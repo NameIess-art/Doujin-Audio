@@ -1,9 +1,11 @@
 import 'dart:async';
 
+import '../../core/logging/app_log_service.dart';
 import '../../core/platform/windows_desktop_service.dart';
 import '../../features/player/application/notification_facade.dart';
 import '../../features/player/application/playback_facade.dart';
 import '../../features/player/application/timer_facade.dart';
+import 'app_lifecycle_binding.dart';
 import 'app_runtime_lifecycle.dart';
 
 /// Owns desktop commands from bootstrap through runtime shutdown.
@@ -29,11 +31,21 @@ class WindowsRuntimeBinding {
   bool _closing = false;
   bool _endingSession = false;
   bool _stateLoaded = false;
+  String? _pendingLifecycleAction;
   final _pausedByTaskbar = <String>{};
   bool _taskbarPauseIncomplete = false;
   final Set<Future<void>> _inFlightActions = <Future<void>>{};
 
-  Future<void> attach() => _attachment ??= _desktop.attach(_onAction);
+  Future<void> attach() => _attachment ??= _attach();
+
+  Future<void> _attach() async {
+    try {
+      await _desktop.attach(_onAction);
+    } catch (_) {
+      _attachment = null;
+      rethrow;
+    }
+  }
 
   void bindRuntime({
     required AppRuntimeLifecycle runtime,
@@ -67,11 +79,26 @@ class WindowsRuntimeBinding {
     if (active != null) return active;
     late final Future<void> attempt;
     attempt = Future<void>.sync(initialize)
-        .then((_) {
+        .then((_) async {
           if (_closing) {
             throw StateError('Windows initialization was invalidated');
           }
-          if (loadRuntime) _stateLoaded = true;
+          if (loadRuntime) {
+            _stateLoaded = true;
+            final pendingLifecycle = _pendingLifecycleAction;
+            _pendingLifecycleAction = null;
+            if (pendingLifecycle != null && _runtime != null) {
+              try {
+                await _dispatchAction(pendingLifecycle);
+              } catch (error, stackTrace) {
+                AppLogService.warning(
+                  'windows_runtime_deferred_lifecycle_failed',
+                  error: error,
+                  stackTrace: stackTrace,
+                );
+              }
+            }
+          }
         })
         .whenComplete(() {
           if (identical(_initialization, attempt)) _initialization = null;
@@ -82,6 +109,7 @@ class WindowsRuntimeBinding {
   Future<void> _onAction(String action) async {
     if (action == 'exit' || action == 'endSession') {
       if (action == 'endSession') _endingSession = true;
+      _pendingLifecycleAction = null;
       if (!_closing) {
         _closing = true;
         _invalidateInitialization?.call();
@@ -89,11 +117,21 @@ class WindowsRuntimeBinding {
       await (_shutdown ??= _saveAndDispose(closeWindow: action == 'exit'));
       return;
     }
-    if (!_stateLoaded || _closing) return;
+    if (_closing) return;
+    if (!_stateLoaded) {
+      if (action == 'background' || action == 'resume') {
+        _pendingLifecycleAction = action;
+      }
+      return;
+    }
+    await _dispatchAction(action);
+  }
+
+  Future<void> _dispatchAction(String action) {
     late final Future<void> task;
     task = _runAction(action).whenComplete(() => _inFlightActions.remove(task));
     _inFlightActions.add(task);
-    await task;
+    return task;
   }
 
   Future<void> _runAction(String action) async {
@@ -116,12 +154,13 @@ class WindowsRuntimeBinding {
           _taskbarPauseIncomplete = false;
           final resumeIds = _pausedByTaskbar.toList();
           _pausedByTaskbar.clear();
-          for (final id in resumeIds) {
-            final session = playback.sessionById(id);
-            if (session != null && !session.playbackRequested) {
-              await playback.toggleSessionPlayPause(id);
-            }
-          }
+          final toResume = <Future<void>>[
+            for (final id in resumeIds)
+              if (playback.sessionById(id) case final session?
+                  when !session.playbackRequested)
+                playback.toggleSessionPlayPause(id),
+          ];
+          if (toResume.isNotEmpty) await Future.wait<void>(toResume);
         } else {
           await notifications.playPrimarySession();
         }
@@ -139,15 +178,16 @@ class WindowsRuntimeBinding {
   }
 
   Future<void> _saveAndDispose({required bool closeWindow}) async {
+    final drainDeadline = _endingSession ? (Stopwatch()..start()) : null;
     final initialization = _initialization;
     if (initialization != null) {
       // The bootstrap caller receives the error; shutdown still drains its work.
       try {
-        if (_endingSession) {
-          await initialization.timeout(
-            _endSessionDrainBudget,
-            onTimeout: () {},
-          );
+        if (drainDeadline != null) {
+          final remaining = _endSessionDrainBudget - drainDeadline.elapsed;
+          if (remaining > Duration.zero) {
+            await initialization.timeout(remaining, onTimeout: () {});
+          }
         } else {
           await initialization;
         }
@@ -156,43 +196,31 @@ class WindowsRuntimeBinding {
         // must still release the partially created runtime.
       }
     }
-    if (_endingSession) {
-      final deadline = Stopwatch()..start();
-      while (_inFlightActions.isNotEmpty) {
-        final remaining = _endSessionDrainBudget - deadline.elapsed;
-        if (remaining <= Duration.zero) break;
-        final batch = _inFlightActions.toList();
-        var timedOut = false;
-        try {
-          await Future.wait<void>(
-            batch.map<Future<void>>((action) async {
-              try {
-                await action;
-              } catch (_) {
-                // Action errors are returned to their caller; shutdown still drains.
-              }
-            }),
-          ).timeout(
-            remaining,
-            onTimeout: () {
-              timedOut = true;
-              return const <void>[];
-            },
-          );
-        } catch (_) {
-          // Action errors are returned to their caller; shutdown still drains.
-        }
-        if (timedOut) break;
-      }
-    } else {
-      while (_inFlightActions.isNotEmpty) {
-        for (final action in _inFlightActions.toList()) {
+    while (_inFlightActions.isNotEmpty) {
+      final batch = _inFlightActions.toList();
+      final waitBatch = Future.wait<void>(
+        batch.map<Future<void>>((action) async {
           try {
             await action;
           } catch (_) {
             // Action errors are returned to their caller; shutdown still drains.
           }
-        }
+        }),
+      );
+      if (drainDeadline != null) {
+        final remaining = _endSessionDrainBudget - drainDeadline.elapsed;
+        if (remaining <= Duration.zero) break;
+        var timedOut = false;
+        await waitBatch.timeout(
+          remaining,
+          onTimeout: () {
+            timedOut = true;
+            return const <void>[];
+          },
+        );
+        if (timedOut) break;
+      } else {
+        await waitBatch;
       }
     }
     Object? firstError;
@@ -207,10 +235,20 @@ class WindowsRuntimeBinding {
     }
 
     if (_stateLoaded) {
-      await attempt(_playback!.savePersistedState);
-      await attempt(_timer!.saveRuntime);
+      await Future.wait<void>([
+        attempt(_playback!.savePersistedState),
+        attempt(_timer!.saveRuntime),
+      ]);
     }
-    if (_runtime != null) await attempt(_runtime!.dispose);
+    if (_runtime != null) {
+      await attempt(() {
+        final runtime = _runtime!;
+        if (runtime is AppLifecycleBinding) {
+          return runtime.dispose(fastShutdown: _endingSession);
+        }
+        return runtime.dispose();
+      });
+    }
     // Windows needs the channel reply before WM_ENDSESSION returns.
     if (closeWindow && !_endingSession) await attempt(_desktop.exit);
     if (firstError != null) Error.throwWithStackTrace(firstError!, firstStack!);

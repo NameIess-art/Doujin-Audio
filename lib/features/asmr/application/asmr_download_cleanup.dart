@@ -2,6 +2,9 @@ import '../domain/asmr_download.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:crypto/crypto.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path;
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/path_matcher.dart';
@@ -372,7 +375,7 @@ class AsmrDownloadOutputStore {
         );
         if (await outputPathExists(targetPath)) return true;
       }
-      for (final ext in const ['.jpg', '.png', '.webp', '.jpeg']) {
+      for (final ext in const ['.jpg', '.png', '.webp', '.jpeg', '.gif']) {
         final targetPath = _planner.joinFolderPath(
           workRootPath,
           'cover/${item.coverFileStem!}$ext',
@@ -408,6 +411,44 @@ class AsmrDownloadOutputStore {
       folder: folder,
       name: path.posix.basename(relativePath),
     );
+  }
+
+  Future<String?> pickDestinationFolder({String? dialogTitle}) async {
+    try {
+      if (Platform.isAndroid) {
+        final pathValue = await _fileCacheGateway.pickAudioFolder();
+        if (pathValue != null && pathValue.isNotEmpty) {
+          return pathValue;
+        }
+      }
+    } on PlatformException {
+      // Fall through to the file picker.
+    } catch (_) {
+      // Native folder selection is optional; fall through to the file picker.
+    }
+
+    if (!Platform.isAndroid || kIsWeb) {
+      final directory = await FilePicker.getDirectoryPath(
+        dialogTitle: dialogTitle ?? 'Choose download folder',
+      );
+      if (directory != null && directory.trim().isNotEmpty) {
+        return directory.trim();
+      }
+    }
+    return null;
+  }
+
+  Future<bool> destinationExists(String folderPath) async {
+    final normalized = folderPath.trim();
+    if (normalized.isEmpty) return false;
+    if (PathMatcher.isContentUri(normalized)) {
+      try {
+        return await _fileCacheGateway.documentPathExists(normalized);
+      } catch (_) {
+        return false;
+      }
+    }
+    return localDownloadDirectory(normalized).exists();
   }
 
   Future<File> persistentStagingFile(

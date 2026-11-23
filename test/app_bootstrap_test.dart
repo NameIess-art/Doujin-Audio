@@ -13,6 +13,7 @@ import 'package:doujin_audio/app/theme/theme_provider.dart';
 import 'package:doujin_audio/core/platform/app_lifecycle_platform_service.dart';
 import 'package:doujin_audio/core/widgets/app_brand_icon.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
+import 'package:doujin_audio/features/data_support/application/data_backup_service.dart';
 import 'package:doujin_audio/features/settings/application/app_update_service.dart';
 import 'package:doujin_audio/features/settings/presentation/settings_providers.dart';
 import 'package:doujin_audio/features/settings/presentation/settings_tab.dart';
@@ -703,6 +704,67 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(seconds: 1));
     },
+    );
+
+    testWidgets(
+      'MusicPlayerApp delays startup restore outcome feedback until presentation is ready',
+      (tester) async {
+        SharedPreferences.setMockInitialValues(const <String, Object>{});
+        await AppPreferences.init();
+        final presentationGate = Completer<void>();
+        final themeProvider = ThemeProvider();
+        final harness = AppRuntimeWidgetTestFixture();
+        addTearDown(harness.dispose);
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              ...createAppRuntimeOverrides(
+                persistence: harness.runtimeGraph.persistence,
+                runtime: harness.runtimeGraph.runtime,
+                warmup: harness.runtimeGraph.warmup,
+                playbackCommands: harness.runtimeGraph.playbackCommands,
+                keepAlive: harness.runtimeGraph.keepAlive,
+                library: harness.runtimeGraph.library,
+                playback: harness.runtimeGraph.playback,
+                subtitles: harness.runtimeGraph.subtitles,
+                timer: harness.runtimeGraph.timer,
+                notifications: harness.runtimeGraph.notifications,
+                settings: harness.runtimeGraph.settings,
+                workTexts: harness.runtimeGraph.workTexts,
+              ),
+              appUpdateServiceProvider.overrideWithValue(AppUpdateService()),
+              themeProviderInstanceProvider.overrideWith(
+                (ref) => themeProvider,
+              ),
+              appLanguageProviderInstanceProvider.overrideWithValue(
+                harness.languageProvider,
+              ),
+            ],
+            child: MusicPlayerApp(
+              shouldShowOnboarding: false,
+              startupRestoreOutcome: const StartupRestoreOutcome.succeeded(),
+              presentationInitializer: () => presentationGate.future,
+              runtimeInitializer: () async {},
+            ),
+          ),
+        );
+
+        final toastText = harness.languageProvider.tr(
+          'backup_restore_succeeded',
+        );
+        await tester.pump();
+        await tester.pump(const Duration(seconds: 2));
+        expect(find.text(toastText), findsNothing);
+
+        presentationGate.complete();
+        await tester.pump();
+        await tester.pump();
+        await tester.pump();
+        expect(find.text(toastText), findsOneWidget);
+
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(seconds: 3));
+      },
     );
   });
 }

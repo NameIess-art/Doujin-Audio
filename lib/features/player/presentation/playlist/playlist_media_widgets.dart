@@ -58,6 +58,7 @@ class SessionHeroArtwork extends ConsumerWidget {
     );
     final videoReady =
         allowVideoPlayback && isSessionVideoReady(session, track);
+    final showVideoSurface = videoReady && mountVideoSurface;
     final coverResolution = ref.watch(coverImageResolutionProvider);
     final preview = coverPreview == null
         ? null
@@ -172,7 +173,7 @@ class SessionHeroArtwork extends ConsumerWidget {
                   radius: 16,
                   enabled: !videoReady,
                   child: SessionVideoViewport(
-                    videoReady: videoReady && mountVideoSurface,
+                    videoReady: showVideoSurface,
                     surfaceBuilder: (_) => NativeSessionVideoSurface(
                       sessionId: sessionId,
                       nativeRepository: ref

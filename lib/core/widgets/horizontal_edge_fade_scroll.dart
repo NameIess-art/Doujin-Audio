@@ -11,10 +11,12 @@ class HorizontalEdgeFadeScroll extends StatefulWidget {
     super.key,
     required this.builder,
     this.controller,
+    this.absorbScrollNotifications = false,
   });
 
   final Widget Function(ScrollController controller) builder;
   final ScrollController? controller;
+  final bool absorbScrollNotifications;
 
   @override
   State<HorizontalEdgeFadeScroll> createState() =>
@@ -67,22 +69,13 @@ class _HorizontalEdgeFadeScrollState extends State<HorizontalEdgeFadeScroll> {
           onNotification: (notification) {
             if (notification.depth != 0) return false;
             _updateEdges(notification.metrics);
-            return true;
+            return widget.absorbScrollNotifications;
           },
           child: _HorizontalEdgeMask(
             enabled: _fadeLeft || _fadeRight,
             fadeLeft: _fadeLeft,
             fadeRight: _fadeRight,
             blendMode: BlendMode.dstIn,
-            shaderCallback: (bounds) => LinearGradient(
-              colors: [
-                _fadeLeft ? Colors.transparent : Colors.black,
-                Colors.black,
-                Colors.black,
-                _fadeRight ? Colors.transparent : Colors.black,
-              ],
-              stops: const [0, 0.06, 0.94, 1],
-            ).createShader(bounds),
             child: widget.builder(controller),
           ),
         ),
@@ -97,17 +90,51 @@ class _HorizontalEdgeFadeScrollState extends State<HorizontalEdgeFadeScroll> {
   }
 }
 
+const _edgeMaskStops = <double>[0, 0.06, 0.94, 1];
+const _neitherEdgeGradient = LinearGradient(
+  colors: [Colors.black, Colors.black, Colors.black, Colors.black],
+  stops: _edgeMaskStops,
+);
+const _leftEdgeGradient = LinearGradient(
+  colors: [Colors.transparent, Colors.black, Colors.black, Colors.black],
+  stops: _edgeMaskStops,
+);
+const _rightEdgeGradient = LinearGradient(
+  colors: [Colors.black, Colors.black, Colors.black, Colors.transparent],
+  stops: _edgeMaskStops,
+);
+const _bothEdgeGradient = LinearGradient(
+  colors: [Colors.transparent, Colors.black, Colors.black, Colors.transparent],
+  stops: _edgeMaskStops,
+);
+
+Shader _createNeitherEdgeShader(Rect bounds) =>
+    _neitherEdgeGradient.createShader(bounds);
+Shader _createLeftEdgeShader(Rect bounds) =>
+    _leftEdgeGradient.createShader(bounds);
+Shader _createRightEdgeShader(Rect bounds) =>
+    _rightEdgeGradient.createShader(bounds);
+Shader _createBothEdgeShader(Rect bounds) =>
+    _bothEdgeGradient.createShader(bounds);
+
+ShaderCallback _edgeShaderCallbackFor(bool fadeLeft, bool fadeRight) =>
+    switch ((fadeLeft, fadeRight)) {
+      (false, false) => _createNeitherEdgeShader,
+      (true, false) => _createLeftEdgeShader,
+      (false, true) => _createRightEdgeShader,
+      (true, true) => _createBothEdgeShader,
+    };
+
 // Keep the scrollable's element and position when resizing removes overflow.
 // Fully visible rows can paint directly without an offscreen shader layer.
 class _HorizontalEdgeMask extends ShaderMask {
-  const _HorizontalEdgeMask({
+  _HorizontalEdgeMask({
     required this.enabled,
     required this.fadeLeft,
     required this.fadeRight,
-    required super.shaderCallback,
     required super.blendMode,
     required super.child,
-  });
+  }) : super(shaderCallback: _edgeShaderCallbackFor(fadeLeft, fadeRight));
 
   final bool enabled;
   final bool fadeLeft;
@@ -128,8 +155,8 @@ class _HorizontalEdgeMask extends ShaderMask {
     BuildContext context,
     covariant _RenderHorizontalEdgeMask renderObject,
   ) {
-    super.updateRenderObject(context, renderObject);
     renderObject
+      ..blendMode = blendMode
       ..enabled = enabled
       ..fadeLeft = fadeLeft
       ..fadeRight = fadeRight;
@@ -195,7 +222,10 @@ class _RenderHorizontalEdgeMask extends RenderShaderMask {
         _cachedSize != size ||
         _cachedFadeLeft != _fadeLeft ||
         _cachedFadeRight != _fadeRight) {
-      _cachedShader = shaderCallback(const Offset(overlap, overlap) & size);
+      _cachedShader = _edgeShaderCallbackFor(
+        _fadeLeft,
+        _fadeRight,
+      )(const Offset(overlap, overlap) & size);
       _cachedSize = size;
       _cachedFadeLeft = _fadeLeft;
       _cachedFadeRight = _fadeRight;

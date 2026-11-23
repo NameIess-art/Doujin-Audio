@@ -16,6 +16,9 @@ import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../app/presentation/audio_ui_controllers.dart';
+import '../../../app/theme/app_design_tokens.dart';
+import '../../../app/theme/app_styles.dart';
+import '../../../app/theme/theme_provider.dart';
 import '../../../core/media/cover_image_resolution.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/subtitle_parser.dart';
@@ -99,6 +102,9 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
   final ValueNotifier<double> _pageNotifier = ValueNotifier<double>(
     _loopPageSeed.toDouble(),
   );
+  final ValueNotifier<int> _currentPageNotifier = ValueNotifier<int>(
+    _loopPageSeed,
+  );
   final ValueNotifier<int> _indicatorIndex = ValueNotifier<int>(0);
   List<PlaybackSessionSnapshot> _currentSessions = const [];
   List<PlaybackSessionSnapshot> _incomingSessions = const [];
@@ -170,6 +176,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     }
     _pendingDisposedControllers.clear();
     _pageNotifier.dispose();
+    _currentPageNotifier.dispose();
     _indicatorIndex.dispose();
     if (widget.presentation == ActiveSessionCarouselPresentation.card) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -187,6 +194,10 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     }
     if ((nextPage - current).abs() < 0.001) return;
     _pageNotifier.value = nextPage;
+    final rounded = nextPage.round();
+    if (_currentPageNotifier.value != rounded) {
+      _currentPageNotifier.value = rounded;
+    }
     _notifyVisibleSessionChanged();
   }
 
@@ -283,11 +294,25 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     final targetPage = _pageNotifier.value.round() - 1;
     await _moveToPage(targetPage, duration: const Duration(milliseconds: 420));
     if (!mounted) return;
+    // If a user drag took over animateToPage, align with the session actually
+    // settled under the user's finger instead of snapping to leftSessionId.
+    final settledPage = _pageController.hasClients
+        ? (_pageController.page ?? _pageNotifier.value).round()
+        : _pageNotifier.value.round();
+    final settledSessionId =
+        _currentSessions.isNotEmpty && settledPage != targetPage
+        ? _currentSessions[_sessionIndexForPage(
+            settledPage,
+            _currentSessions.length,
+          )].id
+        : leftSessionId;
     setState(() {
       _currentSessions = _incomingSessions;
       if (_currentSessions.isNotEmpty) {
         final targetSessionId =
-            _currentSessions.any((session) => session.id == leftSessionId)
+            _currentSessions.any((session) => session.id == settledSessionId)
+            ? settledSessionId
+            : _currentSessions.any((session) => session.id == leftSessionId)
             ? leftSessionId
             : _currentSessions.first.id;
         _alignPageWithSession(targetSessionId, _currentSessions);
@@ -320,6 +345,9 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     }
     if (!_pageController.hasClients) {
       _pageNotifier.value = page.toDouble();
+      if (_currentPageNotifier.value != page) {
+        _currentPageNotifier.value = page;
+      }
       _notifyVisibleSessionChanged();
       return;
     }
@@ -492,7 +520,14 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
         pageListenable: _pageNotifier,
         index: index,
         enabled: visibleSessions.length > 1,
-        child: card,
+        child: ValueListenableBuilder<int>(
+          valueListenable: _currentPageNotifier,
+          child: card,
+          builder: (context, currentPage, child) => MarqueePauseScope(
+            isPaused: index != currentPage,
+            child: child!,
+          ),
+        ),
       );
     });
     Widget buildPages({required bool canPage}) => Listener(
@@ -560,17 +595,19 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     final narrowPages = widget.retainDockPages
         ? singlePage ?? buildPages(canPage: false)
         : null;
-    final positionIndicator = IgnorePointer(
+    Widget buildPositionIndicator({double opacity = 1.0}) => IgnorePointer(
       child: Center(
         child: FittedBox(
           fit: BoxFit.scaleDown,
           child: _ActiveSessionIndicator(
             sessions: visibleSessions,
             indexListenable: _indicatorIndex,
+            opacity: opacity,
           ),
         ),
       ),
     );
+    final positionIndicator = buildPositionIndicator();
     return SizedBox(
       height: dockPresentation
           ? kActiveSessionCarouselDockHeight
@@ -591,16 +628,16 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
             fit: StackFit.expand,
             children: [
               _isNarrowDock ? narrowPages! : pages,
-              if (!_isNarrowDock && !compact && visibleSessions.length > 1)
+              if (!_isNarrowDock &&
+                  !compact &&
+                  visibleSessions.length > 1 &&
+                  (!widget.retainDockPages || indicatorOpacity > 0))
                 PositionedDirectional(
                   start: 12,
                   end: 12,
                   bottom: 7,
-                  child: widget.retainDockPages
-                      ? Opacity(
-                          opacity: indicatorOpacity,
-                          child: positionIndicator,
-                        )
+                  child: widget.retainDockPages && indicatorOpacity < 1
+                      ? buildPositionIndicator(opacity: indicatorOpacity)
                       : positionIndicator,
                 ),
             ],

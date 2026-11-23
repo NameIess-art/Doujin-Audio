@@ -1,6 +1,6 @@
 part of 'asmr_tab.dart';
 
-class _AsmrWorkCover extends ConsumerWidget {
+class _AsmrWorkCover extends ConsumerStatefulWidget {
   const _AsmrWorkCover({
     required this.workKey,
     required this.url,
@@ -16,10 +16,36 @@ class _AsmrWorkCover extends ConsumerWidget {
   final Duration? duration;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final width = this.width;
+  ConsumerState<_AsmrWorkCover> createState() => _AsmrWorkCoverState();
+}
+
+class _AsmrWorkCoverState extends ConsumerState<_AsmrWorkCover> {
+  Future<String?>? _coverPathFuture;
+  String? _lastUrl;
+  Object? _lastCoverRevision;
+  LibraryCoverUiController? _lastCoverUi;
+
+  Future<String?> _coverFutureFor(
+    LibraryCoverUiController coverUi,
+    String url,
+    Object coverRevision,
+  ) {
+    if (_lastUrl != url ||
+        _lastCoverRevision != coverRevision ||
+        !identical(_lastCoverUi, coverUi)) {
+      _lastUrl = url;
+      _lastCoverRevision = coverRevision;
+      _lastCoverUi = coverUi;
+      _coverPathFuture = coverUi.deferredRemoteCover(url, context: context);
+    }
+    return _coverPathFuture!;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final width = widget.width;
     final height = width / kStandardCoverAspectRatio;
-    final url = this.url.trim();
+    final url = widget.url.trim();
     final coverResolution = ref.watch(coverImageResolutionProvider);
     final coverCacheWidth = coverThumbnailCacheWidth(
       logicalWidth: width,
@@ -27,12 +53,18 @@ class _AsmrWorkCover extends ConsumerWidget {
       resolution: coverResolution,
     );
     final library = ref.read(libraryFacadeProvider);
-    ref.watch(
+    final (coverRevision, resolvedPath) = ref.watch(
       coverGenerationProvider.select(
-        (_) => library.resolvedCoverPathForRemoteCover(url),
+        (_) => (
+          library.coverArtworkCacheService.revisionForScope(url),
+          library.resolvedCoverPathForRemoteCover(url),
+        ),
       ),
     );
     final coverUi = ref.read(libraryCoverUiControllerProvider);
+    final coverFuture = url.isEmpty
+        ? null
+        : _coverFutureFor(coverUi, url, (coverRevision, resolvedPath));
     return SizedBox(
       width: width,
       height: height,
@@ -44,6 +76,8 @@ class _AsmrWorkCover extends ConsumerWidget {
             height: height,
             child: CoverArtworkFrame(
               clipBehavior: Clip.hardEdge,
+              showShadow: false,
+              showBorder: true,
               borderRadius: BorderRadius.circular(
                 LibraryLikeCardMetrics.coverRadius,
               ),
@@ -61,12 +95,8 @@ class _AsmrWorkCover extends ConsumerWidget {
                                 .coverArtworkCacheService
                                 .reportArtworkReadFailure,
                             url: url,
-                            future: coverUi.deferredRemoteCover(
-                              url,
-                              context: context,
-                            ),
-                            initialPath: library
-                                .resolvedCoverPathForRemoteCover(url),
+                            future: coverFuture!,
+                            initialPath: resolvedPath,
                             retryFutureBuilder: () => coverUi
                                 .deferredRemoteCover(url, context: context),
                             retryDelay: const Duration(seconds: 5),
@@ -81,11 +111,12 @@ class _AsmrWorkCover extends ConsumerWidget {
                                 const CoverFallbackArtwork(),
                           ),
                   ),
-                  if (duration != null && duration! > Duration.zero)
+                  if (widget.duration != null &&
+                      widget.duration! > Duration.zero)
                     Positioned(
                       left: 4,
                       bottom: 4,
-                      child: DurationOverlay(duration: duration!),
+                      child: DurationOverlay(duration: widget.duration!),
                     ),
                 ],
               ),
@@ -95,8 +126,10 @@ class _AsmrWorkCover extends ConsumerWidget {
             right: -2,
             bottom: -2,
             child: SelectionCheckmark(
-              indicatorKey: ValueKey<String>('asmr_selection_indicator_$workKey'),
-              isSelected: isSelected,
+              indicatorKey: ValueKey<String>(
+                'asmr_selection_indicator_${widget.workKey}',
+              ),
+              isSelected: widget.isSelected,
             ),
           ),
         ],

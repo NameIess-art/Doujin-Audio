@@ -44,6 +44,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
   bool _saving = false;
   bool _dirty = false;
   bool _cuesValid = false;
+  bool _hasSameTiming = false;
   bool _confirmingExit = false;
   bool _highlightInvalid = false;
   // Ignore dialogs opened before a save, including results after it completes.
@@ -53,12 +54,13 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
 
   bool get _canSave => _dirty && !_saving && _cuesValid;
 
-  int? _firstInvalidCueIndex() {
+  int? _firstInvalidCueIndex({bool? hasSameTiming}) {
     final cues = _cues;
     if (cues == null) return null;
-    final hasSameTiming = _sourceTrack?.hasSameCueTimings(cues) ?? false;
+    final sameTiming =
+        hasSameTiming ?? (_sourceTrack?.hasSameCueTimings(cues) ?? false);
     for (var index = 0; index < cues.length; index++) {
-      if (_isCueInvalidAt(cues, index, hasSameTiming: hasSameTiming)) {
+      if (_isCueInvalidAt(cues, index, hasSameTiming: sameTiming)) {
         return index;
       }
     }
@@ -80,10 +82,12 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
   void _recomputeCuesValid() {
     final cues = _cues;
     if (cues == null) {
+      _hasSameTiming = false;
       _cuesValid = false;
       return;
     }
-    _cuesValid = _firstInvalidCueIndex() == null;
+    _hasSameTiming = _sourceTrack?.hasSameCueTimings(cues) ?? false;
+    _cuesValid = _firstInvalidCueIndex(hasSameTiming: _hasSameTiming) == null;
     if (_cuesValid) {
       _highlightInvalid = false;
     }
@@ -437,6 +441,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
     if (resolvedIndex < 0) return;
     final wasDirty = _dirty;
     final deleteEditGen = ++_editGeneration;
+    final deleteSaveGen = _saveGeneration;
     setState(() {
       if (_cues!.length == 1) {
         // The outgoing list can still build its final row while fading.
@@ -457,8 +462,11 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
         setState(() {
           final restoreIndex = resolvedIndex.clamp(0, _cues!.length);
           _cues!.insert(restoreIndex, cue);
-          if (_editGeneration == deleteEditGen) {
+          if (_editGeneration == deleteEditGen &&
+              _saveGeneration == deleteSaveGen) {
             _dirty = wasDirty;
+          } else {
+            _dirty = true;
           }
           _editGeneration++;
           _recomputeCuesValid();
@@ -468,7 +476,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
   }
 
   void _scrollToFirstInvalidCue() {
-    final invalidIndex = _firstInvalidCueIndex();
+    final invalidIndex = _firstInvalidCueIndex(hasSameTiming: _hasSameTiming);
     if (invalidIndex == null) return;
     setState(() => _highlightInvalid = true);
     if (_scrollController.hasClients && _cues != null && _cues!.isNotEmpty) {
@@ -512,6 +520,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
         _sourceTrack = saved;
         _cues = saved.cues.toList();
         _dirty = false;
+        _editGeneration++;
         _recomputeCuesValid();
       });
       showAppSnackBar(
@@ -737,10 +746,8 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
                             final cue = cues[index];
                             final needsText = cue.text.trim().isEmpty;
                             final needsTime = cue.end <= cue.start;
-                            final hasSameTiming =
-                                _sourceTrack?.hasSameCueTimings(cues) ?? false;
                             final hasOverlap =
-                                !hasSameTiming &&
+                                !_hasSameTiming &&
                                 index > 0 &&
                                 cue.start < cues[index - 1].end;
                             final isInvalid =

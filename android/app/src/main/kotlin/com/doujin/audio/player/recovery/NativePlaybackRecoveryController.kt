@@ -28,6 +28,7 @@ internal interface NativePlaybackRecoveryHost {
     fun requestAudioFocus(): Boolean
     fun establishForegroundPlayback(sessionId: String): Boolean
     fun ensurePlayer(session: NativePlaybackSession): ExoPlayer
+    fun onBeforeReleasePlayer(session: NativePlaybackSession) {}
     fun prepareRecoveryQueue(
         sessionId: String,
         queue: List<NativeMediaItemDescriptor>,
@@ -63,8 +64,7 @@ internal data class NativePlaybackHealthSample(
     val isPlaying: Boolean,
     val playbackSuppressionReason: Int,
     val hasPlayerError: Boolean,
-    val capturedElapsedRealtimeMs: Long,
-    val sleepingForOffload: Boolean = false
+    val capturedElapsedRealtimeMs: Long
 )
 
 internal data class NativePlaybackHealthState(
@@ -117,17 +117,12 @@ internal fun evaluateNativePlaybackHealth(
         current.playbackState != Player.STATE_ENDED &&
         current.playbackSuppressionReason == Player.PLAYBACK_SUPPRESSION_REASON_NONE &&
         !nearEnd
-    // Media3 can intentionally suspend its playback loop while the DSP
-    // drains queued audio. Give it a fresh baseline when that sleep ends.
-    val offloadSleep = current.playbackState == Player.STATE_READY &&
-        current.sleepingForOffload
-    val offloadWoke = previousSample?.sleepingForOffload == true && !offloadSleep
     val activityAdvanced = positionAdvanced ||
         positionRewound ||
         (current.playbackState == Player.STATE_BUFFERING && bufferAdvanced)
     val stateChanged = previousSample?.playbackState != current.playbackState
     val resetBaseline = previous == null || stateChanged || mediaItemChanged || !eligible ||
-        activityAdvanced || offloadSleep || offloadWoke
+        activityAdvanced
     val lastActivityMs = if (resetBaseline) {
         nowMs
     } else {
@@ -252,8 +247,7 @@ internal fun captureNativePlaybackHealthSample(
         isPlaying = player.isPlaying,
         playbackSuppressionReason = player.playbackSuppressionReason,
         hasPlayerError = player.playerError != null,
-        capturedElapsedRealtimeMs = nowElapsedRealtimeMs,
-        sleepingForOffload = player.isSleepingForOffload
+        capturedElapsedRealtimeMs = nowElapsedRealtimeMs
     )
 }
 
@@ -264,7 +258,9 @@ internal class NativePlaybackRecoveryController(
     private val readyStallThresholdMs: Long = 30_000L,
     private val bufferingStallThresholdMs: Long = 45_000L,
     private val frozenPositionThresholdMs: Long = 30_000L,
-    private val maxRecoveryDurationMs: Long = 10 * 60 * 1000L
+    private val maxRecoveryDurationMs: Long = 10 * 60 * 1000L,
+    private val screenOffHealthCheckIntervalMs: Long = 60_000L,
+    private val isScreenInteractive: () -> Boolean = { true }
 ) {
     private class Recovery {
         var startedAtMs: Long? = null
@@ -366,7 +362,6 @@ internal class NativePlaybackRecoveryController(
         recoverable: Boolean,
         candidateFallbackEligible: Boolean = false,
         rebuildPlayer: Boolean = false,
-        immediateRetry: Boolean = false,
         errorCodeName: String
     ) {
         val session = host.session(sessionId)
@@ -386,7 +381,7 @@ internal class NativePlaybackRecoveryController(
             recovery.baseline = captureHealth(sessionId)
             if (recovery.inFlight == null) {
                 val tryAlternateNow = recovery.candidateFallback && recovery.attempt == 0
-                scheduleRetry(sessionId, recovery, immediate = immediateRetry || tryAlternateNow)
+                scheduleRetry(sessionId, recovery, immediate = tryAlternateNow)
             }
         }
         host.publishSession(sessionId)
@@ -520,7 +515,7 @@ internal class NativePlaybackRecoveryController(
         }
         if (waitForPlayback && currentHealth != null && !currentHealth.hasPlayerError &&
             currentHealth.playWhenReady &&
-            (currentHealth.playbackState == Player.STATE_BUFFERING || currentHealth.sleepingForOffload)
+            currentHealth.playbackState == Player.STATE_BUFFERING
         ) {
             val evaluation = evaluateHealth(sessionId, currentHealth)
             if (evaluation.stallReason == null) {
@@ -583,7 +578,11 @@ internal class NativePlaybackRecoveryController(
                 recovery.rebuildPlayer = false
                 recovery.candidateFallback = false
                 session.applyFadeMultiplier(1f)
-                session.reprepareCurrentMediaItem(preparedQueue, rebuildPlayer)
+                session.reprepareCurrentMediaItem(
+                    preparedQueue = preparedQueue,
+                    rebuildPlayer = rebuildPlayer,
+                    beforeReleasePlayer = { host.onBeforeReleasePlayer(session) }
+                )
                 if (!ownsAttempt()) return
                 if (preparedQueue != null) host.logInfo("playback_candidate_advanced sessionId=$sessionId", session)
                 host.ensurePlayer(session).play()
@@ -667,7 +666,7 @@ internal class NativePlaybackRecoveryController(
             return
         }
         if (sample.playbackState == Player.STATE_READY && !sample.playWhenReady &&
-            !sample.hasPlayerError && !sample.sleepingForOffload &&
+            !sample.hasPlayerError &&
             sample.playbackSuppressionReason == Player.PLAYBACK_SUPPRESSION_REASON_NONE
         ) {
             resumeUnexpectedPause(sessionId)
@@ -739,10 +738,25 @@ internal class NativePlaybackRecoveryController(
         host.onRecoveryTimedOut(sessionId)
     }
 
+    fun onScreenInteractiveChanged() {
+        if (!healthCheckScheduled || intended.isEmpty()) return
+        environment.remove(healthCheckTask)
+        healthCheckScheduled = false
+        ensureHealthCheck()
+    }
+
+    private fun currentHealthCheckIntervalMs(): Long {
+        if (isScreenInteractive() || recoveries.isNotEmpty()) return healthCheckIntervalMs
+        val anyBuffering = intended.any { sessionId ->
+            host.session(sessionId)?.playerOrNull()?.playbackState == Player.STATE_BUFFERING
+        }
+        return if (anyBuffering) healthCheckIntervalMs else screenOffHealthCheckIntervalMs
+    }
+
     private fun ensureHealthCheck() {
         if (healthCheckScheduled || intended.isEmpty()) return
         healthCheckScheduled = true
-        environment.postDelayed(healthCheckTask, healthCheckIntervalMs)
+        environment.postDelayed(healthCheckTask, currentHealthCheckIntervalMs())
     }
 
     private fun stopMonitoring() {

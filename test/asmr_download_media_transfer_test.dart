@@ -22,6 +22,37 @@ import 'package:path/path.dart' as path;
 
 const _audio = [0, 0, 0, 24, 102, 116, 121, 112, 77, 52, 65, 32];
 
+List<int> _box(String type, List<int> payload) {
+  final size = 8 + payload.length;
+  return <int>[
+    (size >> 24) & 0xff,
+    (size >> 16) & 0xff,
+    (size >> 8) & 0xff,
+    size & 0xff,
+    ...ascii.encode(type),
+    ...payload,
+  ];
+}
+
+List<int> _minimalValidM4aBytes() {
+  final ftyp = _box('ftyp', <int>[...ascii.encode('M4A '), 0, 0, 0, 0]);
+  // mvhd v0: version(1) + flags(3) + ctime(4) + mtime(4) + timescale(4) + duration(4)
+  final mvhd = _box('mvhd', <int>[
+    0, 0, 0, 0,
+    0, 0, 0, 0,
+    0, 0, 0, 0,
+    0, 0, 0xbb, 0x80, // timescale = 48000
+    0, 0, 0xbb, 0x80, // duration = 48000 (1s)
+  ]);
+  // hdlr: version(1) + flags(3) + pre_defined(4) + handler_type('soun')
+  final hdlr = _box('hdlr', <int>[0, 0, 0, 0, 0, 0, 0, 0, ...ascii.encode('soun')]);
+  final mdia = _box('mdia', hdlr);
+  final trak = _box('trak', mdia);
+  final moov = _box('moov', <int>[...mvhd, ...trak]);
+  final mdat = _box('mdat', const <int>[1, 2, 3, 4]);
+  return <int>[...ftyp, ...moov, ...mdat];
+}
+
 void main() {
   for (final saf in [false, true]) {
     test(
@@ -439,7 +470,10 @@ void main() {
       expect(live.estimatedTotalBytes, isNull);
       expect(live.hasUnknownFileSizes, isTrue);
       expect(live.progress, closeTo(1.75 / 3, 0.0001));
-      expect(env.store.buttonViewState.progress, live.progress);
+      expect(
+        env.store.buttonViewState.progress,
+        AsmrDownloadButtonViewState.quantizeProgress(live.progress),
+      );
       expect(live.completedFilePaths, isNot(contains('Folder/01.flac')));
     };
     try {
@@ -881,6 +915,37 @@ void main() {
     }
   });
 
+  test(
+    'HLS transfer omits -flush_packets and skips 2nd FFmpeg decode for structurally valid M4A',
+    () async {
+      final root = await Directory.systemTemp.createTemp('hls_valid_m4a_');
+      final output = File(path.join(root.path, 'valid.m4a.part'));
+      final validM4a = _minimalValidM4aBytes();
+      final commands = <List<String>>[];
+      final transfer = AsmrHlsAudioTransfer(
+        startProcess: (arguments) async {
+          commands.add(arguments);
+          await output.writeAsBytes(validM4a);
+          return _Process(0);
+        },
+      );
+      try {
+        await transfer.save(
+          reference: const PlaybackMediaReference(
+            streamUrl: 'https://media.test/file.m3u8',
+          ),
+          output: output,
+          isCancelled: () => false,
+        );
+        expect(commands, hasLength(1));
+        expect(commands.single, isNot(contains('-flush_packets')));
+        expect(await hasValidRemuxedM4aStructure(output), isTrue);
+      } finally {
+        await root.delete(recursive: true);
+      }
+    },
+  );
+
   test('different originals cannot collapse to the same generated M4A', () {
     const planner = AsmrDownloadPlanner();
     expect(
@@ -1071,6 +1136,82 @@ void main() {
       await env.dispose();
     }
   });
+
+  test(
+    'H24 AsmrHlsAudioTransfer.save preserves DownloadCancelled when output.delete throws',
+    () async {
+      final root = await Directory.systemTemp.createTemp('hls_delete_fail_');
+      try {
+        final realFile = File(path.join(root.path, 'chapter.m4a.part'));
+        await realFile.writeAsBytes(_audio);
+        final token = AsmrRequestCancellationToken();
+        final transfer = AsmrHlsAudioTransfer(
+          startProcess: (_) async {
+            final proc = _Process(null);
+            unawaited(Future<void>.microtask(token.cancel));
+            return proc;
+          },
+        );
+        await expectLater(
+          transfer.save(
+            reference: const PlaybackMediaReference(
+              streamUrl: 'https://media.test/stream.m3u8',
+              endMs: 2000,
+            ),
+            output: _DeleteFailingFile(realFile),
+            cancellationToken: token,
+          ),
+          throwsA(isA<DownloadCancelled>()),
+        );
+      } finally {
+        await root.delete(recursive: true);
+      }
+    },
+  );
+
+  test(
+    'M27 successful HLS download clears fileProgressFractions so mixed tasks resume byte progress',
+    () async {
+      final env = await _Environment.create();
+      final key = env.work.workKey;
+      env.store[key] = env.task.copyWith(
+        totalFiles: 2,
+        totalBytes: 1000,
+        downloadedBytes: 0,
+        fileTotalBytes: const {'Folder/01.flac': 0, 'normal.mp3': 1000},
+      );
+      env.hls.transferring = (progress, bytes) async {
+        bytes!(_audio.length);
+        progress!(0.5);
+      };
+      try {
+        final result = await env.download(
+          const PlaybackMediaReference(
+            streamUrl: 'https://media.test/audio.m3u8',
+            endMs: 2000,
+          ),
+        );
+        expect(result.saved, isTrue);
+        final afterHls = env.store[key]!;
+        expect(afterHls.fileProgressFractions, isEmpty);
+        final midNormal = afterHls.copyWith(
+          completedFiles: 1,
+          completedFilePaths: const {'Folder/01.flac'},
+          downloadedBytes: _audio.length + 500,
+          fileDownloadedBytes: {
+            'Folder/01.flac': _audio.length,
+            'normal.mp3': 500,
+          },
+        );
+        expect(
+          midNormal.progress,
+          closeTo((_audio.length + 500) / (_audio.length + 1000), 0.0001),
+        );
+      } finally {
+        await env.dispose();
+      }
+    },
+  );
 }
 
 class _Environment {
@@ -1297,6 +1438,28 @@ class _Process implements Process {
     killed = true;
     if (!completion.isCompleted) completion.complete(-1);
     return true;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _DeleteFailingFile implements File {
+  _DeleteFailingFile(this._delegate);
+  final File _delegate;
+
+  @override
+  String get path => _delegate.path;
+
+  @override
+  Directory get parent => _delegate.parent;
+
+  @override
+  Future<bool> exists() => _delegate.exists();
+
+  @override
+  Future<FileSystemEntity> delete({bool recursive = false}) async {
+    throw const FileSystemException('file locked');
   }
 
   @override

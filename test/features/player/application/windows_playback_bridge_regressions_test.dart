@@ -19,7 +19,7 @@ void main() {
       idleReleaseDelay: Duration.zero,
       readNativePlaylist: (player) async => jsonEncode([
         for (final media in player.state.playlist.medias)
-          {'id': identityHashCode(media), 'filename': media.uri},
+          {'id': mockMediaId(media), 'filename': media.uri},
       ]),
       createPlayer: () {
         final platform = _FakePlatformPlayer();
@@ -316,6 +316,128 @@ void main() {
         expect(platform.disposed, isTrue);
       },
     );
+
+    test(
+      'queue edit during stopAfterCurrentTrack remaps nativeQueueIndices before restore',
+      () async {
+        final queue = <Map<String, Object?>>[
+          {'uri': 'https://example.com/0.wav', 'path': '/0.wav', 'title': '0'},
+          {'uri': 'https://example.com/1.wav', 'path': '/1.wav', 'title': '1'},
+          {'uri': 'https://example.com/2.wav', 'path': '/2.wav', 'title': '2'},
+        ];
+        final prepared = await bridge.prepareSession(
+          sessionId: 'stop-edit',
+          uri: Uri.parse('https://example.com/1.wav'),
+          path: '/1.wav',
+          title: '1',
+          queue: queue,
+          queueStartIndex: 1,
+          autoPlay: true,
+        );
+        expect(prepared.isOk, isTrue, reason: prepared.errorOrNull);
+        final platform = players.single;
+
+        expect(
+          (await bridge.setStopAfterCurrentTrack('stop-edit', true)).isOk,
+          isTrue,
+        );
+        expect(platform.state.playlist.medias, hasLength(1));
+
+        // Reorder queue while stopAfterCurrentTrack is active so current track moves from index 1 to 0.
+        final edited = await bridge.updateQueue(
+          'stop-edit',
+          queue: [queue[1], queue[2]],
+          queueStartIndex: 0,
+        );
+        expect(edited.isOk, isTrue, reason: edited.errorOrNull);
+
+        // Disabling stopAfterCurrentTrack restores the full queue without killing the player.
+        final restored = await bridge.setStopAfterCurrentTrack(
+          'stop-edit',
+          false,
+        );
+        expect(restored.isOk, isTrue, reason: restored.errorOrNull);
+        expect(platform.disposed, isFalse);
+        expect(bridge.playerForSession('stop-edit'), isNotNull);
+        expect(
+          platform.state.playlist.medias.map((m) => m.uri).toList(),
+          ['https://example.com/1.wav', 'https://example.com/2.wav'],
+        );
+      },
+    );
+
+    test(
+      'seeking a completed session clears completed flag before next play',
+      () async {
+        final prepared = await bridge.prepareSession(
+          sessionId: 'completed-seek',
+          uri: Uri.parse('https://example.com/track.wav'),
+          title: 'Track',
+          autoPlay: true,
+        );
+        expect(prepared.isOk, isTrue, reason: prepared.errorOrNull);
+        final platform = players.single;
+        platform.emitCompleted();
+        await Future<void>.delayed(Duration.zero);
+
+        final sought = await bridge.seek(
+          'completed-seek',
+          const Duration(seconds: 42),
+        );
+        expect(sought.isOk, isTrue, reason: sought.errorOrNull);
+        expect(sought.valueOrNull!.processingState, isNot('completed'));
+        expect(sought.valueOrNull!.position, const Duration(seconds: 42));
+
+        final played = await bridge.play('completed-seek');
+        expect(played.isOk, isTrue, reason: played.errorOrNull);
+        expect(played.valueOrNull!.position, const Duration(seconds: 42));
+      },
+    );
+
+    test(
+      'videoControllerForSession reads serialized position inside _change after queued seek',
+      () async {
+        final prepared = await bridge.prepareSession(
+          sessionId: 'video-pos',
+          uri: Uri.parse('https://example.com/clip.mp4'),
+          title: 'Clip',
+          autoPlay: true,
+        );
+        expect(prepared.isOk, isTrue, reason: prepared.errorOrNull);
+        final platform = players.single;
+        bridge.attachVideoSurface('video-pos');
+        expect((await bridge.pause('video-pos')).isOk, isTrue);
+        expect(
+          (await bridge.seek('video-pos', const Duration(seconds: 5))).isOk,
+          isTrue,
+        );
+
+        final seekStarted = Completer<void>();
+        final seekGate = Completer<void>();
+        platform.seekStarted = seekStarted;
+        platform.seekGate = seekGate;
+
+        final seekFuture = bridge.seek(
+          'video-pos',
+          const Duration(seconds: 30),
+        );
+        await seekStarted.future;
+
+        // Call videoControllerForSession while seek is still queued/in-flight;
+        // session.position is still 5s outside _change.
+        final controller = bridge.videoControllerForSession('video-pos');
+        expect(controller, isNotNull);
+
+        seekGate.complete();
+        expect((await seekFuture).isOk, isTrue);
+        platform.videoControllerCompleter.complete();
+        await bridge.setVolume('video-pos', 1.0);
+
+        final snapshot = (await bridge.snapshot()).valueOrNull!.sessions.single;
+        expect(snapshot.position, const Duration(seconds: 30));
+        expect(platform.state.position, const Duration(seconds: 30));
+      },
+    );
   });
 }
 
@@ -326,6 +448,13 @@ class _FakePlatformPlayer extends PlatformPlayer {
   bool disposed = false;
   Completer<void>? pauseStarted;
   Completer<void>? pauseGate;
+  Completer<void>? seekStarted;
+  Completer<void>? seekGate;
+
+  void emitCompleted() {
+    state = state.copyWith(playing: false, completed: true);
+    completedController.add(true);
+  }
 
   @override
   Future<void> dispose() async {
@@ -366,8 +495,41 @@ class _FakePlatformPlayer extends PlatformPlayer {
 
   @override
   Future<void> seek(Duration position) async {
-    state = state.copyWith(position: position);
+    if (seekStarted?.isCompleted == false) seekStarted!.complete();
+    await seekGate?.future;
+    state = state.copyWith(position: position, completed: false);
     positionController.add(position);
+  }
+
+  @override
+  Future<void> add(Media media) async {
+    state = state.copyWith(
+      playlist: Playlist([
+        ...state.playlist.medias,
+        media,
+      ], index: state.playlist.index),
+    );
+  }
+
+  @override
+  Future<void> remove(int index) async {
+    final items = [...state.playlist.medias]..removeAt(index);
+    state = state.copyWith(
+      playlist: Playlist(
+        items,
+        index: state.playlist.index - (index < state.playlist.index ? 1 : 0),
+      ),
+    );
+  }
+
+  @override
+  Future<void> move(int from, int to) async {
+    final items = [...state.playlist.medias];
+    final current = items[state.playlist.index];
+    final item = items.removeAt(from);
+    items.insert(from < to ? to - 1 : to, item);
+    final next = items.indexWhere((media) => identical(media, current));
+    state = state.copyWith(playlist: Playlist(items, index: next));
   }
 
   @override

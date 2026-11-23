@@ -621,11 +621,9 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                         enabled: chooseDestination != null,
                         builder: (context, feedback) {
                           final cs = Theme.of(context).colorScheme;
-                          final isDark =
-                              Theme.of(context).brightness == Brightness.dark;
                           final surfaceColor = appSurfaceHighlight(
                             cs,
-                            isDark ? cs.surfaceBright : cs.surfaceContainerHigh,
+                            appFloatingSurfaceColor(cs),
                             pressed: feedback.pressed,
                             hovered: feedback.hovered,
                           );

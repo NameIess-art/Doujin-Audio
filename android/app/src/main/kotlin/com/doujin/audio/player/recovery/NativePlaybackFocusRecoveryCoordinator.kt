@@ -69,6 +69,19 @@ internal class NativePlaybackFocusRecoveryCoordinator(
         return audioFocus.requestIfNeeded()
     }
 
+    fun requestForExplicitPlayback(): Boolean {
+        if (!host.behavior.requestAudioFocus) return true
+        if (duckActive) return true
+        val granted = audioFocus.requestIfNeeded()
+        if (granted && transientLossActive) {
+            transientLossActive = false
+            val stalePending = pendingResumeSessionIds.toList()
+            pendingResumeSessionIds.clear()
+            stalePending.forEach(host::clearPlaybackIntent)
+        }
+        return granted
+    }
+
     fun onFocusChange(change: Int) {
         if (!host.behavior.requestAudioFocus) {
             host.logInfo("audio_focus_change_ignored mixing_enabled")
@@ -92,7 +105,8 @@ internal class NativePlaybackFocusRecoveryCoordinator(
             transientLossActive,
             sessionId in pendingResumeSessionIds
         )
-        if (shouldTrackTransientAudioFocusPause(
+        if (host.behavior.resumeAfterTransientAudioFocusGain &&
+            shouldTrackTransientAudioFocusPause(
                 playWhenReady,
                 reason,
                 transientLossActive,
@@ -175,11 +189,17 @@ internal class NativePlaybackFocusRecoveryCoordinator(
     }
 
     private fun pauseForTransientLoss(action: NativeAudioFocusAction) {
-        transientLossActive = true
+        val shouldResumeOnGain = host.behavior.resumeAfterTransientAudioFocusGain
+        transientLossActive = shouldResumeOnGain
         if (duckActive) applyDuck(action)
         duckActive = false
         val ids = host.activePlaybackSessionIds()
-        pendingResumeSessionIds += ids
+        if (shouldResumeOnGain) {
+            pendingResumeSessionIds += ids
+        } else {
+            pendingResumeSessionIds.clear()
+            ids.forEach(host::clearPlaybackIntent)
+        }
         ids.forEach(host::pause)
         host.publishAllSessions()
         host.schedulePersist()

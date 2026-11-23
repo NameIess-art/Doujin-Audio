@@ -355,6 +355,95 @@ void main() {
       expect(listCalls, 1);
     },
   );
+
+  test(
+    'post-commit backup cleanup failure does not roll back a committed write',
+    () async {
+      final target = File(
+        '${directory.path}${Platform.pathSeparator}doujin-audio.json',
+      );
+      await target.writeAsString('{"version": 1}', flush: true);
+      final snapshot = (await store.read(location)).snapshot!;
+      var failedBackupDelete = false;
+      final result = await IOOverrides.runWithIOOverrides(
+        () => store.write(
+          location: location,
+          bytes: Uint8List.fromList(utf8.encode('{"version": 2}')),
+          mode: JsonDocumentWriteMode.replaceIfRevision,
+          expectedRevision: snapshot.revision,
+        ),
+        _FailingDeleteIO(
+          shouldFail: (filePath) => filePath.endsWith('.doujin.bak'),
+          onFailure: () => failedBackupDelete = true,
+        ),
+      );
+
+      expect(failedBackupDelete, isTrue);
+      expect(result.status, JsonDocumentWriteStatus.replaced);
+      expect(await target.readAsString(), '{"version": 2}');
+    },
+  );
+}
+
+final class _FailingDeleteIO extends IOOverrides {
+  _FailingDeleteIO({required this.shouldFail, required this.onFailure});
+
+  final bool Function(String path) shouldFail;
+  final void Function() onFailure;
+
+  @override
+  File createFile(String path) => _FailingDeleteFile(
+    super.createFile(path),
+    shouldFail: shouldFail,
+    onFailure: onFailure,
+  );
+}
+
+final class _FailingDeleteFile implements File {
+  _FailingDeleteFile(
+    this._delegate, {
+    required this.shouldFail,
+    required this.onFailure,
+  });
+
+  final File _delegate;
+  final bool Function(String path) shouldFail;
+  final void Function() onFailure;
+
+  @override
+  String get path => _delegate.path;
+
+  @override
+  Directory get parent => _delegate.parent;
+
+  @override
+  Future<bool> exists() => _delegate.exists();
+
+  @override
+  Future<Uint8List> readAsBytes() => _delegate.readAsBytes();
+
+  @override
+  Future<RandomAccessFile> open({FileMode mode = FileMode.read}) =>
+      _delegate.open(mode: mode);
+
+  @override
+  Future<File> rename(String newPath) async => _FailingDeleteFile(
+    await _delegate.rename(newPath),
+    shouldFail: shouldFail,
+    onFailure: onFailure,
+  );
+
+  @override
+  Future<FileSystemEntity> delete({bool recursive = false}) async {
+    if (shouldFail(_delegate.path)) {
+      onFailure();
+      throw FileSystemException('Locked backup file', _delegate.path);
+    }
+    return _delegate.delete(recursive: recursive);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 final class _ListingCountingIO extends IOOverrides {

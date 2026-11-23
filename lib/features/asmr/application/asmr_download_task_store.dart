@@ -1,17 +1,14 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
 import '../../../core/immutable_collections.dart';
-import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/path_matcher.dart';
-import '../../../core/persistence/app_preferences.dart';
 import 'asmr_download_models.dart';
 import 'asmr_download_internal_models.dart';
 import 'asmr_download_serialization.dart';
 
-const Duration _taskStructurePersistenceDebounce = Duration(milliseconds: 400);
-const Duration _taskProgressCheckpointInterval = Duration(seconds: 5);
 const Duration _progressNotifyMinInterval = Duration(milliseconds: 120);
 
 enum AsmrDownloadStoreOperation {
@@ -22,10 +19,6 @@ enum AsmrDownloadStoreOperation {
 
 typedef AsmrDownloadPersistenceSnapshot =
     PersistedDownloadTask Function(AsmrDownloadTaskSnapshot task);
-typedef _ResumableFileMetadata = ({
-  Map<String, String> entityTags,
-  Map<String, String> outputPaths,
-});
 
 /// Owns download task snapshots and every derived/published task state.
 final class AsmrDownloadTaskStore {
@@ -34,17 +27,29 @@ final class AsmrDownloadTaskStore {
     required AsmrDownloadPersistenceSnapshot persistenceSnapshot,
     bool persistenceReady = true,
     Future<void> Function(String? payload)? persistenceWriter,
+    Future<Directory> Function()? persistenceDirectoryProvider,
     void Function(AsmrDownloadStoreOperation operation)? operationObserver,
-  }) : _persistTasks = persistTasks,
-       _persistenceReady = persistenceReady,
-       _persistenceSnapshot = persistenceSnapshot,
-       _persistenceWriter = persistenceWriter,
-       _operationObserver = operationObserver;
+  }) : _operationObserver = operationObserver {
+    _persistence = AsmrDownloadTaskPersistence(
+      persistTasks: persistTasks,
+      persistenceReady: persistenceReady,
+      currentTasks: () => _tasks.values,
+      persistenceSnapshot: persistenceSnapshot,
+      persistenceWriter: persistenceWriter,
+      persistenceDirectoryProvider: persistenceDirectoryProvider,
+      onSnapshotCaptured: operationObserver == null
+          ? null
+          : () =>
+                operationObserver(AsmrDownloadStoreOperation.persistenceSnapshot),
+    );
+  }
 
-  final bool _persistTasks;
-  final AsmrDownloadPersistenceSnapshot _persistenceSnapshot;
-  final Future<void> Function(String? payload)? _persistenceWriter;
+  static const String tasksFileName = AsmrDownloadTaskPersistence.tasksFileName;
+  static const String progressFileName =
+      AsmrDownloadTaskPersistence.progressFileName;
+
   final void Function(AsmrDownloadStoreOperation operation)? _operationObserver;
+  late final AsmrDownloadTaskPersistence _persistence;
 
   final Map<String, AsmrDownloadTaskSnapshot> _tasks = {};
   final Map<String, AsmrDownloadTaskSnapshot> _publishedTasks = {};
@@ -77,17 +82,9 @@ final class AsmrDownloadTaskStore {
   int _aggregateTotalFiles = 0;
   double _aggregateProgressUnits = 0;
   int _persistedUriReferenceRevision = 0;
-  Future<void> _persistenceTail = Future<void>.value();
-  Future<void>? _queuedPersistence;
-  Map<String, _ResumableFileMetadata> _committedFileMetadata = {};
-  Map<String, _ResumableFileMetadata>? _writingFileMetadata;
   Future<void>? _shutdownFuture;
-  Timer? _deferredPersistenceTimer;
-  Timer? _progressCheckpointTimer;
   Timer? _deferredProgressNotifyTimer;
   DateTime? _lastProgressNotifyAt;
-  bool _persistenceDirty = false;
-  bool _persistenceReady;
   bool _shutdown = false;
 
   List<AsmrDownloadTaskSnapshot> get tasks =>
@@ -97,51 +94,40 @@ final class AsmrDownloadTaskStore {
       _tasks.entries;
   Iterable<AsmrDownloadTaskSnapshot> get values => _tasks.values;
   bool get isShutdown => _shutdown;
-  Future<void> get pendingPersistenceWrites => _persistenceTail;
+  Future<void> get pendingPersistenceWrites => _persistence.pendingWrites;
 
-  void markPersistenceReady() {
-    _persistenceReady = true;
-  }
+  void markPersistenceReady({bool restoredFromFile = false}) =>
+      _persistence.markReady(restoredFromFile: restoredFromFile);
+
+  Future<({List<PersistedDownloadTask> tasks, bool fromFile})>
+  restorePersistedTasks({
+    Future<String?> Function()? reader,
+    bool Function()? isDisposed,
+  }) => _persistence.restorePersistedTasks(
+    reader: reader,
+    isDisposed: isDisposed,
+  );
 
   void restoreTask(AsmrDownloadTaskSnapshot task) {
     final workId = task.work.workKey;
     this[workId] = task;
-    _committedFileMetadata[workId] = _fileMetadata(task);
+    _persistence.restoreTaskMetadata(task);
   }
 
-  String? durableFileEntityTag(String workId, String relativePath) {
-    if (!_persistTasks) return null;
-    return _writingFileMetadata?[workId]?.entityTags[relativePath] ??
-        _committedFileMetadata[workId]?.entityTags[relativePath];
-  }
+  String? durableFileEntityTag(String workId, String relativePath) =>
+      _persistence.durableFileEntityTag(workId, relativePath);
 
-  bool isFileEntityTagDurable(String workId, String relativePath, String? tag) {
-    if (!_persistTasks) return true;
-    final committed = _committedFileMetadata[workId];
-    final writing = _writingFileMetadata;
-    return committed != null &&
-        committed.entityTags[relativePath] == tag &&
-        (writing == null ||
-            (writing.containsKey(workId) &&
-                writing[workId]!.entityTags[relativePath] == tag));
-  }
+  bool isFileEntityTagDurable(
+    String workId,
+    String relativePath,
+    String? tag,
+  ) => _persistence.isFileEntityTagDurable(workId, relativePath, tag);
 
   bool isFileOutputPathDurable(
     String workId,
     String relativePath,
     String outputPath,
-  ) {
-    if (!_persistTasks) return true;
-    final committed = _committedFileMetadata[workId];
-    final writing = _writingFileMetadata;
-    return committed != null &&
-        committed.outputPaths[relativePath] == outputPath &&
-        (writing == null ||
-            writing[workId]?.outputPaths[relativePath] == outputPath);
-  }
-
-  static _ResumableFileMetadata _fileMetadata(AsmrDownloadTaskSnapshot task) =>
-      (entityTags: task.fileEntityTags, outputPaths: task.actualOutputPaths);
+  ) => _persistence.isFileOutputPathDurable(workId, relativePath, outputPath);
 
   AsmrDownloadTaskSnapshot? operator [](String workId) => _tasks[workId];
 
@@ -156,8 +142,7 @@ final class AsmrDownloadTaskStore {
     _liveFileDownloadedBytes.remove(workId);
     // Guard against same-workId recreation before persistence flushes seeing
     // stale durability metadata from the removed task (or an in-flight write).
-    _committedFileMetadata.remove(workId);
-    _writingFileMetadata?.remove(workId);
+    _persistence.removeTaskMetadata(workId);
     return _tasks.remove(workId);
   }
 
@@ -216,7 +201,10 @@ final class AsmrDownloadTaskStore {
           ? (_aggregateDownloadedBytes / _aggregateTotalBytes).clamp(0.0, 1.0)
           : null;
     }
-    return AsmrDownloadButtonViewState(visible: true, progress: progress);
+    return AsmrDownloadButtonViewState(
+      visible: true,
+      progress: AsmrDownloadButtonViewState.quantizeProgress(progress),
+    );
   }
 
   void notifyTaskChanged({
@@ -246,9 +234,9 @@ final class AsmrDownloadTaskStore {
     _publishChangedTasks(changedIds);
     _lastProgressNotifyAt = DateTime.now();
     if (progressOnly) {
-      _scheduleProgressCheckpoint();
+      _persistence.scheduleProgress();
     } else {
-      _scheduleStructuralPersistence();
+      _persistence.scheduleStructural();
     }
   }
 
@@ -371,40 +359,33 @@ final class AsmrDownloadTaskStore {
   }
 
   Future<void> flushPersistence() async {
-    if (_shutdown) return _persistenceTail;
+    if (_shutdown) return _persistence.pendingWrites;
     _publishLiveProgress();
-    _cancelPersistenceTimers();
-    _persistenceDirty = true;
-    await _persistCurrentTasks();
+    await _persistence.flushNow();
   }
 
-  Future<void> runStructuralPersistenceForTesting() async {
-    _deferredPersistenceTimer?.cancel();
-    _deferredPersistenceTimer = null;
-    unawaited(_persistCurrentTasks());
-    await _persistenceTail;
-  }
+  Future<void> runStructuralPersistenceForTesting() =>
+      _persistence.runStructuralForTesting();
 
-  Future<void> runProgressCheckpointForTesting() async {
-    _progressCheckpointTimer?.cancel();
-    _progressCheckpointTimer = null;
-    unawaited(_persistCurrentTasks());
-    await _persistenceTail;
-  }
+  Future<void> runProgressCheckpointForTesting() =>
+      _persistence.runProgressCheckpointForTesting();
 
   Future<void> shutdown({Iterable<String> pauseWorkIds = const []}) =>
       _shutdownFuture ??= _shutdownOnce(pauseWorkIds);
 
   Future<void> _shutdownOnce(Iterable<String> pauseWorkIds) async {
-    if (_shutdown) return _persistenceTail;
-    _cancelPersistenceTimers();
+    if (_shutdown) return _persistence.pendingWrites;
+    _persistence.cancelTimers();
     _deferredProgressNotifyTimer?.cancel();
     _deferredProgressNotifyTimer = null;
     _pendingProgressWorkIds.clear();
     _publishLiveProgress();
     for (final workId in pauseWorkIds) {
       final task = this[workId];
-      if (task != null) {
+      if (task != null &&
+          (task.status == AsmrDownloadTaskStatus.idle ||
+              task.status == AsmrDownloadTaskStatus.preparing ||
+              task.status == AsmrDownloadTaskStatus.downloading)) {
         this[workId] = task.copyWith(
           status: AsmrDownloadTaskStatus.paused,
           fileRetryAttempts: const {},
@@ -413,8 +394,7 @@ final class AsmrDownloadTaskStore {
         );
       }
     }
-    _persistenceDirty = true;
-    final finalWrite = _persistCurrentTasks();
+    final finalWrite = _persistence.flushNow();
     _shutdown = true;
     _liveDownloadedBytes.clear();
     _liveFileDownloadedBytes.clear();
@@ -564,95 +544,5 @@ final class AsmrDownloadTaskStore {
       changedWorkIds.add(workId);
     }
     return changedWorkIds;
-  }
-
-  void _scheduleStructuralPersistence() {
-    if (!_persistTasks) return;
-    _persistenceDirty = true;
-    _progressCheckpointTimer?.cancel();
-    _progressCheckpointTimer = null;
-    _deferredPersistenceTimer ??= Timer(_taskStructurePersistenceDebounce, () {
-      _deferredPersistenceTimer = null;
-      _persistCurrentTasks();
-    });
-  }
-
-  void _scheduleProgressCheckpoint() {
-    if (!_persistTasks) return;
-    _persistenceDirty = true;
-    if (_deferredPersistenceTimer != null) return;
-    _progressCheckpointTimer ??= Timer(_taskProgressCheckpointInterval, () {
-      _progressCheckpointTimer = null;
-      _persistCurrentTasks();
-    });
-  }
-
-  Future<void>? _persistCurrentTasks() {
-    if (!_persistTasks || !_persistenceReady || !_persistenceDirty) return null;
-    final queued = _queuedPersistence;
-    if (queued != null) return queued;
-    late final Future<void> write;
-    write = _persistenceTail.then((_) async {
-      _queuedPersistence = null;
-      _persistenceDirty = false;
-      // Capture when this write starts so concurrent entity/ownership barriers
-      // queued behind the previous write share one complete, durable snapshot.
-      _operationObserver?.call(AsmrDownloadStoreOperation.persistenceSnapshot);
-      final tasks = _tasks.values
-          .where((task) => task.status != AsmrDownloadTaskStatus.completed)
-          .map(_persistenceSnapshot)
-          .toList(growable: false);
-      final fileMetadata = {
-        for (final snapshot in tasks)
-          snapshot.task.work.workKey: _fileMetadata(snapshot.task),
-      };
-      _writingFileMetadata = fileMetadata;
-      try {
-        final payload = tasks.isEmpty
-            ? null
-            : await compute(encodePersistedDownloadTasks, tasks);
-        await _writePersistedTasks(payload);
-        _committedFileMetadata = fileMetadata;
-      } finally {
-        _writingFileMetadata = null;
-      }
-    });
-    _queuedPersistence = write;
-    // Keep background writes and later retries usable after a failed write;
-    // explicit flush callers still await the original result.
-    _persistenceTail = write.then<void>(
-      (_) {},
-      onError: (Object error, StackTrace stackTrace) {
-        _persistenceDirty = true;
-        AppLogService.warning(
-          'asmr_download_persist_failed',
-          error: error,
-          stackTrace: stackTrace,
-        );
-      },
-    );
-    return write;
-  }
-
-  Future<void> _writePersistedTasks(String? payload) async {
-    final writer = _persistenceWriter;
-    if (writer != null) {
-      await writer(payload);
-    } else {
-      final saved = payload == null
-          ? await AppPreferences.remove(AppPreferences.asmrDownloadTasksKey)
-          : await AppPreferences.setString(
-              AppPreferences.asmrDownloadTasksKey,
-              payload,
-            );
-      if (!saved) throw StateError('asmr_download_persist_failed');
-    }
-  }
-
-  void _cancelPersistenceTimers() {
-    _deferredPersistenceTimer?.cancel();
-    _deferredPersistenceTimer = null;
-    _progressCheckpointTimer?.cancel();
-    _progressCheckpointTimer = null;
   }
 }

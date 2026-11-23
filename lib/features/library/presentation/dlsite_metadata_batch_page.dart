@@ -76,6 +76,14 @@ class _DlsiteMetadataBatchPageState
     _hasRjCodeEntries = entries
         .where((entry) => entry.detail.hasRjCode)
         .toList(growable: false);
+    if (_specificEntries.isNotEmpty) {
+      final byTarget = <AudioDetailTarget, AudioLibraryCategoryEntry>{
+        for (final entry in entries) entry.target: entry,
+      };
+      _specificEntries = <AudioLibraryCategoryEntry>[
+        for (final entry in _specificEntries) ?byTarget[entry.target],
+      ];
+    }
   }
 
   void _scheduleHeaderMeasurement(Object layoutKey) {
@@ -209,6 +217,29 @@ class _DlsiteMetadataBatchPageState
         child: DlsiteMetadataBatchResultsPage(session: session),
       ),
     );
+    if (!mounted) return;
+    if (widget.entries == null) {
+      await _load();
+    } else if (session.appliedCount > 0) {
+      final library = ref.read(libraryFacadeProvider);
+      final refreshed = await Future.wait(
+        _entries.map((entry) async {
+          final loaded = await library.loadAudioDetail(entry.target);
+          return AudioLibraryCategoryEntry(
+            target: entry.target,
+            title: entry.title,
+            path: entry.path,
+            isFolder: entry.isFolder,
+            detail: loaded.detail,
+            tracks: entry.tracks,
+          );
+        }),
+      );
+      if (!mounted) return;
+      setState(() {
+        _setEntries(refreshed);
+      });
+    }
   }
 
   @override

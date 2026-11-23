@@ -4,9 +4,13 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:doujin_audio/app/application/audio_path_coordinator.dart';
+import 'package:doujin_audio/app/application/notification_runtime_binding.dart';
+import 'package:doujin_audio/app/application/playback_keep_alive_coordinator.dart';
 import 'package:doujin_audio/core/errors/native_result.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/platform/notifications_platform_service.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_playback_cache_service.dart';
 import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:doujin_audio/features/library/application/library_facade.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
@@ -14,12 +18,17 @@ import 'package:doujin_audio/features/player/application/notification_facade.dar
 import 'package:doujin_audio/features/player/application/audio_state_services.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
+import 'package:doujin_audio/features/player/application/playback_command_coordinator.dart';
 import 'package:doujin_audio/features/player/application/playback_notification_service.dart';
 import 'package:doujin_audio/features/player/application/playback_facade.dart';
 import 'package:doujin_audio/features/player/application/playback_session.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
+import 'package:doujin_audio/features/player/application/timer_facade.dart';
+import 'package:doujin_audio/features/player/domain/audio_effects.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/features/player/domain/playback_persistence_repository.dart';
+import 'package:doujin_audio/features/settings/application/settings_repository.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/test_persistence_repository.dart';
 
@@ -659,16 +668,33 @@ void main() {
   });
 
   test('NotificationFacade owns guarded pause action coordination', () async {
+    SharedPreferences.setMockInitialValues(const {});
     final library = _createLibraryFacade();
     final native = _RecordingNativePlaybackRepository();
     final playback = PlaybackFacade.create(
       databaseRepository:
           library.databaseRepository as PlaybackPersistenceRepository,
       nativeRepository: native,
-    );
+    )..configurePersistence(enabled: false);
+    final timer = TimerFacade.create();
     final facade = NotificationFacade.create(
       service: PlaybackNotificationService(),
     );
+    final subtitles = PlaybackSubtitleService(trackResolver: (_) => null);
+    final commands = PlaybackCommandCoordinator(
+      library: library,
+      playback: playback,
+      timer: timer,
+      notifications: facade,
+      asmrPlaybackCacheEnabled: () => false,
+      audioPaths: AudioPathCoordinator(library: library, playback: playback),
+      subtitles: subtitles,
+      activateAudioSession: () async => true,
+      asmrPlaybackCacheService: AsmrPlaybackCacheService(),
+      notifyPlaybackChanged: () {},
+      syncNotificationState: ({bool immediateUnifiedSync = false}) {},
+    );
+    playback.attachCommandPort(commands);
     final session = PlaybackSession(
       id: 'notification-session',
       currentTrackPath: '/tracks/notification.mp3',
@@ -681,9 +707,12 @@ void main() {
     var focusedSessionId = '';
     addTearDown(() async {
       await session.shutdown();
+      await commands.dispose();
+      await timer.dispose();
       await facade.dispose();
       await playback.dispose();
       await library.dispose();
+      subtitles.dispose();
     });
     playback.registerSession(session);
     facade.attachActions(
@@ -709,16 +738,33 @@ void main() {
   });
 
   test('notification pause failure keeps the session playing', () async {
+    SharedPreferences.setMockInitialValues(const {});
     final library = _createLibraryFacade();
     final native = _RecordingNativePlaybackRepository()..failPause = true;
     final playback = PlaybackFacade.create(
       databaseRepository:
           library.databaseRepository as PlaybackPersistenceRepository,
       nativeRepository: native,
-    );
+    )..configurePersistence(enabled: false);
+    final timer = TimerFacade.create();
     final facade = NotificationFacade.create(
       service: PlaybackNotificationService(),
     );
+    final subtitles = PlaybackSubtitleService(trackResolver: (_) => null);
+    final commands = PlaybackCommandCoordinator(
+      library: library,
+      playback: playback,
+      timer: timer,
+      notifications: facade,
+      asmrPlaybackCacheEnabled: () => false,
+      audioPaths: AudioPathCoordinator(library: library, playback: playback),
+      subtitles: subtitles,
+      activateAudioSession: () async => true,
+      asmrPlaybackCacheService: AsmrPlaybackCacheService(),
+      notifyPlaybackChanged: () {},
+      syncNotificationState: ({bool immediateUnifiedSync = false}) {},
+    );
+    playback.attachCommandPort(commands);
     final session = PlaybackSession(
       id: 'notification-pause-failure',
       currentTrackPath: '/tracks/failure.mp3',
@@ -743,9 +789,12 @@ void main() {
       notifyNotificationChanged: () {},
     );
     addTearDown(() async {
+      await commands.dispose();
+      await timer.dispose();
       await facade.dispose();
       await playback.dispose();
       await library.dispose();
+      subtitles.dispose();
     });
 
     await facade.pausePrimarySession();
@@ -757,16 +806,33 @@ void main() {
   test(
     'notification pause and toggle respect playbackRequested during buffering/starting',
     () async {
+      SharedPreferences.setMockInitialValues(const {});
       final library = _createLibraryFacade();
       final native = _RecordingNativePlaybackRepository();
       final playback = PlaybackFacade.create(
         databaseRepository:
             library.databaseRepository as PlaybackPersistenceRepository,
         nativeRepository: native,
-      );
+      )..configurePersistence(enabled: false);
+      final timer = TimerFacade.create();
       final facade = NotificationFacade.create(
         service: PlaybackNotificationService(),
       );
+      final subtitles = PlaybackSubtitleService(trackResolver: (_) => null);
+      final commands = PlaybackCommandCoordinator(
+        library: library,
+        playback: playback,
+        timer: timer,
+        notifications: facade,
+        asmrPlaybackCacheEnabled: () => false,
+        audioPaths: AudioPathCoordinator(library: library, playback: playback),
+        subtitles: subtitles,
+        activateAudioSession: () async => true,
+        asmrPlaybackCacheService: AsmrPlaybackCacheService(),
+        notifyPlaybackChanged: () {},
+        syncNotificationState: ({bool immediateUnifiedSync = false}) {},
+      );
+      playback.attachCommandPort(commands);
       final session = PlaybackSession(
         id: 'starting-session',
         currentTrackPath: '/tracks/starting.mp3',
@@ -793,9 +859,12 @@ void main() {
         notifyNotificationChanged: () {},
       );
       addTearDown(() async {
+        await commands.dispose();
+        await timer.dispose();
         await facade.dispose();
         await playback.dispose();
         await library.dispose();
+        subtitles.dispose();
       });
 
       expect(session.playbackRequested, isTrue);
@@ -804,6 +873,112 @@ void main() {
       expect(native.pausedSessionIds, <String>[session.id]);
       expect(session.playbackRequested, isFalse);
       facade.detachRuntime();
+    },
+  );
+
+  test(
+    'SMTC and Spacebar play/pause route through timer state, fade reset, and completion restart',
+    () async {
+      SharedPreferences.setMockInitialValues(const {});
+      final library = _createLibraryFacade();
+      final native = _RecordingNativePlaybackRepository();
+      final playback = PlaybackFacade.create(
+        databaseRepository:
+            library.databaseRepository as PlaybackPersistenceRepository,
+        nativeRepository: native,
+      )..configurePersistence(enabled: false);
+      final timerService = TimerService();
+      final timer = TimerFacade.create(service: timerService);
+      final facade = NotificationFacade.create(
+        service: PlaybackNotificationService(),
+      );
+      final subtitles = PlaybackSubtitleService(trackResolver: (_) => null);
+      final audioPaths = AudioPathCoordinator(
+        library: library,
+        playback: playback,
+      );
+      final keepAlive = PlaybackKeepAliveCoordinator(
+        playback: playback,
+        settings: SettingsRepository(),
+        enterBackgroundWarmup: () {},
+        resumeForegroundWarmup: () {},
+      );
+      final commands = PlaybackCommandCoordinator(
+        library: library,
+        playback: playback,
+        timer: timer,
+        notifications: facade,
+        asmrPlaybackCacheEnabled: () => false,
+        audioPaths: audioPaths,
+        subtitles: subtitles,
+        activateAudioSession: () async => true,
+        asmrPlaybackCacheService: AsmrPlaybackCacheService(),
+        notifyPlaybackChanged: () {},
+        syncNotificationState: ({bool immediateUnifiedSync = false}) {},
+      );
+      playback.attachCommandPort(commands);
+      library.configureCoverArtworkRuntime(
+        isActiveCoverKey: facade.isActiveCoverKey,
+        onActiveCoverChanged: () {},
+      );
+      final binding = NotificationRuntimeBinding.attach(
+        library: library,
+        playback: playback,
+        notifications: facade,
+        playbackCommands: commands,
+        audioPaths: audioPaths,
+        keepAlive: keepAlive,
+        subtitles: subtitles,
+        syncPlaybackState: () {},
+      );
+      final session = PlaybackSession(
+        id: 'smtc-session',
+        currentTrackPath: '/tracks/smtc.mp3',
+        loopMode: SessionLoopMode.folderSequential,
+        nonSingleLoopMode: SessionLoopMode.folderSequential,
+        volume: 1,
+        createdAt: DateTime(2026),
+        state: const PlayerState(false, ProcessingState.ready),
+      )..loadedPath = '/tracks/smtc.mp3';
+      playback.registerSession(session);
+      facade.setFocusedSession(session.id);
+      addTearDown(() async {
+        await binding.dispose();
+        await session.shutdown();
+        await commands.dispose();
+        await timer.dispose();
+        await facade.dispose();
+        await playback.dispose();
+        await library.dispose();
+        subtitles.dispose();
+      });
+
+      // 1. Trigger mode + timer-paused session: SMTC play clears timer pause,
+      // resets fade multiplier to 1, and starts trigger countdown.
+      timer.configureTimer(TimerMode.trigger, const Duration(minutes: 5));
+      timerService.pausedByTimerSessionIds.add(session.id);
+      await facade.playPrimarySession();
+      expect(timerService.pausedByTimerSessionIds, isEmpty);
+      expect(timerService.timerActive, isTrue);
+      expect(native.fadeMultipliers, contains((session.id, 1.0)));
+      expect(native.playedSessionIds, [session.id]);
+
+      // 2. SMTC pause routes through PlaybackCommandPort.pauseSession and
+      // clears timer pause state on manual stop.
+      timerService.pausedByTimerSessionIds.add(session.id);
+      await facade.pausePrimarySession();
+      expect(timerService.pausedByTimerSessionIds, isEmpty);
+      expect(native.pausedSessionIds, [session.id]);
+
+      // 3. Spacebar / SMTC toggle on a completed session restarts from zero.
+      session
+        ..setOptimisticPosition(const Duration(seconds: 90))
+        ..setOptimisticState(
+          playing: false,
+          processingState: ProcessingState.completed,
+        );
+      await facade.toggleSessionPlayback(session.id);
+      expect(native.preparedStartPositions, [Duration.zero]);
     },
   );
 }
@@ -988,7 +1163,82 @@ final class _NoopNotificationPlaybackCommands
 final class _RecordingNativePlaybackRepository
     extends NativePlaybackRepository {
   final List<String> pausedSessionIds = <String>[];
+  final List<String> playedSessionIds = <String>[];
+  final List<(String, double)> fadeMultipliers = <(String, double)>[];
+  final List<Duration> preparedStartPositions = <Duration>[];
   bool failPause = false;
+
+  @override
+  Future<NativeResult<NativePlaybackSnapshot>> prepareSession({
+    required String sessionId,
+    required Uri uri,
+    required String title,
+    String? path,
+    String? subtitle,
+    Uri? artUri,
+    Duration startPosition = Duration.zero,
+    double volume = 1,
+    bool repeatOne = false,
+    bool autoPlay = false,
+    double speed = 1,
+    NativeAudioEffects? audioEffects,
+    List<Map<String, Object?>>? queue,
+    int? queueStartIndex,
+    bool repeatAll = false,
+    bool shuffle = false,
+    List<Uri>? candidateUris,
+    bool deferPlayerCreation = false,
+    bool isTemporary = false,
+    bool reuseExistingQueue = false,
+  }) async {
+    preparedStartPositions.add(startPosition);
+    return NativeSuccess(
+      NativePlaybackSnapshot(
+        sessionId: sessionId,
+        path: path ?? uri.toString(),
+        playing: autoPlay,
+        playWhenReady: autoPlay,
+        processingState: 'ready',
+        position: startPosition,
+        bufferedPosition: startPosition,
+        volume: volume,
+        boostGain: 1,
+        channelSwapEnabled: false,
+      ),
+    );
+  }
+
+  @override
+  Future<NativeResult<NativePlaybackSnapshot>> play(
+    String sessionId, {
+    int transportCommandId = 0,
+    bool exclusive = false,
+  }) async {
+    playedSessionIds.add(sessionId);
+    return NativeSuccess(
+      NativePlaybackSnapshot(
+        sessionId: sessionId,
+        playing: true,
+        playWhenReady: true,
+        processingState: 'ready',
+        position: Duration.zero,
+        bufferedPosition: Duration.zero,
+        volume: 1,
+        boostGain: 1,
+        channelSwapEnabled: false,
+        transportCommandId: transportCommandId,
+      ),
+    );
+  }
+
+  @override
+  Future<NativeResult<NativePlaybackSnapshot>> setFadeMultiplier(
+    String sessionId,
+    double multiplier,
+  ) async {
+    fadeMultipliers.add((sessionId, multiplier));
+    return const NativeSuccess<NativePlaybackSnapshot>();
+  }
 
   @override
   Future<NativeResult<NativePlaybackSnapshot>> pause(

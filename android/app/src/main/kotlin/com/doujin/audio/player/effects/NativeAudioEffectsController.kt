@@ -87,8 +87,6 @@ internal class NativeAudioEffectsController(
     }
 
     private fun syncProcessors() {
-        // Once enabled, keep the processor installed until player release so
-        // returning through neutral doesn't restart playback.
         volumeBalanceAudioProcessor.controls = VolumeBalanceAudioProcessor.Controls(
             panning = panning,
             channelSwapEnabled = channelSwapEnabled,

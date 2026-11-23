@@ -40,7 +40,6 @@ internal class SubtitleOverlayCoordinator(
             val boundService = (binder as? SubtitleOverlayService.LocalBinder)?.getService()
             if (boundService == null || !boundService.ensureOverlayAttached()) {
                 dispose()
-                stopOverlayService()
                 return
             }
             service = boundService
@@ -98,28 +97,25 @@ internal class SubtitleOverlayCoordinator(
         val nextConnection = newConnection()
         connection = nextConnection
         try {
-            appContext.startService(intent)
             if (appContext.bindService(intent, nextConnection, Context.BIND_AUTO_CREATE)) return true
         } catch (error: IllegalStateException) {
             connection = null
-            stopOverlayService()
             throw IllegalStateException("Unable to bind subtitle overlay service.", error)
         } catch (error: SecurityException) {
             connection = null
-            stopOverlayService()
             throw IllegalStateException("Unable to bind subtitle overlay service.", error)
         }
         connection = null
-        stopOverlayService()
+        try {
+            appContext.unbindService(nextConnection)
+        } catch (_: IllegalArgumentException) {
+        }
         return false
     }
 
     fun stop() {
-        val currentService = service
         dispose()
         pendingText = null
-        currentService?.stopSelf()
-        stopOverlayService()
     }
 
     fun updateSubtitle(text: String) {
@@ -147,12 +143,6 @@ internal class SubtitleOverlayCoordinator(
                 appContext.unbindService(previous)
             } catch (_: IllegalArgumentException) {
             }
-        }
-    }
-
-    private fun stopOverlayService() {
-        runCatching {
-            appContext.stopService(Intent(appContext, SubtitleOverlayService::class.java))
         }
     }
 

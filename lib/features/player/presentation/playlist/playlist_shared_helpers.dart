@@ -2,6 +2,7 @@ export '../../application/session_switcher_tree.dart'
     show orderTracksForSessionSwitcher, resolveSessionSwitcherSelectedTrack;
 
 import '../playback_providers.dart';
+import '../../../settings/application/settings_repository.dart';
 import '../../../settings/presentation/settings_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -77,12 +78,12 @@ void showPlaybackRemovalFeedback(
   );
 }
 
-UndoableRemovalAction playbackSessionRemovalAction(
-  WidgetRef ref,
-  String sessionId,
-) {
-  final playback = ref.read(playbackFacadeProvider);
-  final subtitles = ref.read(subtitleSettingsProvider.notifier);
+UndoableRemovalAction _buildPlaybackSessionRemovalAction({
+  required PlaybackFacade playback,
+  required SubtitleSettingsNotifier subtitles,
+  required SettingsRepository settings,
+  required String sessionId,
+}) {
   final wasPlaying =
       playback.sessionSnapshotById(sessionId)?.effectivePlaying ?? false;
   return UndoableRemovalAction(
@@ -101,11 +102,26 @@ UndoableRemovalAction playbackSessionRemovalAction(
       if (!await playback.removeSession(sessionId)) {
         throw StateError('Failed to remove playback session $sessionId');
       }
-      subtitles.resetForSession(sessionId);
-      await ref
-          .read(settingsRepositoryProvider)
-          .unpinPlaylistSession(sessionId);
+      await settings.unpinPlaylistSession(sessionId);
+      try {
+        subtitles.resetForSession(sessionId);
+      } on StateError {
+        // ProviderScope is already being torn down; playback and settings cleanup
+        // above has completed.
+      }
     },
+  );
+}
+
+UndoableRemovalAction playbackSessionRemovalAction(
+  WidgetRef ref,
+  String sessionId,
+) {
+  return _buildPlaybackSessionRemovalAction(
+    playback: ref.read(playbackFacadeProvider),
+    subtitles: ref.read(subtitleSettingsProvider.notifier),
+    settings: ref.read(settingsRepositoryProvider),
+    sessionId: sessionId,
   );
 }
 
@@ -116,10 +132,20 @@ Future<bool> stagePlaybackSessionRemovals(
   IconData icon = Icons.delete_outline_rounded,
 }) async {
   final service = ref.read(undoableRemovalServiceProvider);
+  final playback = ref.read(playbackFacadeProvider);
+  final subtitles = ref.read(subtitleSettingsProvider.notifier);
+  final settings = ref.read(settingsRepositoryProvider);
   var stagedAny = false;
   for (final sessionId in sessionIds.toSet()) {
     stagedAny =
-        await service.stage(playbackSessionRemovalAction(ref, sessionId)) ||
+        await service.stage(
+          _buildPlaybackSessionRemovalAction(
+            playback: playback,
+            subtitles: subtitles,
+            settings: settings,
+            sessionId: sessionId,
+          ),
+        ) ||
         stagedAny;
   }
   if (stagedAny && context.mounted) {
@@ -166,22 +192,30 @@ Color sessionDetailForeground(
   Color? darkFallback,
 }) {
   if (colorScheme.brightness == Brightness.dark) {
-    return darkFallback ?? colorScheme.onSurface;
+    if (darkFallback != null) return darkFallback;
+    return switch (level) {
+      SessionDetailForegroundLevel.strong => colorScheme.onSurface,
+      SessionDetailForegroundLevel.medium => colorScheme.onSurface.withValues(
+        alpha: 0.84,
+      ),
+      SessionDetailForegroundLevel.muted =>
+        colorScheme.onSurfaceVariant.withValues(alpha: 0.86),
+    };
   }
 
   return switch (level) {
     SessionDetailForegroundLevel.strong => Color.alphaBlend(
-      colorScheme.primary.withValues(alpha: 0.10),
+      colorScheme.primary.withValues(alpha: 0.08),
       colorScheme.onSurface,
     ),
     SessionDetailForegroundLevel.medium => Color.alphaBlend(
-      colorScheme.primary.withValues(alpha: 0.06),
+      colorScheme.primary.withValues(alpha: 0.05),
       colorScheme.onSurfaceVariant,
     ),
     SessionDetailForegroundLevel.muted => Color.alphaBlend(
       colorScheme.primary.withValues(alpha: 0.03),
       colorScheme.onSurfaceVariant,
-    ).withValues(alpha: 0.72),
+    ).withValues(alpha: 0.82),
   };
 }
 

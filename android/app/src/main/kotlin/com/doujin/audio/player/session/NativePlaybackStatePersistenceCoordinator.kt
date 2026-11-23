@@ -2,9 +2,6 @@ package com.doujin.audio.player.session
 
 import android.content.Context
 import android.os.Handler
-import android.util.Log
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
 internal interface NativePlaybackStatePersistenceEnvironment {
@@ -12,6 +9,9 @@ internal interface NativePlaybackStatePersistenceEnvironment {
     fun removeCallbacks(runnable: Runnable)
     fun execute(task: () -> Unit)
     fun saveSessions(sessions: List<StoredNativePlaybackSession>, revisions: Map<String, Long>)
+    fun saveSessionMetadata(sessions: List<StoredNativePlaybackSession>, revisions: Map<String, Long>) {
+        saveSessions(sessions, revisions)
+    }
     fun saveSessionProgress(progress: List<StoredNativePlaybackProgress>, revisions: Map<String, Long>)
     fun removeSession(sessionId: String, revision: Long)
     fun clearSessions(revision: Long)
@@ -43,14 +43,47 @@ internal fun nativePlaybackSnapshotsDifferOnlyByProgress(
     }
 }
 
+/**
+ * True when two snapshots for the same session keep the same queue and retained
+ * content URI set, so only the lightweight `sessions` row needs updating.
+ */
+internal fun nativePlaybackSnapshotsDifferOnlyByMetadata(
+    before: StoredNativePlaybackSession,
+    after: StoredNativePlaybackSession
+): Boolean {
+    if (before.sessionId != after.sessionId) return false
+    if (before.isTemporary != after.isTemporary) return false
+    if (before.queue != after.queue) return false
+    if (before.path != after.path || before.uri != after.uri || before.artUri != after.artUri) {
+        if (!topLevelContentUrisCoveredByQueue(before) || !topLevelContentUrisCoveredByQueue(after)) {
+            return false
+        }
+    }
+    return true
+}
+
+private fun topLevelContentUrisCoveredByQueue(session: StoredNativePlaybackSession): Boolean {
+    val activeItem = session.queue.getOrNull(session.queueStartIndex)
+    fun isCovered(value: String?): Boolean {
+        if (value == null || !value.startsWith("content:", ignoreCase = true)) return true
+        if (activeItem != null &&
+            (value == activeItem.path || value == activeItem.uri || value == activeItem.artUri ||
+                value in activeItem.candidateUris)
+        ) {
+            return true
+        }
+        return session.queue.any { item ->
+            value == item.path || value == item.uri || value == item.artUri || value in item.candidateUris
+        }
+    }
+    return isCovered(session.path) && isCovered(session.uri) && isCovered(session.artUri)
+}
+
 private class AndroidNativePlaybackStatePersistenceEnvironment(
     context: Context,
     private val mainHandler: Handler
 ) : NativePlaybackStatePersistenceEnvironment {
     private val appContext = context.applicationContext
-    private val executor = Executors.newSingleThreadExecutor { runnable ->
-        Thread(runnable, "NativePlaybackStateStore").apply { isDaemon = true }
-    }
 
     override fun postDelayed(runnable: Runnable, delayMs: Long) {
         mainHandler.postDelayed(runnable, delayMs)
@@ -61,13 +94,7 @@ private class AndroidNativePlaybackStatePersistenceEnvironment(
     }
 
     override fun execute(task: () -> Unit) {
-        executor.execute {
-            try {
-                task()
-            } catch (error: Exception) {
-                Log.e("PlaybackRecovery", "Unable to persist playback state", error)
-            }
-        }
+        NativePlaybackStateStore.executeOnPersistenceExecutor(task)
     }
 
     override fun stageSessions(sessions: List<StoredNativePlaybackSession>, revisions: Map<String, Long>) {
@@ -76,6 +103,10 @@ private class AndroidNativePlaybackStatePersistenceEnvironment(
 
     override fun saveSessions(sessions: List<StoredNativePlaybackSession>, revisions: Map<String, Long>) {
         NativePlaybackStateStore.upsertSessions(appContext, sessions, revisions)
+    }
+
+    override fun saveSessionMetadata(sessions: List<StoredNativePlaybackSession>, revisions: Map<String, Long>) {
+        NativePlaybackStateStore.upsertSessionMetadata(appContext, sessions, revisions)
     }
 
     override fun saveSessionProgress(progress: List<StoredNativePlaybackProgress>, revisions: Map<String, Long>) {
@@ -91,11 +122,11 @@ private class AndroidNativePlaybackStatePersistenceEnvironment(
     }
 
     override fun shutdown() {
-        executor.shutdown()
+        // The process-scoped persistence executor continues draining queued writes asynchronously.
     }
 
     override fun awaitTermination(timeoutMs: Long): Boolean =
-        executor.awaitTermination(timeoutMs, TimeUnit.MILLISECONDS)
+        NativePlaybackStateStore.awaitPendingPersistenceForTest(timeoutMs)
 }
 
 internal class NativePlaybackStatePersistenceCoordinator(
@@ -214,24 +245,49 @@ internal class NativePlaybackStatePersistenceCoordinator(
             }
             val previous = lastSubmittedSnapshots.orEmpty().associateBy { it.sessionId }
             val changed = snapshots.filter { previous[it.sessionId] != it }
-            val (progress, structure) = changed.partition { stored ->
-                persistedStructure[stored.sessionId]?.let {
-                    nativePlaybackSnapshotsDifferOnlyByProgress(listOf(it), listOf(stored))
-                } == true
+            val progress = mutableListOf<StoredNativePlaybackSession>()
+            val metadata = mutableListOf<StoredNativePlaybackSession>()
+            val structure = mutableListOf<StoredNativePlaybackSession>()
+            for (stored in changed) {
+                val persisted = persistedStructure[stored.sessionId]
+                when {
+                    persisted != null &&
+                        nativePlaybackSnapshotsDifferOnlyByProgress(listOf(persisted), listOf(stored)) ->
+                        progress += stored
+                    persisted != null &&
+                        nativePlaybackSnapshotsDifferOnlyByMetadata(persisted, stored) ->
+                        metadata += stored
+                    else ->
+                        structure += stored
+                }
             }
             if (structure.isNotEmpty()) environment.saveSessions(structure, revisions)
+            if (metadata.isNotEmpty()) environment.saveSessionMetadata(metadata, revisions)
             if (progress.isNotEmpty()) environment.saveSessionProgress(
-                progress.map(StoredNativePlaybackSession::toStoredProgress), revisions)
+                progress.map(StoredNativePlaybackSession::toStoredProgress), revisions
+            )
             structure.forEach { persistedStructure[it.sessionId] = it }
+            metadata.forEach { persistedStructure[it.sessionId] = it }
             lastSubmittedSnapshots = snapshots
         }
     }
 
     fun persistSession(session: StoredNativePlaybackSession, revision: Long) {
         generation.incrementAndGet()
-        environment.stageSessions(listOf(session), mapOf(session.sessionId to revision))
+        val revisions = mapOf(session.sessionId to revision)
+        environment.stageSessions(listOf(session), revisions)
         environment.execute {
-            environment.saveSessions(listOf(session), mapOf(session.sessionId to revision))
+            val persisted = persistedStructure[session.sessionId]
+            when {
+                persisted != null &&
+                    nativePlaybackSnapshotsDifferOnlyByProgress(listOf(persisted), listOf(session)) ->
+                    environment.saveSessionProgress(listOf(session.toStoredProgress()), revisions)
+                persisted != null &&
+                    nativePlaybackSnapshotsDifferOnlyByMetadata(persisted, session) ->
+                    environment.saveSessionMetadata(listOf(session), revisions)
+                else ->
+                    environment.saveSessions(listOf(session), revisions)
+            }
             persistedStructure.remove(session.sessionId)
             lastSubmittedSnapshots = lastSubmittedSnapshots?.filterNot { it.sessionId == session.sessionId }
         }
@@ -257,30 +313,15 @@ internal class NativePlaybackStatePersistenceCoordinator(
         }
     }
 
-    fun shutdown() = shutdown(SHUTDOWN_AWAIT_TIMEOUT_MS)
-
-    fun shutdown(awaitTimeoutMs: Long) {
+    fun shutdown() {
         stopTicker()
         persistNow()
         environment.shutdown()
-        if (awaitTimeoutMs > 0L) {
-            try {
-                if (!environment.awaitTermination(awaitTimeoutMs)) {
-                    Log.w(
-                        "PlaybackRecovery",
-                        "Timed out waiting ${awaitTimeoutMs}ms for playback state persistence shutdown"
-                    )
-                }
-            } catch (_: InterruptedException) {
-                Thread.currentThread().interrupt()
-            }
-        }
     }
+
+    fun awaitPendingForTest(timeoutMs: Long = 10_000L): Boolean =
+        environment.awaitTermination(timeoutMs)
 
     fun awaitTermination(timeoutMs: Long = 10_000L): Boolean =
         environment.awaitTermination(timeoutMs)
-
-    companion object {
-        internal const val SHUTDOWN_AWAIT_TIMEOUT_MS = 1_500L
-    }
 }

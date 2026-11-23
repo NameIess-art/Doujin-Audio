@@ -118,6 +118,27 @@ class NativeVideoOutputRegistryTest {
         assertSame(player, output.player)
         assertFalse(output.screenKeptOn)
     }
+
+    @Test
+    fun `refreshSession rebinds rebuilt player without requiring owner id`() {
+        var player: FakePlayer? = FakePlayer(playing = true)
+        val output = FakeOutput()
+        val registry = NativeVideoOutputRegistry<FakePlayer>(
+            playerForSession = { player },
+            shouldKeepScreenOn = FakePlayer::playing
+        )
+
+        registry.register("session", "owner", output)
+        registry.detachPlayer("session")
+        assertNull(output.player)
+
+        val rebuilt = FakePlayer(playing = true)
+        player = rebuilt
+        assertTrue(registry.refreshSession("session"))
+        assertSame(rebuilt, output.player)
+        assertTrue(output.screenKeptOn)
+        assertFalse(registry.refreshSession("unknown"))
+    }
 }
 
 private data class FakePlayer(var playing: Boolean)

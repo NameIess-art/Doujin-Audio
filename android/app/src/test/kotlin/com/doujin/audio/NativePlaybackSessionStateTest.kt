@@ -395,14 +395,18 @@ class NativePlaybackSessionStateTest {
     }
 
     @Test
-    fun `front back position stays live through neutral until player release`() {
+    fun `front back position enters pipeline when non neutral and returns to bypass when flat`() {
         val controller = NativeAudioEffectsController { testSpatialResponses() }
         assertTrue(controller.apply(NativeAudioEffects(frontBack = 0.5f)))
         assertEquals(false, controller.apply(NativeAudioEffects(frontBack = -0.5f)))
         assertEquals(-0.5, controller.snapshot()["frontBack"])
-        assertEquals(false, controller.apply(NativeAudioEffects()))
-        controller.release()
+        // Returning frontBack to 0 while panning stays active keeps stereo pipeline live without reprepare.
+        assertEquals(false, controller.apply(NativeAudioEffects(panning = 0.5f, frontBack = 0f)))
+        // Returning all stereo controls to flat bypasses the processor.
+        assertTrue(controller.apply(NativeAudioEffects()))
         assertTrue(controller.apply(NativeAudioEffects(frontBack = 0.5f)))
+        controller.release()
+        assertEquals(false, controller.apply(NativeAudioEffects(frontBack = 0.25f)))
     }
 
     @Test

@@ -27,9 +27,11 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
   String get _query => _submittedQuery ?? '';
   SearchFilters _filters = emptySearchFilters;
   final ValueNotifier<String> _inputQuery = ValueNotifier('');
+  final ValueNotifier<_AsmrSuggestionSelection> _suggestionSelection =
+      ValueNotifier(const _AsmrSuggestionSelection());
   bool _matchAll = true;
   late final ValueNotifier<(AsmrSearchSuggestions?, Object?)> _suggestions;
-  late final Listenable _suggestionChanges;
+  late final Listenable _remoteSuggestionChanges;
   bool _showSearchPlaceholder = false;
   bool _isSelectionMode = false;
   final Set<String> _selectedWorkIds = <String>{};
@@ -73,7 +75,10 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
       _searchController?.searchSuggestions,
       _searchController?.searchSuggestionsError,
     ));
-    _suggestionChanges = Listenable.merge([_inputQuery, _suggestions]);
+    _remoteSuggestionChanges = Listenable.merge([
+      _suggestionSelection,
+      _suggestions,
+    ]);
     _searchController?.addListener(_handleSuggestionsChanged);
     _searchController?.beginSearchSession();
     _languageProvider = ref.read(appLanguageProviderInstanceProvider);
@@ -89,6 +94,26 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
         unawaited(_onSubmitted(legacySearchElements(widget.initialQuery)));
       }
     });
+  }
+
+  void _syncSuggestionSelection({bool allowDuringComposing = false}) {
+    if (!allowDuringComposing) {
+      final composing = _controller.value.composing;
+      if (composing.isValid && !composing.isCollapsed) return;
+    }
+    final draftQuery = _inputQuery.value;
+    final parsedDraft = parseSearchElements(draftQuery);
+    final selected = _matchAll ? parsedDraft?.all : parsedDraft?.any;
+    final selectedLower = selected == null || selected.isEmpty
+        ? const <String>{}
+        : <String>{for (final item in selected) item.toLowerCase()};
+    final next = _AsmrSuggestionSelection(
+      canonicalDraft: canonicalElementQuery(draftQuery),
+      selectedLowerTerms: selectedLower,
+    );
+    if (_suggestionSelection.value != next) {
+      _suggestionSelection.value = next;
+    }
   }
 
   void _handleLanguageChanged() {
@@ -133,6 +158,7 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
     }
     void updateDraft() {
       _inputQuery.value = value;
+      _syncSuggestionSelection();
       _submittedQuery = null;
       _requestSerial++;
       _showSearchPlaceholder = false;
@@ -187,6 +213,7 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
       selection: TextSelection.collapsed(offset: query.length),
     );
     _inputQuery.value = query;
+    _syncSuggestionSelection(allowDuringComposing: true);
     _searchController?.setSearchQuery(query, _category);
     _resetScroll();
     setState(() {
@@ -462,42 +489,35 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
               ),
             ) ??
             ref.read(settingsRepositoryProvider).slice.state.asmrSearchHistory;
-        return ListenableBuilder(
-          listenable: _suggestionChanges,
-          builder: (context, _) {
-            final (suggestions, error) = _suggestions.value;
-            final errorText = error == null
-                ? null
-                : localizedAsmrCatalogErrorText(i18n, error);
-            final draftQuery = _inputQuery.value;
-            final canonicalDraft = canonicalElementQuery(draftQuery);
-            final parsedDraft = parseSearchElements(draftQuery);
-            final selectedDraftElements =
-                (_matchAll ? parsedDraft?.all : parsedDraft?.any)
-                    ?.map((item) => item.toLowerCase())
-                    .toSet() ??
-                const <String>{};
-            bool isSuggestionSelected(String value) =>
-                selectedDraftElements.contains(value.toLowerCase());
-            return PageHeaderInset(
-              topInset: topInset,
-              child: CustomScrollView(
-                key: const ValueKey('asmr_search_suggestions'),
-                controller: _suggestionsScrollController,
-                slivers: [
-                  SliverToBoxAdapter(child: SizedBox(height: topInset)),
-                  SliverToBoxAdapter(
-                    child: AppSearchElementTabs(
-                      draft: draftQuery,
-                      matchAll: _matchAll,
-                      onSelected: (value) => setState(() => _matchAll = value),
-                      translate: i18n.tr,
-                      filters: _filters,
-                      onFiltersChanged: (value) =>
-                          setState(() => _filters = value),
-                    ),
+        return PageHeaderInset(
+          topInset: topInset,
+          child: CustomScrollView(
+            key: const ValueKey('asmr_search_suggestions'),
+            controller: _suggestionsScrollController,
+            slivers: [
+              SliverToBoxAdapter(child: SizedBox(height: topInset)),
+              SliverToBoxAdapter(
+                child: ValueListenableBuilder<String>(
+                  valueListenable: _inputQuery,
+                  builder: (context, draftQuery, _) => AppSearchElementTabs(
+                    draft: draftQuery,
+                    matchAll: _matchAll,
+                    onSelected: (value) {
+                      setState(() => _matchAll = value);
+                      _syncSuggestionSelection(allowDuringComposing: true);
+                    },
+                    translate: i18n.tr,
+                    filters: _filters,
+                    onFiltersChanged: (value) =>
+                        setState(() => _filters = value),
                   ),
-                  AppSearchSuggestionSection(
+                ),
+              ),
+              ValueListenableBuilder<_AsmrSuggestionSelection>(
+                valueListenable: _suggestionSelection,
+                builder: (context, selection, _) {
+                  final canonicalDraft = selection.canonicalDraft;
+                  return AppSearchSuggestionSection(
                     key: const ValueKey('asmr_search_history'),
                     title: i18n.tr('search_history'),
                     items: history,
@@ -513,46 +533,68 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
                     expandLabel: i18n.tr('expand'),
                     collapseLabel: i18n.tr('collapse'),
                     accentColor: accent,
-                  ),
-                  AppSearchSuggestionSection(
-                    key: const ValueKey('asmr_search_voice_actors'),
-                    title: i18n.tr('search_hot_voice_actors'),
-                    items: suggestions?.voiceActors ?? const [],
-                    maxExpandedItems: AsmrSearchSuggestions.displayLimit,
-                    isSelected: isSuggestionSelected,
-                    onToggle: _toggleSuggestion,
-                    emptyText: i18n.tr('no_search_results'),
-                    expandLabel: i18n.tr('expand'),
-                    collapseLabel: i18n.tr('collapse'),
-                    accentColor: accent,
-                    errorText: errorText,
-                    retryLabel: i18n.tr('retry'),
-                    onRetry: () => unawaited(
-                      _searchController?.ensureSearchSuggestions(force: true),
-                    ),
-                  ),
-                  AppSearchSuggestionSection(
-                    key: const ValueKey('asmr_search_tags'),
-                    title: i18n.tr('search_hot_tags'),
-                    items: suggestions?.tags ?? const [],
-                    maxExpandedItems: AsmrSearchSuggestions.displayLimit,
-                    isSelected: isSuggestionSelected,
-                    onToggle: _toggleSuggestion,
-                    emptyText: i18n.tr('no_search_results'),
-                    expandLabel: i18n.tr('expand'),
-                    collapseLabel: i18n.tr('collapse'),
-                    accentColor: accent,
-                    errorText: errorText,
-                    retryLabel: i18n.tr('retry'),
-                    onRetry: () => unawaited(
-                      _searchController?.ensureSearchSuggestions(force: true),
-                    ),
-                  ),
-                  SliverToBoxAdapter(child: SizedBox(height: bottomInset)),
-                ],
+                  );
+                },
               ),
-            );
-          },
+              ListenableBuilder(
+                listenable: _remoteSuggestionChanges,
+                builder: (context, _) {
+                  final (suggestions, error) = _suggestions.value;
+                  final errorText = error == null
+                      ? null
+                      : localizedAsmrCatalogErrorText(i18n, error);
+                  final selectedDraftElements =
+                      _suggestionSelection.value.selectedLowerTerms;
+                  bool isSuggestionSelected(String value) =>
+                      selectedDraftElements.isNotEmpty &&
+                      selectedDraftElements.contains(value.toLowerCase());
+                  return SliverMainAxisGroup(
+                    slivers: [
+                      AppSearchSuggestionSection(
+                        key: const ValueKey('asmr_search_voice_actors'),
+                        title: i18n.tr('search_hot_voice_actors'),
+                        items: suggestions?.voiceActors ?? const [],
+                        maxExpandedItems: AsmrSearchSuggestions.displayLimit,
+                        isSelected: isSuggestionSelected,
+                        onToggle: _toggleSuggestion,
+                        emptyText: i18n.tr('no_search_results'),
+                        expandLabel: i18n.tr('expand'),
+                        collapseLabel: i18n.tr('collapse'),
+                        accentColor: accent,
+                        errorText: errorText,
+                        retryLabel: i18n.tr('retry'),
+                        onRetry: () => unawaited(
+                          _searchController?.ensureSearchSuggestions(
+                            force: true,
+                          ),
+                        ),
+                      ),
+                      AppSearchSuggestionSection(
+                        key: const ValueKey('asmr_search_tags'),
+                        title: i18n.tr('search_hot_tags'),
+                        items: suggestions?.tags ?? const [],
+                        maxExpandedItems: AsmrSearchSuggestions.displayLimit,
+                        isSelected: isSuggestionSelected,
+                        onToggle: _toggleSuggestion,
+                        emptyText: i18n.tr('no_search_results'),
+                        expandLabel: i18n.tr('expand'),
+                        collapseLabel: i18n.tr('collapse'),
+                        accentColor: accent,
+                        errorText: errorText,
+                        retryLabel: i18n.tr('retry'),
+                        onRetry: () => unawaited(
+                          _searchController?.ensureSearchSuggestions(
+                            force: true,
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+              SliverToBoxAdapter(child: SizedBox(height: bottomInset)),
+            ],
+          ),
         );
       },
     );
@@ -569,6 +611,7 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
     _searchController?.removeListener(_handleSuggestionsChanged);
     _suggestions.dispose();
     _inputQuery.dispose();
+    _suggestionSelection.dispose();
     _searchController?.endSearchSession();
     _languageProvider.removeListener(_handleLanguageChanged);
     _controller.dispose();
@@ -734,4 +777,25 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
       },
     );
   }
+}
+
+@immutable
+class _AsmrSuggestionSelection {
+  const _AsmrSuggestionSelection({
+    this.canonicalDraft = '',
+    this.selectedLowerTerms = const <String>{},
+  });
+
+  final String canonicalDraft;
+  final Set<String> selectedLowerTerms;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _AsmrSuggestionSelection &&
+      other.canonicalDraft == canonicalDraft &&
+      setEquals(other.selectedLowerTerms, selectedLowerTerms);
+
+  @override
+  int get hashCode =>
+      Object.hash(canonicalDraft, Object.hashAllUnordered(selectedLowerTerms));
 }

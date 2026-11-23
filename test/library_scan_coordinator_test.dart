@@ -303,6 +303,34 @@ void main() {
 
     await expectLater(scan, completion(isNull));
   });
+
+  test('new scan after cancel waits for catalog scanIdle rollback', () async {
+    final rollback = Completer<void>();
+    final catalog = _FakeCatalog(pendingScanIdle: rollback.future);
+    var refreshCalls = 0;
+    final coordinator = LibraryScanCoordinator(
+      scanner: _FakeScanner((_, _) async {
+        refreshCalls++;
+        return LibraryScanOutcome(
+          code: LibraryScanOutcomeCode.refreshNoChanges,
+          source: 'refresh',
+        );
+      }),
+    );
+    addTearDown(coordinator.dispose);
+
+    coordinator.cancel(catalog);
+    final nextScan = coordinator.refresh(catalog: catalog, labels: labels);
+    await pumpEventQueue();
+    expect(refreshCalls, 0);
+    expect(coordinator.state.phase, LibraryScanPhase.running);
+
+    rollback.complete();
+    final outcome = await nextScan;
+    expect(refreshCalls, 1);
+    expect(outcome?.code, LibraryScanOutcomeCode.refreshNoChanges);
+    expect(coordinator.state.phase, LibraryScanPhase.success);
+  });
 }
 
 typedef _RefreshHandler =
@@ -332,14 +360,19 @@ class _FakeCatalog implements LibraryCatalog {
     this.importResult = const AudioDetailBackupImportResult(),
     this.pendingImport,
     this.pendingDuration,
+    this.pendingScanIdle,
   });
 
   final AudioDetailBackupImportResult importResult;
   final Future<AudioDetailBackupImportResult>? pendingImport;
   final Future<void>? pendingDuration;
+  final Future<void>? pendingScanIdle;
   int detailImportCount = 0;
   int durationBackfillCount = 0;
   bool? lastImportOnlyMissing;
+
+  @override
+  Future<void> get scanIdle => pendingScanIdle ?? Future<void>.value();
 
   @override
   void cancelScan() {}

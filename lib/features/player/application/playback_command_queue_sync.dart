@@ -57,6 +57,10 @@ extension PlaybackCommandQueueSync on PlaybackCommandCoordinator {
       session.clearNativePlaybackQueueCache();
       return false;
     }
+    session.syncedNativeQueueBaseKey = Object.hash(
+      session.nativePlaybackQueueScopeCacheKey,
+      _libraryFacade.contentRevision,
+    );
     _playbackFacade.updateNativeSessionRetainedContentUris(
       session.id,
       <Object?>[
@@ -234,8 +238,14 @@ extension PlaybackCommandQueueSync on PlaybackCommandCoordinator {
             session.loadGeneration != generation) {
           return false;
         }
-        if (result.isOk && result.valueOrNull != null) {
-          _handleNativePlaybackSnapshot(result.valueOrNull!);
+        if (result.isOk) {
+          session.syncedNativeQueueBaseKey = Object.hash(
+            session.nativePlaybackQueueScopeCacheKey,
+            _libraryFacade.contentRevision,
+          );
+          if (result.valueOrNull != null) {
+            _handleNativePlaybackSnapshot(result.valueOrNull!);
+          }
         }
         _syncNotificationState();
         _playbackFacade.scheduleSessionStatePersistence(sessionId: session.id);

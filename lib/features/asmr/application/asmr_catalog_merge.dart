@@ -11,11 +11,11 @@ class AsmrCatalogCursor {
   Map<_CatalogStream, int> _pages = {};
   Map<_CatalogStream, bool> _more = {};
   Map<_CatalogStream, List<AsmrWork>> _pending = {};
-  Map<String, AsmrWork> _emitted = {};
+  Set<String> _emitted = {};
   Map<_CatalogStream, int> _totals = {};
 
   // The category publishes this snapshot together with the prepared rows.
-  AsmrCatalogCursor copy() => _copyProgress().._emitted = Map.of(_emitted);
+  AsmrCatalogCursor copy() => _copyProgress().._emitted = Set.of(_emitted);
 
   AsmrCatalogCursor _copyProgress() => AsmrCatalogCursor()
     .._japanesePages = _japanesePages
@@ -26,14 +26,12 @@ class AsmrCatalogCursor {
       for (final entry in _pending.entries) entry.key: List.of(entry.value),
     };
 
-  void _commit(AsmrCatalogCursor next, Iterable<AsmrWork> emitted) {
+  void _commit(AsmrCatalogCursor next, Iterable<String> emittedKeys) {
     _pages = next._pages;
     _more = next._more;
     _totals = next._totals;
     _pending = next._pending;
-    for (final work in emitted) {
-      _emitted[work.workKey] = work;
-    }
+    _emitted.addAll(emittedKeys);
   }
 }
 
@@ -74,13 +72,14 @@ extension on AsmrRemoteCatalogService {
     required String? token,
     AsmrRequestCancellationToken? cancellationToken,
     AsmrCatalogCursor? cursor,
+    bool includeJapanese = true,
   }) async {
     final next = cursor?._copyProgress() ?? AsmrCatalogCursor();
-    final emitted = cursor?._emitted ?? const <String, AsmrWork>{};
+    final emitted = cursor?._emitted ?? const <String>{};
     final streams = [
       for (final query in queries) ...[
         (AsmrCatalogSource.asmrOne, query),
-        if (_usesJapaneseCatalog(category))
+        if (includeJapanese && _usesJapaneseCatalog(category))
           (AsmrCatalogSource.japaneseAsmr, query),
       ],
     ];
@@ -107,16 +106,11 @@ extension on AsmrRemoteCatalogService {
         do {
           final sourcePage = next._pages[stream]!;
           final query = searchElementKeyword(searchQuery);
-          Future<AsmrWorkPage> loadJapanese() => _retryTransientLoad(
-            category: category,
+          Future<AsmrWorkPage> loadJapanese() => _loadSecondaryJapanesePage(
+            query: query,
             page: sourcePage,
+            pageSize: pageSize,
             cancellationToken: cancellationToken,
-            load: () => _japaneseApiService!.searchWorks(
-              keyword: query,
-              page: sourcePage,
-              pageSize: pageSize,
-              cancellationToken: cancellationToken,
-            ),
           );
           final loaded = source == AsmrCatalogSource.asmrOne
               ? await _loadOnePage(
@@ -139,10 +133,12 @@ extension on AsmrRemoteCatalogService {
           next._more[stream] = loaded.hasMore;
           next._totals[stream] = loaded.totalCount;
           for (final work in loaded.works) {
-            final previous = updates[work.workKey] ?? emitted[work.workKey];
-            if (previous != null) {
-              final merged = previous.mergedWith(work);
-              updates[work.workKey] = merged;
+            if (emitted.contains(work.workKey)) {
+              updates.update(
+                work.workKey,
+                (old) => old.mergedWith(work),
+                ifAbsent: () => work,
+              );
             } else {
               next._pending[stream]!.add(work);
             }
@@ -212,7 +208,7 @@ extension on AsmrRemoteCatalogService {
     for (final pending in next._pending.values) {
       pending.removeWhere(
         (work) =>
-            emitted.containsKey(work.workKey) ||
+            emitted.contains(work.workKey) ||
             selectedIds.contains(work.workKey),
       );
     }
@@ -220,7 +216,7 @@ extension on AsmrRemoteCatalogService {
         next._more.values.any((value) => value) ||
         next._pending.values.any((works) => works.isNotEmpty);
     cancellationToken?.throwIfCancelled();
-    cursor?._commit(next, updates.values.followedBy(selected));
+    cursor?._commit(next, selectedIds);
     return AsmrMergedWorkPage(
       works: selected,
       currentPage: page,

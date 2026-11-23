@@ -13,13 +13,13 @@ class DurationOverlay extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.6),
+        color: Colors.black.withValues(alpha: 0.64),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Text(
         formatDurationCompact(duration),
         style: const TextStyle(
-          color: Color(0xFFF8F5F7),
+          color: Colors.white,
           fontSize: 10,
           fontWeight: FontWeight.w600,
           height: 1.1,

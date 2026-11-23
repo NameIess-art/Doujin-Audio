@@ -6,7 +6,6 @@ import 'package:flutter/foundation.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/logging/app_log_service.dart';
 import 'library_catalog.dart';
-import 'library_state_models.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/media/path_display.dart';
 import 'library_scan_data_source.dart';
@@ -149,10 +148,25 @@ class LibraryRefreshChunkPlanner {
     required Future<bool> Function(LibraryRefreshChunk chunk) onChunk,
     required void Function(FolderScanSessionEvent event) onProgress,
   }) async {
-    final mergeContext = LibraryScanMergeContext(
+    var mergeContext = LibraryScanMergeContext(
       provider: provider,
       libraryRoot: libraryRoot,
     );
+    await worker.setEntrySnapshot(mergeContext.entrySnapshot);
+    if (!provider.isScanGenerationActive(generation)) return;
+
+    Future<void> syncMergeContextIfExclusionsChanged() async {
+      final currentExclusions = provider.libraryExclusionMatcherForLibrary(
+        libraryRoot,
+      );
+      if (identical(currentExclusions, mergeContext.exclusionMatcher)) return;
+      mergeContext = LibraryScanMergeContext(
+        provider: provider,
+        libraryRoot: libraryRoot,
+      );
+      await worker.setEntrySnapshot(mergeContext.entrySnapshot);
+    }
+
     final retainedTrackPaths = <String>{};
     final retainedEntryPaths = <String>{};
     final allFolderPaths = LinkedHashSet<String>.from(folderPaths);
@@ -170,6 +184,9 @@ class LibraryRefreshChunkPlanner {
         return provider.isScanGenerationActive(generation);
       }
 
+      await syncMergeContextIfExclusionsChanged();
+      if (!provider.isScanGenerationActive(generation)) return false;
+
       final existingTracks = <MusicTrack>[];
       final existingPaths = <String>{};
       for (final scannedTrack in chunk.tracks) {
@@ -179,7 +196,8 @@ class LibraryRefreshChunkPlanner {
           existingTracks.add(existing);
         }
       }
-      final result = await worker.merge(
+      var exclusionMatcher = mergeContext.exclusionMatcher;
+      var result = await worker.merge(
         ScanMergeIsolatePayload(
           scannedTracks: chunk.tracks,
           library: existingTracks,
@@ -187,10 +205,34 @@ class LibraryRefreshChunkPlanner {
           promoteRootTracksToSingles: promoteRootTracksToSingles,
           i18nImportedFiles: labels.importedFiles,
           i18nManuallySelectedFiles: labels.manuallySelectedFiles,
-          exclusionMatcher: mergeContext.exclusionMatcher,
+          exclusionMatcher: exclusionMatcher,
+          useWorkerEntrySnapshot: true,
         ),
       );
       if (!provider.isScanGenerationActive(generation)) return false;
+      // Re-run this chunk if exclusions mutated while the worker was busy so
+      // newly restored tracks are never dropped by the stale snapshot.
+      if (!identical(
+        provider.libraryExclusionMatcherForLibrary(libraryRoot),
+        exclusionMatcher,
+      )) {
+        await syncMergeContextIfExclusionsChanged();
+        if (!provider.isScanGenerationActive(generation)) return false;
+        exclusionMatcher = mergeContext.exclusionMatcher;
+        result = await worker.merge(
+          ScanMergeIsolatePayload(
+            scannedTracks: chunk.tracks,
+            library: existingTracks,
+            libraryRoot: libraryRoot,
+            promoteRootTracksToSingles: promoteRootTracksToSingles,
+            i18nImportedFiles: labels.importedFiles,
+            i18nManuallySelectedFiles: labels.manuallySelectedFiles,
+            exclusionMatcher: exclusionMatcher,
+            useWorkerEntrySnapshot: true,
+          ),
+        );
+        if (!provider.isScanGenerationActive(generation)) return false;
+      }
       processedTracks += chunk.tracks.length;
       return onChunk(
         LibraryRefreshChunk(
@@ -198,6 +240,7 @@ class LibraryRefreshChunkPlanner {
           libraryRoot: libraryRoot,
           tracks: result.trackBatch,
           entryTracks: result.entryBatch,
+          folderPaths: result.folderBatch,
           mergeContext: mergeContext,
           progressLabel: [
             if (progressPrefix.isNotEmpty) progressPrefix,
@@ -276,28 +319,38 @@ class LibraryRefreshChunkPlanner {
         allowRemoval &&
         (removalCandidates.isNotEmpty ||
             mergeContext.entrySnapshot.entriesByPath.isNotEmpty);
-    final removals = hasRemovalWork
-        ? await compute(_findRefreshRemovalPaths, (
+    final hasFinalizeWork = hasRemovalWork || allFolderPaths.isNotEmpty;
+    await syncMergeContextIfExclusionsChanged();
+    if (!provider.isScanGenerationActive(generation)) return;
+    final finalized = hasFinalizeWork
+        ? await worker.finalizeRefresh(
+            libraryRoot: libraryRoot,
             sourceFolderPath: sourceFolderPath,
+            exclusionMatcher: mergeContext.exclusionMatcher,
+            folderPaths: allFolderPaths.toList(growable: false),
+            allowRemoval: hasRemovalWork,
             removalCandidates: removalCandidates,
-            entrySnapshot: mergeContext.entrySnapshot,
             retainedTrackPaths: retainedTrackPaths,
             retainedEntryPaths: retainedEntryPaths,
-          ))
-        : (trackPaths: const <String>[], entryPaths: const <String>[]);
+          )
+        : RefreshFinalizeIsolateResult(
+            folderPaths: const <String>[],
+            removedTrackPaths: const <String>[],
+            removedEntryPaths: const <String>[],
+          );
     if (!provider.isScanGenerationActive(generation)) return;
     await onChunk(
       LibraryRefreshChunk(
         sourceFolderPath: sourceFolderPath,
         libraryRoot: libraryRoot,
-        folderPaths: allFolderPaths.toList(growable: false),
+        folderPaths: finalized.folderPaths,
         mergeContext: mergeContext,
         removeWatchedFolders: allowRemoval
             ? removeWatchedFolders
             : const <String>[],
         addWatchedFolders: addWatchedFolders,
-        removeTrackPaths: removals.trackPaths,
-        removeEntryPaths: removals.entryPaths,
+        removeTrackPaths: finalized.removedTrackPaths,
+        removeEntryPaths: finalized.removedEntryPaths,
         progressLabel: label,
         failureCount: scanResult.failureCount + additionalFailureCount,
       ),
@@ -371,37 +424,4 @@ List<String> _tracksInRefreshSource(
     collect(prefix, (candidate) => candidate.startsWith(prefix));
   }
   return paths;
-}
-
-({List<String> trackPaths, List<String> entryPaths}) _findRefreshRemovalPaths(
-  ({
-    String sourceFolderPath,
-    List<String> removalCandidates,
-    LibraryEntrySnapshot entrySnapshot,
-    Set<String> retainedTrackPaths,
-    Set<String> retainedEntryPaths,
-  })
-  payload,
-) {
-  final normalizedSource = PathMatcher.normalize(payload.sourceFolderPath);
-  final retainedTrackIndex = PathMembershipIndex(payload.retainedTrackPaths);
-  final removedTrackPaths = <String>[];
-  for (final path in payload.removalCandidates) {
-    if (!retainedTrackIndex.containsEquivalent(path)) {
-      removedTrackPaths.add(path);
-    }
-  }
-
-  final retainedEntryIndex = PathMembershipIndex(payload.retainedEntryPaths);
-  final removedEntryPaths = <String>[];
-  for (final entry in payload.entrySnapshot.entriesByPath.values) {
-    if (!PathMatcher.isWithinOrEqualNormalized(entry.path, normalizedSource)) {
-      continue;
-    }
-    final retained = entry.isFolder
-        ? retainedEntryIndex.containsDescendantOrEqual(entry.path)
-        : retainedEntryIndex.containsEquivalent(entry.path);
-    if (!retained) removedEntryPaths.add(entry.path);
-  }
-  return (trackPaths: removedTrackPaths, entryPaths: removedEntryPaths);
 }

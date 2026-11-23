@@ -151,22 +151,6 @@ final class PlaybackFacade {
       !hasActivePlayback &&
       _resumeBatch.entries.any(_isResumeTarget);
 
-  bool _isResumeTarget(MapEntry<String, String> target) {
-    final session = _service.sessions[target.key];
-    return session != null &&
-        session.currentTrackPath.isNotEmpty &&
-        PathMatcher.equalsNormalized(session.currentTrackPath, target.value) &&
-        session.state.processingState != ProcessingState.completed;
-  }
-
-  Map<String, String> _captureActivePlayback() => {
-    for (final session in _service.sessions.values)
-      if (_isPlaybackActive(session) &&
-          session.currentTrackPath.isNotEmpty &&
-          session.state.processingState != ProcessingState.completed)
-        session.id: session.currentTrackPath,
-  };
-
   void _notifyResumeBatchChanged() {
     if (!_disposed) _resumeBatchChanges.add(++_resumeBatchRevision);
   }
@@ -200,46 +184,10 @@ final class PlaybackFacade {
     return resume;
   }
 
-  Future<bool> _resumePlaybackBatch(PlaybackCommandPort commands) async {
-    final sequence = _recordedPauseSequence;
-    final results = await Future.wait(
-      _resumeBatch.entries.where(_isResumeTarget).toList().map((target) async {
-        final session = _service.sessions[target.key]!;
-        if (_isPlaybackActive(session)) return null;
-        session.lastPlayedAt = DateTime.now();
-        try {
-          if (await _startPausedSession(session, commands)) return null;
-        } catch (error, stackTrace) {
-          AppLogService.error(
-            'resume_playback_failed sessionId=${session.id}',
-            error: error,
-            stackTrace: stackTrace,
-          );
-        }
-        return isRegisteredSession(session) ? target : null;
-      }),
-    );
-    final failed = results.whereType<MapEntry<String, String>>().where(
-      (target) =>
-          _isResumeTarget(target) &&
-          !_isPlaybackActive(_service.sessions[target.key]!),
-    );
-    final retryTargets = Map<String, String>.fromEntries(failed);
-    if (!_disposed && sequence == _recordedPauseSequence) {
-      _resumeRetryTargets = retryTargets;
-      _scheduleResumeBatch(Map.of(retryTargets));
-    }
-    return retryTargets.isEmpty;
-  }
-
-  Future<bool> pauseSessionForResume(
-    PlaybackSession session, {
-    Future<bool> Function()? pause,
-  }) async {
+  Future<bool> pauseSessionForResume(PlaybackSession session) async {
     final wasActive = _isPlaybackActive(session);
     final sequence = ++_pauseSequence;
-    final paused =
-        await (pause?.call() ?? _commandPort?.pauseSession(session)) ?? false;
+    final paused = await _commandPort?.pauseSession(session) ?? false;
     if (paused && wasActive && isRegisteredSession(session)) {
       _rememberPausedBatch({
         session.id: session.currentTrackPath,
@@ -698,6 +646,13 @@ final class PlaybackFacade {
               : (position > maxDuration ? maxDuration : position))
         : (position < Duration.zero ? Duration.zero : position);
     session.setOptimisticPosition(clamped);
+    if (session.state.processingState == ProcessingState.completed) {
+      session.setOptimisticState(
+        playing: false,
+        processingState: ProcessingState.idle,
+      );
+      publishSessionState(session.id);
+    }
     session.lastPersistedPositionBucket =
         clamped.inSeconds ~/ positionBucketSeconds;
     if (!_sessionObserversAttached) {
@@ -758,59 +713,59 @@ final class PlaybackFacade {
     await seekSession(sessionId, clamped);
   }
 
-  Future<void> toggleSessionPlayPause(String sessionId) async {
+  Future<bool> resumeSession(String sessionId) async {
     final session = _service.sessions[sessionId];
-    if (session == null || session.currentTrackPath.isEmpty) return;
+    if (session == null || session.currentTrackPath.isEmpty) return false;
+    final commands = _commandPort;
     if (session.playbackError != null) {
       session.lastPlayedAt = DateTime.now();
       _notifySessionStateChanged(session);
-      // A native player can keep the failed media item while ExoPlayer is in
-      // an error/idle state. Re-preparing the unchanged path is a no-op in the
-      // preparation coordinator, so route retries through native recovery when
-      // the session still has a loaded source and its queue is synchronized.
-      // A replaced queue must pass through preparation before native recovery.
+      // Native recovery keeps the failed item when the source and queue cache
+      // are still valid; a replaced queue must re-prepare first.
       if (session.loadedPath != null &&
           session.nativePlaybackQueueCache != null) {
         session.beginLoadingIndicatorThreshold();
-        await _commandPort?.startSession(
-          session,
-          shouldStartTriggerCountdown: true,
-        );
-      } else {
-        await _commandPort?.prepareSession(
-          session,
-          nextPath: session.currentTrackPath,
-        );
+        return await commands?.startSession(
+              session,
+              shouldStartTriggerCountdown: true,
+            ) ??
+            false;
       }
-      return;
+      return await commands?.prepareSession(
+            session,
+            nextPath: session.currentTrackPath,
+          ) ??
+          false;
     }
-    if (session.playbackRequested) {
+    if (session.playbackRequested) return true;
+    if (commands == null) return false;
+    session.lastPlayedAt = DateTime.now();
+    return _startPausedSession(session, commands);
+  }
+
+  Future<void> toggleSessionPlayPause(String sessionId) async {
+    final session = _service.sessions[sessionId];
+    if (session == null || session.currentTrackPath.isEmpty) return;
+    if (session.playbackError == null && session.playbackRequested) {
       await pauseSessionForResume(session);
       return;
     }
-    final commands = _commandPort;
-    if (commands == null) return;
-    session.lastPlayedAt = DateTime.now();
-    await _startPausedSession(session, commands);
+    await resumeSession(sessionId);
   }
 
   Future<bool> _startPausedSession(
     PlaybackSession session,
     PlaybackCommandPort commands,
   ) {
-    if (session.isLoading) {
-      return commands.prepareSession(
-        session,
-        nextPath: session.currentTrackPath,
-      );
-    }
-    if (session.state.processingState == ProcessingState.completed ||
-        session.state.processingState == ProcessingState.idle) {
+    final processing = session.state.processingState;
+    if (session.isLoading ||
+        processing == ProcessingState.completed ||
+        processing == ProcessingState.idle) {
       return commands.prepareSession(
         session,
         nextPath: session.currentTrackPath,
         forceStartAtZero:
-            session.state.processingState == ProcessingState.completed,
+            !session.isLoading && processing == ProcessingState.completed,
       );
     }
     session.beginLoadingIndicatorThreshold();
@@ -1198,59 +1153,58 @@ final class PlaybackFacade {
   Future<void> retargetPath(String oldPath, String newPath) =>
       PlaybackQueuePathCoordinator(this).retargetPath(oldPath, newPath);
 
+  Future<bool> _runUserLaunch(Future<bool> Function() action) async =>
+      await _ensureUserLaunchReady() ? await action() : false;
+
   Future<bool> playDirect(
     FutureOr<List<MusicTrack>> tracks, {
     int startIndex = 0,
     SessionLoopMode loopMode = SessionLoopMode.folderSequential,
-  }) async {
-    if (!await _ensureUserLaunchReady()) return false;
-    return PlaybackQueuePathCoordinator(
+  }) => _runUserLaunch(
+    () => PlaybackQueuePathCoordinator(
       this,
-    ).playDirect(tracks, startIndex: startIndex, loopMode: loopMode);
-  }
+    ).playDirect(tracks, startIndex: startIndex, loopMode: loopMode),
+  );
 
   Future<bool> addTrackToPlaylist(
     MusicTrack track, {
     List<MusicTrack>? workTracks,
-  }) async {
-    if (!await _ensureUserLaunchReady()) return false;
-    return PlaybackQueuePathCoordinator(
+  }) => _runUserLaunch(
+    () => PlaybackQueuePathCoordinator(
       this,
-    ).addTrackToPlaylist(track, workTracks: workTracks);
-  }
+    ).addTrackToPlaylist(track, workTracks: workTracks),
+  );
 
   Future<bool> launchQueue(
     List<MusicTrack> tracks, {
     bool? autoPlay,
     required SessionLoopMode loopMode,
-  }) async {
-    if (!await _ensureUserLaunchReady()) return false;
-    return PlaybackQueuePathCoordinator(
+  }) => _runUserLaunch(
+    () => PlaybackQueuePathCoordinator(
       this,
-    ).launchQueue(tracks, autoPlay: autoPlay, loopMode: loopMode);
-  }
+    ).launchQueue(tracks, autoPlay: autoPlay, loopMode: loopMode),
+  );
 
-  Future<bool> spawnSession(MusicTrack track, {bool? autoPlay}) async {
-    if (!await _ensureUserLaunchReady()) return false;
-    return PlaybackQueuePathCoordinator(
-      this,
-    ).spawnSession(track, autoPlay: autoPlay);
-  }
+  Future<bool> spawnSession(MusicTrack track, {bool? autoPlay}) =>
+      _runUserLaunch(
+        () => PlaybackQueuePathCoordinator(
+          this,
+        ).spawnSession(track, autoPlay: autoPlay),
+      );
 
   Future<bool> spawnSessionWithQueue(
     List<MusicTrack> tracks, {
     int startIndex = 0,
     bool? autoPlay,
     SessionLoopMode loopMode = SessionLoopMode.folderSequential,
-  }) async {
-    if (!await _ensureUserLaunchReady()) return false;
-    return PlaybackQueuePathCoordinator(this).spawnSessionWithQueue(
+  }) => _runUserLaunch(
+    () => PlaybackQueuePathCoordinator(this).spawnSessionWithQueue(
       tracks,
       startIndex: startIndex,
       autoPlay: autoPlay,
       loopMode: loopMode,
-    );
-  }
+    ),
+  );
 
   Future<void> dispose() async {
     if (_disposed) return;

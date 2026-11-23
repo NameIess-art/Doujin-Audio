@@ -25,11 +25,17 @@ Future<void> initializePlatformRuntime() async {
 Future<StartupRestoreOutcome?> initializeAudioPlayerStartup({
   required Future<void> uiInitialization,
 }) async {
-  await AppLogService.measureAsync(
-    'app_bootstrap_pre_run_app',
-    () => uiInitialization,
-  );
-  final restoreOutcome = await DataBackupService().applyAtStartup();
+  StartupRestoreOutcome? pendingOutcome;
+  await Future.wait<void>([
+    AppLogService.measureAsync(
+      'app_bootstrap_pre_run_app',
+      () => uiInitialization,
+    ),
+    DataBackupService().applyAtStartup().then((outcome) {
+      pendingOutcome = outcome;
+    }),
+  ]);
+  final restoreOutcome = pendingOutcome;
   if (restoreOutcome?.succeeded == true) {
     final nativePlayback = NativePlaybackRepository();
     try {

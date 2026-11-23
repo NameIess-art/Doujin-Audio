@@ -71,6 +71,7 @@ class NativePlaybackRepository {
     List<Uri>? candidateUris,
     bool deferPlayerCreation = false,
     bool isTemporary = false,
+    bool reuseExistingQueue = false,
   }) {
     return _bridge.prepareSession(
       sessionId: sessionId,
@@ -92,6 +93,7 @@ class NativePlaybackRepository {
       candidateUris: candidateUris,
       deferPlayerCreation: deferPlayerCreation,
       isTemporary: isTemporary,
+      reuseExistingQueue: reuseExistingQueue,
     );
   }
 

@@ -1,25 +1,32 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:doujin_audio/app/presentation/app_orientation_controller.dart';
+import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/app/state/subtitle_settings_provider.dart';
 import 'package:doujin_audio/core/errors/native_result.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/media/subtitle_parser.dart';
+import 'package:doujin_audio/core/ui/undoable_removal_service.dart';
 import 'package:doujin_audio/core/widgets/app_entry_ink_well.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
+import 'package:doujin_audio/features/player/domain/audio_effects.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/features/player/presentation/bedtime_canvas_page.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_audio_features.dart';
+import 'package:doujin_audio/features/player/presentation/playlist/playlist_batch_controller.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_list_view.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_progress_widgets.dart';
+import 'package:doujin_audio/features/player/presentation/playlist/playlist_shared_helpers.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_subtitle_panel.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_transport_controls.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_video_widgets.dart';
 import 'package:doujin_audio/features/player/presentation/session_video_surface.dart';
+import 'package:doujin_audio/features/settings/application/settings_command_controller.dart';
 import 'package:doujin_audio/features/player/presentation/timer_tab.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -996,12 +1003,500 @@ Dialogue: 0,0:00:10.00,0:00:14.00,Default,,0,0,0,,Middle line
       variant: TargetPlatformVariant.only(TargetPlatform.windows),
     );
   });
+
+  group('Deferred ref and lifecycle regressions', () {
+    testWidgets(
+      'stagePlaybackSessionRemovals commits after widget disposal without StateError',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture(
+          providedNativePlaybackRepository: _AcceptingPlaybackRepository(),
+        );
+        addTearDown(fixture.dispose);
+        final track1 = testMusicTrack(
+          name: 'Track 1',
+          path: '/music/remove_1.mp3',
+          groupKey: '/music',
+          groupTitle: 'Music',
+        );
+        final track2 = testMusicTrack(
+          name: 'Track 2',
+          path: '/music/remove_2.mp3',
+          groupKey: '/music',
+          groupTitle: 'Music',
+        );
+        fixture.library.addTracks([track1, track2], persist: false);
+        final session1 = fixture.playback.createTrackSession(track1);
+        final session2 = fixture.playback.createTrackSession(track2);
+        fixture.playbackService.syncSlice(
+          activeSessions: [session1, session2],
+          playingSessionCount: 0,
+          focusedSessionId: session1.id,
+          coverGeneration: 0,
+          isInitialized: true,
+        );
+        await tester.runAsync(
+          () => fixture.settings.pinPlaylistSessions([
+            session1.id,
+            session2.id,
+          ]),
+        );
+
+        final removalService = UndoableRemovalService();
+        addTearDown(removalService.dispose);
+        final showConsumer = ValueNotifier<bool>(true);
+        addTearDown(showConsumer.dispose);
+        late WidgetRef capturedRef;
+        late BuildContext capturedContext;
+
+        await tester.pumpWidget(
+          fixture.build(
+            ValueListenableBuilder<bool>(
+              valueListenable: showConsumer,
+              builder: (_, visible, _) => visible
+                  ? Consumer(
+                      builder: (context, ref, _) {
+                        capturedContext = context;
+                        capturedRef = ref;
+                        return const SizedBox.shrink();
+                      },
+                    )
+                  : const SizedBox.shrink(),
+            ),
+            overrides: [
+              undoableRemovalServiceProvider.overrideWithValue(removalService),
+            ],
+          ),
+        );
+        await tester.pump();
+
+        final staged = await stagePlaybackSessionRemovals(
+          capturedContext,
+          capturedRef,
+          [session1.id, session2.id],
+        );
+        expect(staged, isTrue);
+
+        // Dispose the widget owning WidgetRef before commit runs.
+        showConsumer.value = false;
+        await tester.pump();
+
+        await tester.runAsync(
+          () => removalService.commitPending().timeout(
+            const Duration(seconds: 3),
+          ),
+        );
+        expect(fixture.playback.hasSession(session1.id), isFalse);
+        expect(fixture.playback.hasSession(session2.id), isFalse);
+        expect(fixture.settings.pinnedPlaylistSessionIds, isEmpty);
+      },
+    );
+
+    testWidgets(
+      'SessionProgressBar invokes onSeekCancel on cancelled drag and disposal',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        final track1 = testMusicTrack(
+          name: 'Seek 1',
+          path: '/music/seek_1.mp3',
+          groupKey: '/music',
+          groupTitle: 'Music',
+        );
+        final track2 = testMusicTrack(
+          name: 'Seek 2',
+          path: '/music/seek_2.mp3',
+          groupKey: '/music',
+          groupTitle: 'Music',
+        );
+        fixture.library.addTracks([track1, track2], persist: false);
+        final session = fixture.playback.createTrackSession(track1)
+          ..duration = const Duration(minutes: 5)
+          ..lastKnownPosition = const Duration(minutes: 1);
+        addTearDown(session.shutdown);
+        fixture.playback.publishSessionState(session.id);
+
+        var seekStarts = 0;
+        var seekCancels = 0;
+        var manualSeeks = 0;
+
+        Widget buildBar(PlaybackSessionSnapshot snapshot) => fixture.build(
+          Center(
+            child: SizedBox(
+              width: 320,
+              child: SessionProgressBar(
+                session: snapshot,
+                playback: fixture.playback,
+                onSeekStart: () => seekStarts++,
+                onSeekCancel: () => seekCancels++,
+                onManualSeek: (_) => manualSeeks++,
+              ),
+            ),
+          ),
+        );
+
+        await tester.pumpWidget(
+          buildBar(fixture.playback.sessionSnapshotById(session.id)!),
+        );
+        await tester.pump();
+
+        // Start drag on slider, then switch track mid-drag to trigger _cancelActiveDrag().
+        final sliderFinder = find.byType(Slider);
+        final drag = await tester.startGesture(tester.getCenter(sliderFinder));
+        await drag.moveBy(const Offset(24, 0));
+        await tester.pump();
+        expect(seekStarts, 1);
+        expect(seekCancels, 0);
+
+        session.currentTrackPath = track2.path;
+        fixture.playback.publishSessionState(session.id);
+        await tester.pumpWidget(
+          buildBar(fixture.playback.sessionSnapshotById(session.id)!),
+        );
+        await tester.pump();
+        expect(seekCancels, 1);
+        expect(manualSeeks, 0);
+        await drag.up();
+        await tester.pump();
+
+        // Start a second drag and unmount mid-drag -> dispose() notifies onSeekCancel.
+        final drag2 = await tester.startGesture(tester.getCenter(sliderFinder));
+        await drag2.moveBy(const Offset(24, 0));
+        await tester.pump();
+        expect(seekStarts, 2);
+
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+        expect(seekCancels, 2);
+        await drag2.up();
+      },
+    );
+
+    testWidgets(
+      'EqualizerPage preset removal does not read disposed WidgetRef inside prepare',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture(
+          providedNativePlaybackRepository: _AcceptingPlaybackRepository(),
+        );
+        addTearDown(fixture.dispose);
+        final track = testMusicTrack(
+          name: 'EQ Track',
+          path: '/music/eq.mp3',
+          groupKey: '/music',
+          groupTitle: 'Music',
+        );
+        fixture.library.addTracks([track], persist: false);
+        final customPreset = EqPreset(
+          id: 'custom_1',
+          labelKey: 'Warm',
+          bandLevels: const <int, double>{60: 3.0},
+        );
+        await tester.runAsync(
+          () => fixture.settings
+              .saveCustomEqPreset(customPreset)
+              .timeout(const Duration(seconds: 3)),
+        );
+        final session = fixture.playback.createTrackSession(track)
+          ..audioEffects = AudioEffectsState.flat.copyWith(
+            eqEnabled: true,
+            eqPresetId: customPreset.id,
+            eqBandLevels: customPreset.bandLevels,
+          );
+        addTearDown(session.shutdown);
+        fixture.playback.publishSessionState(session.id);
+
+        final removalService = UndoableRemovalService();
+        addTearDown(removalService.dispose);
+        final showPage = ValueNotifier<bool>(true);
+        addTearDown(showPage.dispose);
+
+        await tester.pumpWidget(
+          fixture.build(
+            ValueListenableBuilder<bool>(
+              valueListenable: showPage,
+              builder: (_, visible, _) => visible
+                  ? SizedBox(
+                      width: 400,
+                      height: 600,
+                      child: EqualizerPage(
+                        session: fixture.playback.sessionSnapshotById(
+                          session.id,
+                        )!,
+                        playback: fixture.playback,
+                        topInset: 0,
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+            overrides: [
+              undoableRemovalServiceProvider.overrideWithValue(removalService),
+              settingsCommandControllerProvider.overrideWithValue(
+                SettingsCommandController(
+                  settings: fixture.settings,
+                  playback: fixture.playback,
+                ),
+              ),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final deleteButton = find.byKey(
+          const ValueKey<String>('delete_equalizer_preset'),
+        );
+        await tester.scrollUntilVisible(
+          deleteButton,
+          200,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.ensureVisible(deleteButton);
+        await tester.pumpAndSettle();
+        await tester.tap(deleteButton);
+        await tester.pump();
+        expect(removalService.state.pendingCount, 1);
+
+        // Dispose EqualizerPage before committing removal.
+        showPage.value = false;
+        await tester.pump();
+        await tester.runAsync(
+          () => removalService.commitPending().timeout(
+            const Duration(seconds: 3),
+          ),
+        );
+
+        expect(fixture.settings.customEqPresets, isEmpty);
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'PlaylistBatchActions.playSelected and pauseSelected survive widget disposal mid-loop',
+      (tester) async {
+        final gate = _GatedPlaybackRepository();
+        final fixture = AppRuntimeWidgetTestFixture(
+          providedNativePlaybackRepository: gate,
+        );
+        addTearDown(fixture.dispose);
+        final track1 = testMusicTrack(
+          name: 'Batch 1',
+          path: '/music/batch_1.mp3',
+          groupKey: '/music',
+          groupTitle: 'Music',
+        );
+        final track2 = testMusicTrack(
+          name: 'Batch 2',
+          path: '/music/batch_2.mp3',
+          groupKey: '/music',
+          groupTitle: 'Music',
+        );
+        fixture.library.addTracks([track1, track2], persist: false);
+        final session1 = fixture.playback.createTrackSession(track1)
+          ..loadedPath = track1.path
+          ..setOptimisticState(
+            playing: false,
+            processingState: ProcessingState.ready,
+          );
+        final session2 = fixture.playback.createTrackSession(track2)
+          ..loadedPath = track2.path
+          ..setOptimisticState(
+            playing: false,
+            processingState: ProcessingState.ready,
+          );
+        addTearDown(session1.shutdown);
+        addTearDown(session2.shutdown);
+        fixture.playbackService.syncSlice(
+          activeSessions: [session1, session2],
+          playingSessionCount: 0,
+          focusedSessionId: session1.id,
+          coverGeneration: 0,
+          isInitialized: true,
+        );
+
+        final showConsumer = ValueNotifier<bool>(true);
+        addTearDown(showConsumer.dispose);
+        late WidgetRef capturedRef;
+        await tester.pumpWidget(
+          fixture.build(
+            ValueListenableBuilder<bool>(
+              valueListenable: showConsumer,
+              builder: (_, visible, _) => visible
+                  ? Consumer(
+                      builder: (_, ref, _) {
+                        capturedRef = ref;
+                        return const SizedBox.shrink();
+                      },
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        final firstPlayGate = Completer<void>();
+        gate.playGate = firstPlayGate;
+        final playFuture = PlaylistBatchActions.playSelected(
+          ref: capturedRef,
+          selectedSessionIds: [session1.id, session2.id],
+        );
+
+        // Dispose widget owning WidgetRef before the first play call resolves.
+        showConsumer.value = false;
+        await tester.pump();
+        gate.playGate = null;
+        firstPlayGate.complete();
+        await tester.runAsync(() => playFuture.timeout(const Duration(seconds: 5)));
+        await tester.pump(const Duration(milliseconds: 500));
+
+        expect(
+          fixture.playback.sessionSnapshotById(session1.id)?.playbackRequested,
+          isTrue,
+        );
+        expect(
+          fixture.playback.sessionSnapshotById(session2.id)?.playbackRequested,
+          isTrue,
+        );
+
+        // Verify pauseSelected also survives disposal mid-loop.
+        showConsumer.value = true;
+        await tester.pump();
+
+        final firstPauseGate = Completer<void>();
+        gate.pauseGate = firstPauseGate;
+        final pauseFuture = PlaylistBatchActions.pauseSelected(
+          ref: capturedRef,
+          selectedSessionIds: [session1.id, session2.id],
+        );
+
+        showConsumer.value = false;
+        await tester.pump();
+        gate.pauseGate = null;
+        firstPauseGate.complete();
+        await tester.runAsync(() => pauseFuture.timeout(const Duration(seconds: 5)));
+        await tester.pump(const Duration(milliseconds: 500));
+
+        expect(
+          fixture.playback.sessionSnapshotById(session1.id)?.playbackRequested,
+          isFalse,
+        );
+        expect(
+          fixture.playback.sessionSnapshotById(session2.id)?.playbackRequested,
+          isFalse,
+        );
+      },
+    );
+  });
 }
 
 class _AcceptingPlaybackRepository extends NativePlaybackRepository {
   @override
+  void startListening() {}
+
+  @override
+  Future<void> stopListening() async {}
+
+  @override
+  Future<void> dispose() async {}
+
+  @override
+  Future<NativeResult<NativePlaybackBundleSnapshot>> snapshot() async =>
+      NativeSuccess(NativePlaybackBundleSnapshot(sessions: const []));
+
+  @override
+  Future<NativeResult<void>> setPlaybackBehavior({
+    required bool pauseOnAudioDeviceDisconnect,
+    required bool requestAudioFocus,
+    required bool pauseOnTransientAudioFocusLoss,
+    required bool resumeAfterTransientAudioFocusGain,
+  }) async => const NativeSuccess();
+
+  @override
   Future<NativeResult<NativePlaybackSnapshot>> setVolume(
     String sessionId,
     double volume,
+  ) async => const NativeSuccess();
+
+  @override
+  Future<NativeResult<void>> removeSession(String sessionId) async =>
+      const NativeSuccess();
+
+  @override
+  Future<NativeResult<NativePlaybackSnapshot>> setAudioEffects(
+    String sessionId,
+    NativeAudioEffects effects,
+  ) async => const NativeSuccess();
+}
+
+class _GatedPlaybackRepository extends NativePlaybackRepository {
+  Completer<void>? playGate;
+  Completer<void>? pauseGate;
+
+  @override
+  void startListening() {}
+
+  @override
+  Future<void> stopListening() async {}
+
+  @override
+  Future<void> dispose() async {}
+
+  @override
+  Future<NativeResult<NativePlaybackSnapshot>> prepareSession({
+    required String sessionId,
+    required Uri uri,
+    required String title,
+    String? path,
+    String? subtitle,
+    Uri? artUri,
+    Duration startPosition = Duration.zero,
+    double volume = 1.0,
+    bool repeatOne = false,
+    bool autoPlay = false,
+    double speed = 1.0,
+    NativeAudioEffects? audioEffects,
+    List<Map<String, Object?>>? queue,
+    int? queueStartIndex,
+    bool repeatAll = false,
+    bool shuffle = false,
+    List<Uri>? candidateUris,
+    bool deferPlayerCreation = false,
+    bool isTemporary = false,
+    bool reuseExistingQueue = false,
+  }) async => const NativeSuccess();
+
+  @override
+  Future<NativeResult<NativePlaybackSnapshot>> play(
+    String sessionId, {
+    bool exclusive = false,
+    int transportCommandId = 0,
+  }) async {
+    final gate = playGate;
+    if (gate != null) await gate.future;
+    return const NativeSuccess();
+  }
+
+  @override
+  Future<NativeResult<NativePlaybackSnapshot>> pause(
+    String sessionId, {
+    int transportCommandId = 0,
+  }) async {
+    final gate = pauseGate;
+    if (gate != null) await gate.future;
+    return const NativeSuccess();
+  }
+
+  @override
+  Future<NativeResult<NativePlaybackSnapshot>> setFadeMultiplier(
+    String sessionId,
+    double multiplier,
+  ) async => const NativeSuccess();
+
+  @override
+  Future<NativeResult<NativePlaybackSnapshot>> setStopAfterCurrentTrack(
+    String sessionId,
+    bool enabled,
+  ) async => const NativeSuccess();
+
+  @override
+  Future<NativeResult<NativePlaybackSnapshot>> removeSession(
+    String sessionId,
   ) async => const NativeSuccess();
 }

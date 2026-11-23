@@ -806,9 +806,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
         subtitleEnabled: widget.subtitleEnabled,
         subtitleGlobalEnabled: widget.subtitleGlobalEnabled,
         onShowTrackSwitcher: () => _showTrackSwitcher(context),
-        onToggleSegments: _segmentPanelExpanded
-            ? collapseSegmentPanel
-            : expandSegmentPanel,
+        onOpenFeatures: expandSegmentPanel,
         onToggleSubtitle: widget.onToggleSubtitle,
         onToggleGlobalSubtitle: widget.onToggleGlobalSubtitle,
         onShowSubtitleMenu: () {

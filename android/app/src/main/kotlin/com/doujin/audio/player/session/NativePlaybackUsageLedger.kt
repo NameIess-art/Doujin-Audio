@@ -36,7 +36,20 @@ internal class NativePlaybackUsageCheckpoint(
         return ledger.read()
     }
 
+    fun readAsync(complete: (List<Map<String, Any?>>) -> Unit) {
+        val currentItems = items()
+        ledger.readAsync(currentItems) { batches ->
+            handler.post { complete(batches) }
+        }
+    }
+
     fun acknowledge(ids: Set<String>) = ledger.acknowledge(ids)
+
+    fun acknowledgeAsync(ids: Set<String>, complete: () -> Unit) {
+        ledger.acknowledgeAsync(ids) {
+            handler.post(complete)
+        }
+    }
 
     fun reset() {
         update()
@@ -240,10 +253,30 @@ internal class NativePlaybackUsageLedger(
         }
     }
 
+    fun readAsync(
+        currentItems: List<Map<String, Any?>>? = null,
+        onComplete: (List<Map<String, Any?>>) -> Unit
+    ) {
+        writer.execute {
+            if (currentItems != null) update(currentItems)
+            onComplete(read())
+        }
+    }
+
     fun acknowledge(ids: Set<String>) {
         loadFromDiskIfNeeded()
         synchronized(this) {
             if (pending.removeAll { it.id in ids }) persist()
+        }
+    }
+
+    fun acknowledgeAsync(
+        ids: Set<String>,
+        onComplete: () -> Unit
+    ) {
+        writer.execute {
+            acknowledge(ids)
+            onComplete()
         }
     }
 

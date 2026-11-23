@@ -4,6 +4,7 @@ import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_account_sync_service.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_api_service.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_auth_service.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_category_catalog.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_preferences.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_remote_catalog_service.dart';
@@ -575,4 +576,109 @@ void main() {
       expect(controller.asmrAccountName, 'restored');
     },
   );
+
+  test(
+    'H22 AsmrCategoryCatalog.loadMore does not self-deadlock with refresh when works is null',
+    () async {
+      final repo = _InMemoryAsmrRepository();
+      final api = _FakeAsmrApiService();
+      addTearDown(api.close);
+
+      const context = (
+        authEpoch: 0,
+        token: null,
+        contentEpoch: 0,
+        language: AsmrContentLanguage.zh,
+        scope: 'h22',
+      );
+      var callCount = 0;
+      final firstGate = Completer<void>();
+      final secondEntered = Completer<void>();
+      final secondGate = Completer<void>();
+
+      final remote = _FakeRemoteCatalogService(
+        apiService: api,
+        persistenceRepository: repo,
+        onLoadPage: (page) async {
+          callCount++;
+          if (callCount == 1) {
+            await firstGate.future;
+            throw StateError('transient failure 1');
+          }
+          if (!secondEntered.isCompleted) secondEntered.complete();
+          await secondGate.future;
+          return AsmrWorkPage(
+            works: [_work(2201, title: 'Loaded Work')],
+            currentPage: page,
+            pageSize: 20,
+            totalCount: 1,
+          );
+        },
+      );
+
+      final catalog = AsmrCategoryCatalog(
+        remoteCatalogService: remote,
+        onChanged: () {},
+        isContextCurrent: (_) => true,
+        currentContext: () => context,
+        localWorks: (_) => const <AsmrWork>[],
+        favoriteIds: () => const <String>{},
+      );
+
+      final initialRefresh = catalog.refresh(
+        AsmrCategoryType.release,
+        searchQuery: '',
+        context: context,
+      );
+      final pendingLoadMore = catalog.loadMore(
+        AsmrCategoryType.release,
+        searchQuery: '',
+        context: context,
+      );
+
+      firstGate.complete();
+      await initialRefresh.timeout(const Duration(seconds: 3));
+      await secondEntered.future.timeout(const Duration(seconds: 3));
+
+      final concurrentRefresh = catalog.refresh(
+        AsmrCategoryType.release,
+        searchQuery: '',
+        context: context,
+      );
+
+      secondGate.complete();
+      await Future.wait([
+        pendingLoadMore,
+        concurrentRefresh,
+      ]).timeout(const Duration(seconds: 3));
+
+      expect(callCount, 2);
+      expect(
+        catalog.worksFor(AsmrCategoryType.release).map((w) => w.id),
+        [2201],
+      );
+    },
+  );
+}
+
+class _FakeRemoteCatalogService extends AsmrRemoteCatalogService {
+  _FakeRemoteCatalogService({
+    required super.apiService,
+    required super.persistenceRepository,
+    required this.onLoadPage,
+  });
+
+  final Future<AsmrWorkPage> Function(int page) onLoadPage;
+
+  @override
+  Future<AsmrWorkPage> loadPage(
+    AsmrCategoryType category, {
+    required String searchQuery,
+    required int page,
+    required AsmrContentLanguage language,
+    required String? token,
+    AsmrRequestCancellationToken? cancellationToken,
+    AsmrCatalogCursor? cursor,
+    bool includeJapanese = true,
+  }) => onLoadPage(page);
 }

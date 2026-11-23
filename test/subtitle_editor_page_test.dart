@@ -870,4 +870,83 @@ void main() {
       await tester.pumpAndSettle();
     },
   );
+
+  testWidgets(
+    'undo after another edit keeps dirty state and undo after clean delete clears dirty state',
+    (tester) async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final service = _RecordingSubtitleService(const [
+        SubtitleCue(
+          start: Duration(seconds: 2),
+          end: Duration(seconds: 4),
+          text: 'First',
+        ),
+        SubtitleCue(
+          start: Duration(seconds: 6),
+          end: Duration(seconds: 8),
+          text: 'Second',
+        ),
+        SubtitleCue(
+          start: Duration(seconds: 10),
+          end: Duration(seconds: 12),
+          text: 'Third',
+        ),
+      ]);
+      await _showEditor(tester, service);
+      final language = ProviderScope.containerOf(
+        tester.element(find.byType(SubtitleEditorPage)),
+      ).read(appLanguageProviderInstanceProvider);
+
+      IconButton saveButton() => tester.widget<IconButton>(
+        find.widgetWithIcon(IconButton, Icons.save_rounded),
+      );
+
+      // Clean delete -> immediate undo restores cue and clears dirty flag.
+      expect(saveButton().onPressed, isNull);
+      tester
+          .widget<SwipeRevealCard>(find.byType(SwipeRevealCard).first)
+          .onRemove();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(saveButton().onPressed, isNotNull);
+      await tester.tap(find.text(language.tr('undo')));
+      await tester.pumpAndSettle();
+      expect(find.text('First'), findsOneWidget);
+      expect(saveButton().onPressed, isNull);
+
+      // Clean delete -> edit remaining cue before the 2s snackbar expires ->
+      // undo restores cue while keeping dirty flag enabled.
+      tester
+          .widget<SwipeRevealCard>(find.byType(SwipeRevealCard).first)
+          .onRemove();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.tap(find.byKey(const ValueKey('subtitle_text_1')));
+      await tester.pump(const Duration(milliseconds: 250));
+      await tester.enterText(find.byType(TextField), 'Third edited');
+      await tester.tap(
+        find.descendant(
+          of: find.byType(AppEditPanelForm),
+          matching: find.widgetWithText(TextButton, language.tr('save')),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(find.text(language.tr('undo')), findsOneWidget);
+      await tester.tap(find.text(language.tr('undo')));
+      await tester.pumpAndSettle();
+      expect(find.text('First'), findsOneWidget);
+      expect(find.text('Third edited'), findsOneWidget);
+      expect(saveButton().onPressed, isNotNull);
+
+      // Save persists all cues and clears dirty flag.
+      await tester.tap(find.widgetWithIcon(IconButton, Icons.save_rounded));
+      await tester.pumpAndSettle();
+      expect(service.saved?.map((c) => c.text).toList(), [
+        'First',
+        'Second',
+        'Third edited',
+      ]);
+      expect(saveButton().onPressed, isNull);
+    },
+  );
 }

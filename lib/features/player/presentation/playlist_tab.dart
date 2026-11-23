@@ -930,13 +930,10 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
         id: session.id,
         child: BrowseAnchor(
           id: session.id,
-          child: isQueue
+          child: isQueue && _appearingQueueIds.contains(session.id)
               ? TweenAnimationBuilder<double>(
                   key: ValueKey('playlist_queue_appearance_${session.id}'),
-                  tween: Tween<double>(
-                    begin: _appearingQueueIds.contains(session.id) ? 0 : 1,
-                    end: 1,
-                  ),
+                  tween: Tween<double>(begin: 0, end: 1),
                   duration: disableAnimations
                       ? Duration.zero
                       : kAppFadeDuration,

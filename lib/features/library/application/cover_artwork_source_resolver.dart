@@ -40,6 +40,7 @@ class _FolderImageIndex {
     List<CoverImageReference> images,
     String normalizedFolder, {
     required bool firstOnly,
+    bool preferDirect = false,
   }) {
     if (images.isEmpty) return const <CoverImageReference>[];
     if (!identical(_indexedSource, images)) {
@@ -63,17 +64,24 @@ class _FolderImageIndex {
       }
     }
     if (firstOnly) {
-      var minIndex = -1;
+      var minDirectIndex = -1;
+      var minAnyIndex = -1;
       for (var i = low; i < sorted.length; i++) {
         final entry = sorted[i];
         if (!entry.key.startsWith(prefix)) break;
-        if (minIndex < 0 || entry.index < minIndex) {
-          minIndex = entry.index;
+        if (preferDirect && entry.key.indexOf('/', prefix.length) < 0) {
+          if (minDirectIndex < 0 || entry.index < minDirectIndex) {
+            minDirectIndex = entry.index;
+          }
+        }
+        if (minAnyIndex < 0 || entry.index < minAnyIndex) {
+          minAnyIndex = entry.index;
         }
       }
-      if (minIndex < 0) return const <CoverImageReference>[];
+      final chosen = minDirectIndex >= 0 ? minDirectIndex : minAnyIndex;
+      if (chosen < 0) return const <CoverImageReference>[];
       return List<CoverImageReference>.unmodifiable(<CoverImageReference>[
-        images[minIndex],
+        images[chosen],
       ]);
     }
     final matchedIndices = <int>[];
@@ -119,9 +127,9 @@ final class CoverArtworkSourceResolver {
     equals: (first, second) =>
         first.recursive == second.recursive &&
         first.preferredOnly == second.preferredOnly &&
-        PathMatcher.equalsNormalized(first.rootPath, second.rootPath),
+        PathMatcher.equivalenceEquals(first.rootPath, second.rootPath),
     hashCode: (key) => Object.hash(
-      PathMatcher.equivalenceKey(key.rootPath),
+      PathMatcher.equivalenceHashCode(key.rootPath),
       key.recursive,
       key.preferredOnly,
     ),
@@ -197,11 +205,16 @@ final class CoverArtworkSourceResolver {
     if (pathValue == null || pathValue.isEmpty) return null;
     if (PathMatcher.isRemoteUri(pathValue)) return null;
 
+    final parent = PathMatcher.parentPath(pathValue);
+    // Video cover selections follow the file's real folder, including videos
+    // listed under the synthetic Imported Files group.
+    if (parent != null && track != null && _isVideoTrack(track)) {
+      return PathMatcher.normalize(parent);
+    }
     final groupKey = track?.groupKey.trim();
     if (groupKey != null && groupKey.isNotEmpty) {
       return PathMatcher.normalize(groupKey);
     }
-    final parent = PathMatcher.parentPath(pathValue);
     if (parent != null && parent.isNotEmpty) {
       return PathMatcher.normalize(parent);
     }
@@ -357,6 +370,7 @@ final class CoverArtworkSourceResolver {
 
   bool get _supportsContentUriLookup =>
       AppPlatform.isAndroid ||
+      (!kReleaseMode && defaultTargetPlatform == TargetPlatform.android) ||
       !identical(_fileCacheGateway, FileCachePlatformGateway.instance);
 
   Future<String?> resolveVideoFramePathForTrack(MusicTrack track) async {
@@ -774,20 +788,52 @@ final class CoverArtworkSourceResolver {
 
   Future<String?> resolvePreferredFolderCover(String folderPath) async {
     final preferredOnly = PathMatcher.isContentUri(folderPath);
-    final images = await discoverFolderImageReferences(
-      folderPath,
-      recursive: false,
-      preferredOnly: preferredOnly,
-      firstOnly: true,
-    );
-    if (images.isNotEmpty) return images.first.displayPath;
+    if (!preferredOnly) {
+      final normalizedFolder = PathMatcher.normalize(folderPath);
+      final indexRoot = folderImageIndexRoot(normalizedFolder);
+      final sharedRootKey = (
+        rootPath: indexRoot,
+        recursive: true,
+        preferredOnly: false,
+      );
+      if (!PathMatcher.equalsNormalized(indexRoot, normalizedFolder) &&
+          _folderImageIndexFutures.containsKey(sharedRootKey)) {
+        final images = await discoverFolderImageReferences(
+          folderPath,
+          firstOnly: true,
+          preferDirect: true,
+        );
+        if (images.isNotEmpty) return images.first.displayPath;
+      } else {
+        final images = await discoverFolderImageReferences(
+          folderPath,
+          recursive: false,
+          firstOnly: true,
+        );
+        if (images.isNotEmpty) return images.first.displayPath;
 
-    final nestedImages = await discoverFolderImageReferences(
-      folderPath,
-      preferredOnly: preferredOnly,
-      firstOnly: true,
-    );
-    if (nestedImages.isNotEmpty) return nestedImages.first.displayPath;
+        final nestedImages = await discoverFolderImageReferences(
+          folderPath,
+          firstOnly: true,
+        );
+        if (nestedImages.isNotEmpty) return nestedImages.first.displayPath;
+      }
+    } else {
+      final images = await discoverFolderImageReferences(
+        folderPath,
+        recursive: false,
+        preferredOnly: true,
+        firstOnly: true,
+      );
+      if (images.isNotEmpty) return images.first.displayPath;
+
+      final nestedImages = await discoverFolderImageReferences(
+        folderPath,
+        preferredOnly: true,
+        firstOnly: true,
+      );
+      if (nestedImages.isNotEmpty) return nestedImages.first.displayPath;
+    }
 
     for (final track in await _tracksInCoverScope(folderPath, limit: 3)) {
       final candidate = _isVideoTrack(track)
@@ -822,6 +868,7 @@ final class CoverArtworkSourceResolver {
     bool refresh = false,
     bool preferredOnly = false,
     bool firstOnly = false,
+    bool preferDirect = false,
   }) async {
     final normalizedFolder = PathMatcher.normalize(folderPath);
     final isContent = PathMatcher.isContentUri(normalizedFolder);
@@ -891,6 +938,7 @@ final class CoverArtworkSourceResolver {
         indexedImages,
         normalizedFolder,
         firstOnly: firstOnly,
+        preferDirect: preferDirect,
       );
     } finally {
       lookup.users--;
@@ -1017,12 +1065,8 @@ final class CoverArtworkSourceResolver {
 
   String folderImageIndexRoot(String folderPath) {
     final libraryMatch = _libraryService.mostSpecificWatchedLibrary(folderPath);
-    final folderMatch = _mostSpecificWatchedFolder(folderPath);
-    if (libraryMatch == null) return folderMatch ?? folderPath;
-    if (folderMatch == null) return libraryMatch;
-    return folderMatch.length > libraryMatch.length
-        ? folderMatch
-        : libraryMatch;
+    if (libraryMatch != null) return libraryMatch;
+    return _mostSpecificWatchedFolder(folderPath) ?? folderPath;
   }
 
   Future<List<CoverImageReference>> _buildFolderImageIndex(
@@ -1086,7 +1130,7 @@ final class CoverArtworkSourceResolver {
       extensions: folderCoverImageExtensions,
     );
     final images = scanner == null
-        ? recursive && IOOverrides.current == null
+        ? IOOverrides.current == null
               ? await compute(
                   _scanFilesystemFiles,
                   request,

@@ -77,6 +77,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     with WidgetsBindingObserver {
   Animation<double>? _routeAnimation;
   final ValueNotifier<bool> _transitionActive = ValueNotifier(true);
+  final ValueNotifier<bool> _inputLocked = ValueNotifier(true);
   final ValueNotifier<bool> _segmentPanelExpandedNotifier = ValueNotifier(
     false,
   );
@@ -146,16 +147,33 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
         : widget.routeAnimation;
     if (!identical(animation, _routeAnimation)) {
       _routeAnimation?.removeStatusListener(_handleEnterStatus);
+      _routeAnimation?.removeListener(_updateTransitionFlags);
       _routeAnimation = animation;
       animation?.addStatusListener(_handleEnterStatus);
+      animation?.addListener(_updateTransitionFlags);
     }
-    _handleEnterStatus(animation?.status ?? AnimationStatus.completed);
+    _updateTransitionFlags();
   }
 
-  void _handleEnterStatus(AnimationStatus status) {
-    _transitionActive.value = status != AnimationStatus.completed;
-    if (!_transitionActive.value) {
-      UiInteractionCoordinator.instance.scheduleCommitFrame();
+  void _handleEnterStatus(AnimationStatus _) => _updateTransitionFlags();
+
+  void _updateTransitionFlags() {
+    final animation = _routeAnimation;
+    final status = animation?.status ?? AnimationStatus.completed;
+    final isTransitioning = status != AnimationStatus.completed;
+    final isInputLocked =
+        isTransitioning &&
+        !(status == AnimationStatus.forward &&
+            (animation?.value ?? 0.0) >=
+                SessionDetailRoute.interactiveReadyThreshold);
+    if (_transitionActive.value != isTransitioning) {
+      _transitionActive.value = isTransitioning;
+      if (!isTransitioning) {
+        UiInteractionCoordinator.instance.scheduleCommitFrame();
+      }
+    }
+    if (_inputLocked.value != isInputLocked) {
+      _inputLocked.value = isInputLocked;
     }
   }
 
@@ -170,7 +188,9 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     WidgetsBinding.instance.removeObserver(this);
     _segmentPanelExpandedNotifier.dispose();
     _transitionActive.dispose();
+    _inputLocked.dispose();
     _routeAnimation?.removeStatusListener(_handleEnterStatus);
+    _routeAnimation?.removeListener(_updateTransitionFlags);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _activeSessionDetailIdsNotifier.pop(widget.sessionId);
     });
@@ -279,16 +299,17 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       queueColorValue: session.playbackQueue?.colorValue,
       transitionActive: _transitionActive,
       child: ValueListenableBuilder<bool>(
-        valueListenable: _transitionActive,
-        builder: (context, isTransitioning, child) => IgnorePointer(
-          ignoring: isTransitioning,
-          child: TickerMode(
+        valueListenable: _inputLocked,
+        builder: (context, isInputLocked, child) => IgnorePointer(
+          ignoring: isInputLocked,
+          child: child,
+        ),
+        child: ValueListenableBuilder<bool>(
+          valueListenable: _transitionActive,
+          builder: (context, isTransitioning, child) => TickerMode(
             enabled: !isTransitioning,
             child: MarqueePauseScope(isPaused: isTransitioning, child: child!),
           ),
-        ),
-        child: RepaintBoundary(
-          key: const ValueKey('session_detail_content_cache'),
           child: SessionDetailScaffold(
             session: session,
             track: detailTrack,

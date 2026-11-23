@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../app/theme/app_styles.dart';
 import 'app_buttons.dart';
 import 'app_transitions.dart';
+import 'windows_smooth_scroll_controller.dart';
 
 class AppBottomSheet {
   static const contentPadding = EdgeInsets.fromLTRB(20, 8, 20, 12);
@@ -74,7 +75,7 @@ class AppBottomSheet {
           behavior: ScrollConfiguration.of(
             ctx,
           ).copyWith(scrollbars: isWindows),
-          child: RepaintBoundary(child: builder(ctx)),
+          child: RepaintBoundary(child: builder(ctx)).withWindowsSmoothScroll(),
         ),
       ),
     );
@@ -209,6 +210,7 @@ class _AppBottomSheetRoute<T> extends ModalBottomSheetRoute<T> {
   late final Animation<double> _visibleOpacityAnimation =
       Animation<double>.fromValueListenable(_visibleOpacity);
   Animation<double>? _trackedAnimation;
+  double _lastAnimationValue = 0;
 
   @override
   Curve get barrierCurve => kAppFadeCurve;
@@ -216,18 +218,49 @@ class _AppBottomSheetRoute<T> extends ModalBottomSheetRoute<T> {
   void _attachAnimation(Animation<double> animation) {
     if (identical(_trackedAnimation, animation)) return;
     _trackedAnimation?.removeListener(_syncOpeningOpacity);
+    _trackedAnimation?.removeStatusListener(_handleAnimationStatus);
     _trackedAnimation = animation;
+    _lastAnimationValue = animation.value;
     _syncOpeningOpacity();
     animation.addListener(_syncOpeningOpacity);
+    animation.addStatusListener(_handleAnimationStatus);
+  }
+
+  void _handleAnimationStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed) {
+      _visibleOpacity.value = 1.0;
+    } else if (status == AnimationStatus.dismissed) {
+      // Clear any partial entrance opacity so RenderAnimatedOpacity drops its
+      // offscreen OpacityLayer on dismissal.
+      _visibleOpacity.value = 0.0;
+    }
   }
 
   void _syncOpeningOpacity() {
     final animation = _trackedAnimation;
     if (animation == null) return;
-    // Keep the opening fade, but hold its reached opacity during dragging
-    // and dismissal, including a close that interrupts the entrance.
-    final openingOpacity = kAppSpringCurve.transform(animation.value);
-    if (openingOpacity > _visibleOpacity.value) {
+    final value = animation.value;
+    final status = animation.status;
+    final draggedDownDuringEntrance =
+        value < _lastAnimationValue &&
+        status != AnimationStatus.reverse &&
+        _visibleOpacity.value > 0 &&
+        _visibleOpacity.value < 1;
+    _lastAnimationValue = value;
+    if (status == AnimationStatus.completed || draggedDownDuringEntrance) {
+      _visibleOpacity.value = 1.0;
+      return;
+    }
+    if (status == AnimationStatus.dismissed) {
+      _visibleOpacity.value = 0.0;
+      return;
+    }
+    // Keep the opening fade, and hold its reached opacity when a programmatic
+    // close interrupts the entrance.
+    final openingOpacity = kAppSpringCurve.transform(value);
+    if (openingOpacity >= 1 - 1e-4) {
+      _visibleOpacity.value = 1.0;
+    } else if (openingOpacity > _visibleOpacity.value) {
       _visibleOpacity.value = openingOpacity;
     }
   }
@@ -235,6 +268,7 @@ class _AppBottomSheetRoute<T> extends ModalBottomSheetRoute<T> {
   @override
   void dispose() {
     _trackedAnimation?.removeListener(_syncOpeningOpacity);
+    _trackedAnimation?.removeStatusListener(_handleAnimationStatus);
     _trackedAnimation = null;
     _visibleOpacity.dispose();
     super.dispose();

@@ -193,11 +193,32 @@ class FilteredLibraryTreeResult {
     required bool hasSubtitle,
     required Future<bool> Function(String) checkTrack,
     required bool Function() isActive,
+    Map<String, bool>? workSubtitleCache,
+    Map<String, bool>? trackSubtitleCache,
   }) async {
     if (tree.isEmpty) return this;
+    Future<bool> checkTrackCached(String trackPath) async {
+      if (trackSubtitleCache == null) return checkTrack(trackPath);
+      final key = PathMatcher.equivalenceKey(trackPath);
+      final cached = trackSubtitleCache[key];
+      if (cached != null) return cached;
+      final found = await checkTrack(trackPath);
+      if (isActive() || found) {
+        trackSubtitleCache[key] = found;
+      }
+      return found;
+    }
+
     Future<bool> checkWork(LibraryNode node) async {
-      if (node is TrackNode) return checkTrack(node.path);
+      if (node is TrackNode) return checkTrackCached(node.path);
       if (node is! FolderNode) return false;
+      final workKey = workSubtitleCache == null
+          ? null
+          : PathMatcher.equivalenceKey(node.path);
+      if (workKey != null) {
+        final cached = workSubtitleCache![workKey];
+        if (cached != null) return cached;
+      }
       // Text search can trim a folder. Test subtitle availability on the work.
       final tracks =
           snapshot
@@ -206,7 +227,13 @@ class FilteredLibraryTreeResult {
           node.allTracks;
       for (final track in tracks) {
         if (!isActive()) return false;
-        if (await checkTrack(track.path)) return true;
+        if (await checkTrackCached(track.path)) {
+          if (workKey != null) workSubtitleCache![workKey] = true;
+          return true;
+        }
+      }
+      if (workKey != null && isActive()) {
+        workSubtitleCache![workKey] = false;
       }
       return false;
     }
@@ -277,6 +304,9 @@ class LibrarySearchIndex {
   int? _cachedRevision;
   int? _cachedDetailRevision;
   final _cache = <(String, SearchFilters), FilteredLibraryTreeResult>{};
+  int? _subtitleCacheStructureRevision;
+  final Map<String, bool> _workSubtitleCache = <String, bool>{};
+  final Map<String, bool> _trackSubtitleCache = <String, bool>{};
 
   static const int _maxEntries = 12;
 
@@ -284,6 +314,29 @@ class LibrarySearchIndex {
   _LibrarySearchCorpus? _corpus;
   (List<LibraryNode>, int, int)? _workerKey;
   _LibrarySearchWorker? _worker;
+
+  void _syncSubtitleCacheRevision(int structureRevision) {
+    if (_subtitleCacheStructureRevision == structureRevision) return;
+    _subtitleCacheStructureRevision = structureRevision;
+    _workSubtitleCache.clear();
+    _trackSubtitleCache.clear();
+  }
+
+  Map<String, bool> workSubtitleCacheForRevision(int structureRevision) {
+    _syncSubtitleCacheRevision(structureRevision);
+    return _workSubtitleCache;
+  }
+
+  Map<String, bool> trackSubtitleCacheForRevision(int structureRevision) {
+    _syncSubtitleCacheRevision(structureRevision);
+    return _trackSubtitleCache;
+  }
+
+  void invalidateSubtitleCache() {
+    _workSubtitleCache.clear();
+    _trackSubtitleCache.clear();
+    _cache.removeWhere((key, _) => key.$2.hasSubtitle != null);
+  }
 
   Future<FilteredLibraryTreeResult> searchInBackground({
     required List<LibraryNode> tree,
@@ -311,6 +364,8 @@ class LibrarySearchIndex {
     _workerKey = null;
     _corpus = null;
     _corpusKey = null;
+    _workSubtitleCache.clear();
+    _trackSubtitleCache.clear();
     _cache.clear();
   }
 

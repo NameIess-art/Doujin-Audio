@@ -4,13 +4,14 @@
 #include <comdef.h>
 #include <winrt/base.h>
 #include <algorithm>
-#include <condition_variable>
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <sddl.h>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -198,6 +199,7 @@ struct ScheduledTasks::State {
   struct Request {
     int64_t end_ms = 0;
     int64_t resume_ms = 0;
+    std::pair<int64_t, int64_t> seconds_key{0, 0};
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result;
     std::string error;
     std::string error_code = "platform_error";
@@ -205,26 +207,34 @@ struct ScheduledTasks::State {
   };
 
   std::mutex mutex;
-  std::condition_variable changed;
   HWND window = nullptr;
   std::shared_ptr<Request> queued;
   std::vector<std::shared_ptr<Request>> pending;
+  std::optional<std::pair<int64_t, int64_t>> last_synced_seconds;
   bool stopping = false;
+  bool worker_running = false;
   bool reply_posted = false;
 
-  static void Run(const std::shared_ptr<State>& state) {
+  static void CALLBACK RunWorker(PTP_CALLBACK_INSTANCE instance, void* context) {
+    CallbackMayRunLong(instance);
+    const std::unique_ptr<std::shared_ptr<State>> owner(
+        static_cast<std::shared_ptr<State>*>(context));
+    (*owner)->RunQueuedRequests();
+  }
+
+  void RunQueuedRequests() {
     const auto apartment = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     {
       TaskSchedulerSession session;
       for (;;) {
         std::shared_ptr<Request> request;
         {
-          std::unique_lock<std::mutex> lock(state->mutex);
-          state->changed.wait(lock, [&] {
-            return state->stopping || state->queued != nullptr;
-          });
-          if (state->stopping || !state->queued) break;
-          request = std::move(state->queued);
+          std::lock_guard<std::mutex> lock(mutex);
+          if (stopping || !window || !queued) {
+            worker_running = false;
+            break;
+          }
+          request = std::move(queued);
         }
         std::string error;
         std::string error_code = "platform_error";
@@ -244,8 +254,16 @@ struct ScheduledTasks::State {
           error = e.what();
         }
         {
-          std::lock_guard<std::mutex> lock(state->mutex);
-          if (state->stopping || !state->window) break;
+          std::lock_guard<std::mutex> lock(mutex);
+          if (error.empty()) {
+            last_synced_seconds = request->seconds_key;
+          } else {
+            last_synced_seconds.reset();
+          }
+          if (stopping || !window) {
+            worker_running = false;
+            break;
+          }
           request->error = std::move(error);
           request->error_code = std::move(error_code);
           request->completed = true;
@@ -254,13 +272,13 @@ struct ScheduledTasks::State {
         bool aborted = false;
         for (int attempt = 0; attempt < 200; ++attempt) {
           {
-            std::lock_guard<std::mutex> lock(state->mutex);
-            if (state->stopping || !state->window || state->reply_posted) {
+            std::lock_guard<std::mutex> lock(mutex);
+            if (stopping || !window || reply_posted) {
               aborted = true;
               break;
             }
-            if (PostMessage(state->window, kReply, 0, 0)) {
-              state->reply_posted = true;
+            if (PostMessage(window, kReply, 0, 0)) {
+              reply_posted = true;
               posted = true;
               break;
             }
@@ -294,10 +312,8 @@ ScheduledTasks::~ScheduledTasks() {
     state_->queued.reset();
     pending.swap(state_->pending);
   }
-  state_->changed.notify_one();
-  // Task Scheduler COM calls cannot be cancelled reliably; detach the worker
-  // and complete pending channel replies on the platform thread immediately.
-  if (worker_.joinable()) worker_.detach();
+  // Task Scheduler COM calls cannot be cancelled reliably; complete pending
+  // channel replies on the platform thread immediately without blocking teardown.
   for (const auto& request : pending) {
     if (!request->result) continue;
     if (request->completed) {
@@ -318,34 +334,50 @@ ScheduledTasks::~ScheduledTasks() {
 void ScheduledTasks::Sync(const flutter::EncodableMap& payload,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>& result) {
   // Validate synchronously so malformed payloads fail immediately without
-  // spawning the worker thread or displacing a valid queued sync.
+  // scheduling a threadpool worker or displacing a valid queued sync.
   const auto end_ms = Millis(payload, "timerEndsAtWallClockMs");
   const auto resume_ms = Millis(payload, "autoResumeAtMs");
+  const std::pair<int64_t, int64_t> seconds_key{
+      end_ms > 0 ? end_ms / 1000 : -1,
+      resume_ms > 0 ? resume_ms / 1000 : -1,
+  };
   std::shared_ptr<State::Request> superseded;
   bool rejected = false;
+  bool deduplicated = false;
+  bool schedule_failed = false;
   {
     std::lock_guard<std::mutex> lock(state_->mutex);
     if (state_->stopping || !state_->window) {
       rejected = true;
+    } else if (!state_->worker_running && !state_->queued &&
+               state_->last_synced_seconds == seconds_key) {
+      deduplicated = true;
     } else {
-      if (!worker_.joinable()) {
-        auto worker_state = state_;
-        worker_ = std::thread([worker_state = std::move(worker_state)] {
-          State::Run(worker_state);
-        });
-      }
       const auto request = std::make_shared<State::Request>();
       request->end_ms = end_ms;
       request->resume_ms = resume_ms;
+      request->seconds_key = seconds_key;
       request->result = std::move(result);
-      if (state_->queued) {
-        superseded = std::move(state_->queued);
-        auto& pending = state_->pending;
-        pending.erase(std::remove(pending.begin(), pending.end(), superseded),
-                      pending.end());
+      if (!state_->worker_running) {
+        auto owner = std::make_unique<std::shared_ptr<State>>(state_);
+        if (TrySubmitThreadpoolCallback(State::RunWorker, owner.get(), nullptr)) {
+          owner.release();
+          state_->worker_running = true;
+        } else {
+          result = std::move(request->result);
+          schedule_failed = true;
+        }
       }
-      state_->queued = request;
-      state_->pending.push_back(request);
+      if (!schedule_failed) {
+        if (state_->queued) {
+          superseded = std::move(state_->queued);
+          auto& pending = state_->pending;
+          pending.erase(std::remove(pending.begin(), pending.end(), superseded),
+                        pending.end());
+        }
+        state_->queued = request;
+        state_->pending.push_back(request);
+      }
     }
   }
   if (rejected) {
@@ -353,7 +385,16 @@ void ScheduledTasks::Sync(const flutter::EncodableMap& payload,
     result.reset();
     return;
   }
-  state_->changed.notify_one();
+  if (deduplicated) {
+    ReplySuccess(*result);
+    result.reset();
+    return;
+  }
+  if (schedule_failed) {
+    result->Error("platform_error", "Unable to schedule task sync");
+    result.reset();
+    return;
+  }
   if (superseded && superseded->result) {
     ReplySuccess(*superseded->result);
     superseded->result.reset();

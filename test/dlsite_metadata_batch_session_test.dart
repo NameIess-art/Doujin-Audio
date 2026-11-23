@@ -312,4 +312,34 @@ void main() {
     expect(saved.length, 1);
     expect(saved.single.entry.title, '001');
   });
+
+  test('applyConfirmed stops applying remaining items after dispose', () async {
+    final firstApply = Completer<void>();
+    final applied = <String>[];
+    final session = DlsiteMetadataBatchSession(
+      entries: [entry('001'), entry('002')],
+      lookup: (query) async => [metadata(query.rjCode!.substring(5))],
+      apply: (item) async {
+        applied.add(item.entry.title);
+        if (item.entry.title == '001') {
+          await firstApply.future;
+        }
+      },
+    );
+
+    session.start();
+    await Future<void>.delayed(Duration.zero);
+    session.confirm(0, metadata: metadata('001'), saveCover: false);
+    session.confirm(1, metadata: metadata('002'), saveCover: false);
+
+    final pendingApply = session.applyConfirmed();
+    await Future<void>.delayed(Duration.zero);
+    expect(applied, ['001']);
+
+    session.dispose();
+    firstApply.complete();
+    await pendingApply;
+
+    expect(applied, ['001']);
+  });
 }

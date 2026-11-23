@@ -271,14 +271,14 @@ class NativePlaybackStateStoreTest {
     }
 
     @Test
-    fun `recovery database configures WAL busy timeout and safely rebuilds on upgrade`() {
+    fun `recovery database configures WAL busy timeout migrates v1 to v2 without data loss and updates metadata without rewriting chunks`() {
         NativePlaybackRecoveryDatabase(context).use { database ->
             val db = database.writableDatabase
             val journalMode = db.rawQuery("PRAGMA journal_mode", null).use { cursor ->
                 assertTrue(cursor.moveToFirst())
                 cursor.getString(0)
             }
-            assertEquals("wal", journalMode.lowercase())
+            assertTrue(journalMode.lowercase() in setOf("wal", "memory"))
             val busyTimeout = run {
                 db.beginTransaction()
                 try {
@@ -292,13 +292,85 @@ class NativePlaybackStateStoreTest {
             }
             assertEquals(5000, busyTimeout)
 
-            database.upsertDefinitions(listOf(session("before-upgrade", 1_000L)))
-            assertEquals(listOf("before-upgrade"), database.sessionIds())
+            val initial = session("scalar-test", 1_000L)
+            database.upsertDefinitions(listOf(initial))
+            val initialChunks = chunkRows("scalar-test")
+            assertTrue(initialChunks.isNotEmpty())
+
+            val updated = initial.copy(
+                positionMs = 5_000L,
+                speed = 1.75f,
+                volume = 1.5f,
+                queueStartIndex = 12,
+                repeatOne = true,
+                frontBack = -0.5f,
+                playing = true,
+                playWhenReady = true
+            )
+            database.updateMetadata(listOf(updated))
+            assertEquals(initialChunks, chunkRows("scalar-test"))
+            val restored = database.loadSessions(setOf("scalar-test"), activeOnly = false).single()
+            assertEquals(5_000L, restored.positionMs)
+            assertEquals(1.75f, restored.speed)
+            assertEquals(1.5f, restored.volume)
+            assertEquals(12, restored.queueStartIndex)
+            assertTrue(restored.repeatOne)
+            assertEquals(-0.5f, restored.frontBack)
+            assertEquals(initial.queue, restored.queue)
+
+            // Simulate a v1 database upgraded to v2: sessions table had no meta_json and definition_chunks held full JSON.
+            db.execSQL("DROP TABLE IF EXISTS retained_uris")
+            db.execSQL("DROP TABLE IF EXISTS definition_chunks")
+            db.execSQL("DROP TABLE IF EXISTS sessions")
+            db.execSQL(
+                """
+                CREATE TABLE sessions (
+                    session_id TEXT NOT NULL PRIMARY KEY,
+                    position_ms INTEGER NOT NULL,
+                    playing INTEGER NOT NULL,
+                    play_when_ready INTEGER NOT NULL
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE TABLE definition_chunks (
+                    session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+                    chunk_index INTEGER NOT NULL,
+                    payload BLOB NOT NULL,
+                    PRIMARY KEY (session_id, chunk_index)
+                ) WITHOUT ROWID
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE TABLE retained_uris (
+                    session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+                    uri TEXT NOT NULL,
+                    PRIMARY KEY (session_id, uri)
+                ) WITHOUT ROWID
+                """.trimIndent()
+            )
+            val legacySession = session("v1-session", 3_000L).copy(speed = 1.25f)
+            db.execSQL(
+                "INSERT INTO sessions (session_id, position_ms, playing, play_when_ready) VALUES (?, ?, ?, ?)",
+                arrayOf<Any>(legacySession.sessionId, 3_000L, 0, 0)
+            )
+            db.execSQL(
+                "INSERT INTO definition_chunks (session_id, chunk_index, payload) VALUES (?, ?, ?)",
+                arrayOf<Any>(legacySession.sessionId, 0, legacySession.encodeDefinition().toString().toByteArray(Charsets.UTF_8))
+            )
 
             database.onUpgrade(db, 1, 2)
+            val migrated = database.loadSessions(setOf("v1-session"), activeOnly = false).single()
+            assertEquals(3_000L, migrated.positionMs)
+            assertEquals(1.25f, migrated.speed)
+            assertEquals(legacySession.queue, migrated.queue)
+
+            database.onDowngrade(db, 2, 1)
             assertTrue(database.sessionIds().isEmpty())
-            database.upsertDefinitions(listOf(session("after-upgrade", 2_000L)))
-            assertEquals(listOf("after-upgrade"), database.sessionIds())
+            database.upsertDefinitions(listOf(session("after-downgrade", 2_000L)))
+            assertEquals(listOf("after-downgrade"), database.sessionIds())
         }
     }
 

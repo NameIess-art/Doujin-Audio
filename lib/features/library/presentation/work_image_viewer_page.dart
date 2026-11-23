@@ -89,15 +89,23 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
   int? _targetVirtualPage;
   String? _selectedCoverPath;
   bool _isSettingCover = false;
-  bool _isCurrentZoomed = false;
+  final ValueNotifier<bool> _isCurrentZoomed = ValueNotifier<bool>(false);
   late final AnimationController _fullscreenFade;
-  late final Animation<double> _viewerOpacity;
+  late final CurvedAnimation _viewerOpacity;
   late final AnimationController _chromeController;
-  late final Animation<double> _chromeOpacity;
+  late final CurvedAnimation _chromeOpacity;
   late final AnimationController _dragResetController;
   Animation<double>? _dragResetAnimation;
   final ValueNotifier<double> _dragOffset = ValueNotifier<double>(0);
   final ValueNotifier<bool> _isDraggingDismiss = ValueNotifier<bool>(false);
+  final ValueNotifier<double> _effectiveChromeOpacity = ValueNotifier<double>(
+    1.0,
+  );
+  late final Animation<double> _effectiveChromeOpacityAnimation =
+      Animation<double>.fromValueListenable(_effectiveChromeOpacity);
+  final ValueNotifier<bool> _chromeInteractive = ValueNotifier<bool>(true);
+  late final Listenable _chromeListenable;
+  late final Listenable _pagerPhysicsListenable;
   bool _dismissThresholdReached = false;
   bool _chromeVisible = true;
   bool _isDismissing = false;
@@ -116,6 +124,20 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
     if (length <= 1) return 0;
     final remainder = page % length;
     return remainder < 0 ? remainder + length : remainder;
+  }
+
+  void _syncEffectiveChromeOpacity() {
+    final visibleFraction = _chromeOpacity.value;
+    final dragFraction = (_dragOffset.value.abs() / 260.0).clamp(0.0, 1.0);
+    final dragChromeOpacity = (1.0 - dragFraction * 1.8).clamp(0.0, 1.0);
+    final nextOpacity = (visibleFraction * dragChromeOpacity).clamp(0.0, 1.0);
+    if (_effectiveChromeOpacity.value != nextOpacity) {
+      _effectiveChromeOpacity.value = nextOpacity;
+    }
+    final nextInteractive = _chromeVisible && nextOpacity >= 0.05;
+    if (_chromeInteractive.value != nextInteractive) {
+      _chromeInteractive.value = nextInteractive;
+    }
   }
 
   @override
@@ -139,6 +161,12 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
       parent: _chromeController,
       curve: kAppSpringCurve,
     );
+    _chromeListenable = Listenable.merge([_chromeOpacity, _dragOffset])
+      ..addListener(_syncEffectiveChromeOpacity);
+    _pagerPhysicsListenable = Listenable.merge([
+      _isCurrentZoomed,
+      _isDraggingDismiss,
+    ]);
     _dragResetController =
         AnimationController(vsync: this, duration: kAppMotionStandard)
           ..addListener(() {
@@ -168,7 +196,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
       _currentIndex = _currentIndex.clamp(0, count == 0 ? 0 : count - 1);
       _currentPage = _pageForIndex(_currentIndex, count);
       _targetVirtualPage = null;
-      _isCurrentZoomed = false;
+      _isCurrentZoomed.value = false;
       if (_pageController.hasClients && count > 0) {
         _pageController.jumpToPage(_currentPage);
       }
@@ -179,12 +207,18 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
   void dispose() {
     UiInteractionCoordinator.instance.cancelInteraction(_dragDismissInteraction);
     WidgetsBinding.instance.removeObserver(this);
+    _chromeListenable.removeListener(_syncEffectiveChromeOpacity);
     _pageController.dispose();
+    _viewerOpacity.dispose();
+    _chromeOpacity.dispose();
     _fullscreenFade.dispose();
     _chromeController.dispose();
     _dragResetController.dispose();
     _dragOffset.dispose();
     _isDraggingDismiss.dispose();
+    _isCurrentZoomed.dispose();
+    _effectiveChromeOpacity.dispose();
+    _chromeInteractive.dispose();
     super.dispose();
   }
 
@@ -202,18 +236,18 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
     } else {
       _chromeController.reverse();
     }
-    setState(() {});
+    _syncEffectiveChromeOpacity();
   }
 
   void _handleDragDismissStart(DragStartDetails details) {
-    if (_isCurrentZoomed || _isDismissing) return;
+    if (_isCurrentZoomed.value || _isDismissing) return;
     if (!Navigator.of(context).canPop()) return;
     _dragResetController.stop();
     UiInteractionCoordinator.instance.beginInteraction(_dragDismissInteraction);
   }
 
   void _handleDragDismissUpdate(DragUpdateDetails details) {
-    if (_isCurrentZoomed || _isDismissing) return;
+    if (_isCurrentZoomed.value || _isDismissing) return;
     if (!Navigator.of(context).canPop()) return;
     final nextOffset = _dragOffset.value + details.delta.dy;
     final crossed = nextOffset.abs() >= _dismissThreshold;
@@ -230,7 +264,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
 
   void _handleDragDismissEnd(DragEndDetails details) {
     UiInteractionCoordinator.instance.endInteraction(_dragDismissInteraction);
-    if (_isCurrentZoomed || _isDismissing) {
+    if (_isCurrentZoomed.value || _isDismissing) {
       _animateDragBack();
       return;
     }
@@ -255,12 +289,33 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
             : (velocity == 0 ? 1.0 : velocity.sign);
         final travel = MediaQuery.sizeOf(context).height * 0.45;
         final targetOffset = direction * math.max(offset.abs() + 120.0, travel);
+        const dismissDuration = Duration(milliseconds: 160);
         _dragResetAnimation = Tween<double>(
           begin: offset,
           end: targetOffset,
         ).chain(CurveTween(curve: Curves.easeOutCubic)).animate(_dragResetController);
-        _dragResetController.duration = kAppMotionStandard;
-        _dragResetController.forward(from: 0);
+        _dragResetController.duration = dismissDuration;
+        _fullscreenFade.duration = dismissDuration;
+        // Finish the vertical fly-off and fade to transparent before popping so
+        // the route's horizontal pop transition does not visibly conflict.
+        unawaited(
+          Future.wait<void>([
+            _dragResetController.forward(from: 0).orCancel,
+            _fullscreenFade.reverse().orCancel,
+          ]).then(
+            (_) async {
+              if (!mounted) return;
+              final popped = await Navigator.of(context).maybePop();
+              if (!popped && mounted) {
+                _isDismissing = false;
+                _fullscreenFade.value = 1;
+                _animateDragBack();
+              }
+            },
+            onError: (_) {},
+          ),
+        );
+        return;
       }
       unawaited(Navigator.of(context).maybePop());
       return;
@@ -306,11 +361,11 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
     // Intermediate pages must not replace the target of rapid button presses.
     if (_targetVirtualPage != null && page != _targetVirtualPage) return;
     final index = _indexForPage(page, count);
-    if (_currentPage != page || _currentIndex != index || _isCurrentZoomed) {
+    _isCurrentZoomed.value = false;
+    if (_currentPage != page || _currentIndex != index) {
       setState(() {
         _currentPage = page;
         _currentIndex = index;
-        _isCurrentZoomed = false;
       });
     }
   }
@@ -328,10 +383,10 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
     final basePage = _targetVirtualPage ?? current.round();
     final targetPage = basePage + delta;
     _targetVirtualPage = targetPage;
+    _isCurrentZoomed.value = false;
     setState(() {
       _currentPage = targetPage;
       _currentIndex = _indexForPage(targetPage, widget.images.length);
-      _isCurrentZoomed = false;
     });
     final duration = MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
@@ -411,7 +466,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
   void _handlePointerSignal(PointerSignalEvent event) {
     if (defaultTargetPlatform != TargetPlatform.windows ||
         event is! PointerScrollEvent ||
-        _isCurrentZoomed ||
+        _isCurrentZoomed.value ||
         widget.images.length <= 1) {
       return;
     }
@@ -420,7 +475,9 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
         : event.scrollDelta.dx;
     if (delta == 0) return;
     GestureBinding.instance.pointerSignalResolver.register(event, (_) {
-      if (!mounted || _isCurrentZoomed || widget.images.length <= 1) return;
+      if (!mounted || _isCurrentZoomed.value || widget.images.length <= 1) {
+        return;
+      }
       final now = DateTime.now();
       if (now.difference(_lastWheelTurnAt) <
           const Duration(milliseconds: 160)) {
@@ -460,6 +517,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
     return RetryingFileImage(
       key: ValueKey<String>('local_work_image_${imagePath}_$retrySeed'),
       deferLoadDuringInteraction: true,
+      retainInImageCache: false,
       path: imagePath,
       fit: BoxFit.contain,
       cacheWidth: maxCacheWidth,
@@ -673,96 +731,88 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
     final maxCacheWidth = (mediaSize.longestSide * dpr * 1.5)
         .round()
         .clamp(1600, 2560);
-    final chromeListenable = Listenable.merge([_chromeOpacity, _dragOffset]);
 
     Widget wrapChrome(Widget child, {double slideOffsetY = 0}) {
-      return AnimatedBuilder(
-        animation: chromeListenable,
-        child: child,
-        builder: (context, inner) {
-          final visibleFraction = _chromeOpacity.value;
-          final dragFraction = (_dragOffset.value.abs() / 260.0).clamp(0.0, 1.0);
-          final dragChromeOpacity = (1.0 - dragFraction * 1.8).clamp(0.0, 1.0);
-          final effectiveOpacity = (visibleFraction * dragChromeOpacity).clamp(
-            0.0,
-            1.0,
-          );
-          final dy = slideOffsetY * (1.0 - visibleFraction);
-          Widget result = inner!;
-          if (dy != 0) {
-            result = Transform.translate(offset: Offset(0, dy), child: result);
-          }
-          if (effectiveOpacity < 1.0) {
-            result = Opacity(opacity: effectiveOpacity, child: result);
-          }
-          return IgnorePointer(
-            ignoring: !_chromeVisible || effectiveOpacity < 0.05,
-            child: result,
-          );
-        },
-      );
-    }
-
-    final pagedViewer = GestureDetector(
-      behavior: HitTestBehavior.translucent,
-      onVerticalDragStart: _isCurrentZoomed ? null : _handleDragDismissStart,
-      onVerticalDragUpdate: _isCurrentZoomed ? null : _handleDragDismissUpdate,
-      onVerticalDragEnd: _isCurrentZoomed ? null : _handleDragDismissEnd,
-      onVerticalDragCancel: _isCurrentZoomed ? null : _handleDragDismissCancel,
-      child: AppPageContentTransition(
-        child: ScrollConfiguration(
-          behavior: ScrollConfiguration.of(context).copyWith(
-            dragDevices: {
-              PointerDeviceKind.touch,
-              PointerDeviceKind.mouse,
-              PointerDeviceKind.trackpad,
-              PointerDeviceKind.stylus,
-            },
-          ),
-          child: NotificationListener<ScrollNotification>(
-            onNotification: _handlePageScroll,
-            child: ValueListenableBuilder<bool>(
-              valueListenable: _isDraggingDismiss,
-              builder: (context, isDraggingDismiss, child) => PageView.builder(
-                key: const ValueKey<String>('work_image_viewport'),
-                clipBehavior: Clip.none,
-                controller: _pageController,
-                physics: _isCurrentZoomed || isDraggingDismiss
-                    ? const NeverScrollableScrollPhysics()
-                    : (widget.images.length > 1
-                          ? const PageScrollPhysics()
-                          : const NeverScrollableScrollPhysics()),
-                onPageChanged: _onPageChanged,
-                itemCount: widget.images.length > 1
-                    ? null
-                    : widget.images.length,
-                itemBuilder: (context, page) {
-                  final index = _indexForPage(page, widget.images.length);
-                  final img = widget.images[index];
-                  return Listener(
-                    behavior: HitTestBehavior.opaque,
-                    onPointerSignal: _handlePointerSignal,
-                    child: _WorkImageViewerItem(
-                      key: ValueKey<String>('image_item_${img.path}_$page'),
-                      isActive: widget.images.length > 1
-                          ? page == _currentPage
-                          : index == _currentIndex,
-                      onToggleChrome: _toggleChrome,
-                      onZoomChanged: (zoomed) {
-                        setState(() => _isCurrentZoomed = zoomed);
-                      },
-                      child: _buildImage(
-                        img,
-                        cs,
-                        maxCacheWidth: maxCacheWidth,
-                      ),
-                    ),
-                  );
-                },
-              ),
+      return ValueListenableBuilder<bool>(
+        valueListenable: _chromeInteractive,
+        child: FadeTransition(
+          opacity: _effectiveChromeOpacityAnimation,
+          child: AnimatedBuilder(
+            animation: _chromeOpacity,
+            child: child,
+            builder: (context, inner) => Transform.translate(
+              offset: Offset(0, slideOffsetY * (1.0 - _chromeOpacity.value)),
+              child: inner,
             ),
           ),
         ),
+        builder: (context, interactive, inner) =>
+            IgnorePointer(ignoring: !interactive, child: inner),
+      );
+    }
+
+    final pageContent = AppPageContentTransition(
+      child: ScrollConfiguration(
+        behavior: ScrollConfiguration.of(context).copyWith(
+          dragDevices: {
+            PointerDeviceKind.touch,
+            PointerDeviceKind.mouse,
+            PointerDeviceKind.trackpad,
+            PointerDeviceKind.stylus,
+          },
+        ),
+        child: NotificationListener<ScrollNotification>(
+          onNotification: _handlePageScroll,
+          child: ListenableBuilder(
+            listenable: _pagerPhysicsListenable,
+            builder: (context, _) => PageView.builder(
+              key: const ValueKey<String>('work_image_viewport'),
+              clipBehavior: Clip.none,
+              controller: _pageController,
+              physics: _isCurrentZoomed.value || _isDraggingDismiss.value
+                  ? const NeverScrollableScrollPhysics()
+                  : (widget.images.length > 1
+                        ? const PageScrollPhysics()
+                        : const NeverScrollableScrollPhysics()),
+              onPageChanged: _onPageChanged,
+              itemCount: widget.images.length > 1 ? null : widget.images.length,
+              itemBuilder: (context, page) {
+                final index = _indexForPage(page, widget.images.length);
+                final img = widget.images[index];
+                return Listener(
+                  behavior: HitTestBehavior.opaque,
+                  onPointerSignal: _handlePointerSignal,
+                  child: _WorkImageViewerItem(
+                    key: ValueKey<String>('image_item_${img.path}_$page'),
+                    isActive: widget.images.length > 1
+                        ? page == _currentPage
+                        : index == _currentIndex,
+                    onToggleChrome: _toggleChrome,
+                    onZoomChanged: (zoomed) => _isCurrentZoomed.value = zoomed,
+                    child: _buildImage(
+                      img,
+                      cs,
+                      maxCacheWidth: maxCacheWidth,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final pagedViewer = ValueListenableBuilder<bool>(
+      valueListenable: _isCurrentZoomed,
+      child: pageContent,
+      builder: (context, isZoomed, child) => GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onVerticalDragStart: isZoomed ? null : _handleDragDismissStart,
+        onVerticalDragUpdate: isZoomed ? null : _handleDragDismissUpdate,
+        onVerticalDragEnd: isZoomed ? null : _handleDragDismissEnd,
+        onVerticalDragCancel: isZoomed ? null : _handleDragDismissCancel,
+        child: child,
       ),
     );
 
@@ -774,25 +824,32 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
         child: Stack(
           children: [
             Positioned.fill(
-              child: ValueListenableBuilder<double>(
-                valueListenable: _dragOffset,
-                builder: (context, dragOffset, _) {
-                  final dragFraction = (dragOffset.abs() / 260.0).clamp(
-                    0.0,
-                    1.0,
-                  );
-                  final backdropOpacity = (1.0 - 0.65 * dragFraction).clamp(
-                    0.0,
-                    1.0,
-                  );
-                  return ColoredBox(
-                    color: cs.surface.withValues(alpha: backdropOpacity),
-                  );
-                },
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _toggleChrome,
+                child: ValueListenableBuilder<double>(
+                  valueListenable: _dragOffset,
+                  builder: (context, dragOffset, _) {
+                    final dragFraction = (dragOffset.abs() / 260.0).clamp(
+                      0.0,
+                      1.0,
+                    );
+                    final backdropOpacity = (1.0 - 0.65 * dragFraction).clamp(
+                      0.0,
+                      1.0,
+                    );
+                    return ColoredBox(
+                      color: cs.surface.withValues(alpha: backdropOpacity),
+                    );
+                  },
+                ),
               ),
             ),
-            AnimatedBuilder(
-              animation: _chromeOpacity,
+            // Keep the viewport bounds fixed across chrome toggles so hiding or
+            // showing controls never relayouts the image or shifts zoomed offsets.
+            Positioned.fill(
+              top: imageTop,
+              bottom: imageBottom,
               child: ValueListenableBuilder<double>(
                 valueListenable: _dragOffset,
                 child: pagedViewer,
@@ -807,11 +864,6 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
                     child: Transform.scale(scale: viewportScale, child: child),
                   );
                 },
-              ),
-              builder: (context, child) => Positioned.fill(
-                top: imageTop * _chromeOpacity.value,
-                bottom: imageBottom * _chromeOpacity.value,
-                child: child!,
               ),
             ),
             // Floating Top Page Header
@@ -1087,6 +1139,7 @@ class _RemoteWorkImageState extends ConsumerState<_RemoteWorkImage> {
     return AsyncRemoteCoverImage(
       key: ValueKey<String>('remote_work_image_${widget.url}_$_retryCount'),
       deferLoadDuringInteraction: true,
+      retainInImageCache: false,
       url: widget.url,
       future: _future!,
       initialPath: _retryCount == 0 ? resolved : null,

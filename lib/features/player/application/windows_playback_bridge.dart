@@ -246,7 +246,6 @@ class WindowsPlaybackBridge
     }
     if (session.videoController == null) {
       final generation = session.generation;
-      final position = session.position;
       session.videoController = VideoController(
         player,
         configuration: _videoControllerConfiguration,
@@ -259,6 +258,7 @@ class WindowsPlaybackBridge
           }
           final platform = player.platform;
           if (platform == null) return;
+          final position = current.position;
           // Changing from null output to the render context may emit an unload/EOF.
           // Treat it as source preparation, preserving the user's playback intent.
           current.opening = true;
@@ -477,6 +477,8 @@ class WindowsPlaybackBridge
         error.toString(),
         code: NativeErrorCode.invalidArgument,
       );
+    } on _WindowsBridgeFailure catch (error) {
+      return NativeFailure<T>(error.message, code: error.code);
     } catch (error) {
       return NativeFailure<T>(
         error.toString(),
@@ -514,7 +516,8 @@ class WindowsPlaybackBridge
         } catch (error) {
           if (markPlaybackError &&
               _isCurrent(session) &&
-              error is! ArgumentError) {
+              error is! ArgumentError &&
+              error is! _WindowsBridgeFailure) {
             session.error = error.toString();
             _emit(session);
           }
@@ -545,6 +548,7 @@ class WindowsPlaybackBridge
     List<Uri>? candidateUris,
     bool deferPlayerCreation = false,
     bool isTemporary = false,
+    bool reuseExistingQueue = false,
   }) {
     try {
       if (audioEffects != null) {
@@ -554,6 +558,97 @@ class WindowsPlaybackBridge
         throw ArgumentError('sessionId and uri are required');
       }
       if (_disposed) throw ArgumentError('Playback bridge was disposed');
+      if (reuseExistingQueue) {
+        if (!_sessions.containsKey(sessionId)) {
+          return Future.value(
+            const NativeFailure(
+              'Session does not have an existing queue to reuse',
+              code: nativePlaybackQueueResyncRequiredCode,
+            ),
+          );
+        }
+        return _change(
+          sessionId,
+          (session) async {
+            final player = session.player;
+            final index = queueStartIndex;
+            if (deferPlayerCreation ||
+                player == null ||
+                session.queue.isEmpty ||
+                index == null ||
+                index < 0 ||
+                index >= session.queue.length ||
+                session.error != null ||
+                session.completed ||
+                session.nativeQueueLimited ||
+                session.retainedCurrentIndex != null ||
+                session.nativeQueueIndices.length != session.queue.length ||
+                session.shuffle != shuffle ||
+                (!shuffle && !session.nativeOrderMatchesLogical)) {
+              throw const _WindowsBridgeFailure(
+                nativePlaybackQueueResyncRequiredCode,
+                'Existing session queue cannot be reused',
+              );
+            }
+            final targetItem = session.queue[index];
+            if (targetItem['uri'] != uri.toString() ||
+                (path != null && targetItem['path'] != path)) {
+              throw const _WindowsBridgeFailure(
+                nativePlaybackQueueResyncRequiredCode,
+                'Existing session queue does not match requested track',
+              );
+            }
+            final clampedPosition = startPosition < Duration.zero
+                ? Duration.zero
+                : startPosition;
+            final sameTrack =
+                _WindowsPlaybackSession._queueKey(session.queue[session.index]) ==
+                _WindowsPlaybackSession._queueKey(targetItem);
+            if (!sameTrack && clampedPosition != Duration.zero) {
+              throw const _WindowsBridgeFailure(
+                nativePlaybackQueueResyncRequiredCode,
+                'Reusing existing queue requires zero start position on track switch',
+              );
+            }
+            final generation = ++session.generation;
+            session.wantsPlay = autoPlay;
+            session.cancelRetry();
+            session.cancelIdleRelease();
+            _focus(sessionId);
+            session.index = index;
+            session.volume = _finite(volume, 0, 3);
+            session.speed = _finite(speed, 0.25, 3);
+            session.effects =
+                audioEffects ??
+                NativeAudioEffects(
+                  state: AudioEffectsState.flat,
+                  channelSwapEnabled: false,
+                );
+            session.repeatOne = repeatOne;
+            session.stopAfterCurrentTrack = false;
+            session.repeatAll = repeatAll;
+            session.shuffle = shuffle;
+            session.position = clampedPosition;
+            session.error = null;
+            session.completed = false;
+            session.retryAttempt = 0;
+            session.retryStartedAt = null;
+            session.retainedCurrentIndex = null;
+            session.externalQueueRevision = 0;
+            session.isTemporary = isTemporary;
+            if (!sameTrack) session.duration = null;
+            if (sameTrack && clampedPosition > Duration.zero) {
+              await _seekExistingTrack(session, player, generation);
+            } else {
+              await _jump(session, player);
+            }
+            if (!session.wantsPlay && !_shouldRetainPausedPlayer(session)) {
+              _scheduleIdleRelease(session);
+            }
+          },
+          markPlaybackError: false,
+        );
+      }
       final items = queue?.isNotEmpty == true
           ? queue!
           : <Map<String, Object?>>[
@@ -628,27 +723,42 @@ class WindowsPlaybackBridge
         session.retainedCurrentIndex = null;
         session.externalQueueRevision = 0;
         session.isTemporary = isTemporary;
-        if (!deferPlayerCreation &&
+        final player = session.player;
+        final canJump =
+            !deferPlayerCreation &&
+            player != null &&
+            !hadError &&
+            !wasCompleted &&
+            !wasNativeQueueLimited &&
+            !hadRetainedCurrent &&
+            sameQueueStructure &&
+            session.position == Duration.zero &&
+            session.nativeQueueIndices.length == session.queue.length &&
+            session.shuffle == wasShuffle &&
+            (session.shuffle || session.nativeOrderMatchesLogical);
+        if (canJump) {
+          if (!sameTrack) session.duration = null;
+          await _jump(session, player);
+          if (!session.wantsPlay && !_shouldRetainPausedPlayer(session)) {
+            _scheduleIdleRelease(session);
+          }
+        } else if (!deferPlayerCreation &&
+            !session.wantsPlay &&
+            player != null &&
+            !hadError &&
+            !wasCompleted &&
+            !wasNativeQueueLimited &&
+            !hadRetainedCurrent &&
+            sameTrack &&
+            sameQueueStructure) {
+          await _seekExistingTrack(session, player, generation);
+          if (!_shouldRetainPausedPlayer(session)) {
+            _scheduleIdleRelease(session);
+          }
+        } else if (!deferPlayerCreation &&
             (session.wantsPlay || session.videoController != null)) {
           if (!sameTrack) session.duration = null;
-          final player = session.player;
-          final canJump =
-              player != null &&
-              !hadError &&
-              !wasCompleted &&
-              !wasNativeQueueLimited &&
-              !hadRetainedCurrent &&
-              sameQueueStructure &&
-              session.wantsPlay &&
-              session.position == Duration.zero &&
-              session.nativeQueueIndices.length == session.queue.length &&
-              session.shuffle == wasShuffle &&
-              (session.shuffle || session.nativeOrderMatchesLogical);
-          if (canJump) {
-            await _jump(session, player);
-          } else {
-            await _open(session);
-          }
+          await _open(session);
         } else {
           await session.releasePlayer();
           if (!sameTrack) session.duration = null;
@@ -702,6 +812,44 @@ class WindowsPlaybackBridge
     return true;
   }
 
+  Future<void> _seekExistingTrack(
+    _WindowsPlaybackSession session,
+    Player player,
+    int generation,
+  ) async {
+    session.cancelIdleRelease();
+    session.error = null;
+    session.pendingStart = null;
+    session.lastProgressPosition = null;
+    session.lastProgressElapsed = null;
+    if (!session.wantsPlay && player.state.playing) {
+      await player.pause();
+      if (!_isCurrent(session) || generation != session.generation) {
+        throw ArgumentError('Playback preparation was superseded');
+      }
+    }
+    await _applyMode(session, force: true);
+    await _applyEffects(session, session.effects);
+    await player.setVolume(session.volume * session.fade * 100);
+    await player.setRate(session.temporarySpeed ?? session.speed);
+    if (!_isCurrent(session) || generation != session.generation) {
+      throw ArgumentError('Playback preparation was superseded');
+    }
+    final target = session.clampPosition(session.position);
+    await player.seek(session.absolutePosition(target));
+    session.position = target;
+    session.seekRevision++;
+    if (!_isCurrent(session) || generation != session.generation) {
+      throw ArgumentError('Playback preparation was superseded');
+    }
+    if (session.wantsPlay && !player.state.playing) {
+      await player.play();
+      if (!_isCurrent(session) || generation != session.generation) {
+        throw ArgumentError('Playback preparation was superseded');
+      }
+    }
+  }
+
   Future<void> _jump(_WindowsPlaybackSession session, Player player) async {
     session.cancelIdleRelease();
     session.opening = true;
@@ -729,6 +877,12 @@ class WindowsPlaybackBridge
               physicalIndex >= player.state.playlist.medias.length)) {
         fallbackToOpen = true;
       } else {
+        if (!session.wantsPlay && player.state.playing) {
+          await player.pause();
+          if (!_isCurrent(session) || generation != session.generation) {
+            throw ArgumentError('Playback preparation was superseded');
+          }
+        }
         await _applyMode(session, force: true);
         await _applyEffects(session, session.effects);
         await player.setVolume(session.volume * session.fade * 100);
@@ -740,12 +894,22 @@ class WindowsPlaybackBridge
         if (!_isCurrent(session) || generation != session.generation) {
           throw ArgumentError('Playback preparation was superseded');
         }
+        if (session.wantsPlay && !player.state.playing) {
+          await player.play();
+          if (!_isCurrent(session) || generation != session.generation) {
+            throw ArgumentError('Playback preparation was superseded');
+          }
+        }
       }
     } finally {
       session.opening = false;
     }
     if (fallbackToOpen) {
-      await _open(session);
+      if (session.wantsPlay || session.videoController != null) {
+        await _open(session);
+      } else {
+        await session.releasePlayer();
+      }
     }
   }
 
@@ -895,10 +1059,22 @@ class WindowsPlaybackBridge
         }
         final generation = session.generation;
         final preReadQueue = session.queue;
-        final preReadIndexFuture = session.currentNativeEntryId(player).then<int?>(
-          (id) => id == null ? null : session.nativeQueueIndices[id],
-          onError: (Object _, StackTrace _) => null,
-        );
+        final preReadQueueRevision = session.queueRevision;
+        Object? preReadError;
+        StackTrace? preReadStackTrace;
+        final preReadFuture = session
+            .currentNativeEntryId(player)
+            .then<({int? id, int? index})>(
+              (id) => (
+                id: id,
+                index: id == null ? null : session.nativeQueueIndices[id],
+              ),
+              onError: (Object error, StackTrace stackTrace) {
+                preReadError = error;
+                preReadStackTrace = stackTrace;
+                return (id: null, index: null);
+              },
+            );
         unawaited(
           _change(session.id, (current) async {
             if (!_isCurrent(current) ||
@@ -908,7 +1084,17 @@ class WindowsPlaybackBridge
               return;
             }
             if (identical(current.player, player)) {
-              final id = await current.currentNativeEntryId(player);
+              final int? id;
+              if (identical(current.queue, preReadQueue) &&
+                  current.queueRevision == preReadQueueRevision) {
+                final preRead = await preReadFuture;
+                if (preReadError != null) {
+                  Error.throwWithStackTrace(preReadError!, preReadStackTrace!);
+                }
+                id = preRead.id;
+              } else {
+                id = await current.currentNativeEntryId(player);
+              }
               if (!_isCurrent(current) ||
                   generation != current.generation ||
                   !identical(current.player, player) ||
@@ -955,7 +1141,7 @@ class WindowsPlaybackBridge
             } else if (current.player == null &&
                 identical(current.queue, preReadQueue) &&
                 current.retainedCurrentIndex != null) {
-              final preIndex = await preReadIndexFuture;
+              final preIndex = (await preReadFuture).index;
               if (preIndex == null ||
                   !_isCurrent(current) ||
                   generation != current.generation ||
@@ -1333,6 +1519,7 @@ class WindowsPlaybackBridge
     Duration position,
   ) => _change(sessionId, (session) async {
     final target = session.clampPosition(position);
+    session.completed = false;
     if (session.pendingStart != null) {
       session.pendingStart = target;
     } else {
@@ -1610,6 +1797,16 @@ class WindowsPlaybackBridge
       await _progress.close();
     }
   }
+}
+
+final class _WindowsBridgeFailure implements Exception {
+  const _WindowsBridgeFailure(this.code, this.message);
+
+  final String code;
+  final String message;
+
+  @override
+  String toString() => message;
 }
 
 double _finite(double value, double min, double max) {

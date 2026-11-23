@@ -156,8 +156,10 @@ class _MarqueeTextState extends State<MarqueeText>
   Duration? _previousTick;
   bool _atEnd = false;
   bool _canAnimate = false;
+  bool _pausedHoverScope = false;
   bool _pointerDown = false;
   bool _userScrolling = false;
+  bool _needsDependencySync = false;
   String? _measuredText;
   TextStyle? _measuredStyle;
   TextDirection? _measuredDirection;
@@ -190,16 +192,34 @@ class _MarqueeTextState extends State<MarqueeText>
         controller.position.maxScrollExtent > 0;
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
+  void _syncDependencies() {
     if (_usesStaticAndroidText) {
       _canAnimate = false;
+      _pausedHoverScope = false;
+      _tickerMode?.removeListener(_syncTicker);
+      _tickerMode = null;
+      _scrollActivity?.removeListener(_handleScrollActivity);
+      _scrollActivity = null;
+      _cancelPauseTimer();
+      _ticker?.stop();
       return;
     }
-    _canAnimate =
-        !MediaQuery.disableAnimationsOf(context) &&
-        !MarqueePauseScope.isPausedOf(context);
+    final pauseScope = context
+        .dependOnInheritedWidgetOfExactType<_MarqueePauseScope>();
+    final isPaused = pauseScope?.isPaused ?? false;
+    final hoverToRun = pauseScope?.hoverToRun ?? false;
+    _pausedHoverScope = isPaused && hoverToRun;
+    if (_pausedHoverScope) {
+      _canAnimate = false;
+      _tickerMode?.removeListener(_syncTicker);
+      _tickerMode = null;
+      _scrollActivity?.removeListener(_handleScrollActivity);
+      _scrollActivity = null;
+      _cancelPauseTimer();
+      _ticker?.stop();
+      return;
+    }
+    _canAnimate = !MediaQuery.disableAnimationsOf(context) && !isPaused;
     final tickerMode = TickerMode.getValuesNotifier(context);
     if (!identical(tickerMode, _tickerMode)) {
       _tickerMode?.removeListener(_syncTicker);
@@ -213,6 +233,13 @@ class _MarqueeTextState extends State<MarqueeText>
       _scrollActivity?.addListener(_handleScrollActivity);
     }
     _handleScrollActivity();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _needsDependencySync = false;
+    _syncDependencies();
   }
 
   void _handleScrollActivity() {
@@ -237,6 +264,14 @@ class _MarqueeTextState extends State<MarqueeText>
   @override
   void didUpdateWidget(MarqueeText oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.animateOnAndroid != widget.animateOnAndroid) {
+      if (_usesStaticAndroidText) {
+        _needsDependencySync = false;
+        _syncDependencies();
+      } else {
+        _needsDependencySync = true;
+      }
+    }
     if (oldWidget.text != widget.text) {
       _cancelPauseTimer();
       _ticker?.stop();
@@ -273,6 +308,7 @@ class _MarqueeTextState extends State<MarqueeText>
   }
 
   void _syncTicker() {
+    if (!mounted) return;
     final shouldRun = _shouldRun;
     if (shouldRun && !(_ticker?.isActive ?? false) && _pauseTimer == null) {
       _previousTick = null;
@@ -330,18 +366,39 @@ class _MarqueeTextState extends State<MarqueeText>
     }
   }
 
+  static TextStyle _metricsStyle(TextStyle style) => TextStyle(
+    fontFamily: style.fontFamily,
+    fontFamilyFallback: style.fontFamilyFallback,
+    fontSize: style.fontSize,
+    fontWeight: style.fontWeight,
+    fontStyle: style.fontStyle,
+    letterSpacing: style.letterSpacing,
+    wordSpacing: style.wordSpacing,
+    height: style.height,
+    leadingDistribution: style.leadingDistribution,
+    locale: style.locale,
+    fontFeatures: style.fontFeatures,
+    fontVariations: style.fontVariations,
+    textBaseline: style.textBaseline,
+  );
+
   double _measureTextWidth(BuildContext context) {
     final direction = Directionality.of(context);
     final scaler = MediaQuery.textScalerOf(context);
+    final defaultStyle = DefaultTextStyle.of(context).style;
+    final effectiveStyle = widget.style == null
+        ? defaultStyle
+        : defaultStyle.merge(widget.style);
+    final metricsStyle = _metricsStyle(effectiveStyle);
     if (_measuredWidth != null &&
         _measuredText == widget.text &&
-        _measuredStyle == widget.style &&
+        _measuredStyle == metricsStyle &&
         _measuredDirection == direction &&
         _measuredScaler == scaler) {
       return _measuredWidth!;
     }
     final painter = TextPainter(
-      text: TextSpan(text: widget.text, style: widget.style),
+      text: TextSpan(text: widget.text, style: effectiveStyle),
       textDirection: direction,
       textScaler: scaler,
       maxLines: 1,
@@ -349,7 +406,7 @@ class _MarqueeTextState extends State<MarqueeText>
     final width = painter.width;
     painter.dispose();
     _measuredText = widget.text;
-    _measuredStyle = widget.style;
+    _measuredStyle = metricsStyle;
     _measuredDirection = direction;
     _measuredScaler = scaler;
     _measuredWidth = width;
@@ -368,7 +425,11 @@ class _MarqueeTextState extends State<MarqueeText>
 
   @override
   Widget build(BuildContext context) {
-    if (_usesStaticAndroidText) {
+    if (_needsDependencySync) {
+      _needsDependencySync = false;
+      _syncDependencies();
+    }
+    if (_usesStaticAndroidText || _pausedHoverScope) {
       return widget.child ??
           Text(
             widget.text,
@@ -421,6 +482,7 @@ class _MarqueeTextState extends State<MarqueeText>
               },
               child: HorizontalEdgeFadeScroll(
                 controller: _ensureController(),
+                absorbScrollNotifications: true,
                 builder: (controller) =>
                     NotificationListener<ScrollNotification>(
                       onNotification: (notification) {

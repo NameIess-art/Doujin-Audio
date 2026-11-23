@@ -1,6 +1,7 @@
 package com.doujin.audio
 
 import com.doujin.audio.channel.WindowBrightnessLeaseController
+import com.doujin.audio.channel.readSystemScreenBrightnessFraction
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -51,5 +52,14 @@ class WindowBrightnessLeaseControllerTest {
         assertTrue(controller.set(second.token, 0.6f))
         assertTrue(controller.end(second.token))
         assertEquals(0.4f, windowBrightness, 0.001f)
+    }
+
+    @Test
+    fun `system brightness fraction respects OEM max brightness and falls back to 255`() {
+        assertEquals(0.5f, readSystemScreenBrightnessFraction(2048, 4096), 0.001f)
+        assertEquals(1.0f, readSystemScreenBrightnessFraction(4095, 4095), 0.001f)
+        assertEquals(128f / 255f, readSystemScreenBrightnessFraction(128, null), 0.001f)
+        assertEquals(128f / 255f, readSystemScreenBrightnessFraction(128, 0), 0.001f)
+        assertEquals(0.01f, readSystemScreenBrightnessFraction(0, 4095), 0.001f)
     }
 }

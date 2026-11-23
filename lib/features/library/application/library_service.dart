@@ -18,37 +18,29 @@ class LibraryService {
 
   static Map<String, T> createPathIndex<T>([Map<String, T>? values]) =>
       HashMap<String, T>(
-        equals: (first, second) =>
-            first == second ||
-            PathMatcher.equivalenceKey(first) ==
-                PathMatcher.equivalenceKey(second),
-        hashCode: (value) => PathMatcher.equivalenceKey(value).hashCode,
+        equals: PathMatcher.equivalenceEquals,
+        hashCode: PathMatcher.equivalenceHashCode,
       )..addAll(values ?? <String, T>{});
 
   static Set<String> createPathSet([Iterable<String>? values]) =>
       HashSet<String>(
-        equals: (first, second) =>
-            first == second ||
-            PathMatcher.equivalenceKey(first) ==
-                PathMatcher.equivalenceKey(second),
-        hashCode: (value) => PathMatcher.equivalenceKey(value).hashCode,
+        equals: PathMatcher.equivalenceEquals,
+        hashCode: PathMatcher.equivalenceHashCode,
       )..addAll(values ?? const <String>[]);
 
   List<MusicTrack> library = <MusicTrack>[];
   Map<String, MusicTrack> libraryByPath = createPathIndex<MusicTrack>();
 
   /// Maps each track path to its index in [library].  Kept in sync by
-  /// [_rebuildLibraryIndexes] so that [addOrReplaceTracks] can update
-  /// existing entries in O(1) instead of O(n).
+  /// [rebuildLibraryIndexes] and incremental mutations so [addOrReplaceTracks]
+  /// can update existing entries in O(1) instead of O(n).
   Map<String, int> libraryIndexByPath = createPathIndex<int>();
   Map<String, List<MusicTrack>> tracksByGroup = <String, List<MusicTrack>>{};
   final List<String> groupOrder = <String>[];
   final Set<String> groupOrderSet = <String>{};
   final _watchedFolders = LinkedHashSet<String>(
-    equals: (first, second) =>
-        first == second ||
-        PathMatcher.equivalenceKey(first) == PathMatcher.equivalenceKey(second),
-    hashCode: (value) => PathMatcher.equivalenceKey(value).hashCode,
+    equals: PathMatcher.equivalenceEquals,
+    hashCode: PathMatcher.equivalenceHashCode,
   );
   late final Set<String> watchedFolders = UnmodifiableSetView(_watchedFolders);
   List<String>? _watchedFoldersSnapshot;
@@ -131,6 +123,16 @@ class LibraryService {
   Map<String, String> get watchedFolderByPath {
     _ensureRootIndexes();
     return _watchedFolderByPathCache;
+  }
+
+  PathRootIndex get watchedFoldersIndex {
+    _ensureRootIndexes();
+    return _watchedFoldersIndex;
+  }
+
+  PathRootIndex get watchedLibrariesIndex {
+    _ensureRootIndexes();
+    return _watchedLibrariesIndex;
   }
 
   String? mostSpecificWatchedFolder(String value) {
@@ -590,7 +592,7 @@ class LibraryService {
       ..addAll(nextOrder);
   }
 
-  MusicTrack? retargetSingleTrack(
+  LibraryTrackRetargetResult retargetSingleTrack(
     String oldTrackPath,
     String newTrackPath,
     String displayName, {
@@ -598,13 +600,19 @@ class LibraryService {
   }) {
     final oldPath = PathMatcher.normalize(oldTrackPath);
     final newPath = PathMatcher.normalize(newTrackPath);
-    for (final entries in libraryEntriesByLibrary.values) {
+    final retargetedEntries = <LibraryEntry>[];
+    final removedEntryPathsByLibrary = <String, List<String>>{};
+    for (final libraryEntry in libraryEntriesByLibrary.entries) {
+      final entries = libraryEntry.value;
       final entry = entries.remove(oldPath);
       if (entry == null) continue;
-      entries[newPath] = entry.copyWith(
+      final updatedEntry = entry.copyWith(
         path: newPath,
         displayName: displayName,
       );
+      entries[newPath] = updatedEntry;
+      retargetedEntries.add(updatedEntry);
+      removedEntryPathsByLibrary[libraryEntry.key] = <String>[entry.path];
     }
     for (final excluded in excludedLibraryTracks.values) {
       if (excluded.remove(oldPath)) excluded.add(newPath);
@@ -613,8 +621,12 @@ class LibraryService {
     final track = libraryByPath[oldPath] ?? retainedTrack;
     if (track == null) {
       markStructureChanged();
-      return null;
+      return LibraryTrackRetargetResult(
+        retargetedEntries: retargetedEntries,
+        removedEntryPathsByLibrary: removedEntryPathsByLibrary,
+      );
     }
+    final originalTrackPath = track.path;
     final updatedTrack = _copyTrackForRetarget(
       track,
       path: newPath,
@@ -654,7 +666,12 @@ class LibraryService {
       }
     }
     markStructureChanged();
-    return updatedTrack;
+    return LibraryTrackRetargetResult(
+      originalTrackPath: originalTrackPath,
+      updatedTrack: updatedTrack,
+      retargetedEntries: retargetedEntries,
+      removedEntryPathsByLibrary: removedEntryPathsByLibrary,
+    );
   }
 
   void _retargetLibraryExclusions(String oldRoot, String newRoot) {
@@ -1198,6 +1215,40 @@ class LibraryService {
     }
   }
 
+  void _updateTracksByGroupIncremental({
+    required Set<String> affectedGroups,
+    Map<String, List<MusicTrack>> upsertedByGroup =
+        const <String, List<MusicTrack>>{},
+    Set<String> excludedPaths = const <String>{},
+  }) {
+    for (final groupKey in affectedGroups) {
+      final existing = tracksByGroup[groupKey];
+      final upserted = upsertedByGroup[groupKey];
+      final nextBucket = <MusicTrack>[];
+      if (existing != null) {
+        if (excludedPaths.isEmpty) {
+          nextBucket.addAll(existing);
+        } else {
+          for (final track in existing) {
+            if (!excludedPaths.contains(track.path)) {
+              nextBucket.add(track);
+            }
+          }
+        }
+      }
+      if (upserted != null) {
+        nextBucket.addAll(upserted);
+      }
+      if (nextBucket.isEmpty) {
+        tracksByGroup.remove(groupKey);
+      } else {
+        nextBucket.sort(compareTracks);
+        tracksByGroup[groupKey] = List<MusicTrack>.unmodifiable(nextBucket);
+      }
+    }
+    markStructureChanged();
+  }
+
   ({List<MusicTrack> tracks, bool didChangeGroupOrder, bool batched}) addTracks(
     List<MusicTrack> newTracks, {
     required bool persist,
@@ -1231,7 +1282,22 @@ class LibraryService {
         batched: true,
       );
     }
-    rebuildLibraryIndexes();
+    if (tracksByGroup.isEmpty && library.length > addedTracks.length) {
+      rebuildLibraryIndexes();
+    } else {
+      final affectedGroups = <String>{};
+      final addedByGroup = <String, List<MusicTrack>>{};
+      for (final track in addedTracks) {
+        affectedGroups.add(track.groupKey);
+        addedByGroup
+            .putIfAbsent(track.groupKey, () => <MusicTrack>[])
+            .add(track);
+      }
+      _updateTracksByGroupIncremental(
+        affectedGroups: affectedGroups,
+        upsertedByGroup: addedByGroup,
+      );
+    }
     return (
       tracks: addedTracks,
       didChangeGroupOrder: didChangeGroupOrder,
@@ -1253,6 +1319,10 @@ class LibraryService {
     var didChangeGroupOrder = false;
     var didReplaceGroup = false;
     final changedTracks = <MusicTrack>[];
+    final affectedGroups = <String>{};
+    final upsertedByGroup = <String, List<MusicTrack>>{};
+    final replacedPaths = createPathSet();
+    final hadExistingTracks = library.isNotEmpty;
 
     for (final track in tracks) {
       final existing = libraryByPath[track.path];
@@ -1267,8 +1337,12 @@ class LibraryService {
           !mergedLibraryTrackHasChanges(existing, track)) {
         continue;
       }
-      if (existing != null && existing.groupKey != nextTrack.groupKey) {
-        didReplaceGroup = true;
+      if (existing != null) {
+        affectedGroups.add(existing.groupKey);
+        replacedPaths.add(existing.path);
+        if (existing.groupKey != nextTrack.groupKey) {
+          didReplaceGroup = true;
+        }
       }
       if (existing == null) {
         libraryIndexByPath[nextTrack.path] = library.length;
@@ -1285,13 +1359,19 @@ class LibraryService {
           );
           if (fallbackIndex >= 0) {
             library[fallbackIndex] = nextTrack;
+            libraryIndexByPath[nextTrack.path] = fallbackIndex;
           } else {
+            libraryIndexByPath[nextTrack.path] = library.length;
             library.add(nextTrack);
           }
         }
       }
       libraryByPath[nextTrack.path] = nextTrack;
       changedTracks.add(nextTrack);
+      affectedGroups.add(nextTrack.groupKey);
+      upsertedByGroup
+          .putIfAbsent(nextTrack.groupKey, () => <MusicTrack>[])
+          .add(nextTrack);
       if (groupOrderSet.add(nextTrack.groupKey)) {
         groupOrder.add(nextTrack.groupKey);
         didChangeGroupOrder = true;
@@ -1316,8 +1396,22 @@ class LibraryService {
         batched: true,
       );
     }
-    rebuildLibraryIndexes();
-    syncGroupOrderFromLibrary();
+    if (hadExistingTracks && tracksByGroup.isEmpty) {
+      rebuildLibraryIndexes();
+      syncGroupOrderFromLibrary();
+    } else {
+      _updateTracksByGroupIncremental(
+        affectedGroups: affectedGroups,
+        upsertedByGroup: upsertedByGroup,
+        excludedPaths: replacedPaths,
+      );
+      if (didReplaceGroup) {
+        groupOrder.removeWhere((key) => !tracksByGroup.containsKey(key));
+        groupOrderSet
+          ..clear()
+          ..addAll(groupOrder);
+      }
+    }
     return (
       tracks: changedTracks,
       didChangeGroupOrder: didChangeGroupOrder,
@@ -1329,13 +1423,24 @@ class LibraryService {
   ({List<MusicTrack> tracks, bool batched}) removeTracksWhere(
     bool Function(MusicTrack track) test,
   ) {
-    final removedTracks = library.where(test).toList(growable: false);
+    final removedTracks = <MusicTrack>[];
+    var firstRemovedIndex = -1;
+    for (var i = 0; i < library.length; i++) {
+      final track = library[i];
+      if (test(track)) {
+        if (firstRemovedIndex < 0) firstRemovedIndex = i;
+        removedTracks.add(track);
+      }
+    }
     if (removedTracks.isEmpty) {
       return (tracks: const <MusicTrack>[], batched: false);
     }
     final removedPaths = createPathSet(
       removedTracks.map((track) => track.path),
     );
+    final affectedGroups = <String>{
+      for (final track in removedTracks) track.groupKey,
+    };
     library.removeWhere((track) => removedPaths.contains(track.path));
     for (final trackPath in removedPaths) {
       libraryByPath.remove(trackPath);
@@ -1345,7 +1450,17 @@ class LibraryService {
       libraryBatchChanged = true;
       return (tracks: removedTracks, batched: true);
     }
-    rebuildLibraryIndexes();
+    if (tracksByGroup.isEmpty || removedTracks.length * 4 >= library.length) {
+      rebuildLibraryIndexes();
+    } else {
+      for (var i = firstRemovedIndex; i < library.length; i++) {
+        libraryIndexByPath[library[i].path] = i;
+      }
+      _updateTracksByGroupIncremental(
+        affectedGroups: affectedGroups,
+        excludedPaths: removedPaths,
+      );
+    }
     return (tracks: removedTracks, batched: false);
   }
 
@@ -1501,4 +1616,18 @@ class LibraryFolderRetargetResult {
   final Map<String, MusicTrack> retargetedTracks;
   final List<LibraryEntry> retargetedEntries;
   final List<String> removedEntryPaths;
+}
+
+class LibraryTrackRetargetResult {
+  const LibraryTrackRetargetResult({
+    this.originalTrackPath,
+    this.updatedTrack,
+    this.retargetedEntries = const <LibraryEntry>[],
+    this.removedEntryPathsByLibrary = const <String, List<String>>{},
+  });
+
+  final String? originalTrackPath;
+  final MusicTrack? updatedTrack;
+  final List<LibraryEntry> retargetedEntries;
+  final Map<String, List<String>> removedEntryPathsByLibrary;
 }

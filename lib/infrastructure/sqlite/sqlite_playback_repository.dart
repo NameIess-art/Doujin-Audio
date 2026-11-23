@@ -1,5 +1,3 @@
-import 'package:flutter/foundation.dart' show compute;
-
 import '../../core/media/music_track.dart';
 import '../../core/persistence/app_database.dart';
 import '../../core/persistence/persistence_records.dart';
@@ -49,11 +47,7 @@ class SqlitePlaybackRepository
   Future<PersistedPlaybackSession?> loadSessionQueue(String sessionId) async {
     final records = await _database.loadAllSessions(sessionId: sessionId);
     if (records.isEmpty) return null;
-    return compute(
-      _sessionFromRecord,
-      records.single,
-      debugLabel: 'decode_session_queue',
-    );
+    return _sessionFromRecord(records.single);
   }
 
   @override
@@ -126,24 +120,16 @@ class SqlitePlaybackRepository
     bool includeQueue = true,
     bool includeEffects = true,
     Map<String, int>? queueEntryPositions,
-  }) async {
-    final record = includeQueue
-        ? await compute(
-            (input) => _sessionToRecord(input.$1, includeEffects: input.$2),
-            (session, includeEffects),
-          )
-        : _sessionToRecord(
-            session,
-            includeQueue: false,
-            includeEffects: includeEffects,
-          );
-    await _database.upsertSession(
-      record,
+  }) => _database.upsertSession(
+    _sessionToRecord(
+      session,
       includeQueue: includeQueue,
       includeEffects: includeEffects,
-      queueEntryPositions: queueEntryPositions,
-    );
-  }
+    ),
+    includeQueue: includeQueue,
+    includeEffects: includeEffects,
+    queueEntryPositions: queueEntryPositions,
+  );
 
   @override
   Future<void> deleteSessions(List<String> sessionIds) =>

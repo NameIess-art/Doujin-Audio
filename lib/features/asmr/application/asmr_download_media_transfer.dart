@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:ffmpeg_kit_flutter_new_full/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_new_full/return_code.dart';
@@ -145,6 +146,139 @@ Future<void> validateAsmrAudioFile(File file) async {
   }
 }
 
+Future<bool> hasValidRemuxedM4aStructure(File file) async {
+  final fileLength = await file.length();
+  if (fileLength < 32) return false;
+  final handle = await file.open();
+  try {
+    var offset = 0;
+    var hasFtyp = false;
+    var hasPositiveDuration = false;
+    var hasAudioTrack = false;
+    var hasNonEmptyMdat = false;
+    var boxCount = 0;
+    final header = Uint8List(16);
+    final headerView = ByteData.sublistView(header);
+
+    while (offset + 8 <= fileLength && boxCount < 64) {
+      boxCount++;
+      await handle.setPosition(offset);
+      final read = await handle.readInto(header, 0, 8);
+      if (read < 8) return false;
+      var boxSize = headerView.getUint32(0);
+      final boxType = ascii.decode(header.sublist(4, 8), allowInvalid: true);
+      var headerSize = 8;
+      if (boxSize == 1) {
+        if (offset + 16 > fileLength) return false;
+        final extRead = await handle.readInto(header, 8, 16);
+        if (extRead < 8) return false;
+        boxSize = headerView.getUint64(8);
+        headerSize = 16;
+      } else if (boxSize == 0) {
+        boxSize = fileLength - offset;
+      }
+      if (boxSize < headerSize || offset + boxSize > fileLength) {
+        return false;
+      }
+
+      if (boxType == 'ftyp') {
+        if (offset == 0 && boxSize >= 16) hasFtyp = true;
+      } else if (boxType == 'mdat') {
+        if (boxSize > headerSize) hasNonEmptyMdat = true;
+      } else if (boxType == 'moov') {
+        final payloadSize = boxSize - headerSize;
+        if (payloadSize >= 24 && payloadSize <= 2 * 1024 * 1024) {
+          await handle.setPosition(offset + headerSize);
+          final moovBytes = await handle.read(payloadSize);
+          if (moovBytes.length == payloadSize) {
+            final parsed = _inspectMoovBox(moovBytes);
+            hasPositiveDuration = parsed.hasPositiveDuration;
+            hasAudioTrack = parsed.hasAudioTrack;
+          }
+        }
+      }
+      offset += boxSize;
+    }
+    return hasFtyp &&
+        hasPositiveDuration &&
+        hasAudioTrack &&
+        hasNonEmptyMdat &&
+        offset == fileLength;
+  } catch (_) {
+    return false;
+  } finally {
+    await handle.close();
+  }
+}
+
+({bool hasPositiveDuration, bool hasAudioTrack}) _inspectMoovBox(
+  Uint8List bytes,
+) {
+  final view = ByteData.sublistView(bytes);
+  var hasPositiveDuration = false;
+  var hasAudioTrack = false;
+
+  void walkBoxes(
+    int start,
+    int end,
+    void Function(String type, int payloadStart, int payloadEnd) visit,
+  ) {
+    var cursor = start;
+    while (cursor + 8 <= end) {
+      var boxSize = view.getUint32(cursor);
+      final type = ascii.decode(
+        bytes.sublist(cursor + 4, cursor + 8),
+        allowInvalid: true,
+      );
+      var headerSize = 8;
+      if (boxSize == 1) {
+        if (cursor + 16 > end) return;
+        boxSize = view.getUint64(cursor + 8);
+        headerSize = 16;
+      } else if (boxSize == 0) {
+        boxSize = end - cursor;
+      }
+      if (boxSize < headerSize || cursor + boxSize > end) return;
+      visit(type, cursor + headerSize, cursor + boxSize);
+      cursor += boxSize;
+    }
+  }
+
+  walkBoxes(0, bytes.length, (type, payloadStart, payloadEnd) {
+    final payloadLength = payloadEnd - payloadStart;
+    if (type == 'mvhd' && payloadLength >= 20) {
+      final version = bytes[payloadStart];
+      if (version == 0) {
+        final timescale = view.getUint32(payloadStart + 12);
+        final duration = view.getUint32(payloadStart + 16);
+        if (timescale > 0 && duration > 0) hasPositiveDuration = true;
+      } else if (version == 1 && payloadLength >= 32) {
+        final timescale = view.getUint32(payloadStart + 20);
+        final duration = view.getUint64(payloadStart + 24);
+        if (timescale > 0 && duration > 0) hasPositiveDuration = true;
+      }
+    } else if (type == 'trak' && !hasAudioTrack) {
+      walkBoxes(payloadStart, payloadEnd, (trakChild, mdiaStart, mdiaEnd) {
+        if (trakChild != 'mdia' || hasAudioTrack) return;
+        walkBoxes(mdiaStart, mdiaEnd, (mdiaChild, hdlrStart, hdlrEnd) {
+          if (mdiaChild != 'hdlr' || hdlrEnd - hdlrStart < 12) return;
+          if (bytes[hdlrStart + 8] == 0x73 &&
+              bytes[hdlrStart + 9] == 0x6f &&
+              bytes[hdlrStart + 10] == 0x75 &&
+              bytes[hdlrStart + 11] == 0x6e) {
+            hasAudioTrack = true;
+          }
+        });
+      });
+    }
+  });
+
+  return (
+    hasPositiveDuration: hasPositiveDuration,
+    hasAudioTrack: hasAudioTrack,
+  );
+}
+
 /// Uses the existing platform FFmpeg distributions and is shared by downloads
 /// and playback caching. Interruption owns and stops only this invocation.
 class AsmrHlsAudioTransfer {
@@ -181,30 +315,38 @@ class AsmrHlsAudioTransfer {
       );
       if (checkCancelled()) throw const DownloadCancelled();
       await validateAsmrAudioFile(output);
-      // Decode the first audio frame before committing a remotely generated file.
-      await _run(
-        [
-          '-nostdin',
-          '-v',
-          'error',
-          '-i',
-          output.path,
-          '-map',
-          '0:a:0',
-          '-frames:a',
-          '1',
-          '-f',
-          'null',
-          '-',
-        ],
-        cancellationToken: cancellationToken,
-        cancelled: checkCancelled,
-        progress: (_, _) {},
-      );
+      // Skip spawning a second FFmpeg decode process when the remuxed M4A
+      // passes structural container validation; fall back to a 1-frame decode
+      // check only when header validation is inconclusive.
+      if (!await hasValidRemuxedM4aStructure(output)) {
+        await _run(
+          [
+            '-nostdin',
+            '-v',
+            'error',
+            '-i',
+            output.path,
+            '-map',
+            '0:a:0',
+            '-frames:a',
+            '1',
+            '-f',
+            'null',
+            '-',
+          ],
+          cancellationToken: cancellationToken,
+          cancelled: checkCancelled,
+          progress: (_, _) {},
+        );
+      }
       onBytes?.call(await output.length());
       onProgress?.call(1);
     } catch (_) {
-      if (await output.exists()) await output.delete();
+      try {
+        if (await output.exists()) await output.delete();
+      } catch (_) {
+        // Best-effort cleanup; preserve DownloadCancelled or the original failure.
+      }
       rethrow;
     }
   }
@@ -246,8 +388,6 @@ class AsmrHlsAudioTransfer {
     'copy',
     '-movflags',
     '+faststart',
-    '-flush_packets',
-    '1',
     '-progress',
     'pipe:1',
     '-f',

@@ -368,7 +368,10 @@ void main() {
             .widget<FadeTransition>(
               find.ancestor(
                 of: header,
-                matching: find.byType(FadeTransition, skipOffstage: false),
+                matching: find.byWidgetPredicate(
+                  (widget) => widget is FadeTransition,
+                  skipOffstage: false,
+                ),
               ).first,
             )
             .opacity

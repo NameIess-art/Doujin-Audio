@@ -5,6 +5,7 @@ import com.doujin.audio.storage.*
 
 import android.content.Context
 import android.net.Uri
+import android.os.SystemClock
 import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
@@ -22,28 +23,58 @@ internal fun coverBridgeCacheKey(
 internal class CoverArtworkOperations(
     private val context: Context,
     private val storage: DocumentStorageOperations,
-    private val metadata: MediaMetadataOperations
+    private val metadata: MediaMetadataOperations,
+    private val clockMs: () -> Long = SystemClock::elapsedRealtime
 ) {
     private val imageExtensions = setOf("jpg", "jpeg", "png", "webp", "bmp", "gif")
     private val preferredNames = listOf("cover", "folder", "front", "album", "artwork", "poster")
 
+    private data class SafFolderCacheKey(
+        val folderUri: String,
+        val recursive: Boolean,
+        val stopAtRootTopPriority: Boolean
+    )
+
+    private data class SafFolderCacheEntry(
+        val candidates: List<DocumentCandidate>,
+        val expiresAtMs: Long
+    )
+
+    private val safFolderCache = object : LinkedHashMap<SafFolderCacheKey, SafFolderCacheEntry>(32, 0.75f, true) {
+        override fun removeEldestEntry(
+            eldest: MutableMap.MutableEntry<SafFolderCacheKey, SafFolderCacheEntry>?
+        ): Boolean = size > MAX_SAF_FOLDER_CACHE_ENTRIES
+    }
+
     fun resolve(trackPath: String, groupKey: String?, rootFolder: String?): String? {
         if (!rootFolder.isNullOrBlank()) {
             if (rootFolder.startsWith("content://")) {
-                val root = storage.resolveDocumentFileForFolderPath(rootFolder)
-                val candidate = root?.takeIf { it.exists() }?.let(::preferredDocument)
-                if (candidate != null) return cacheCandidate(candidate, "$rootFolder|${candidate.path}")
-                val localRoot = storage.contentUriToFilePath(rootFolder)
-                if (localRoot != null) return preferredFile(localRoot)
+                val localRoot = readableLocalDirectory(storage.contentUriToFilePath(rootFolder))
+                if (localRoot != null) {
+                    val fileCover = preferredFile(localRoot.absolutePath)
+                    if (fileCover != null) return fileCover
+                } else {
+                    val root = storage.resolveDocumentFileForFolderPath(rootFolder)
+                    val candidate = root?.let(::preferredDocument)
+                    if (candidate != null) return cacheCandidate(candidate)
+                }
             } else {
                 val fileCover = preferredFile(rootFolder)
                 if (fileCover != null) return fileCover
             }
         }
         if (trackPath.startsWith("content://") && !groupKey.isNullOrBlank()) {
-            val root = storage.resolveDocumentFileForFolderPath(groupKey)
-            val candidate = root?.let(::preferredDocument)
-            if (candidate != null) return cacheCandidate(candidate, "$trackPath|${candidate.path}")
+            val localGroup = readableLocalDirectory(
+                if (groupKey.startsWith("content://")) storage.contentUriToFilePath(groupKey) else groupKey
+            )
+            if (localGroup != null) {
+                val fileCover = preferredFile(localGroup.absolutePath)
+                if (fileCover != null) return fileCover
+            } else {
+                val root = storage.resolveDocumentFileForFolderPath(groupKey)
+                val candidate = root?.let(::preferredDocument)
+                if (candidate != null) return cacheCandidate(candidate)
+            }
         }
         return metadata.resolveEmbeddedCover(trackPath)
     }
@@ -61,8 +92,13 @@ internal class CoverArtworkOperations(
             else -> null
         }
         if (documentRoot != null) {
+            val localRootPath = storage.contentUriToFilePath(documentRoot)
+            val localRoot = readableLocalDirectory(localRootPath)
+            if (localRoot != null) {
+                return fileImages(localRoot.absolutePath, recursive, preferredOnly)
+            }
             val root = storage.resolveDocumentFileForFolderPath(documentRoot)
-            if (root != null && root.exists() && root.isDirectory && root.canRead()) {
+            if (root != null) {
                 val candidates = documentImages(
                     root,
                     recursive,
@@ -70,10 +106,8 @@ internal class CoverArtworkOperations(
                     stopAtRootTopPriority = preferredOnly
                 )
                 return (if (preferredOnly) candidates.take(1) else candidates).map { candidate ->
-                    val cachedPath = cacheCandidate(
-                        candidate,
-                        "$trackPath|${candidate.path}"
-                    ) ?: throw IOException("Unable to cache image: ${candidate.uri}")
+                    val cachedPath = cacheCandidate(candidate)
+                        ?: throw IOException("Unable to cache image: ${candidate.uri}")
                     buildMap {
                         put("path", cachedPath)
                         put("sourcePath", candidate.uri.toString())
@@ -81,19 +115,25 @@ internal class CoverArtworkOperations(
                     }
                 }
             }
-            val localRoot = storage.contentUriToFilePath(documentRoot)
-            if (localRoot != null) return fileImages(localRoot, recursive, preferredOnly)
+            if (localRootPath != null) return fileImages(localRootPath, recursive, preferredOnly)
             throw IOException("Image directory is unavailable: $documentRoot")
         }
         if (!rootFolder.isNullOrBlank()) return fileImages(rootFolder, recursive, preferredOnly)
         return emptyList()
     }
 
-    private fun cacheCandidate(candidate: DocumentCandidate, cacheKey: String): String? =
+    private fun readableLocalDirectory(path: String?): File? {
+        if (path.isNullOrBlank()) return null
+        val dir = File(path)
+        if (!dir.isDirectory || !dir.canRead()) return null
+        return dir.takeIf { it.listFiles() != null }
+    }
+
+    private fun cacheCandidate(candidate: DocumentCandidate): String? =
         cacheUri(
             candidate.uri,
             candidate.rawName,
-            cacheKey,
+            candidate.uri.toString(),
             candidate.modifiedAtMs,
             candidate.sizeBytes
         )
@@ -144,8 +184,8 @@ internal class CoverArtworkOperations(
         if (!root.isDirectory) return null
         val rootTopPriority = root.listFiles()
             ?.asSequence()
-            ?.filter { it.isFile && it.canRead() && isImage(it.name, null) && priority(it.name) == 0 }
-            ?.minWithOrNull(compareBy<File> { it.absolutePath.lowercase(Locale.US) })
+            ?.filter { it.isFile && it.canRead() && isImage(it.name, null) && priority(it.name) < preferredNames.size }
+            ?.minWithOrNull(compareBy<File>({ priority(it.name) }, { it.absolutePath.lowercase(Locale.US) }))
         val candidate = rootTopPriority ?: root.walkTopDown()
             .filter { it.isFile && it.canRead() && isImage(it.name, null) }
             .minWithOrNull(compareBy<File>({ priority(it.name) }, { it.absolutePath.lowercase(Locale.US) }))
@@ -164,8 +204,8 @@ internal class CoverArtworkOperations(
             val rootEntries = root.listFiles()
                 ?: throw IOException("Unable to list image directory: $folderPath")
             rootEntries.asSequence()
-                .filter { it.isFile && it.canRead() && isImage(it.name, null) && priority(it.name) == 0 }
-                .minWithOrNull(compareBy<File> { it.absolutePath.lowercase(Locale.US) })
+                .filter { it.isFile && it.canRead() && isImage(it.name, null) && priority(it.name) < preferredNames.size }
+                .minWithOrNull(compareBy<File>({ priority(it.name) }, { it.absolutePath.lowercase(Locale.US) }))
         } else {
             null
         }
@@ -199,6 +239,20 @@ internal class CoverArtworkOperations(
         strict: Boolean = false,
         stopAtRootTopPriority: Boolean = false
     ): List<DocumentCandidate> {
+        val effectiveStopAtRoot = recursive && stopAtRootTopPriority
+        val cacheKey = SafFolderCacheKey(
+            folderUri = root.uri.toString(),
+            recursive = recursive,
+            stopAtRootTopPriority = effectiveStopAtRoot
+        )
+        val nowMs = clockMs()
+        synchronized(safFolderCache) {
+            val cached = safFolderCache[cacheKey]
+            if (cached != null) {
+                if (nowMs < cached.expiresAtMs) return cached.candidates
+                safFolderCache.remove(cacheKey)
+            }
+        }
         data class Node(val folderUri: Uri, val path: String)
         val found = mutableListOf<DocumentCandidate>()
         try {
@@ -214,7 +268,7 @@ internal class CoverArtworkOperations(
                     if (recursive && entry.mime == DocumentsContract.Document.MIME_TYPE_DIR) {
                         pending += Node(entry.uri, childPath)
                     } else if (isImage(name, entry.mime)) {
-                        if (stopAtRootTopPriority && isRoot && priority(name) == 0) {
+                        if (effectiveStopAtRoot && isRoot && priority(name) < preferredNames.size) {
                             foundRootTopPriority = true
                         }
                         found += DocumentCandidate(
@@ -233,7 +287,12 @@ internal class CoverArtworkOperations(
             if (strict) throw error
             return emptyList()
         }
-        return found.sortedWith(compareBy<DocumentCandidate>({ priority(it.name) }, { it.path.lowercase(Locale.US) }))
+        val sorted = found.sortedWith(compareBy<DocumentCandidate>({ priority(it.name) }, { it.path.lowercase(Locale.US) }))
+        val expiresAtMs = clockMs() + SAF_FOLDER_CACHE_TTL_MS
+        synchronized(safFolderCache) {
+            safFolderCache[cacheKey] = SafFolderCacheEntry(sorted, expiresAtMs)
+        }
+        return sorted
     }
 
     private fun writeFileAtomically(target: File, write: (File) -> Boolean): Boolean {
@@ -293,5 +352,7 @@ internal class CoverArtworkOperations(
 
     private companion object {
         const val SAF_COPY_BUFFER_BYTES = 64 * 1024
+        const val MAX_SAF_FOLDER_CACHE_ENTRIES = 128
+        const val SAF_FOLDER_CACHE_TTL_MS = 60_000L
     }
 }

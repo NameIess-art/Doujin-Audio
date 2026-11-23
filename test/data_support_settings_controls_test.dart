@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/presentation/app_settings_group_card.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/app/theme/theme_provider.dart';
 import 'package:doujin_audio/core/ui/ui_operation_service.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
@@ -689,6 +690,75 @@ void main() {
     expect(storageReads, 2);
     expect(find.byKey(appCacheSegmentKey), findsNothing);
   });
+
+  testWidgets(
+    'StorageUsageCard keeps distinct segment colors for yellow and monochrome themes',
+    (tester) async {
+      final languageProvider = AppLanguageProvider();
+      for (final preset in const [
+        ThemeAccentPreset.yellow,
+        ThemeAccentPreset.monochrome,
+      ]) {
+        for (final brightness in Brightness.values) {
+          final themeProvider = ThemeProvider(loadPersistedState: false);
+          await themeProvider.setAppThemeColor(preset);
+          final theme = brightness == Brightness.dark
+              ? themeProvider.darkTheme
+              : themeProvider.lightTheme;
+          await tester.pumpWidget(
+            ProviderScope(
+              overrides: [
+                appLanguageProviderInstanceProvider.overrideWithValue(
+                  languageProvider,
+                ),
+                dataSupportStorageUsageServiceProvider.overrideWithValue(
+                  storageService(
+                    cacheBytes: () async => 128 * 1024 * 1024,
+                    libraryTracks: () => [
+                      MusicTrack(
+                        path: '/music/track.mp3',
+                        displayName: 'Track',
+                        groupKey: 'group',
+                        groupTitle: 'Group',
+                        groupSubtitle: '',
+                        isSingle: true,
+                        fileSizeBytes: 128 * 1024 * 1024,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              child: MaterialApp(
+                theme: theme,
+                home: StorageUsageCard(key: ValueKey((preset, brightness))),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          Color segmentColor(String key) => tester
+              .widget<ColoredBox>(
+                find.descendant(
+                  of: find.byKey(ValueKey('data-support-storage-segment-$key')),
+                  matching: find.byType(ColoredBox),
+                ),
+              )
+              .color;
+          final colors = <Color>{
+            segmentColor('audio-library'),
+            segmentColor('app-cache'),
+            segmentColor('other'),
+            segmentColor('available'),
+          };
+          expect(
+            colors,
+            hasLength(4),
+            reason: '${preset.name} ${brightness.name} segments must stay distinct',
+          );
+          themeProvider.dispose();
+        }
+      }
+    },
+  );
 }
 
 class _SynchronousStorageUsageService extends StorageUsageService {

@@ -11,6 +11,7 @@ import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/app/theme/app_styles.dart';
 import 'package:doujin_audio/app/theme/theme_provider.dart';
+import 'package:doujin_audio/core/widgets/app_buttons.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -752,16 +753,21 @@ void main() {
     },
   );
 
-  test('overlay surfaces share the design token radius', () async {
+  test('cards and overlays use rounded shapes without outlines', () async {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
     await AppPreferences.init();
     final theme = ThemeProvider().darkTheme;
     final tokens = theme.extension<AppDesignTokens>()!;
 
+    final cardShape = theme.cardTheme.shape! as RoundedRectangleBorder;
     final dialogShape = theme.dialogTheme.shape! as RoundedRectangleBorder;
     final sheetShape = theme.bottomSheetTheme.shape! as RoundedRectangleBorder;
     final menuShape = theme.popupMenuTheme.shape! as RoundedRectangleBorder;
 
+    for (final shape in [cardShape, dialogShape, sheetShape, menuShape]) {
+      expect(shape.side, BorderSide.none);
+    }
+    expect(cardShape.borderRadius, BorderRadius.circular(tokens.radiusCard));
     expect(
       dialogShape.borderRadius,
       BorderRadius.circular(tokens.radiusOverlay),
@@ -1018,6 +1024,184 @@ void main() {
         provider.windowBorderColorFor(Brightness.dark),
         expectedBorder(provider.darkTheme.colorScheme),
       );
+    },
+  );
+
+  test(
+    'refined light surfaces, semantic tokens, high-contrast tokens, and readable helpers meet contrast targets',
+    () async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      await AppPreferences.init();
+      final provider = ThemeProvider();
+      addTearDown(provider.dispose);
+
+      for (final preset in ThemeAccentPreset.values) {
+        final light = preset.colorScheme(Brightness.light);
+        final floatingLight = appFloatingSurfaceColor(light);
+        expect(
+          floatingLight.computeLuminance(),
+          greaterThan(light.surface.computeLuminance()),
+          reason: '${preset.name} light floating surface should lift above canvas',
+        );
+        expect(
+          _contrastRatio(AppDesignTokens.light.folderColor, light.surfaceContainerLow),
+          greaterThanOrEqualTo(4.5),
+          reason: '${preset.name} light folder icon contrast on card',
+        );
+        expect(
+          _contrastRatio(AppDesignTokens.light.textFileColor, light.surfaceContainerLow),
+          greaterThanOrEqualTo(4.5),
+        );
+        expect(
+          _contrastRatio(AppDesignTokens.light.imageFileColor, light.surfaceContainerLow),
+          greaterThanOrEqualTo(4.5),
+        );
+      }
+
+      final hcLightTokens =
+          provider.highContrastLightTheme.extension<AppDesignTokens>()!;
+      final hcDarkTokens =
+          provider.highContrastDarkTheme.extension<AppDesignTokens>()!;
+      expect(hcLightTokens.highContrast, isTrue);
+      expect(hcDarkTokens.highContrast, isTrue);
+      expect(
+        hcLightTokens.standardBorderAlpha,
+        greaterThan(AppDesignTokens.light.standardBorderAlpha),
+      );
+      expect(
+        hcDarkTokens.standardBorderAlpha,
+        greaterThan(AppDesignTokens.dark.standardBorderAlpha),
+      );
+
+      final darkSurface = provider.darkTheme.colorScheme.surface;
+      final lightSurface = provider.lightTheme.colorScheme.surface;
+      expect(
+        _contrastRatio(
+          appReadableAccentColor(
+            const Color(0xFF0A0A0A),
+            darkSurface,
+            targetContrast: 3.5,
+          ),
+          darkSurface,
+        ),
+        greaterThanOrEqualTo(3.5),
+      );
+      expect(
+        _contrastRatio(
+          appReadableAccentColor(
+            const Color(0xFFFFF0A0),
+            lightSurface,
+            targetContrast: 3.5,
+          ),
+          lightSurface,
+        ),
+        greaterThanOrEqualTo(3.5),
+      );
+
+      final darkMonochrome = ThemeAccentPreset.monochrome.colorScheme(
+        Brightness.dark,
+      );
+      final monoFeedback = appAccentFeedbackColor(
+        darkMonochrome,
+        darkMonochrome.primary,
+      );
+      expect(monoFeedback, isNot(darkMonochrome.primary));
+      expect(
+        monoFeedback.computeLuminance(),
+        lessThan(darkMonochrome.primary.computeLuminance()),
+      );
+    },
+  );
+
+  test(
+    'disposal guards setSystemAccentColor and post-await notifications',
+    () async {
+      final gate = Completer<bool>();
+      final provider = ThemeProvider(
+        loadPersistedState: false,
+        preferenceWriter: (_, _) => gate.future,
+      );
+      var notifications = 0;
+      provider.addListener(() => notifications++);
+
+      final pending = provider.setThemeMode(ThemeMode.dark);
+      expect(notifications, 1);
+      provider.dispose();
+
+      // Must not throw after disposal.
+      provider.setSystemAccentColor(const Color(0xFF1E88E5));
+      gate.complete(false);
+      expect(await pending, isFalse);
+      expect(notifications, 1);
+    },
+  );
+
+  test(
+    'partial multi-key write failure keeps succeeded keys synced and rolls back failed keys',
+    () async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      await AppPreferences.init();
+      var failKey = '';
+      final provider = ThemeProvider(
+        loadPersistedState: false,
+        preferenceWriter: (key, _) async => key != failKey,
+      );
+      addTearDown(provider.dispose);
+
+      const customColor = Color(0xFF2E9C8B);
+      expect(await provider.setCustomThemeColor(customColor), isTrue);
+      expect(await provider.setUseSystemAccentColor(true), isTrue);
+
+      failKey = 'customThemeColor';
+      expect(await provider.setAppThemeColor(ThemeAccentPreset.teal), isFalse);
+      // appThemeColor and useSystemAccentColor succeeded; only customThemeColor rolled back.
+      expect(provider.appThemeColor, ThemeAccentPreset.teal);
+      expect(provider.useSystemAccentColor, isFalse);
+      expect(provider.customThemeColor, customColor);
+
+      // A later failure on appThemeColor must roll back to teal (the last persisted value), not rose.
+      failKey = 'appThemeColor';
+      expect(await provider.setAppThemeColor(ThemeAccentPreset.blue), isFalse);
+      expect(provider.appThemeColor, ThemeAccentPreset.teal);
+
+      // Verify setCustomThemeColor per-key partial outcome as well.
+      failKey = '';
+      expect(await provider.setUseSystemAccentColor(true), isTrue);
+      failKey = 'useSystemAccentColor';
+      const nextCustom = Color(0xFF1E88E5);
+      expect(await provider.setCustomThemeColor(nextCustom), isFalse);
+      expect(provider.customThemeColor, nextCustom);
+      expect(provider.useSystemAccentColor, isTrue);
+    },
+  );
+
+  test(
+    'reloadPersistedState awaits pending writes and suppresses stale rollbacks',
+    () async {
+      SharedPreferences.setMockInitialValues({'themeMode': 'light'});
+      await AppPreferences.init();
+      final gate = Completer<bool>();
+      final provider = ThemeProvider(
+        preferenceWriter: (_, _) => gate.future,
+      );
+      addTearDown(provider.dispose);
+      expect(provider.themeMode, ThemeMode.light);
+
+      final write = provider.setThemeMode(ThemeMode.dark);
+      SharedPreferences.setMockInitialValues({'themeMode': 'system'});
+      await AppPreferences.init();
+
+      var reloadDone = false;
+      final reload = provider.reloadPersistedState().then((_) {
+        reloadDone = true;
+      });
+      await Future<void>.delayed(Duration.zero);
+      expect(reloadDone, isFalse);
+
+      gate.complete(false);
+      await Future.wait([write, reload]);
+      expect(reloadDone, isTrue);
+      expect(provider.themeMode, ThemeMode.system);
     },
   );
 }

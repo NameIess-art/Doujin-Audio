@@ -260,7 +260,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
       await tester.pump(interaction.idleDelay);
       await settleIo(tester);
-      expect(api.treeRequests, 2);
+      expect(api.treeRequests, 1);
       expect(find.text('audio'), findsOneWidget);
       Navigator.of(tester.element(find.byType(WorkDetailPage))).pop();
       await tester.pumpAndSettle();
@@ -272,13 +272,13 @@ void main() {
       expect(find.text('audio'), findsOneWidget);
       expect(
         api.treeRequests,
-        2,
-        reason: 'Prepared directory rows are reused before the refresh starts.',
+        1,
+        reason: 'Prepared directory rows are reused without redundant refreshes.',
       );
       await tester.pump(const Duration(milliseconds: 500));
       await tester.pump(interaction.idleDelay);
       await settleIo(tester);
-      expect(api.treeRequests, 3);
+      expect(api.treeRequests, 1);
       Navigator.of(tester.element(find.byType(WorkDetailPage))).pop();
       await tester.pumpAndSettle();
       controller.clearRuntimeCaches();
@@ -287,11 +287,11 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
       expect(find.text('audio'), findsNothing);
-      expect(api.treeRequests, 3);
+      expect(api.treeRequests, 1);
       await tester.pump(const Duration(milliseconds: 500));
       await tester.pump(interaction.idleDelay);
       await settleIo(tester);
-      expect(api.treeRequests, 4);
+      expect(api.treeRequests, 2);
       expect(find.text('audio'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
@@ -427,15 +427,15 @@ void main() {
       await tester.tap(find.text('Disc'));
       await settleIo(tester);
       expect(find.text('audio'), findsOneWidget);
-      expect(api.treeRequests, 2);
+      expect(api.treeRequests, 1);
       await tester.pump(const Duration(seconds: 60));
-      expect(api.treeRequests, 2);
+      expect(api.treeRequests, 1);
       await tester.pumpWidget(const SizedBox());
       await tester.pumpWidget(page());
       expect(find.text('Disc'), findsOneWidget);
       expect(find.text('audio'), findsNothing);
       await settleIo(tester);
-      expect(api.treeRequests, 3);
+      expect(api.treeRequests, 1);
       expect(find.text('Disc'), findsOneWidget);
       expect(find.text('audio'), findsNothing);
     },

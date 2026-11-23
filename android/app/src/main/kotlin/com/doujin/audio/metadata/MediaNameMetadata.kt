@@ -2,7 +2,7 @@ package com.doujin.audio.metadata
 
 import android.provider.DocumentsContract
 import android.webkit.MimeTypeMap
-import java.net.URLDecoder
+import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
 import java.util.Locale
 
@@ -58,14 +58,7 @@ internal object MediaNameMetadata {
         )
     }
 
-    private fun decodePercent(value: String): String {
-        if (!value.contains('%')) return value
-        return try {
-            URLDecoder.decode(value, StandardCharsets.UTF_8.name())
-        } catch (_: Exception) {
-            value
-        }
-    }
+    private fun decodePercent(value: String): String = decodePercentRfc3986(value)
 
     private fun latin1ToUtf8(value: String): String {
         return try {
@@ -103,8 +96,10 @@ internal object MediaNameMetadata {
 
     private fun isVideoMediaName(extension: String, mime: String?): Boolean {
         if (mime?.startsWith("video/") == true) return true
+        if (mime?.startsWith("audio/") == true) return false
         if (extension.isBlank()) return false
         if (extension in supportedVideoExtensions) return true
+        if (extension in supportedAudioExtensions) return false
         return mimeTypeFromExtension(extension)?.startsWith("video/") == true
     }
 
@@ -115,4 +110,44 @@ internal object MediaNameMetadata {
             null
         }
     }
+}
+
+/**
+ * Decodes RFC 3986 `%XX` UTF-8 sequences without turning `+` into space
+ * (unlike `URLDecoder`), leaving malformed `%` sequences intact.
+ */
+internal fun decodePercentRfc3986(value: String): String {
+    if ('%' !in value) return value
+    val out = StringBuilder(value.length)
+    val bytes = ByteArrayOutputStream()
+    var i = 0
+    val len = value.length
+    while (i < len) {
+        if (value[i] == '%' && i + 2 < len) {
+            val hi = hexDigit(value[i + 1])
+            val lo = hexDigit(value[i + 2])
+            if (hi >= 0 && lo >= 0) {
+                bytes.reset()
+                while (i + 2 < len && value[i] == '%') {
+                    val h = hexDigit(value[i + 1])
+                    val l = hexDigit(value[i + 2])
+                    if (h < 0 || l < 0) break
+                    bytes.write((h shl 4) or l)
+                    i += 3
+                }
+                out.append(String(bytes.toByteArray(), StandardCharsets.UTF_8))
+                continue
+            }
+        }
+        out.append(value[i])
+        i++
+    }
+    return out.toString()
+}
+
+private fun hexDigit(c: Char): Int = when (c) {
+    in '0'..'9' -> c - '0'
+    in 'a'..'f' -> c - 'a' + 10
+    in 'A'..'F' -> c - 'A' + 10
+    else -> -1
 }

@@ -243,7 +243,10 @@ class AsmrDownloadTransferService {
       // Failed/paused HLS output is discarded and cannot contribute saved bytes.
       if (_store[workId]?.fileTotalBytes[item.relativePath] == 0) {
         _store.reconcileLiveFileProgress(workId, item.relativePath, 0);
-        final latest = _store[workId]!;
+      }
+      final latest = _store[workId];
+      if (latest != null &&
+          latest.fileProgressFractions.containsKey(item.relativePath)) {
         _store[workId] = latest.copyWith(
           fileProgressFractions: {...latest.fileProgressFractions}
             ..remove(item.relativePath),
@@ -251,8 +254,13 @@ class AsmrDownloadTransferService {
         _store.notifyProgressChanged(workId);
       }
       _setFileRetryAttempt(workId, item.relativePath, null);
-      lease.release();
-      if (await staging.exists()) await staging.delete();
+      try {
+        await _outputs.deleteFileIfPresent(staging);
+      } catch (_) {
+        // Best-effort cleanup; never override a completed transfer or cancellation.
+      } finally {
+        lease.release();
+      }
     }
   }
 

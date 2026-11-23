@@ -1986,6 +1986,18 @@ void main() {
 
     final firstRect = tester.getRect(find.text('Option 1'));
     expect(firstRect.top, greaterThanOrEqualTo(0));
+    expect(
+      find.ancestor(
+        of: find.text('Option 1'),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is DecoratedBox &&
+              widget.decoration is BoxDecoration &&
+              (widget.decoration as BoxDecoration).border != null,
+        ),
+      ),
+      findsNothing,
+    );
     final shadow = find.byWidgetPredicate(
       (widget) =>
           widget is DecoratedBox &&

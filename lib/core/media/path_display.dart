@@ -5,10 +5,15 @@ import 'package:path/path.dart' as path;
 import 'path_matcher.dart';
 
 abstract final class PathDisplay {
+  static final RegExp _pathSeparatorPattern = RegExp(r'[\\/]');
+  static final RegExp _unsafeFileNameChars = RegExp(r'[<>:"/\\|?*\x00-\x1F]');
+  static final RegExp _whitespacePattern = RegExp(r'\s+');
+  static final RegExp _trailingDotsAndSpaces = RegExp(r'[. ]+$');
+
   static String fileName(String value, {bool withoutExtension = false}) {
     final displayPath = displayPathFor(value);
     final segments = displayPath
-        .split(RegExp(r'[\\/]'))
+        .split(_pathSeparatorPattern)
         .where((segment) => segment.trim().isNotEmpty)
         .toList(growable: false);
     final name = segments.isEmpty ? displayPath.trim() : segments.last.trim();
@@ -26,24 +31,36 @@ abstract final class PathDisplay {
   static String displayPathFor(String value) {
     final trimmed = value.trim();
     if (trimmed.isEmpty) return trimmed;
-    if (!PathMatcher.isContentUri(trimmed)) {
-      final androidSharedStoragePath = _androidSharedStoragePath(trimmed);
-      if (androidSharedStoragePath != null) {
-        return _normalizeDisplaySegment(androidSharedStoragePath);
+    if (PathMatcher.isContentUri(trimmed)) {
+      final decodedDocumentPath = _decodedContentDocumentPath(trimmed);
+      if (decodedDocumentPath != null && decodedDocumentPath.isNotEmpty) {
+        return decodedDocumentPath;
       }
-      return _normalizeDisplaySegment(path.normalize(trimmed));
+
+      final fallback = PathMatcher.safeDecodeComponent(
+        PathMatcher.lastContentPathSegment(trimmed) ?? trimmed,
+      );
+      return _normalizeDisplaySegment(fallback, decodePercent: false);
+    }
+    if (PathMatcher.isRemoteUri(trimmed) || _isFileUri(trimmed)) {
+      return _normalizeDisplaySegment(trimmed);
     }
 
-    final decodedDocumentPath = _decodedContentDocumentPath(trimmed);
-    if (decodedDocumentPath != null && decodedDocumentPath.isNotEmpty) {
-      return decodedDocumentPath;
+    final androidSharedStoragePath = _androidSharedStoragePath(trimmed);
+    if (androidSharedStoragePath != null) {
+      return _normalizeDisplaySegment(
+        androidSharedStoragePath,
+        decodePercent: false,
+      );
     }
-
-    final fallback = PathMatcher.safeDecodeComponent(
-      PathMatcher.lastContentPathSegment(trimmed) ?? trimmed,
+    return _normalizeDisplaySegment(
+      path.normalize(trimmed),
+      decodePercent: false,
     );
-    return _normalizeDisplaySegment(fallback);
   }
+
+  static bool _isFileUri(String value) =>
+      value.length >= 7 && value.substring(0, 7).toLowerCase() == 'file://';
 
   static String? _androidSharedStoragePath(String value) {
     const root = '/storage/emulated/0';
@@ -81,11 +98,17 @@ abstract final class PathDisplay {
     }
     final sharedStoragePath = _androidSharedStoragePath(documentPath);
     final displayPath = sharedStoragePath ?? documentPath;
-    return _normalizeDisplaySegment(displayPath).replaceAll('\\', '/');
+    return _normalizeDisplaySegment(
+      displayPath,
+      decodePercent: false,
+    ).replaceAll('\\', '/');
   }
 
-  static String normalizeDisplaySegment(String value) {
-    return _normalizeDisplaySegment(value);
+  static String normalizeDisplaySegment(
+    String value, {
+    bool decodePercent = true,
+  }) {
+    return _normalizeDisplaySegment(value, decodePercent: decodePercent);
   }
 
   static String safeFileName(
@@ -95,27 +118,31 @@ abstract final class PathDisplay {
     bool trimTrailingDotsAndSpaces = true,
     String fallback = '',
   }) {
-    final cleaned = value.replaceAll(
-      RegExp(r'[<>:"/\\|?*\x00-\x1F]'),
-      replacement,
-    );
+    final cleaned = value.replaceAll(_unsafeFileNameChars, replacement);
     final whitespaceAdjusted = collapseWhitespace
-        ? cleaned.replaceAll(RegExp(r'\s+'), replacement)
+        ? cleaned.replaceAll(_whitespacePattern, replacement)
         : cleaned;
     final trimmed = whitespaceAdjusted.trim();
     final result = trimTrailingDotsAndSpaces
-        ? trimmed.replaceAll(RegExp(r'[. ]+$'), '')
+        ? trimmed.replaceAll(_trailingDotsAndSpaces, '')
         : trimmed;
     return result.isEmpty ? fallback : result;
   }
 
-  static String _normalizeDisplaySegment(String value) {
+  static String _normalizeDisplaySegment(
+    String value, {
+    bool decodePercent = true,
+  }) {
     var normalized = value.trim();
     if (normalized.isEmpty) return normalized;
-    normalized = PathMatcher.safeDecodeComponent(normalized);
-    final fixed = _tryLatin1ToUtf8(normalized);
-    if (_looksLikeMojibake(normalized) && !_looksLikeMojibake(fixed)) {
-      normalized = fixed;
+    if (decodePercent) {
+      normalized = PathMatcher.safeDecodeComponent(normalized);
+    }
+    if (_looksLikeMojibake(normalized)) {
+      final fixed = _tryLatin1ToUtf8(normalized);
+      if (!_looksLikeMojibake(fixed)) {
+        normalized = fixed;
+      }
     }
     return normalized;
   }
@@ -130,9 +157,13 @@ abstract final class PathDisplay {
 
   static bool _looksLikeMojibake(String value) {
     if (value.contains('\uFFFD') || value.contains('\u951F')) return true;
-    return value.runes
-            .where((rune) => rune >= 0x00C0 && rune <= 0x00FF)
-            .length >=
-        2;
+    var count = 0;
+    for (var i = 0; i < value.length; i++) {
+      final c = value.codeUnitAt(i);
+      if (c >= 0x00C0 && c <= 0x00FF) {
+        if (++count >= 2) return true;
+      }
+    }
+    return false;
   }
 }

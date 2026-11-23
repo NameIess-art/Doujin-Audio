@@ -16,18 +16,37 @@ class LibraryScanRules {
     required Iterable<MusicTrack> tracks,
   }) {
     final normalizedFolderPath = PathMatcher.normalize(folderPath);
-    return watchedFolders.any(
-          (value) => pathsOverlap(value, normalizedFolderPath),
-        ) ||
-        watchedLibraries.any(
-          (value) => pathsOverlap(value, normalizedFolderPath),
-        ) ||
-        tracks.any(
-          (track) =>
-              pathsOverlap(track.path, normalizedFolderPath) ||
-              (track.groupKey != '__single_files__' &&
-                  pathsOverlap(track.groupKey, normalizedFolderPath)),
-        );
+    final existingRoots = PathRootIndex(<String>[
+      ...watchedFolders,
+      ...watchedLibraries,
+    ]);
+    if (existingRoots.mostSpecificContaining(normalizedFolderPath) != null) {
+      return true;
+    }
+    final folderIndex = PathRootIndex(<String>[normalizedFolderPath]);
+    for (final value in watchedFolders) {
+      if (folderIndex.mostSpecificContaining(value) != null) return true;
+    }
+    for (final value in watchedLibraries) {
+      if (folderIndex.mostSpecificContaining(value) != null) return true;
+    }
+    final seenGroups = <String>{};
+    for (final track in tracks) {
+      if (folderIndex.mostSpecificContaining(track.path) != null ||
+          PathMatcher.isWithinOrEqual(normalizedFolderPath, track.path)) {
+        return true;
+      }
+      if (track.groupKey != '__single_files__' &&
+          seenGroups.add(track.groupKey) &&
+          (folderIndex.mostSpecificContaining(track.groupKey) != null ||
+              PathMatcher.isWithinOrEqual(
+                normalizedFolderPath,
+                track.groupKey,
+              ))) {
+        return true;
+      }
+    }
+    return false;
   }
 
   bool areAnyTracksAlreadyInLibrary({
@@ -91,17 +110,32 @@ class LibraryScanRules {
     required Iterable<MusicTrack> tracks,
   }) {
     final normalizedFolderPath = PathMatcher.normalize(folderPath);
-    return tracks.any((track) {
-      final belongsToPromotedFolder = promotedFolders.any(
-        (folderPath) =>
-            PathMatcher.isWithinOrEqual(track.path, folderPath) ||
-            (track.groupKey != '__single_files__' &&
-                PathMatcher.isWithinOrEqual(track.groupKey, folderPath)),
-      );
-      if (belongsToPromotedFolder) return false;
-      return pathsOverlap(track.path, normalizedFolderPath) ||
-          (track.groupKey != '__single_files__' &&
-              pathsOverlap(track.groupKey, normalizedFolderPath));
-    });
+    final promotedIndex = PathRootIndex(promotedFolders);
+    final folderIndex = PathRootIndex(<String>[normalizedFolderPath]);
+    final seenGroups = <String>{};
+    for (final track in tracks) {
+      final hasGroup = track.groupKey != '__single_files__';
+      final belongsToPromotedFolder =
+          !promotedIndex.isEmpty &&
+          (promotedIndex.mostSpecificContaining(track.path) != null ||
+              (hasGroup &&
+                  promotedIndex.mostSpecificContaining(track.groupKey) !=
+                      null));
+      if (belongsToPromotedFolder) continue;
+      if (folderIndex.mostSpecificContaining(track.path) != null ||
+          PathMatcher.isWithinOrEqual(normalizedFolderPath, track.path)) {
+        return true;
+      }
+      if (hasGroup &&
+          seenGroups.add(track.groupKey) &&
+          (folderIndex.mostSpecificContaining(track.groupKey) != null ||
+              PathMatcher.isWithinOrEqual(
+                normalizedFolderPath,
+                track.groupKey,
+              ))) {
+        return true;
+      }
+    }
+    return false;
   }
 }

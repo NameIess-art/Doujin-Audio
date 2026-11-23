@@ -900,6 +900,94 @@ void main() {
         expect(calls.length, callsBefore);
       },
     );
+
+    test(
+      'cancelling timer during auto-resume cold-prepare restores fade multiplier',
+      () async {
+        final service = TimerService()
+          ..autoResumeEnabled = true
+          ..autoResumeAt = DateTime.now().subtract(const Duration(seconds: 1))
+          ..pausedByTimerSessionIds.add('s1');
+        final platform = _ControlledPowerPlatformService()
+          ..autoResumeResult.complete(TimerExecutionResult.failed);
+        final timer = TimerFacade.create(
+          service: service,
+          powerPlatformService: platform,
+        );
+        addTearDown(timer.dispose);
+        final resumeStarted = Completer<void>();
+        final resumeGate = Completer<bool>();
+        final sessionFades = <(String, double)>[];
+        timer.attachRuntime(
+          hasPlayingSession: () => false,
+          sessions: () => [_TestSession('s1')],
+          pauseSession: (_) async => true,
+          activateAudioSession: () async => true,
+          resumeSession: (_) async {
+            if (!resumeStarted.isCompleted) resumeStarted.complete();
+            return resumeGate.future;
+          },
+          onStateChanged: () {},
+          onRuntimeRestored: () {},
+          applyFadeMultiplier: (_) {},
+          applySessionFadeMultiplier: (id, value) =>
+              sessionFades.add((id, value)),
+        );
+
+        timer.retryOverdueAutoResume();
+        await resumeStarted.future;
+        timer.cancelTimer();
+        resumeGate.complete(true);
+        await Future<void>.delayed(Duration.zero);
+
+        expect(sessionFades, contains(('s1', 1.0)));
+      },
+    );
+
+    test(
+      'configureTimer clears stale pausedByTimerSessionIds and persists draft in trigger mode',
+      () async {
+        final service = TimerService()
+          ..pausedByTimerSessionIds.add('stale-session');
+        final platform = _RecordingPowerPlatformService();
+        final timer = TimerFacade.create(
+          service: service,
+          powerPlatformService: platform,
+        );
+        addTearDown(timer.dispose);
+        timer.attachRuntime(
+          hasPlayingSession: () => true,
+          sessions: () => const [],
+          pauseSession: (_) async => false,
+          activateAudioSession: () async => false,
+          resumeSession: (_) async => false,
+          onStateChanged: () {},
+          onRuntimeRestored: () {},
+          applyFadeMultiplier: (_) {},
+        );
+
+        timer.configureTimer(TimerMode.trigger, const Duration(minutes: 15));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(service.pausedByTimerSessionIds, isEmpty);
+        expect(service.timerActive, isTrue);
+
+        // Enabling auto-resume after configureTimer must not arm an alarm for stale sessions.
+        timer.setAutoResume(true, 8, 30);
+        expect(service.autoResumeAt, isNull);
+
+        // Draft mode and duration must have been persisted despite trigger-mode early return.
+        final reloaded = TimerService();
+        final reloadedFacade = TimerFacade.create(
+          service: reloaded,
+          powerPlatformService: platform,
+        );
+        addTearDown(reloadedFacade.dispose);
+        await reloadedFacade.loadPersistedState();
+        expect(reloaded.timerDraftMode, TimerMode.trigger);
+        expect(reloaded.timerDraftDuration, const Duration(minutes: 15));
+      },
+    );
   });
 }
 

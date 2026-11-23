@@ -29,7 +29,9 @@ internal data class NativePrepareSessionArguments(
     val deferPlayerCreation: Boolean,
     val isTemporary: Boolean = false,
     val preparedQueue: NativePlaybackQueue? = null,
-    val definitionRevision: Long = 0L
+    val definitionRevision: Long = 0L,
+    val reuseExistingQueue: Boolean = false,
+    val explicitPath: String? = null
 ) {
     fun storedDefinition(): StoredNativePlaybackSession {
         val items = playbackQueue()
@@ -106,7 +108,8 @@ internal object NativePlaybackCommandPayloads {
     fun parsePrepareSession(raw: Map<String, Any?>): NativePrepareSessionArguments {
         val sessionId = raw.requiredString("sessionId")
         val uri = raw.requiredUri("uri")
-        val path = raw.optionalString("path")?.takeIf { it.isNotBlank() } ?: uri
+        val explicitPath = raw.optionalString("path")?.takeIf { it.isNotBlank() }
+        val path = explicitPath ?: uri
         val title = raw.requiredString("title")
         val subtitle = raw.optionalString("subtitle")
         val artUri = raw.optionalString("artUri")?.also(::requireSupportedUri)
@@ -114,11 +117,18 @@ internal object NativePlaybackCommandPayloads {
         val volume = raw.requiredFiniteDouble("volume", 0.0..3.0).toFloat()
         val speed = raw.requiredFiniteDouble("speed", NATIVE_PLAYBACK_SPEED_RANGE).toFloat()
         val audioEffects = parseAudioEffects(raw.requiredMap("audioEffects"))
+        val reuseExistingQueue = raw.optionalBoolean("reuseExistingQueue") == true
         val queue = parseQueue(raw["queue"])
         val queueStartIndex = raw.optionalInt("queueStartIndex") ?: 0
         val candidateUris = parseCandidateUris(raw["candidateUris"])
-        require(queue.isEmpty() && queueStartIndex == 0 || queueStartIndex in queue.indices) {
-            "Invalid queueStartIndex."
+        if (reuseExistingQueue) {
+            require(queueStartIndex >= 0 && (queue.isEmpty() || queueStartIndex in queue.indices)) {
+                "Invalid queueStartIndex."
+            }
+        } else {
+            require(queue.isEmpty() && queueStartIndex == 0 || queueStartIndex in queue.indices) {
+                "Invalid queueStartIndex."
+            }
         }
         return NativePrepareSessionArguments(
             sessionId = sessionId,
@@ -133,18 +143,21 @@ internal object NativePlaybackCommandPayloads {
             speed = speed,
             audioEffects = audioEffects,
             repeatOne = raw.requiredBoolean("repeatOne"),
-            queue = queue.ifEmpty {
-                listOf(NativeMediaItemDescriptor(path, uri, title, subtitle, artUri))
+            queue = if (reuseExistingQueue) {
+                queue
+            } else {
+                queue.ifEmpty {
+                    listOf(NativeMediaItemDescriptor(path, uri, title, subtitle, artUri))
+                }
             },
             queueStartIndex = queueStartIndex,
             repeatAll = raw.requiredBoolean("repeatAll"),
             shuffle = raw.requiredBoolean("shuffle"),
             candidateUris = candidateUris,
             deferPlayerCreation = raw.requiredBoolean("deferPlayerCreation"),
-            isTemporary = raw["isTemporary"]?.let {
-                require(it is Boolean) { "isTemporary must be a boolean." }
-                it
-            } ?: false
+            isTemporary = raw.optionalBoolean("isTemporary") ?: false,
+            reuseExistingQueue = reuseExistingQueue,
+            explicitPath = explicitPath
         )
     }
 
@@ -264,6 +277,12 @@ private fun Map<*, *>.requiredNullableString(key: String): String? {
 
 private fun Map<*, *>.requiredBoolean(key: String): Boolean {
     val value = requiredValue(key)
+    require(value is Boolean) { "Invalid boolean argument: $key" }
+    return value
+}
+
+private fun Map<*, *>.optionalBoolean(key: String): Boolean? {
+    val value = this[key] ?: return null
     require(value is Boolean) { "Invalid boolean argument: $key" }
     return value
 }

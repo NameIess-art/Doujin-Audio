@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../app/theme/app_design_tokens.dart';
+import '../../../app/theme/app_styles.dart';
 import '../../../core/widgets/subtitle_window_visual.dart';
 import '../../../app/state/subtitle_settings_provider.dart';
 
@@ -41,7 +42,7 @@ class SubtitleWindowPreviewCard extends StatelessWidget {
               colors: [cs.surfaceContainerLow, cs.surfaceContainer],
             ),
             border: Border.all(
-              color: cs.outlineVariant.withValues(alpha: isDark ? 0.28 : 0.5),
+              color: appOverlayBorderColor(cs, AppDesignTokens.of(context)),
             ),
             boxShadow: [
               BoxShadow(

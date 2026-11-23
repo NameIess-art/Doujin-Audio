@@ -162,7 +162,7 @@ internal class FolderScanOperations(
         if (!root.exists() || !root.isDirectory) return 1
         val rootName = normalized(root.name).ifBlank { "Folder" }
         val pending = ArrayDeque<DocumentNode>()
-        pending.add(DocumentNode(root.uri, "", rootName))
+        pending.add(DocumentNode(root.uri, "", "", rootName))
         var failures = 0
         while (pending.isNotEmpty() && !observer.isCancelled()) {
             val current = pending.removeFirst()
@@ -186,19 +186,21 @@ internal class FolderScanOperations(
                 },
                 observer = observer
             ) { child ->
+                val rawName = child.name.trim()
                 val name = normalized(child.name).ifBlank { "media_file" }
                 val childUri = DocumentsContract.buildDocumentUriUsingTree(rootUri, child.id)
                 if (child.mime == DocumentsContract.Document.MIME_TYPE_DIR) {
-                    val relative = joinRelative(current.relative, name)
-                    pending.add(DocumentNode(childUri, relative, name))
+                    val rawRelative = joinRelative(current.rawRelative, rawName.ifBlank { name })
+                    val displayRelative = joinRelative(current.displayRelative, name)
+                    pending.add(DocumentNode(childUri, rawRelative, displayRelative, name))
                     return@scanDocumentChildren
                 }
                 val media = MediaNameMetadata.mediaNameInfoOrNull(name, child.mime)
                     ?: return@scanDocumentChildren
-                val groupKey = if (current.relative.isBlank()) {
+                val groupKey = if (current.rawRelative.isBlank()) {
                     rootUri.toString()
                 } else {
-                    "${rootUri}::${current.relative}"
+                    "${rootUri}::${current.rawRelative}"
                 }
                 remember(
                     tracks,
@@ -207,7 +209,11 @@ internal class FolderScanOperations(
                         title = media.title,
                         groupKey = groupKey,
                         groupTitle = current.title,
-                        groupSubtitle = if (current.relative.isBlank()) rootName else "$rootName/${current.relative}",
+                        groupSubtitle = if (current.displayRelative.isBlank()) {
+                            rootName
+                        } else {
+                            "$rootName/${current.displayRelative}"
+                        },
                         isVideo = media.isVideo,
                         fileSizeBytes = child.size,
                         modifiedAtMs = child.modifiedAt
@@ -394,7 +400,8 @@ internal class FolderScanOperations(
 
     private data class DocumentNode(
         val directory: Uri,
-        val relative: String,
+        val rawRelative: String,
+        val displayRelative: String,
         val title: String
     )
 }

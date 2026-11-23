@@ -163,7 +163,18 @@ class PlaybackSubtitleService extends ChangeNotifier {
     if (!_disposed) notifyListeners();
   }
 
-  String _trackKey(String trackPath) => PathMatcher.equivalenceKey(trackPath);
+  String? _lastTrackKeyInput;
+  String? _lastTrackKeyValue;
+
+  String _trackKey(String trackPath) {
+    if (trackPath == _lastTrackKeyInput && _lastTrackKeyValue != null) {
+      return _lastTrackKeyValue!;
+    }
+    final key = PathMatcher.equivalenceKey(trackPath);
+    _lastTrackKeyInput = trackPath;
+    _lastTrackKeyValue = key;
+    return key;
+  }
 
   bool _startGeneration(
     String trackPath,
@@ -325,13 +336,15 @@ class PlaybackSubtitleService extends ChangeNotifier {
   );
 
   bool hasResult(String trackPath) {
-    _refreshSubtitleSource(trackPath);
-    return _tracks.containsKey(_trackKey(trackPath));
+    final key = _trackKey(trackPath);
+    _refreshSubtitleSource(trackPath, key: key);
+    return _tracks.containsKey(key);
   }
 
   bool isLoading(String trackPath) {
-    _refreshSubtitleSource(trackPath);
-    return _loading.containsKey(_trackKey(trackPath));
+    final key = _trackKey(trackPath);
+    _refreshSubtitleSource(trackPath, key: key);
+    return _loading.containsKey(key);
   }
 
   bool hasKnownSubtitle(String trackPath) {
@@ -341,6 +354,8 @@ class PlaybackSubtitleService extends ChangeNotifier {
 
   Duration getOffset(String trackPath) =>
       _offsets[_trackKey(trackPath)] ?? Duration.zero;
+
+  String? customPathFor(String trackPath) => _customPaths[_trackKey(trackPath)];
 
   bool _isRemote(String trackPath) =>
       trackPath.startsWith('https://') || trackPath.startsWith('http://');
@@ -497,8 +512,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
       if (translation) {
         savedPath = await FileCachePlatformGateway.saveNewSubtitleFile(
           directory: dest.parent,
-          fileName:
-              '${Uri.parse(trackPath).pathSegments.last}$suffix$extension',
+          fileName: '${_remoteSubtitleName(trackPath)}$suffix$extension',
           bytes: bytes,
         );
       } else {
@@ -537,9 +551,46 @@ class PlaybackSubtitleService extends ChangeNotifier {
     );
   }
 
+  static final RegExp _invalidRemoteFileNameChars = RegExp(
+    r'[<>:"/\\|?*\x00-\x1F\x7F]+',
+  );
+  static final RegExp _trailingDotsOrSpaces = RegExp(r'[. ]+$');
+  static final RegExp _windowsReservedFileName = RegExp(
+    r'^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\..*)?$',
+    caseSensitive: false,
+  );
+
+  static String _sanitizeRemoteFileName(
+    String raw, {
+    String fallback = 'subtitle',
+  }) {
+    var sanitized = raw
+        .replaceAll(_invalidRemoteFileNameChars, '_')
+        .replaceAll(_trailingDotsOrSpaces, '')
+        .trim();
+    if (sanitized.isEmpty || sanitized == '.' || sanitized == '..') {
+      return fallback;
+    }
+    if (_windowsReservedFileName.hasMatch(sanitized)) {
+      sanitized = '_$sanitized';
+    }
+    return sanitized;
+  }
+
+  static String _remoteSubtitleName(String trackPath) {
+    final uri = Uri.tryParse(trackPath);
+    final raw = uri == null
+        ? ''
+        : uri.pathSegments.lastWhere(
+            (segment) => segment.isNotEmpty,
+            orElse: () => '',
+          );
+    return _sanitizeRemoteFileName(raw);
+  }
+
   Future<File> _remoteSubtitleFile(String trackPath, String extension) async {
-    final name = Uri.parse(trackPath).pathSegments.last;
-    final stem = path.basenameWithoutExtension(name);
+    final name = _remoteSubtitleName(trackPath);
+    final stem = _sanitizeRemoteFileName(path.basenameWithoutExtension(name));
     final dir = await _remoteSubtitleDirectory(trackPath);
     await dir.create(recursive: true);
     return File(path.join(dir.path, '$stem$extension'));
@@ -1140,16 +1191,39 @@ class PlaybackSubtitleService extends ChangeNotifier {
       );
       if (rawCustom != null) {
         for (final item in rawCustom) {
-          final idx = item.lastIndexOf('|');
-          if (idx > 0) {
-            final rawTrackKey = item.substring(0, idx);
-            final customPath = item.substring(idx + 1);
-            if (rawTrackKey.isNotEmpty && customPath.isNotEmpty) {
-              final key = _trackKey(rawTrackKey);
-              if (!_customPaths.containsKey(key)) {
-                _customPaths[key] = customPath;
-                _customRawPaths[key] = rawTrackKey;
+          String? rawTrackKey;
+          String? customPath;
+          if (item.startsWith('{')) {
+            try {
+              final decoded = jsonDecode(item);
+              if (decoded is Map) {
+                final track = decoded['track'];
+                final pathValue = decoded['path'];
+                if (track is String && pathValue is String) {
+                  rawTrackKey = track;
+                  customPath = pathValue;
+                }
               }
+            } catch (_) {
+              // Fall back to legacy delimiter parsing (e.g. a legacy path
+              // literally starting with '{').
+            }
+          }
+          if (rawTrackKey == null || customPath == null) {
+            final idx = item.lastIndexOf('|');
+            if (idx > 0) {
+              rawTrackKey = item.substring(0, idx);
+              customPath = item.substring(idx + 1);
+            }
+          }
+          if (rawTrackKey != null &&
+              customPath != null &&
+              rawTrackKey.isNotEmpty &&
+              customPath.isNotEmpty) {
+            final key = _trackKey(rawTrackKey);
+            if (!_customPaths.containsKey(key)) {
+              _customPaths[key] = customPath;
+              _customRawPaths[key] = rawTrackKey;
             }
           }
         }
@@ -1189,7 +1263,12 @@ class PlaybackSubtitleService extends ChangeNotifier {
   Future<void> _persistCustomPaths({bool throwOnFailure = false}) async {
     await _flushPendingOffsets();
     final list = _customPaths.entries
-        .map((e) => '${_customRawPaths[e.key] ?? e.key}|${e.value}')
+        .map(
+          (e) => jsonEncode(<String, String>{
+            'track': _customRawPaths[e.key] ?? e.key,
+            'path': e.value,
+          }),
+        )
         .toList(growable: false);
     final saved = await AppPreferences.setStringList(
       'subtitle_custom_paths',
@@ -1241,7 +1320,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
   }) {
     if (_disposed) return SynchronousFuture<SubtitleTrack?>(null);
     final key = _trackKey(trackPath);
-    var source = validatedSource ?? _refreshSubtitleSource(trackPath);
+    var source = validatedSource ?? _refreshSubtitleSource(trackPath, key: key);
     if (!reload && _tracks.containsKey(key)) {
       _touchCachedTrack(key);
       return _results.putIfAbsent(
@@ -1330,36 +1409,38 @@ class PlaybackSubtitleService extends ChangeNotifier {
 
   SubtitleTrack? trackSync(String trackPath) {
     final key = _trackKey(trackPath);
-    _refreshSubtitleSource(trackPath);
+    _refreshSubtitleSource(trackPath, key: key);
     if (!_tracks.containsKey(key)) return null;
     _touchCachedTrack(key);
     return _tracks[key];
   }
 
-  _SubtitleSource _refreshSubtitleSource(String trackPath) {
-    final key = _trackKey(trackPath);
-    final source = _subtitleSource(trackPath);
-    if (_resultSources.containsKey(key) && _resultSources[key] != source) {
-      _tracks.remove(key);
-      unawaited(_results.remove(key));
-      _resultSources.remove(key);
-      if (_mostRecentTrackKey == key) _mostRecentTrackKey = null;
+  _SubtitleSource _refreshSubtitleSource(String trackPath, {String? key}) {
+    final trackKey = key ?? _trackKey(trackPath);
+    final source = _subtitleSource(trackPath, key: trackKey);
+    if (_resultSources.containsKey(trackKey) &&
+        _resultSources[trackKey] != source) {
+      _tracks.remove(trackKey);
+      unawaited(_results.remove(trackKey));
+      _resultSources.remove(trackKey);
+      if (_mostRecentTrackKey == trackKey) _mostRecentTrackKey = null;
     }
-    if (_loadingSources.containsKey(key) && _loadingSources[key] != source) {
-      unawaited(_loading.remove(key));
-      _loadingSources.remove(key);
+    if (_loadingSources.containsKey(trackKey) &&
+        _loadingSources[trackKey] != source) {
+      unawaited(_loading.remove(trackKey));
+      _loadingSources.remove(trackKey);
     }
     return source;
   }
 
-  _SubtitleSource _subtitleSource(String trackPath) {
+  _SubtitleSource _subtitleSource(String trackPath, {String? key}) {
     final metadata = _trackResolver(trackPath)?.remoteMetadata;
     return (
       metadata?['subtitleUrl']?.toString(),
       metadata?['subtitleExtension']?.toString(),
       metadata?['subtitleSourcePath']?.toString(),
       metadata?['subtitleTitle']?.toString(),
-      _customPaths[_trackKey(trackPath)],
+      _customPaths[key ?? _trackKey(trackPath)],
     );
   }
 
@@ -1380,7 +1461,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
     bool automatic = true,
   }) {
     final key = _trackKey(trackPath);
-    final source = _refreshSubtitleSource(trackPath);
+    final source = _refreshSubtitleSource(trackPath, key: key);
     final hasCached = _tracks.containsKey(key);
     if (hasCached) _touchCachedTrack(key);
     final track = hasCached ? _tracks[key] : null;
@@ -1400,21 +1481,87 @@ class PlaybackSubtitleService extends ChangeNotifier {
   bool _cachedTextPersistent = false;
   SubtitleCue? _cachedTextCue;
   String? _cachedTextValue;
+  bool _cachedWindowValid = false;
+  Duration? _cachedWindowStart;
+  Duration? _cachedWindowEnd;
 
   String? _textAt(SubtitleTrack? track, Duration position, bool persistent) {
     if (track == null) return null;
-    final cue = track.cueAt(position, persistent: persistent);
+    final effectivePosition = position - track.offset;
     if (identical(track, _cachedTextTrack) &&
         persistent == _cachedTextPersistent &&
-        identical(cue, _cachedTextCue)) {
+        _cachedWindowValid &&
+        (_cachedWindowStart == null ||
+            effectivePosition >= _cachedWindowStart!) &&
+        (_cachedWindowEnd == null || effectivePosition < _cachedWindowEnd!)) {
       return _cachedTextValue;
     }
+    final cue = track.cueAt(position, persistent: persistent);
+    final sameTrackAndCue =
+        identical(track, _cachedTextTrack) &&
+        persistent == _cachedTextPersistent &&
+        identical(cue, _cachedTextCue);
     _cachedTextTrack = track;
     _cachedTextPersistent = persistent;
     _cachedTextCue = cue;
-    final text = cue?.text.trim();
-    _cachedTextValue = text == null || text.isEmpty ? null : text;
+    if (!sameTrackAndCue) {
+      final text = cue?.text.trim();
+      _cachedTextValue = text == null || text.isEmpty ? null : text;
+    }
+    _updateCachedCueWindow(track, position, effectivePosition, cue, persistent);
     return _cachedTextValue;
+  }
+
+  void _updateCachedCueWindow(
+    SubtitleTrack track,
+    Duration position,
+    Duration effectivePosition,
+    SubtitleCue? cue,
+    bool persistent,
+  ) {
+    final ordered = track.timelineCues;
+    if (ordered.isEmpty) {
+      _cachedWindowValid = true;
+      _cachedWindowStart = null;
+      _cachedWindowEnd = null;
+      return;
+    }
+    if (effectivePosition < Duration.zero) {
+      _cachedWindowValid = true;
+      _cachedWindowStart = null;
+      _cachedWindowEnd = Duration.zero;
+      return;
+    }
+    if (effectivePosition < ordered.first.start) {
+      _cachedWindowValid = true;
+      _cachedWindowStart = Duration.zero;
+      _cachedWindowEnd = ordered.first.start;
+      return;
+    }
+    final idx = track.timelineCueIndexAt(position);
+    if (idx == null) {
+      _cachedWindowValid = false;
+      return;
+    }
+    final nextStart = idx + 1 < ordered.length ? ordered[idx + 1].start : null;
+    _cachedWindowValid = true;
+    if (persistent) {
+      _cachedWindowStart = ordered[idx].start;
+      _cachedWindowEnd = nextStart;
+      return;
+    }
+    if (cue == null) {
+      // Every cue at or before idx has already ended at effectivePosition.
+      _cachedWindowStart = effectivePosition;
+      _cachedWindowEnd = nextStart;
+      return;
+    }
+    _cachedWindowStart = identical(cue, ordered[idx])
+        ? cue.start
+        : effectivePosition;
+    _cachedWindowEnd = nextStart != null && nextStart < cue.end
+        ? nextStart
+        : cue.end;
   }
 
   void clear() {
@@ -1430,6 +1577,9 @@ class PlaybackSubtitleService extends ChangeNotifier {
     _cachedTextTrack = null;
     _cachedTextCue = null;
     _cachedTextValue = null;
+    _cachedWindowValid = false;
+    _cachedWindowStart = null;
+    _cachedWindowEnd = null;
     _notifyIfActive();
   }
 

@@ -16,7 +16,71 @@ enum AsmrDownloadTaskStatus {
 }
 
 class AsmrDownloadTaskSnapshot {
-  AsmrDownloadTaskSnapshot({
+  factory AsmrDownloadTaskSnapshot({
+    required AsmrWork work,
+    required String destinationRoot,
+    required String workFolderName,
+    String? requestedWorkFolderName,
+    required AsmrDownloadConflictPolicy conflictPolicy,
+    bool saveMetadata = true,
+    bool saveCover = false,
+    int automaticFileRetryCount = kMaxAsmrDownloadRetryCount,
+    required AsmrDownloadTaskStatus status,
+    required int totalFiles,
+    required int completedFiles,
+    required int skippedFiles,
+    required int failedFiles,
+    required int totalBytes,
+    required int downloadedBytes,
+    required DateTime startedAt,
+    String? currentItemPath,
+    String? coverOutputPath,
+    String? message,
+    String? error,
+    Map<String, int> fileDownloadedBytes = const {},
+    Map<String, int> fileTotalBytes = const {},
+    Map<String, double> fileProgressFractions = const {},
+    Map<String, int> fileRetryAttempts = const {},
+    Map<String, String> fileEntityTags = const {},
+    Map<String, String> actualOutputPaths = const {},
+    Set<String> completedFilePaths = const {},
+    Set<String> failedFilePaths = const {},
+    Set<String> manuallyRetryingFilePaths = const {},
+    List<AsmrTrackFile> selectedRoots = const [],
+  }) => AsmrDownloadTaskSnapshot._(
+    work: work,
+    destinationRoot: destinationRoot,
+    workFolderName: workFolderName,
+    requestedWorkFolderName: requestedWorkFolderName,
+    conflictPolicy: conflictPolicy,
+    saveMetadata: saveMetadata,
+    saveCover: saveCover,
+    automaticFileRetryCount: automaticFileRetryCount,
+    status: status,
+    totalFiles: totalFiles,
+    completedFiles: completedFiles,
+    skippedFiles: skippedFiles,
+    failedFiles: failedFiles,
+    totalBytes: totalBytes,
+    downloadedBytes: downloadedBytes,
+    startedAt: startedAt,
+    currentItemPath: currentItemPath,
+    coverOutputPath: coverOutputPath,
+    message: message,
+    error: error,
+    fileDownloadedBytes: fileDownloadedBytes,
+    fileTotalBytes: fileTotalBytes,
+    fileProgressFractions: fileProgressFractions,
+    fileRetryAttempts: fileRetryAttempts,
+    fileEntityTags: fileEntityTags,
+    actualOutputPaths: actualOutputPaths,
+    completedFilePaths: completedFilePaths,
+    failedFilePaths: failedFilePaths,
+    manuallyRetryingFilePaths: manuallyRetryingFilePaths,
+    selectedRoots: selectedRoots,
+  );
+
+  AsmrDownloadTaskSnapshot._({
     required this.work,
     required this.destinationRoot,
     required this.workFolderName,
@@ -47,6 +111,7 @@ class AsmrDownloadTaskSnapshot {
     Set<String> failedFilePaths = const {},
     Set<String> manuallyRetryingFilePaths = const {},
     List<AsmrTrackFile> selectedRoots = const [],
+    bool? hasUnknownFileSizes,
   }) : requestedWorkFolderName = requestedWorkFolderName ?? workFolderName,
        fileDownloadedBytes = immutableMap(fileDownloadedBytes),
        fileTotalBytes = immutableMap(fileTotalBytes),
@@ -57,7 +122,10 @@ class AsmrDownloadTaskSnapshot {
        completedFilePaths = immutableSet(completedFilePaths),
        failedFilePaths = immutableSet(failedFilePaths),
        manuallyRetryingFilePaths = immutableSet(manuallyRetryingFilePaths),
-       selectedRoots = immutableList(selectedRoots);
+       selectedRoots = immutableList(selectedRoots),
+       _cachedHasUnknownFileSizes = hasUnknownFileSizes;
+
+  final bool? _cachedHasUnknownFileSizes;
 
   final AsmrWork work;
   final String destinationRoot;
@@ -113,9 +181,9 @@ class AsmrDownloadTaskSnapshot {
       status == AsmrDownloadTaskStatus.downloading;
 
   // A snapshot is immutable; receiving chunks must not rescan every file.
-  late final bool hasUnknownFileSizes = fileTotalBytes.values.any(
-    (size) => size <= 0,
-  );
+  late final bool hasUnknownFileSizes =
+      _cachedHasUnknownFileSizes ??
+      fileTotalBytes.values.any((size) => size <= 0);
 
   // HLS output has no Content-Length. Estimate from written bytes and chapter
   // time without treating that estimate as a durable size or a byte limit.
@@ -182,7 +250,7 @@ class AsmrDownloadTaskSnapshot {
     Set<String>? manuallyRetryingFilePaths,
     List<AsmrTrackFile>? selectedRoots,
   }) {
-    return AsmrDownloadTaskSnapshot(
+    return AsmrDownloadTaskSnapshot._(
       work: work,
       destinationRoot: destinationRoot,
       workFolderName: workFolderName ?? this.workFolderName,
@@ -215,6 +283,11 @@ class AsmrDownloadTaskSnapshot {
       manuallyRetryingFilePaths:
           manuallyRetryingFilePaths ?? this.manuallyRetryingFilePaths,
       selectedRoots: selectedRoots ?? this.selectedRoots,
+      hasUnknownFileSizes:
+          fileTotalBytes == null ||
+              identical(fileTotalBytes, this.fileTotalBytes)
+          ? hasUnknownFileSizes
+          : null,
     );
   }
 }
@@ -224,6 +297,14 @@ class AsmrDownloadButtonViewState {
     required this.visible,
     required this.progress,
   });
+
+  /// Quantizes progress to 0.5% increments (200 steps) so sub-pixel chunk
+  /// deltas do not rebuild or repaint the header button at 8 Hz.
+  static double? quantizeProgress(double? value) {
+    if (value == null || !value.isFinite) return null;
+    final clamped = value.clamp(0.0, 1.0);
+    return (clamped * 200).round() / 200.0;
+  }
 
   final bool visible;
   final double? progress;

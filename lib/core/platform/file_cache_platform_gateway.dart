@@ -391,9 +391,40 @@ class FileCachePlatformGateway {
   }
 
   static final RegExp _windowsImageExtension = RegExp(
-    r'\.(png|jpe?g|webp|bmp)$',
+    r'\.(png|jpe?g|webp|bmp|gif)$',
     caseSensitive: false,
   );
+
+  static const List<String> _windowsPreferredCoverNames = <String>[
+    'cover',
+    'folder',
+    'front',
+    'album',
+    'artwork',
+    'poster',
+  ];
+
+  static int _windowsImagePriority(String filePath) {
+    final stem = path.basenameWithoutExtension(filePath).trim().toLowerCase();
+    final exact = _windowsPreferredCoverNames.indexOf(stem);
+    if (exact >= 0) return exact;
+    for (var i = 0; i < _windowsPreferredCoverNames.length; i++) {
+      if (stem.contains(_windowsPreferredCoverNames[i])) {
+        return 100 + i;
+      }
+    }
+    return 200;
+  }
+
+  static int _compareWindowsImages(File a, File b) {
+    final priority = _windowsImagePriority(
+      a.path,
+    ).compareTo(_windowsImagePriority(b.path));
+    if (priority != 0) return priority;
+    final lower = a.path.toLowerCase().compareTo(b.path.toLowerCase());
+    if (lower != 0) return lower;
+    return a.path.compareTo(b.path);
+  }
 
   static const Set<String> _windowsWorkTextExtensions = {
     ...supportedSubtitleExtensions,
@@ -431,16 +462,40 @@ class FileCachePlatformGateway {
         if (isRoot) rethrow;
         continue;
       }
+      final scanningRoot = isRoot;
       isRoot = false;
+      final rootTopPriority = <File>[];
       for (final entity in entries) {
         if (entity is File && _windowsImageExtension.hasMatch(entity.path)) {
           candidates.add(entity);
+          if (scanningRoot &&
+              preferredOnly &&
+              _windowsImagePriority(entity.path) <
+                  _windowsPreferredCoverNames.length) {
+            rootTopPriority.add(entity);
+          }
         } else if (recursive && entity is Directory) {
           pendingDirs.add(entity);
         }
       }
+      if (rootTopPriority.isNotEmpty) {
+        rootTopPriority.sort(_compareWindowsImages);
+        for (final file in rootTopPriority) {
+          try {
+            return <CoverImageReference>[
+              CoverImageReference(
+                displayPath: file.path,
+                sourcePath: file.path,
+                fileSizeBytes: file.lengthSync(),
+              ),
+            ];
+          } on FileSystemException {
+            // Skip unreadable or vanished image files.
+          }
+        }
+      }
     }
-    candidates.sort((a, b) => a.path.compareTo(b.path));
+    candidates.sort(_compareWindowsImages);
     final images = <CoverImageReference>[];
     for (final file in candidates) {
       try {
@@ -477,7 +532,30 @@ class FileCachePlatformGateway {
         candidates.add(entity);
       }
     }
-    candidates.sort((a, b) => a.path.compareTo(b.path));
+    candidates.sort(_compareWindowsImages);
+    if (recursive && preferredOnly) {
+      final rootTopPriority = candidates
+          .where(
+            (file) =>
+                path.equals(file.parent.path, directory.path) &&
+                _windowsImagePriority(file.path) <
+                    _windowsPreferredCoverNames.length,
+          )
+          .toList(growable: false);
+      for (final file in rootTopPriority) {
+        try {
+          return <CoverImageReference>[
+            CoverImageReference(
+              displayPath: file.path,
+              sourcePath: file.path,
+              fileSizeBytes: await file.length(),
+            ),
+          ];
+        } on FileSystemException {
+          // Skip unreadable or vanished image files.
+        }
+      }
+    }
     final images = <CoverImageReference>[];
     for (final file in candidates) {
       try {
@@ -944,7 +1022,15 @@ class FileCachePlatformGateway {
       rethrow;
     }
     for (final backup in staged.keys) {
-      await backup.delete();
+      try {
+        await backup.delete();
+      } on Object catch (error, stackTrace) {
+        AppLogService.warning(
+          'subtitle_backup_cleanup_failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
     }
     return destination;
   }

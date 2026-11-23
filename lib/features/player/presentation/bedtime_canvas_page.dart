@@ -43,6 +43,7 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
   late final VideoDisplayPlatformGateway _displayGateway;
   late final AppOrientationController _orientationController;
   late final AnimationController _breathingController;
+  late final CurvedAnimation _breathingCurve;
   late final Animation<double> _breathingAnimation;
   late final AnimationController _holdExitController;
 
@@ -53,7 +54,7 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
   Timer? _idleDimTimer;
   Timer? _feedbackTimer;
   Timer? _backHintTimer;
-  IconData? _feedbackIcon;
+  final ValueNotifier<IconData?> _feedbackIcon = ValueNotifier<IconData?>(null);
   bool _isIdleDimmed = false;
   bool _showBackBlockedHint = false;
   int? _activePointerId;
@@ -103,16 +104,19 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
       duration: const Duration(milliseconds: 4500),
     );
 
-    _breathingAnimation = Tween<double>(begin: 0.16, end: 0.42).animate(
-      CurvedAnimation(
-        parent: _breathingController,
-        curve: Curves.easeInOutSine,
-      ),
+    _breathingCurve = CurvedAnimation(
+      parent: _breathingController,
+      curve: Curves.easeInOutSine,
     );
+    _breathingAnimation = Tween<double>(
+      begin: 0.16,
+      end: 0.42,
+    ).animate(_breathingCurve);
 
     _holdExitController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2000),
+      reverseDuration: kAppMotionFast,
       // This duration measures a deliberate hold, rather than decorative motion.
       animationBehavior: AnimationBehavior.preserve,
     );
@@ -127,6 +131,9 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
         if (mounted) {
           Navigator.of(context).pop();
         }
+      } else if (status == AnimationStatus.dismissed &&
+          _activePointerId == null) {
+        _touchPosition = null;
       }
     });
 
@@ -156,8 +163,10 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
     _idleDimTimer?.cancel();
     _feedbackTimer?.cancel();
     _backHintTimer?.cancel();
+    _breathingCurve.dispose();
     _breathingController.dispose();
     _holdExitController.dispose();
+    _feedbackIcon.dispose();
     if (_brightnessToken != null) {
       final token = _brightnessToken!;
       _brightnessToken = null;
@@ -249,16 +258,12 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
   }
 
   void _showFeedback({required IconData icon}) {
-    if (!mounted) return;
+    if (!mounted || _disposed) return;
     _feedbackTimer?.cancel();
-    setState(() {
-      _feedbackIcon = icon;
-    });
+    _feedbackIcon.value = icon;
     _feedbackTimer = Timer(const Duration(milliseconds: 900), () {
-      if (mounted) {
-        setState(() {
-          _feedbackIcon = null;
-        });
+      if (mounted && !_disposed) {
+        _feedbackIcon.value = null;
       }
     });
   }
@@ -338,12 +343,26 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
     }
   }
 
+  void _cancelHoldExit() {
+    _touchStartPosition = null;
+    if (_holdExitController.status == AnimationStatus.completed) {
+      return;
+    }
+    if (_disableAnimations == true ||
+        _holdExitController.value <= _holdVisibleThreshold) {
+      _holdExitController.reset();
+      _touchPosition = null;
+      return;
+    }
+    unawaited(_holdExitController.reverse());
+  }
+
   void _onPointerDown(PointerDownEvent event) {
     _onUserInteraction();
     if (_activePointerId != null) return;
     _activePointerId = event.pointer;
-    _touchStartPosition = event.position;
-    _touchPosition = event.position;
+    _touchStartPosition = event.localPosition;
+    _touchPosition = event.localPosition;
     _holdExitController.forward(from: 0.0);
   }
 
@@ -351,11 +370,9 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
     if (_activePointerId != event.pointer || _touchStartPosition == null) {
       return;
     }
-    final distance = (event.position - _touchStartPosition!).distance;
+    final distance = (event.localPosition - _touchStartPosition!).distance;
     if (distance > _moveCancelThreshold) {
-      _holdExitController.reset();
-      _touchStartPosition = null;
-      _touchPosition = null;
+      _cancelHoldExit();
     } else {
       _touchPosition = _touchStartPosition;
     }
@@ -364,17 +381,13 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
   void _onPointerUp(PointerUpEvent event) {
     if (_activePointerId != event.pointer) return;
     _activePointerId = null;
-    _holdExitController.reset();
-    _touchStartPosition = null;
-    _touchPosition = null;
+    _cancelHoldExit();
   }
 
   void _onPointerCancel(PointerCancelEvent event) {
     if (_activePointerId != event.pointer) return;
     _activePointerId = null;
-    _holdExitController.reset();
-    _touchStartPosition = null;
-    _touchPosition = null;
+    _cancelHoldExit();
   }
 
   @override
@@ -491,96 +504,115 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
                     ),
                   ),
 
-                // Faint gesture feedback badge
-                if (_feedbackIcon != null)
-                  Center(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 14,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _bedtimeWarmForeground.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            _feedbackIcon,
-                            color: _bedtimeWarmForeground.withValues(
-                              alpha: 0.35,
-                            ),
-                            size: 26,
-                          ),
-                        ],
+                  // Faint gesture feedback badge
+                  IgnorePointer(
+                    child: Center(
+                      child: ValueListenableBuilder<IconData?>(
+                        valueListenable: _feedbackIcon,
+                        builder: (context, icon, _) => AnimatedSwitcher(
+                          duration: _disableAnimations == true
+                              ? Duration.zero
+                              : const Duration(milliseconds: 180),
+                          switchInCurve: kAppFadeCurve,
+                          switchOutCurve: kAppFadeCurve,
+                          child: icon == null
+                              ? const SizedBox.shrink(
+                                  key: ValueKey<String>(
+                                    'bedtime_feedback_empty',
+                                  ),
+                                )
+                              : RepaintBoundary(
+                                  key: ValueKey<IconData>(icon),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 20,
+                                      vertical: 14,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: _bedtimeWarmForeground.withValues(
+                                        alpha: 0.08,
+                                      ),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Icon(
+                                      icon,
+                                      color: _bedtimeWarmForeground.withValues(
+                                        alpha: 0.35,
+                                      ),
+                                      size: 26,
+                                    ),
+                                  ),
+                                ),
+                        ),
                       ),
                     ),
                   ),
 
-                // Long-press hold indicator
-                AnimatedBuilder(
-                  animation: _holdExitController,
-                  builder: (context, _) {
-                    final rawProgress = _holdExitController.value;
-                    if (rawProgress <= _holdVisibleThreshold) {
-                      return const SizedBox.shrink();
-                    }
-                    final progress =
-                        ((rawProgress - _holdVisibleThreshold) /
-                                (1.0 - _holdVisibleThreshold))
-                            .clamp(0.0, 1.0);
-                    final fadeOpacity = (progress / 0.18).clamp(0.0, 1.0);
+                  // Long-press hold indicator
+                  AnimatedBuilder(
+                    animation: _holdExitController,
+                    builder: (context, _) {
+                      final rawProgress = _holdExitController.value;
+                      if (rawProgress <= _holdVisibleThreshold) {
+                        return const SizedBox.shrink();
+                      }
+                      final progress =
+                          ((rawProgress - _holdVisibleThreshold) /
+                                  (1.0 - _holdVisibleThreshold))
+                              .clamp(0.0, 1.0);
+                      final fadeOpacity = (progress / 0.18).clamp(0.0, 1.0);
 
-                    final pos =
-                        _touchPosition ??
-                        _touchStartPosition ??
-                        Offset(
-                          MediaQuery.sizeOf(context).width / 2,
-                          MediaQuery.sizeOf(context).height / 2,
-                        );
+                      final pos =
+                          _touchPosition ??
+                          _touchStartPosition ??
+                          Offset(
+                            MediaQuery.sizeOf(context).width / 2,
+                            MediaQuery.sizeOf(context).height / 2,
+                          );
 
-                    return Positioned(
-                      left: pos.dx - 40,
-                      top: pos.dy - 40,
-                      child: IgnorePointer(
-                        child: Opacity(
-                          opacity: fadeOpacity,
-                          child: SizedBox(
-                            width: 80,
-                            height: 80,
-                            child: Stack(
-                              alignment: Alignment.center,
-                              children: [
-                                CircularProgressIndicator(
-                                  value: progress,
-                                  strokeWidth: 3,
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                    _bedtimeWarmForeground.withValues(
-                                      alpha: 0.4,
+                      return Positioned(
+                        left: pos.dx - 40,
+                        top: pos.dy - 40,
+                        child: IgnorePointer(
+                          child: RepaintBoundary(
+                            child: Opacity(
+                              opacity: fadeOpacity,
+                              child: SizedBox(
+                                width: 80,
+                                height: 80,
+                                child: Stack(
+                                  alignment: Alignment.center,
+                                  children: [
+                                    CircularProgressIndicator(
+                                      value: progress,
+                                      strokeWidth: 3,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        _bedtimeWarmForeground.withValues(
+                                          alpha: 0.4,
+                                        ),
+                                      ),
+                                      backgroundColor: _bedtimeWarmForeground
+                                          .withValues(alpha: 0.1),
                                     ),
-                                  ),
-                                  backgroundColor: _bedtimeWarmForeground
-                                      .withValues(alpha: 0.1),
-                                ),
-                                Icon(
-                                  Icons.lock_open_rounded,
-                                  size: 20,
-                                  color: _bedtimeWarmForeground.withValues(
-                                    alpha: math.min(
-                                      0.4,
-                                      0.15 + progress * 0.25,
+                                    Icon(
+                                      Icons.lock_open_rounded,
+                                      size: 20,
+                                      color: _bedtimeWarmForeground.withValues(
+                                        alpha: math.min(
+                                          0.4,
+                                          0.15 + progress * 0.25,
+                                        ),
+                                      ),
                                     ),
-                                  ),
+                                  ],
                                 ),
-                              ],
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    );
-                  },
-                ),
+                      );
+                    },
+                  ),
               ],
             ),
           ),
@@ -618,7 +650,9 @@ class _BedtimeTimerStatus extends ConsumerWidget {
         !waitingForAutoResume &&
         timerState.mode == TimerMode.trigger &&
         timerState.duration != null &&
-        timerState.duration! > Duration.zero;
+        timerState.duration! > Duration.zero &&
+        timerState.remaining != null &&
+        timerState.remaining! > Duration.zero;
 
     Widget buildRow(IconData icon, String timerText) {
       return Row(

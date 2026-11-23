@@ -11,6 +11,7 @@ import 'package:path/path.dart' as path;
 import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/state/subtitle_settings_provider.dart';
+import '../../../../app/theme/theme_provider.dart';
 import '../../../../core/logging/app_log_service.dart';
 import '../../../../core/media/music_track.dart';
 import '../../../../core/media/path_matcher.dart';
@@ -353,7 +354,7 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
     final hasTracks = queue.hasTracks;
     final activeColor = cardState.queueColorValue == null
         ? cs.primary
-        : Color(cardState.queueColorValue!);
+        : appReadableAccentColor(Color(cardState.queueColorValue!), cs.surface);
     final isPlaying = cardState.isPlaying;
     final coverSelection = selection;
     if (coverSelection != null &&

@@ -412,4 +412,69 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
     expect(pointer().ignoring, isTrue);
   });
+
+  testWidgets(
+    'fullscreen action aborts if unmounted or videoReady clears before endOfFrame',
+    (tester) async {
+      var fullscreenCalls = 0;
+
+      // Case 1: unmounted before endOfFrame resolves.
+      await tester.pumpWidget(
+        buildViewport(
+          videoReady: true,
+          onFullscreen: () async {
+            fullscreenCalls++;
+          },
+        ),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('session_video_tap_target')),
+      );
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.fullscreen_rounded));
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+      expect(fullscreenCalls, 0);
+
+      // Case 2: videoReady becomes false before endOfFrame resolves.
+      await tester.pumpWidget(
+        buildViewport(
+          videoReady: true,
+          onFullscreen: () async {
+            fullscreenCalls++;
+          },
+        ),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('session_video_tap_target')),
+      );
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.fullscreen_rounded));
+      await tester.pumpWidget(
+        buildViewport(
+          videoReady: false,
+          onFullscreen: () async {
+            fullscreenCalls++;
+          },
+        ),
+      );
+      await tester.pump();
+      expect(fullscreenCalls, 0);
+
+      // Surface recovers cleanly once videoReady becomes true again.
+      await tester.pumpWidget(
+        buildViewport(
+          videoReady: true,
+          onFullscreen: () async {
+            fullscreenCalls++;
+          },
+        ),
+      );
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey<String>('fake_video_surface')),
+        findsOneWidget,
+      );
+    },
+  );
 }

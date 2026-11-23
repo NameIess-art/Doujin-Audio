@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:doujin_audio/app/application/app_lifecycle_binding.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/player/application/playback_facade.dart';
@@ -470,6 +471,68 @@ void main() {
       await graph.runtime.resumeForeground();
       await retried.future;
       expect(migrations, 2);
+    },
+  );
+
+  test(
+    'fastShutdown skips pending secondary work and listening refresh',
+    () async {
+      final stuckSecondary = Completer<void>();
+      final secondaryStarted = Completer<void>();
+      var refreshReads = 0;
+      var secondaryDisposed = false;
+      final activity = ListeningActivityService(
+        repository: _EmptyListeningRepository(),
+        readUsage: () async {
+          refreshReads++;
+          return [];
+        },
+        acknowledgeUsage: (_) async {},
+        resolveTrack: (_) => null,
+        recordInterests: ({required batchId, required contributions}) async {},
+      );
+      final graph = createTestRuntimeGraph(
+        listeningActivity: activity,
+        initializeSecondaryData: () {
+          secondaryStarted.complete();
+          return stuckSecondary.future;
+        },
+        disposeSecondaryData: () => secondaryDisposed = true,
+      );
+      await graph.runtime.start();
+      final secondary = graph.runtime.initializeSecondaryData();
+      await secondaryStarted.future;
+      final readsBeforeDispose = refreshReads;
+
+      final lifecycle = graph.runtime as AppLifecycleBinding;
+      await lifecycle.dispose(fastShutdown: true).timeout(
+        const Duration(seconds: 2),
+      );
+
+      expect(secondaryDisposed, isTrue);
+      expect(refreshReads, readsBeforeDispose);
+      stuckSecondary.complete();
+      await secondary;
+    },
+  );
+
+  test(
+    'enterBackground before startup completes syncs playback mode on start',
+    () async {
+      final graph = createTestRuntimeGraph();
+      addTearDown(graph.runtime.dispose);
+      expect(
+        graph.playback.positionBucketSeconds,
+        PlaybackFacade.foregroundPositionBucketSeconds,
+      );
+
+      await graph.runtime.enterBackground();
+      await graph.runtime.start();
+
+      expect(
+        graph.playback.positionBucketSeconds,
+        PlaybackFacade.backgroundPositionBucketSeconds,
+      );
     },
   );
 }

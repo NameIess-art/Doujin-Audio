@@ -114,14 +114,16 @@ final class UndoableRemovalService {
 
   Future<int> undoPending() {
     _generation++;
-    return _serialize(() async {
-      if (_pending.isEmpty) return 0;
-      final actions = _pending.values.toList(growable: false).reversed.toList();
+    final actions = _pending.values.toList(growable: false).reversed.toList();
+    if (actions.isNotEmpty) {
       _pending.clear();
       _emit(
         batchChanged: true,
         restoredKeys: actions.map((action) => action.key),
       );
+    }
+    return _serialize(() async {
+      if (actions.isEmpty) return 0;
       var failures = 0;
       for (final action in actions) {
         try {

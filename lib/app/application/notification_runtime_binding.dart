@@ -36,10 +36,7 @@ final class NotificationRuntimeBinding implements RuntimeBinding {
       playback: playback,
       resolveSession: notifications.resolveNotificationSession,
       resolveActionSession: () => notifications.notificationActionSession,
-      resumeSession: (session) => playbackCommands.startSession(
-        session,
-        shouldStartTriggerCountdown: false,
-      ),
+      resumeSession: (session) => playback.resumeSession(session.id),
       setFocusSessionId: notifications.setFocusedSession,
       notify: syncPlaybackState,
       syncKeepAlive: keepAlive.sync,

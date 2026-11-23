@@ -648,20 +648,24 @@ void main() {
 
   for (final isVideo in [false, true]) {
     testWidgets(
-      'portrait detail cover spacing preserves aspect ratio and collapsed width, video=$isVideo',
+      'detail artwork uses the same frame for audio and video, video=$isVideo',
       (tester) async {
         tester.view.devicePixelRatio = 1;
         tester.view.physicalSize = const Size(390, 820);
         addTearDown(tester.view.resetDevicePixelRatio);
         addTearDown(tester.view.resetPhysicalSize);
-        Widget page(bool expanded) => MaterialApp(
+        Widget page(
+          bool expanded, {
+          bool landscape = false,
+          bool? video,
+        }) => MaterialApp(
           home: Scaffold(
             body: SessionDetailLayout(
-              isLandscape: false,
+              isLandscape: landscape,
               padding: EdgeInsets.zero,
               segmentPanelExpanded: expanded,
               artwork: const SizedBox(key: ValueKey('portrait_artwork')),
-              isVideo: isVideo,
+              isVideo: video ?? isVideo,
               title: 'Test',
               circleName: 'Circle',
               voiceActors: const ['Voice'],
@@ -674,40 +678,76 @@ void main() {
           ),
         );
         await tester.pumpWidget(page(false));
-        final artwork = tester.getRect(
-          find.byKey(const ValueKey('portrait_artwork')),
-        );
-        expect(artwork.left, isVideo ? 0 : 8);
-        expect(390 - artwork.right, isVideo ? 0 : 8);
-        expect(artwork.width / artwork.height, closeTo(4 / 3, 0.001));
+        final artworkFinder = find.byKey(const ValueKey('portrait_artwork'));
+        final frameFinder = find.byType(CoverArtworkFrame);
+        final artwork = tester.getRect(artworkFinder);
+        expect(artwork, const Rect.fromLTWH(8, 0, 374, 280.5));
+        expect(tester.widget<CoverArtworkFrame>(frameFinder).showShadow, isTrue);
         final filename = find.byKey(const ValueKey('title_marquee_Test'));
         final credits = find.byKey(
           const ValueKey('session_detail_credits_Test'),
         );
-        if (isVideo) {
-          expect(
-            tester.getRect(filename).top,
-            greaterThanOrEqualTo(artwork.bottom),
-          );
-        } else {
-          expect(artwork.contains(tester.getRect(filename).topLeft), isTrue);
-          expect(artwork.contains(tester.getRect(credits).bottomRight), isTrue);
-        }
+        expect(artwork.contains(tester.getRect(filename).topLeft), isTrue);
+        expect(artwork.contains(tester.getRect(credits).bottomRight), isTrue);
         expect(
           tester.getRect(credits).top,
           greaterThan(tester.getRect(filename).bottom),
         );
         expect(find.text('Circle'), findsOneWidget);
         expect(find.text('Voice'), findsOneWidget);
+        final mask = tester.widget<Container>(
+          find
+              .ancestor(
+                of: filename,
+                matching: find.byWidgetPredicate(
+                  (widget) =>
+                      widget is Container &&
+                      widget.decoration is BoxDecoration &&
+                      (widget.decoration as BoxDecoration).gradient != null,
+                ),
+              )
+              .first,
+        );
+        final gradient = (mask.decoration as BoxDecoration).gradient!;
+        expect(gradient.colors.last.a, inExclusiveRange(0, 1));
 
         await tester.pumpWidget(page(true));
         await tester.pumpAndSettle();
-        final frame = tester.getRect(find.byType(CoverArtworkFrame));
+        final frame = tester.getRect(frameFinder);
         expect(frame.left, 0);
         expect(frame.width, 390);
         expect(frame.height, 0);
+        expect(filename, findsOneWidget);
+        if (isVideo) {
+          tester.view.physicalSize = const Size(1000, 520);
+          await tester.pumpWidget(page(false, landscape: true, video: false));
+          final audioArtwork = tester.getRect(artworkFinder);
+          await tester.pumpWidget(page(false, landscape: true));
+          final landscapeArtwork = tester.getRect(artworkFinder);
+          expect(landscapeArtwork, audioArtwork);
+          expect(landscapeArtwork.size.aspectRatio, closeTo(4 / 3, 0.001));
+          expect(
+            tester.widget<CoverArtworkFrame>(frameFinder).showShadow,
+            isTrue,
+          );
+          expect(
+            landscapeArtwork.contains(tester.getRect(filename).topLeft),
+            isTrue,
+          );
+          expect(
+            landscapeArtwork.contains(tester.getRect(credits).bottomRight),
+            isTrue,
+          );
+          await tester.pumpWidget(page(true, landscape: true));
+          await tester.pumpAndSettle();
+          expect(filename, findsOneWidget);
+        }
         expect(tester.takeException(), isNull);
       },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
     );
   }
 
@@ -7085,16 +7125,20 @@ void main() {
         await tester.pumpWidget(fixture.build(const PlaylistTab()));
         await tester.pumpAndSettle();
 
-        double opacityOf(String id) => tester
-            .widget<Opacity>(
-              find
-                  .descendant(
-                    of: find.byKey(ValueKey('playlist_queue_appearance_$id')),
-                    matching: find.byType(Opacity),
-                  )
-                  .first,
-            )
-            .opacity;
+        double opacityOf(String id) {
+          final wrapper = find.byKey(ValueKey('playlist_queue_appearance_$id'));
+          if (wrapper.evaluate().isEmpty) return 1.0;
+          return tester
+              .widget<Opacity>(
+                find
+                    .descendant(
+                      of: wrapper,
+                      matching: find.byType(Opacity),
+                    )
+                    .first,
+              )
+              .opacity;
+        }
 
         expect(opacityOf(existing.id), 1);
         await tester.tap(
@@ -11477,19 +11521,22 @@ void main() {
             .onPressed,
         isNotNull,
       );
-      bool videoReady() => tester
-          .widget<SessionVideoViewport>(find.byType(SessionVideoViewport))
-          .videoReady;
+      final viewport = find.byType(SessionVideoViewport);
+      bool videoReady() =>
+          tester.widget<SessionVideoViewport>(viewport).videoReady;
       expect(videoReady(), isFalse);
+      final posterRect = tester.getRect(viewport);
+      expect(find.byType(SessionVideoBlurredBackdrop), findsOneWidget);
 
       session.loadedPath = tracks[0].path;
       sync();
       await tester.pumpAndSettle();
       expect(videoReady(), isTrue);
+      expect(find.byType(SessionVideoBlurredBackdrop), findsOneWidget);
 
-      final surfaceBeforePause = tester.element(
-        find.byType(NativeSessionVideoSurface),
-      );
+      final videoSurface = find.byType(NativeSessionVideoSurface);
+      expect(tester.getRect(videoSurface), posterRect);
+      final surfaceBeforePause = tester.element(videoSurface);
       final pauseButton = find.byTooltip(fixture.languageProvider.tr('pause'));
       final pausePress = await tester.startGesture(
         tester.getCenter(pauseButton),
@@ -11963,7 +12010,7 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(find.byType(SessionVolumeControls), findsOneWidget);
-        expect(find.byType(PlaybackSecondaryControlSurface), findsOneWidget);
+        expect(find.byType(PlaybackSecondaryControlSurface), findsNothing);
         expect(
           find.byKey(const ValueKey('session_volume_exit_button')),
           findsNothing,
@@ -13205,9 +13252,9 @@ void main() {
         ),
         findsOneWidget,
       );
-      expect(textAlphaFor(cue0), lessThan(textAlphaFor(cue1) * 0.35));
+      expect(textAlphaFor(cue0), inInclusiveRange(0.42, 0.58));
       expect(textAlphaFor(cue1), closeTo(1.0, 0.01));
-      expect(textAlphaFor(cue2), lessThan(textAlphaFor(cue1) * 0.35));
+      expect(textAlphaFor(cue2), inInclusiveRange(0.42, 0.58));
       expect(
         tester.getCenter(cue1).dy,
         closeTo(tester.getCenter(viewport).dy, 0.1),
@@ -13245,6 +13292,7 @@ void main() {
       );
       await tester.tap(cue2);
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 260));
       expect(textAlphaFor(cue2), closeTo(1.0, 0.01));
       expect(
         tester.getCenter(cue2).dy,
@@ -13257,6 +13305,7 @@ void main() {
       );
       await tester.tap(cue1);
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 260));
       expect(textAlphaFor(cue1), closeTo(1.0, 0.01));
       expect(
         find.byKey(const ValueKey('subtitle_timeline_seek_button')),
@@ -13273,8 +13322,8 @@ void main() {
       expect(textAlphaFor(cue2), closeTo(1.0, 0.01));
       await gesture.up();
       await tester.pump();
-      // Measure after the focused cue's scale animation finishes.
-      await tester.pump(const Duration(milliseconds: 200));
+      // Measure after the focused cue's scale and snap animations finish.
+      await tester.pump(const Duration(milliseconds: 260));
       expect(textAlphaFor(cue2), closeTo(1.0, 0.01));
       expect(
         tester.getCenter(cue2).dy,
@@ -15707,7 +15756,7 @@ void main() {
   }
 
   testWidgets(
-    'landscape session detail keeps secondary controls visible when feature menu is open',
+    'landscape session detail hides the capsule on the first feature panel frame',
     (tester) async {
       final themeProvider = ThemeProvider(
         loadPersistedState: false,
@@ -15748,6 +15797,7 @@ void main() {
 
       await tester.tap(tuneButtonFinder);
       await tester.pump();
+      expect(secondaryControlsFinder, findsNothing);
       expect(menuOpacity(), 0);
       expect(cover, findsNothing);
       await tester.pump(kAppFadeDuration ~/ 2);
@@ -15870,8 +15920,7 @@ void main() {
         contentPaddings,
         contains(const EdgeInsets.fromLTRB(16, 0, 16, 16)),
       );
-      // Secondary controls capsule remains visible in landscape
-      expect(secondaryControlsFinder, findsOneWidget);
+      expect(secondaryControlsFinder, findsNothing);
 
       expect(await themeProvider.setBarGlassEnabled(true), isTrue);
       await tester.pumpAndSettle();
@@ -15975,7 +16024,7 @@ void main() {
   );
 
   testWidgets(
-    'portrait session detail hides secondary controls when feature menu is open',
+    'portrait session detail hides the capsule on the first feature panel frame',
     (tester) async {
       await _pumpSubtitleDetail(
         tester: tester,
@@ -15995,8 +16044,9 @@ void main() {
       final tuneButtonFinder = find.byIcon(Icons.tune_rounded);
       expect(tuneButtonFinder, findsOneWidget);
 
-      // Open audio features panel
       await tester.tap(tuneButtonFinder);
+      await tester.pump();
+      expect(secondaryControlsFinder, findsNothing);
       await tester.pumpAndSettle();
 
       expect(find.byKey(const ValueKey('segments')), findsOneWidget);
@@ -16011,7 +16061,6 @@ void main() {
             .height,
         closeTo(432, 1),
       );
-      // Secondary controls capsule is hidden in portrait
       expect(secondaryControlsFinder, findsNothing);
       expect(closeButton, findsNothing);
 
@@ -16085,13 +16134,16 @@ void main() {
         swipeCard.shape,
         const RoundedRectangleBorder(borderRadius: coverRadius),
       );
-      final clip = find.descendant(
+      final roundedSurface = find.descendant(
         of: swipeCardFinder,
         matching: find.byWidgetPredicate(
-          (widget) => widget is ClipRRect && widget.borderRadius == coverRadius,
+          (widget) =>
+              widget is DecoratedBox &&
+              widget.decoration is BoxDecoration &&
+              (widget.decoration as BoxDecoration).borderRadius == coverRadius,
         ),
       );
-      expect(clip, findsOneWidget);
+      expect(roundedSurface, findsOneWidget);
       final content = find.byKey(
         ValueKey<String>('playlist_card_content_${session.id}'),
       );
@@ -16209,12 +16261,7 @@ void main() {
       );
 
       if (defaultTargetPlatform == TargetPlatform.windows) {
-        expect(horizontalScroll, findsOneWidget);
-        final scrollable = find.descendant(
-          of: horizontalScroll,
-          matching: find.byType(Scrollable),
-        );
-        expect(tester.state<ScrollableState>(scrollable).position.pixels, 0.0);
+        expect(horizontalScroll, findsNothing);
 
         final mouse = await tester.createGesture(
           kind: ui.PointerDeviceKind.mouse,
@@ -16222,6 +16269,12 @@ void main() {
         await mouse.addPointer(location: const Offset(800, 800));
         await mouse.moveTo(tester.getCenter(card));
         await tester.pump();
+        expect(horizontalScroll, findsOneWidget);
+        final scrollable = find.descendant(
+          of: horizontalScroll,
+          matching: find.byType(Scrollable),
+        );
+        expect(tester.state<ScrollableState>(scrollable).position.pixels, 0.0);
         for (var i = 0; i < 5; i++) {
           await tester.pump(const Duration(milliseconds: 100));
         }
@@ -16233,7 +16286,7 @@ void main() {
 
         await mouse.moveTo(const Offset(800, 800));
         await tester.pumpAndSettle();
-        expect(tester.state<ScrollableState>(scrollable).position.pixels, 0.0);
+        expect(horizontalScroll, findsNothing);
       } else {
         expect(horizontalScroll, findsNothing);
       }

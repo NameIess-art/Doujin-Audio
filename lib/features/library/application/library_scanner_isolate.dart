@@ -3,6 +3,8 @@ import 'dart:isolate';
 
 import '../../../core/immutable_collections.dart';
 import '../../../core/media/music_track.dart';
+import '../domain/library_entry.dart';
+import 'library_organizer.dart';
 import 'library_scan_models.dart';
 import 'library_state_models.dart';
 import '../../../core/media/path_matcher.dart';
@@ -22,10 +24,13 @@ class ScanMergeIsolatePayload {
     Set<String> retainedTrackPaths = const <String>{},
     Set<String> retainedEntryPaths = const <String>{},
     this.entrySnapshot,
+    List<String> folderPaths = const <String>[],
+    this.useWorkerEntrySnapshot = false,
   }) : scannedTracks = immutableList(scannedTracks),
        library = immutableList(library),
        retainedTrackPaths = immutableSet(retainedTrackPaths),
-       retainedEntryPaths = immutableSet(retainedEntryPaths);
+       retainedEntryPaths = immutableSet(retainedEntryPaths),
+       folderPaths = immutableList(folderPaths);
 
   final List<ScannedTrack> scannedTracks;
   final List<MusicTrack> library;
@@ -39,6 +44,8 @@ class ScanMergeIsolatePayload {
   final Set<String> retainedTrackPaths;
   final Set<String> retainedEntryPaths;
   final LibraryEntrySnapshot? entrySnapshot;
+  final List<String> folderPaths;
+  final bool useWorkerEntrySnapshot;
 }
 
 class ScanMergeIsolateResult {
@@ -46,17 +53,65 @@ class ScanMergeIsolateResult {
     required List<MusicTrack> trackBatch,
     required List<MusicTrack> entryBatch,
     required this.duplicatesCount,
+    List<String> folderBatch = const <String>[],
     List<String> removedTrackPaths = const <String>[],
     List<String> removedEntryPaths = const <String>[],
   }) : trackBatch = immutableList(trackBatch),
        entryBatch = immutableList(entryBatch),
+       folderBatch = immutableList(folderBatch),
        removedTrackPaths = immutableList(removedTrackPaths),
        removedEntryPaths = immutableList(removedEntryPaths);
   final List<MusicTrack> trackBatch;
   final List<MusicTrack> entryBatch;
+  final List<String> folderBatch;
   final int duplicatesCount;
   final List<String> removedTrackPaths;
   final List<String> removedEntryPaths;
+}
+
+class RefreshFinalizeIsolateResult {
+  RefreshFinalizeIsolateResult({
+    required List<String> folderPaths,
+    required List<String> removedTrackPaths,
+    required List<String> removedEntryPaths,
+  }) : folderPaths = immutableList(folderPaths),
+       removedTrackPaths = immutableList(removedTrackPaths),
+       removedEntryPaths = immutableList(removedEntryPaths);
+
+  final List<String> folderPaths;
+  final List<String> removedTrackPaths;
+  final List<String> removedEntryPaths;
+}
+
+final class _SetEntrySnapshotRequest {
+  const _SetEntrySnapshotRequest(this.snapshot);
+
+  final LibraryEntrySnapshot? snapshot;
+}
+
+final class _FinalizeRefreshRequest {
+  _FinalizeRefreshRequest({
+    required this.libraryRoot,
+    required this.sourceFolderPath,
+    required this.exclusionMatcher,
+    required List<String> folderPaths,
+    required this.allowRemoval,
+    required List<String> removalCandidates,
+    required Set<String> retainedTrackPaths,
+    required Set<String> retainedEntryPaths,
+  }) : folderPaths = immutableList(folderPaths),
+       removalCandidates = immutableList(removalCandidates),
+       retainedTrackPaths = immutableSet(retainedTrackPaths),
+       retainedEntryPaths = immutableSet(retainedEntryPaths);
+
+  final String libraryRoot;
+  final String sourceFolderPath;
+  final LibraryExclusionMatcher exclusionMatcher;
+  final List<String> folderPaths;
+  final bool allowRemoval;
+  final List<String> removalCandidates;
+  final Set<String> retainedTrackPaths;
+  final Set<String> retainedEntryPaths;
 }
 
 /// Reuses one isolate for the ordered chunks of a folder scan.
@@ -66,7 +121,7 @@ final class LibraryScanMergeWorker {
   Isolate? _worker;
   SendPort? _requests;
 
-  Future<ScanMergeIsolateResult> merge(ScanMergeIsolatePayload payload) async {
+  Future<SendPort> _ensureStarted() async {
     if (_requests == null) {
       _worker = await Isolate.spawn(
         _serveScanMergeRequests,
@@ -76,8 +131,45 @@ final class LibraryScanMergeWorker {
       );
       _requests = await _readResponse<SendPort>();
     }
-    _requests!.send(payload);
+    return _requests!;
+  }
+
+  Future<void> setEntrySnapshot(LibraryEntrySnapshot? snapshot) async {
+    final requests = await _ensureStarted();
+    requests.send(_SetEntrySnapshotRequest(snapshot));
+    await _readResponse<bool>();
+  }
+
+  Future<ScanMergeIsolateResult> merge(ScanMergeIsolatePayload payload) async {
+    final requests = await _ensureStarted();
+    requests.send(payload);
     return _readResponse<ScanMergeIsolateResult>();
+  }
+
+  Future<RefreshFinalizeIsolateResult> finalizeRefresh({
+    required String libraryRoot,
+    required String sourceFolderPath,
+    required LibraryExclusionMatcher exclusionMatcher,
+    required List<String> folderPaths,
+    required bool allowRemoval,
+    required List<String> removalCandidates,
+    required Set<String> retainedTrackPaths,
+    required Set<String> retainedEntryPaths,
+  }) async {
+    final requests = await _ensureStarted();
+    requests.send(
+      _FinalizeRefreshRequest(
+        libraryRoot: libraryRoot,
+        sourceFolderPath: sourceFolderPath,
+        exclusionMatcher: exclusionMatcher,
+        folderPaths: folderPaths,
+        allowRemoval: allowRemoval,
+        removalCandidates: removalCandidates,
+        retainedTrackPaths: retainedTrackPaths,
+        retainedEntryPaths: retainedEntryPaths,
+      ),
+    );
+    return _readResponse<RefreshFinalizeIsolateResult>();
   }
 
   Future<T> _readResponse<T>() async {
@@ -100,17 +192,95 @@ final class LibraryScanMergeWorker {
 
 void _serveScanMergeRequests(SendPort responses) {
   final requests = ReceivePort();
+  LibraryEntrySnapshot? cachedEntrySnapshot;
   responses.send(requests.sendPort);
   requests.listen((message) {
-    responses.send(
-      processScannedTracksInIsolate(message as ScanMergeIsolatePayload),
-    );
+    if (message is _SetEntrySnapshotRequest) {
+      cachedEntrySnapshot = message.snapshot;
+      responses.send(true);
+    } else if (message is _FinalizeRefreshRequest) {
+      responses.send(_finalizeRefreshInIsolate(message, cachedEntrySnapshot));
+    } else {
+      responses.send(
+        processScannedTracksInIsolate(
+          message as ScanMergeIsolatePayload,
+          cachedEntrySnapshot: cachedEntrySnapshot,
+        ),
+      );
+    }
   });
 }
 
-ScanMergeIsolateResult processScannedTracksInIsolate(
-  ScanMergeIsolatePayload payload,
+RefreshFinalizeIsolateResult _finalizeRefreshInIsolate(
+  _FinalizeRefreshRequest request,
+  LibraryEntrySnapshot? entrySnapshot,
 ) {
+  final neededFolderPaths = <String>[];
+  if (request.folderPaths.isNotEmpty) {
+    if (entrySnapshot == null) {
+      neededFolderPaths.addAll(request.folderPaths);
+    } else {
+      final entries = const LibraryOrganizer().buildLibraryEntries(
+        request.libraryRoot,
+        const <MusicTrack>[],
+        folderPaths: request.folderPaths,
+        exclusionMatcher: request.exclusionMatcher,
+      );
+      final needed = <LibraryEntry>[];
+      for (final entry in entries) {
+        if (!entrySnapshot.entryNeedsRefresh(entry)) continue;
+        needed.add(entry);
+        if (entry.isFolder) neededFolderPaths.add(entry.path);
+      }
+      if (needed.isNotEmpty) entrySnapshot.remember(needed);
+    }
+  }
+
+  final removedTrackPaths = <String>[];
+  final removedEntryPaths = <String>[];
+  if (request.allowRemoval) {
+    if (request.removalCandidates.isNotEmpty) {
+      final retainedTrackIndex = PathMembershipIndex(
+        request.retainedTrackPaths,
+      );
+      for (final path in request.removalCandidates) {
+        if (!retainedTrackIndex.containsEquivalent(path)) {
+          removedTrackPaths.add(path);
+        }
+      }
+    }
+
+    if (entrySnapshot != null && entrySnapshot.entriesByPath.isNotEmpty) {
+      final normalizedSource = PathMatcher.normalize(request.sourceFolderPath);
+      final retainedEntryIndex = PathMembershipIndex(
+        request.retainedEntryPaths,
+      );
+      for (final entry in entrySnapshot.entriesByPath.values) {
+        if (!PathMatcher.isWithinOrEqualNormalized(
+          entry.path,
+          normalizedSource,
+        )) {
+          continue;
+        }
+        final retained = entry.isFolder
+            ? retainedEntryIndex.containsDescendantOrEqual(entry.path)
+            : retainedEntryIndex.containsEquivalent(entry.path);
+        if (!retained) removedEntryPaths.add(entry.path);
+      }
+    }
+  }
+
+  return RefreshFinalizeIsolateResult(
+    folderPaths: neededFolderPaths,
+    removedTrackPaths: removedTrackPaths,
+    removedEntryPaths: removedEntryPaths,
+  );
+}
+
+ScanMergeIsolateResult processScannedTracksInIsolate(
+  ScanMergeIsolatePayload payload, {
+  LibraryEntrySnapshot? cachedEntrySnapshot,
+}) {
   final libraryRoot = payload.libraryRoot;
   final promoteRootTracksToSingles = payload.promoteRootTracksToSingles;
 
@@ -177,7 +347,7 @@ ScanMergeIsolateResult processScannedTracksInIsolate(
   }
 
   final trackBatch = <MusicTrack>[];
-  final entryBatch = <MusicTrack>[];
+  final convertedForEntries = <MusicTrack>[];
   var duplicates = 0;
 
   for (final scanned in payload.scannedTracks) {
@@ -219,7 +389,7 @@ ScanMergeIsolateResult processScannedTracksInIsolate(
     converted = canonicalizeTrackPath(converted);
 
     if (libraryRoot != null) {
-      entryBatch.add(converted);
+      convertedForEntries.add(converted);
     }
 
     if (trackNeedsRefresh(converted)) {
@@ -234,6 +404,52 @@ ScanMergeIsolateResult processScannedTracksInIsolate(
     } else {
       duplicates++;
     }
+  }
+
+  final effectiveEntrySnapshot =
+      payload.entrySnapshot ??
+      (payload.useWorkerEntrySnapshot ? cachedEntrySnapshot : null);
+  final List<MusicTrack> entryBatch;
+  final List<String> folderBatch;
+  if (libraryRoot != null &&
+      effectiveEntrySnapshot != null &&
+      (convertedForEntries.isNotEmpty || payload.folderPaths.isNotEmpty)) {
+    final builtEntries = const LibraryOrganizer().buildLibraryEntries(
+      libraryRoot,
+      convertedForEntries,
+      folderPaths: payload.folderPaths,
+      exclusionMatcher:
+          payload.exclusionMatcher ??
+          LibraryExclusionMatcher(libraryPath: libraryRoot),
+    );
+    final neededEntries = <LibraryEntry>[];
+    final neededTrackKeys = <String>{};
+    final neededFolders = <String>[];
+    for (final entry in builtEntries) {
+      if (!effectiveEntrySnapshot.entryNeedsRefresh(entry)) continue;
+      neededEntries.add(entry);
+      if (entry.isFolder) {
+        neededFolders.add(entry.path);
+      } else {
+        neededTrackKeys.add(PathMatcher.equivalenceKey(entry.path));
+      }
+    }
+    if (neededEntries.isNotEmpty) {
+      effectiveEntrySnapshot.remember(neededEntries);
+    }
+    entryBatch = neededTrackKeys.isEmpty
+        ? const <MusicTrack>[]
+        : <MusicTrack>[
+            for (final track in convertedForEntries)
+              if (neededTrackKeys.contains(
+                PathMatcher.equivalenceKey(track.path),
+              ))
+                track,
+          ];
+    folderBatch = neededFolders;
+  } else {
+    entryBatch = convertedForEntries;
+    folderBatch = payload.folderPaths;
   }
 
   final removedTrackPaths = <String>[];
@@ -258,7 +474,7 @@ ScanMergeIsolateResult processScannedTracksInIsolate(
       }
     }
 
-    final snapshot = payload.entrySnapshot;
+    final snapshot = effectiveEntrySnapshot;
     if (snapshot != null && payload.retainedEntryPaths.isNotEmpty) {
       final retainedEntryIndex = PathMembershipIndex(
         payload.retainedEntryPaths,
@@ -283,6 +499,7 @@ ScanMergeIsolateResult processScannedTracksInIsolate(
   return ScanMergeIsolateResult(
     trackBatch: trackBatch,
     entryBatch: entryBatch,
+    folderBatch: folderBatch,
     duplicatesCount: duplicates,
     removedTrackPaths: List<String>.unmodifiable(removedTrackPaths),
     removedEntryPaths: List<String>.unmodifiable(removedEntryPaths),

@@ -51,6 +51,14 @@ internal class WindowBrightnessLeaseController(
     }
 }
 
+internal fun readSystemScreenBrightnessFraction(
+    rawBrightness: Int,
+    maxBrightness: Int?
+): Float {
+    val divisor = maxBrightness?.takeIf { it > 0 } ?: 255
+    return (rawBrightness.toFloat() / divisor.toFloat()).coerceIn(0.01f, 1f)
+}
+
 internal class VideoDisplayMethodHandler(
     private val activity: Activity
 ) : MethodChannel.MethodCallHandler {
@@ -58,10 +66,21 @@ internal class VideoDisplayMethodHandler(
         readWindowBrightness = { activity.window.attributes.screenBrightness },
         readSystemBrightness = {
             runCatching {
-                Settings.System.getInt(
+                val raw = Settings.System.getInt(
                     activity.contentResolver,
                     Settings.System.SCREEN_BRIGHTNESS
-                ) / 255f
+                )
+                val maxId = activity.resources.getIdentifier(
+                    "config_screenBrightnessSettingMaximum",
+                    "integer",
+                    "android"
+                )
+                val maxBrightness = if (maxId != 0) {
+                    runCatching { activity.resources.getInteger(maxId) }.getOrNull()
+                } else {
+                    null
+                }
+                readSystemScreenBrightnessFraction(raw, maxBrightness)
             }.getOrDefault(0.5f)
         },
         writeWindowBrightness = { brightness ->

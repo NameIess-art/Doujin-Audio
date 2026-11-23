@@ -63,4 +63,36 @@ void main() {
     expect(PathDisplay.folderName(r'C:\Audio\Tracks\TrackFolder\'), 'TrackFolder');
     expect(PathDisplay.fileName('/Music/Albums/MyAlbum/'), 'MyAlbum');
   });
+
+  test('does not percent-decode non-URI local filesystem paths', () {
+    expect(
+      PathDisplay.displayPathFor(
+        '/storage/emulated/0/Music/100%20Pure/50%2F50.mp3',
+      ),
+      'Music/100%20Pure/50%2F50.mp3',
+    );
+    expect(
+      PathDisplay.fileName('/Music/100%20Pure/50%2F50.mp3'),
+      '50%2F50.mp3',
+    );
+    expect(
+      PathDisplay.fileName(
+        '/Music/100%20Pure/50%2F50.mp3',
+        withoutExtension: true,
+      ),
+      '50%2F50',
+    );
+    expect(
+      PathDisplay.folderName(r'C:\Audio\20%25 Off\'),
+      '20%25 Off',
+    );
+    expect(
+      PathDisplay.fileName('https://example.com/audio/Track%201.mp3'),
+      'Track 1.mp3',
+    );
+    expect(
+      PathDisplay.fileName('file:///Music/Track%202.mp3'),
+      'Track 2.mp3',
+    );
+  });
 }

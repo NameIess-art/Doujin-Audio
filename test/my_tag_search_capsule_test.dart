@@ -671,6 +671,64 @@ void main() {
       },
     );
   }
+
+  testWidgets(
+    'tapping retry snackbar after leaving MyTagManagementPage does not crash',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      final controller = _TagController(createTestAsmrServices())
+        ..failSave = true;
+      addTearDown(fixture.dispose);
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        fixture.build(
+          Builder(
+            builder: (context) => TextButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const MyTagManagementPage(excluded: false),
+                ),
+              ),
+              child: const Text('Open tags'),
+            ),
+          ),
+          overrides: [
+            asmrLibraryControllerProvider.overrideWithValue(controller),
+          ],
+        ),
+      );
+
+      await tester.tap(find.text('Open tags'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(AppElementChip).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('my_tags_confirm')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      final i18n = fixture.languageProvider;
+      expect(find.text(i18n.tr('retry')), findsOneWidget);
+      expect(controller.saveCalls, 1);
+
+      // Leave the page while the failure toast is still visible, then tap Retry.
+      await tester.tap(find.byType(AppHeaderBackButton));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.tap(find.text(i18n.tr('confirm')).last);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.byType(MyTagManagementPage), findsNothing);
+
+      final retryButton = find.text(i18n.tr('retry'));
+      expect(retryButton, findsOneWidget);
+      await tester.tap(retryButton);
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      expect(controller.saveCalls, 1);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 6));
+    },
+  );
 }
 
 class _TagController extends AsmrLibraryController {

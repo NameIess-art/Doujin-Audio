@@ -451,6 +451,7 @@ const Map<String, String> appLanguageJa = {
   'library_category_no_voice_actors': '声優情報なし',
   'library_category_no_circles': 'サークル情報なし',
   'library_category_no_matches': '該当する音声なし',
+  'copied': 'コピーしました',
   'copied_to_clipboard': 'コピーしました：{value}',
   'remove_folder': 'フォルダを削除',
   'remove_folder_confirm': 'このフォルダと配下の音声をライブラリから削除しますか？\n\n{name}',

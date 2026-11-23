@@ -11,8 +11,9 @@ class SubtitleWindow {
   void Show(bool visible);
   void Update(const std::string& text);
   void Style(const flutter::EncodableMap& style);
-  void SavePlacement() const;
+  void SavePlacement();
  private:
+  bool EnsureWindow();
   void LoadPlacement(LONG& x, LONG& y, LONG& width, LONG& height) const;
   void FitText();
   int MeasureText(HDC dc, int width);
@@ -21,9 +22,10 @@ class SubtitleWindow {
   bool EnsureMaskSurface(HDC screen, int width, int rows);
   void ReleaseMaskSurface();
   void ReleaseSurface();
-  void PaintBackground(int width, int rows, double scale);
+  void PaintBackground(DWORD* target, size_t stride, int width, int rows, double scale);
   void Paint(HDC screen);
   static LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
+  HINSTANCE instance_ = nullptr;
   HWND window_ = nullptr;
   std::wstring text_;
   std::wstring family_ = L"Segoe UI";
@@ -48,5 +50,5 @@ class SubtitleWindow {
   std::vector<DWORD> background_pixels_;
   bool background_dirty_ = true, content_dirty_ = true, fitting_text_ = false;
   bool dpi_changing_ = false, sized_during_dpi_change_ = false, resizing_ = false;
-  bool hovered_ = false;
+  bool hovered_ = false, surface_uploaded_ = false, placement_dirty_ = false;
 };

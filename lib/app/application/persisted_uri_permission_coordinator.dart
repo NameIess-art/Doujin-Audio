@@ -75,6 +75,18 @@ final class PersistedUriPermissionCoordinator implements RuntimeBinding {
     });
   }
 
+  String? _currentSavedDownloadContentUri() {
+    final savedDownloadRoot = _settings
+        .slice
+        .state
+        .asmrDownloadDestinationRoot
+        ?.trim();
+    return savedDownloadRoot != null &&
+            PathMatcher.isContentUri(savedDownloadRoot)
+        ? savedDownloadRoot
+        : null;
+  }
+
   Future<void> _drain() async {
     if (_running || _disposed) return;
     _running = true;
@@ -95,16 +107,7 @@ final class PersistedUriPermissionCoordinator implements RuntimeBinding {
             continue;
           }
         }
-        final savedDownloadRoot = _settings
-            .slice
-            .state
-            .asmrDownloadDestinationRoot
-            ?.trim();
-        final savedDownloadContentUri =
-            savedDownloadRoot != null &&
-                PathMatcher.isContentUri(savedDownloadRoot)
-            ? savedDownloadRoot
-            : null;
+        final savedDownloadContentUri = _currentSavedDownloadContentUri();
         final revision = (
           _library.persistedUriReferenceRevision,
           _playback.persistedUriReferenceRevision,
@@ -116,7 +119,8 @@ final class PersistedUriPermissionCoordinator implements RuntimeBinding {
         if (_disposed) return;
         if (revision.$1 != _library.persistedUriReferenceRevision ||
             revision.$2 != _playback.persistedUriReferenceRevision ||
-            revision.$3 != _downloads.persistedUriReferenceRevision) {
+            revision.$3 != _downloads.persistedUriReferenceRevision ||
+            revision.$4 != _currentSavedDownloadContentUri()) {
           _requested = true;
           continue;
         }

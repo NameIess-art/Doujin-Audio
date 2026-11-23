@@ -279,6 +279,103 @@ void main() {
       );
     }
   }
+
+  testWidgets(
+    'pushing another route during close preparation does not trap SessionDetailPage',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(540, 960);
+      tester.view.display.devicePixelRatio = 1;
+      tester.view.display.size = const Size(540, 960);
+      addTearDown(tester.view.reset);
+      addTearDown(tester.view.display.reset);
+      UiInteractionCoordinator.instance.resetForTest();
+      addTearDown(UiInteractionCoordinator.instance.resetForTest);
+
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final track = testMusicTrack(
+        name: 'Orientation',
+        path: '/music/orientation_trap.mp3',
+        groupKey: '/music',
+        groupTitle: 'Music',
+      );
+      fixture.library.addTracks([track], persist: false);
+      final session = fixture.playback.createTrackSession(track);
+      fixture.playbackService.syncSlice(
+        activeSessions: [session],
+        playingSessionCount: 0,
+        focusedSessionId: session.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      final orientation = AppOrientationController(
+        setPreferredOrientations: (_) async {},
+        setSystemUiMode: (_) async {},
+      );
+      await orientation.updateDisplay(540);
+      await orientation.setPlaybackDetailVisible(true);
+
+      await tester.pumpWidget(
+        fixture.build(
+          const Scaffold(
+            key: ValueKey('trap_home'),
+            body: SizedBox.expand(),
+          ),
+          overrides: [
+            appOrientationControllerProvider.overrideWithValue(orientation),
+          ],
+        ),
+      );
+      final navigator = Navigator.of(
+        tester.element(find.byKey(const ValueKey('trap_home'))),
+      );
+      final route = _GuardedSessionDetailRoute(sessionId: session.id);
+      unawaited(navigator.push(route));
+      await tester.pumpAndSettle();
+      tester.view.physicalSize = const Size(960, 540);
+      await tester.pumpAndSettle();
+
+      // Start close while landscape portrait-restore is still pending.
+      await tester.tap(
+        find.byKey(const ValueKey('session_detail_close_button')),
+      );
+      await tester.pump();
+      expect(route.preparingForExit, isTrue);
+
+      // Push another route while exit preparation is still awaiting metrics.
+      unawaited(
+        navigator.push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => const Scaffold(body: Text('Interrupting Route')),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Interrupting Route'), findsOneWidget);
+
+      // Complete portrait restoration while the interrupting route is on top.
+      tester.view.physicalSize = const Size(540, 960);
+      await tester.pumpAndSettle();
+
+      // Pop the interrupting route -> SessionDetailPage is current again and must still close.
+      navigator.pop();
+      await tester.pumpAndSettle();
+      expect(find.byType(SessionDetailPage), findsOneWidget);
+      expect(route.isCurrent, isTrue);
+
+      await tester.tap(
+        find.byKey(const ValueKey('session_detail_close_button')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(SessionDetailPage), findsNothing);
+      expect(navigator.canPop(), isFalse);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.android),
+  );
 }
 
 class _GuardedSessionDetailRoute extends SessionDetailRoute {

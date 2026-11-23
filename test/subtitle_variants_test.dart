@@ -153,7 +153,7 @@ void main() {
       final preferences = await SharedPreferences.getInstance();
       expect(
         preferences.getStringList('subtitle_custom_paths'),
-        contains('$audio|${translated.sourcePath}'),
+        contains(jsonEncode({'track': audio, 'path': translated.sourcePath})),
       );
     },
   );
@@ -179,7 +179,9 @@ void main() {
       final preferences = await SharedPreferences.getInstance();
       expect(
         preferences.getStringList('subtitle_custom_paths') ?? [],
-        isNot(contains('$audio|${selected.sourcePath}')),
+        isNot(
+          contains(jsonEncode({'track': audio, 'path': selected.sourcePath})),
+        ),
       );
     },
   );
@@ -438,7 +440,12 @@ void main() {
       final preferences = await SharedPreferences.getInstance();
       expect(
         preferences.getStringList('subtitle_custom_paths'),
-        contains('$safAudio|${_SafChoicesGateway.translated}'),
+        contains(
+          jsonEncode({
+            'track': safAudio,
+            'path': _SafChoicesGateway.translated,
+          }),
+        ),
       );
     },
   );
@@ -461,6 +468,95 @@ void main() {
       expect(await original.readAsString(), _srt('Original'));
     },
   );
+
+  test(
+    'remote subtitle saving sanitizes query-only URLs and Windows-reserved characters',
+    () async {
+      final subtitles = service();
+      const scriptDraft = SubtitleDraft(
+        kind: SubtitleDraftKind.script,
+        sourceLanguage: 'ja',
+        cues: [
+          SubtitleCue(
+            start: Duration(seconds: 1),
+            end: Duration(seconds: 2),
+            text: 'Line one',
+          ),
+        ],
+      );
+      for (final url in const [
+        'https://example.com/?id=42',
+        'https://example.com/a%3Ab%3Fc%2Fd%5Ce.mp3',
+        'https://example.com/CON.mp3',
+      ]) {
+        final savedScript = await subtitles.saveDraft(url, scriptDraft);
+        expect(savedScript.cues.single.text, 'Line one');
+        expect(await File(savedScript.sourcePath).exists(), isTrue);
+
+        final savedTranslation = await subtitles.saveDraft(
+          url,
+          _draft('Translated'),
+        );
+        expect(savedTranslation.cues.single.text, 'Source\nTranslated');
+        expect(await File(savedTranslation.sourcePath).exists(), isTrue);
+      }
+    },
+  );
+
+  test(
+    'custom subtitle persistence preserves paths containing pipe delimiters and migrates legacy entries',
+    () async {
+      const pipedAudio = 'content://provider/doc/dir|one/track|1.mp3';
+      const pipedSub = 'content://provider/doc/dir|one/sub|1.srt';
+      final gateway = _PipedSafGateway({pipedSub: _srt('Piped')});
+      final subtitles = service(gateway: gateway);
+
+      final selected = await subtitles.selectSubtitleFile(pipedAudio, pipedSub);
+      expect(selected.sourcePath, pipedSub);
+      expect(selected.cues.single.text, 'Piped');
+
+      final reloaded = await service(gateway: gateway).load(pipedAudio);
+      expect(reloaded?.sourcePath, pipedSub);
+      expect(reloaded?.cues.single.text, 'Piped');
+
+      // Legacy pipe-delimited entries (even starting with '{') still migrate on read.
+      const legacyAudio = 'content://provider/doc/{album}/track.mp3';
+      const legacySub = 'content://provider/doc/{album}/legacy.srt';
+      final legacyGateway = _PipedSafGateway({legacySub: _srt('Legacy')});
+      SharedPreferences.setMockInitialValues({
+        'subtitle_custom_paths': ['$legacyAudio|$legacySub'],
+      });
+      final migrated = await service(gateway: legacyGateway).load(legacyAudio);
+      expect(migrated?.sourcePath, legacySub);
+      expect(migrated?.cues.single.text, 'Legacy');
+    },
+  );
+}
+
+class _PipedSafGateway extends FileCachePlatformGateway {
+  _PipedSafGateway(this.content);
+  final Map<String, String> content;
+
+  @override
+  Future<List<({String sourcePath, String name})>> listTrackSubtitles({
+    required String trackPath,
+    String? groupKey,
+  }) async => [
+    for (final entry in content.keys)
+      (sourcePath: entry, name: path.basename(entry)),
+  ];
+
+  @override
+  Future<Map<String, Object?>?> resolveTrackSubtitle({
+    required String path,
+    String? groupKey,
+  }) async => null;
+
+  @override
+  Future<Uint8List?> readDocumentBytes(String filePath) async {
+    final text = content[filePath];
+    return text == null ? null : Uint8List.fromList(utf8.encode(text));
+  }
 }
 
 String _srt(String text) => '1\n00:00:01,000 --> 00:00:02,000\n$text\n';

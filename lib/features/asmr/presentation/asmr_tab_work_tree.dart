@@ -80,8 +80,6 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
         ref.watch(asmrPlaybackCoordinatorProvider) != null;
     const cardShape = LibraryLikeCardMetrics.cardShape;
 
-    // The card shell already clips the rounded card; keep its ink surface
-    // rectangular so each scrolling row avoids another shaped physical layer.
     final cardContent = Material(
       color: Colors.transparent,
       shadowColor: Colors.transparent,
@@ -89,6 +87,7 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
       // The tap surface sits inside the card so its ink highlight and ripple
       // paint above the card's closed background.
       child: AppEntryInkWell(
+        customBorder: cardShape,
         canRequestFocus: widget.isSelectionMode,
         onLongPress: widget.onLongPress,
         onTap: widget.isSelectionMode

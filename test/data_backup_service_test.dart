@@ -218,30 +218,41 @@ void main() {
     },
   );
 
-  test('startup removes abandoned work without a pending restore', () async {
-    for (final name in ['export_interrupted', 'validation_interrupted']) {
-      final file = File(
-        '${temporaryDirectory.path}/backup_work/$name/database.sqlite',
+  test(
+    'startup fast-paths without a pending restore and post-frame cleanup removes abandoned work',
+    () async {
+      for (final name in ['export_interrupted', 'validation_interrupted']) {
+        final file = File(
+          '${temporaryDirectory.path}/backup_work/$name/database.sqlite',
+        );
+        await file.parent.create(recursive: true);
+        await file.writeAsString('abandoned');
+      }
+      final unrelated = Directory(
+        '${temporaryDirectory.path}/backup_work/unrelated',
       );
-      await file.parent.create(recursive: true);
-      await file.writeAsString('abandoned');
-    }
-    final unrelated = Directory(
-      '${temporaryDirectory.path}/backup_work/unrelated',
-    );
-    await unrelated.create();
+      await unrelated.create();
 
-    final outcome = await DataBackupService(
-      supportDirectoryProvider: () async => temporaryDirectory,
-    ).applyAtStartup();
+      var supportDirectoryCalls = 0;
+      final service = DataBackupService(
+        supportDirectoryProvider: () async {
+          supportDirectoryCalls++;
+          return temporaryDirectory;
+        },
+      );
+      final outcome = await service.applyAtStartup();
 
-    expect(outcome, isNull);
-    expect(
-      Directory('${temporaryDirectory.path}/backup_work').listSync(),
-      hasLength(1),
-    );
-    expect(unrelated.existsSync(), isTrue);
-  });
+      expect(outcome, isNull);
+      expect(supportDirectoryCalls, 1);
+
+      await service.cleanupAbandonedWorkDirectories();
+      expect(
+        Directory('${temporaryDirectory.path}/backup_work').listSync(),
+        hasLength(1),
+      );
+      expect(unrelated.existsSync(), isTrue);
+    },
+  );
 
   test('work cleanup preserves pending restore and rollback files', () async {
     final abandoned = Directory(
@@ -367,7 +378,7 @@ void main() {
       await Link('${abandoned.path}/nested').create(outside.path);
       await DataBackupService(
         supportDirectoryProvider: () async => temporaryDirectory,
-      ).applyAtStartup();
+      ).cleanupAbandonedWorkDirectories();
       expect(await kept.readAsString(), 'keep');
       expect(await FileSystemEntity.isLink(link.path), isTrue);
       expect(abandoned.existsSync(), isFalse);

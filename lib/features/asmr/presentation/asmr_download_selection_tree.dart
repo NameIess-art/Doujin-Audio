@@ -66,9 +66,6 @@ class _AsmrDownloadSelectionListState extends State<AsmrDownloadSelectionList>
   }
 
   void _handleNodeSelectionChanged() {
-    if (mounted) {
-      setState(() {});
-    }
     widget.onSelectionChanged();
   }
 

@@ -6,7 +6,6 @@ import com.doujin.audio.player.service.*
 import com.doujin.audio.player.session.*
 
 import android.content.Context
-import android.database.sqlite.SQLiteException
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -214,10 +213,9 @@ class NativePlaybackBridge(
     private fun handleControllerChangedOnMain(service: NativePlaybackService?) {
         if (disposed) return
         if (service == null) {
-            if (listening) {
-                attachedService?.removeStateListener(listenerId)
-                attachedService = null
-            }
+            commandService = null
+            attachedService?.removeStateListener(listenerId)
+            attachedService = null
             return
         }
         if (listening) {
@@ -341,12 +339,12 @@ class NativePlaybackBridge(
     }
 }
 
-private inline fun dispatchStoredPlayback(
+internal inline fun dispatchStoredPlayback(
     method: String,
     dispatch: () -> Map<String, Any?>
 ): Map<String, Any?> = try {
     dispatch()
-} catch (error: SQLiteException) {
+} catch (error: Exception) {
     Log.w("NativePlaybackBridge", "Stored playback operation failed: $method", error)
     channelFailure(
         code = ChannelErrorCodes.PLATFORM_ERROR,
@@ -403,17 +401,27 @@ internal fun parsePlaybackCommand(call: MethodCall): ParsedPlaybackCommand {
         return value.toFloat()
     }
     return when (call.method) {
-        NativePlaybackMethods.READ_USAGE -> ParsedPlaybackCommand(dispatchInactive = { context ->
-            channelSuccess(NativePlaybackUsageLedger.get(context).read())
-        }) { service -> service.readUsage() }
+        NativePlaybackMethods.READ_USAGE -> ParsedPlaybackCommand(
+            dispatchInactive = { context ->
+                channelSuccess(NativePlaybackUsageLedger.get(context).read())
+            },
+            dispatchAsync = { service, complete ->
+                service.readUsageAsync(complete)
+            }
+        ) { service -> service.readUsage() }
         NativePlaybackMethods.ACKNOWLEDGE_USAGE -> {
             val ids = arguments.requiredList("batchIds")
             require(ids.all { it is String && it.isNotEmpty() }) { "batchIds is required." }
             val batchIds = ids.map { it as String }.toSet()
-            ParsedPlaybackCommand(dispatchInactive = { context ->
-                NativePlaybackUsageLedger.get(context).acknowledge(batchIds)
-                channelSuccess(null)
-            }) { service -> service.acknowledgeUsage(batchIds) }
+            ParsedPlaybackCommand(
+                dispatchInactive = { context ->
+                    NativePlaybackUsageLedger.get(context).acknowledge(batchIds)
+                    channelSuccess(null)
+                },
+                dispatchAsync = { service, complete ->
+                    service.acknowledgeUsageAsync(batchIds, complete)
+                }
+            ) { service -> service.acknowledgeUsage(batchIds) }
         }
         NativePlaybackMethods.RESET_USAGE -> ParsedPlaybackCommand(dispatchInactive = { context ->
             NativePlaybackUsageLedger.get(context).reset()
@@ -422,6 +430,22 @@ internal fun parsePlaybackCommand(call: MethodCall): ParsedPlaybackCommand {
 
         NativePlaybackMethods.PREPARE_SESSION -> {
             val prepared = NativePlaybackCommandPayloads.parsePrepareSession(call.argumentsMap())
+            if (prepared.reuseExistingQueue) {
+                return ParsedPlaybackCommand(
+                    sessionId = prepared.sessionId,
+                    canStartService = false,
+                    requireForegroundBootstrap = false,
+                    dispatchInactive = {
+                        channelFailure(
+                            code = ChannelErrorCodes.QUEUE_RESYNC_REQUIRED,
+                            message = "Existing playback queue is unavailable.",
+                            details = mapOf("method" to NativePlaybackMethods.PREPARE_SESSION)
+                        )
+                    }
+                ) { service ->
+                    service.prepareSession(prepared)
+                }
+            }
             var liveRevision: Long? = null
             fun versionedForLive(): NativePrepareSessionArguments {
                 val revision = liveRevision ?: NativePlaybackStateStore.invalidateSession(prepared.sessionId)

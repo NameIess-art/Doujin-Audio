@@ -4,7 +4,9 @@ import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
+import 'package:doujin_audio/core/media/dlsite_metadata.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/core/ui/ui_operation_service.dart';
 import 'package:doujin_audio/core/ui/undoable_removal_service.dart';
 import 'package:doujin_audio/core/widgets/app_feedback.dart';
 import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
@@ -14,7 +16,10 @@ import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/features/library/domain/audio_detail_store.dart';
 import 'package:doujin_audio/features/library/domain/library_node.dart';
 import 'package:doujin_audio/features/library/domain/library_persistence_repository.dart';
+import 'package:doujin_audio/features/library/presentation/dlsite_metadata_review_page.dart';
 import 'package:doujin_audio/features/library/presentation/folder_cover_selector.dart';
+import 'package:doujin_audio/features/library/presentation/library_edit_tree_projection.dart';
+import 'package:doujin_audio/features/library/presentation/library_edit_tree_tiles.dart';
 import 'package:doujin_audio/features/library/presentation/library_providers.dart';
 import 'package:doujin_audio/features/library/presentation/library_removal_feedback.dart';
 import 'package:doujin_audio/features/library/presentation/library_scan_feedback.dart';
@@ -511,6 +516,129 @@ void main() {
     },
     variant: TargetPlatformVariant.only(TargetPlatform.windows),
   );
+
+  testWidgets(
+    'L9 LibraryEditTreeList renders empty widget when leading is provided and nodes are empty',
+    (tester) async {
+      final library = LibraryFacade.create(databaseRepository: repo)
+        ..configureCoverArtworkRuntime(
+          isActiveCoverKey: (_) => false,
+          onActiveCoverChanged: () {},
+        );
+      addTearDown(library.dispose);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(i18n),
+            libraryFacadeProvider.overrideWithValue(library),
+          ],
+          child: MaterialApp(
+            theme: ThemeData(extensions: const [AppDesignTokens.light]),
+            home: Scaffold(
+              body: LibraryEditTreeList(
+                libraryPath: 'C:/EmptyLib',
+                nodes: const <LibraryEditTreeNode>[],
+                initiallyExpanded: false,
+                onRememberFolder: (_, _) {},
+                leading: const Text('Leading Banner'),
+                empty: const Text('Empty Placeholder'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('Leading Banner'), findsOneWidget);
+      expect(find.text('Empty Placeholder'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'M18 DlsiteMetadataReviewPage resets _saving when save finishes while route is not current',
+    (tester) async {
+      final uiOps = UiOperationService();
+      addTearDown(uiOps.dispose);
+      final saveGate = Completer<void>();
+      final gatedRepo = _GatedAudioDetailRepo(
+        onUpsert: () => saveGate.future,
+      );
+      final library = LibraryFacade.create(databaseRepository: gatedRepo)
+        ..configureCoverArtworkRuntime(
+          isActiveCoverKey: (_) => false,
+          onActiveCoverChanged: () {},
+        );
+      addTearDown(library.dispose);
+      final target = AudioDetailTarget.libraryRootFolder('C:/ReviewLib/Work1');
+      final detail = AudioDetail.empty(target).copyWith(rjCode: 'RJ010101');
+      final navKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(i18n),
+            libraryFacadeProvider.overrideWithValue(library),
+            settingsRepositoryProvider.overrideWithValue(settings),
+            uiOperationServiceProvider.overrideWithValue(uiOps),
+          ],
+          child: MaterialApp(
+            navigatorKey: navKey,
+            theme: ThemeData(extensions: const [AppDesignTokens.light]),
+            home: DlsiteMetadataReviewPage(
+              detail: detail,
+              initialCandidates: [
+                DlsiteMetadata(
+                  rjCode: 'RJ010101',
+                  workTitle: 'Title',
+                  circleName: 'Circle',
+                  voiceActors: const [],
+                  tags: const [],
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final reviewPopScope = find.descendant(
+        of: find.byType(DlsiteMetadataReviewPage),
+        matching: find.byType(PopScope<Object?>),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('dlsite_review_confirm')),
+      );
+      await tester.pump();
+      expect(tester.widget<PopScope<Object?>>(reviewPopScope).canPop, isFalse);
+
+      // Push a modal route on top so the review route is no longer current.
+      unawaited(
+        navKey.currentState!.push(
+          MaterialPageRoute<void>(
+            builder: (_) => const Scaffold(body: Text('Overlay Route')),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('Overlay Route'), findsOneWidget);
+
+      // Fail the in-flight save while not current, then dismiss the overlay route.
+      saveGate.completeError(StateError('save failed'));
+      await tester.pump();
+      await tester.pump();
+      navKey.currentState!.pop();
+      await tester.pumpAndSettle();
+
+      // Confirm button must be interactive again (_saving reset to false).
+      expect(
+        find.byKey(const ValueKey<String>('dlsite_review_confirm')),
+        findsOneWidget,
+      );
+      expect(tester.widget<PopScope<Object?>>(reviewPopScope).canPop, isTrue);
+    },
+  );
 }
 
 final class _FakeCoverArtworkCacheService extends CoverArtworkCacheService {
@@ -571,4 +699,13 @@ final class _InMemoryLibraryRepo
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+final class _GatedAudioDetailRepo extends _InMemoryLibraryRepo {
+  _GatedAudioDetailRepo({required this.onUpsert});
+
+  final Future<void> Function() onUpsert;
+
+  @override
+  Future<void> upsert(AudioDetail detail) => onUpsert();
 }

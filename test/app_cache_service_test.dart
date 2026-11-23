@@ -554,4 +554,43 @@ void main() {
       }
     },
   );
+
+  test(
+    'leasing a parent cache directory protects nested scratch subdirectories',
+    () async {
+      final leasedDir = await Directory(
+        path.join(temporary.path, 'exports', 'active_job'),
+      ).create(recursive: true);
+      final emptySubdir = await Directory(
+        path.join(leasedDir.path, 'scratch'),
+      ).create(recursive: true);
+      final importsDir = await Directory(
+        path.join(support.path, 'imports'),
+      ).create(recursive: true);
+      final leasedImportDir = await Directory(
+        path.join(importsDir.path, 'active_import'),
+      ).create(recursive: true);
+      final nestedImportSubdir = await Directory(
+        path.join(leasedImportDir.path, 'staging'),
+      ).create(recursive: true);
+      final lease = AppCacheService.protectPaths([
+        leasedDir.path,
+        leasedImportDir.path,
+      ]);
+      try {
+        await AppCacheService.clearTemporaryCaches();
+        expect(await leasedDir.exists(), isTrue);
+        expect(await emptySubdir.exists(), isTrue);
+
+        await AppCacheService.cleanupOrphanedPersistentImports(
+          (_) => false,
+          importDirectory: importsDir,
+        );
+        expect(await leasedImportDir.exists(), isTrue);
+        expect(await nestedImportSubdir.exists(), isTrue);
+      } finally {
+        lease.release();
+      }
+    },
+  );
 }

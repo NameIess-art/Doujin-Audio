@@ -19,6 +19,7 @@ import '../../../core/widgets/animated_reorder.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/library_like_cards.dart';
 import '../../../core/widgets/operation_feedback.dart';
+import '../../../core/widgets/scroll_activity_gate.dart';
 import '../../../core/widgets/scroll_to_top_list.dart';
 
 import 'library_tab_ui_helpers.dart';
@@ -171,6 +172,7 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
     ({AnimationController controller, Animation<double> opacity})
   >
   _folderLoadAnimations = {};
+  final Set<AnimationController> _pendingDisposedFolderControllers = {};
   final Set<String> _pendingFolderReveals = {};
   List<VisibleLibraryItem> _visibleItemsCache = const <VisibleLibraryItem>[];
   Set<String> _presentedPinnedPaths = const {};
@@ -198,8 +200,6 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
   _pendingFolderResults = {};
   int _prunedFolderTreeRevision = -1;
   final Map<String, GlobalKey> _itemKeys = {};
-  bool _itemKeyPruneScheduled = false;
-  static const int _itemKeyPruneThreshold = 96;
   final Set<String> _removingItemIds = {};
   final Set<UndoableRemovalKey> _removalKeys = {};
   bool _removalMotionActive = false;
@@ -273,7 +273,22 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
     for (final animation in _folderLoadAnimations.values) {
       animation.controller.dispose();
     }
+    _folderLoadAnimations.clear();
+    for (final controller in _pendingDisposedFolderControllers) {
+      controller.dispose();
+    }
+    _pendingDisposedFolderControllers.clear();
     super.dispose();
+  }
+
+  void _retireFolderLoadController(AnimationController controller) {
+    controller.stop(canceled: false);
+    if (!_pendingDisposedFolderControllers.add(controller)) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_pendingDisposedFolderControllers.remove(controller)) {
+        controller.dispose();
+      }
+    });
   }
 
   void _handleRemovalChanged(
@@ -490,11 +505,11 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
       );
       animation.addStatusListener((status) {
         if (status != AnimationStatus.completed || !mounted) return;
-        setState(() => _folderLoadAnimations.remove(normalizedPath));
+        final removed = _folderLoadAnimations.remove(normalizedPath);
+        if (removed == null) return;
+        setState(() {});
         // Rows detach their FadeTransition listeners in this frame's build.
-        WidgetsBinding.instance.addPostFrameCallback(
-          (_) => animation.dispose(),
-        );
+        _retireFolderLoadController(removed.controller);
       });
       unawaited(animation.forward());
     }
@@ -672,15 +687,12 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
     );
   }
 
-  void _pruneOffscreenItemKeys() {
-    if (_itemKeys.length <= _itemKeyPruneThreshold) return;
-    _itemKeys.removeWhere((id, key) {
-      if (key.currentContext != null || _removingItemIds.contains(id)) {
-        return false;
-      }
+  void _releaseItemKey(String id, GlobalKey key) {
+    if (_removingItemIds.contains(id)) return;
+    if (identical(_itemKeys[id], key)) {
+      _itemKeys.remove(id);
       _itemKeyIndices.remove(key);
-      return true;
-    });
+    }
   }
 
   void _pruneFolderTreeCaches(List<LibraryNode> tree, int structureRevision) {
@@ -702,7 +714,10 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
         .toList(growable: false);
     for (final path in removedRootPaths) {
       _loadedFolderTrees.remove(path);
-      _folderLoadAnimations.remove(path)?.controller.dispose();
+      final removed = _folderLoadAnimations.remove(path);
+      if (removed != null) {
+        _retireFolderLoadController(removed.controller);
+      }
       changed = true;
     }
     _loadingFolderTreeRevisions.removeWhere((path, _) {
@@ -898,33 +913,50 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
         treeItem = FadeTransition(opacity: opacity, child: treeItem);
       }
       final id = _visibleItemIds[index];
-      // The sliver changes when expanding/removing rows. Keep the card's State
-      // (including its undo size animation) when it moves between those slivers.
-      final itemKey = _itemKeys.putIfAbsent(id, GlobalKey.new);
-      _itemKeyIndices[itemKey] = index;
-      if (_itemKeys.length > _itemKeyPruneThreshold &&
-          !_itemKeyPruneScheduled) {
-        _itemKeyPruneScheduled = true;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _itemKeyPruneScheduled = false;
-          if (!mounted) return;
-          _pruneOffscreenItemKeys();
-        });
+      // The sliver changes when expanding/removing rows. Keep settled rows'
+      // State across sliver switches using lifecycle-released GlobalKeys, while
+      // fast-scrolling rows use lightweight ValueKeys to avoid churn.
+      final existingGlobalKey = _itemKeys[id];
+      final fastScrolling = ScrollActivityGate.isFastScrollingWithoutDependencyOf(
+        context,
+      );
+      final GlobalKey? leasedGlobalKey;
+      final Key itemKey;
+      if (existingGlobalKey != null) {
+        leasedGlobalKey = existingGlobalKey;
+        itemKey = existingGlobalKey;
+        _itemKeyIndices[existingGlobalKey] = index;
+      } else if (fastScrolling) {
+        leasedGlobalKey = null;
+        itemKey = ValueKey<String>(id);
+      } else {
+        final allocated = GlobalKey();
+        _itemKeys[id] = allocated;
+        _itemKeyIndices[allocated] = index;
+        leasedGlobalKey = allocated;
+        itemKey = allocated;
       }
+      final rowContent = BrowseAnchor(
+        id: id,
+        child: item.depth == 0
+            ? treeItem
+            : AnimatedTreeReveal(
+                key: ValueKey<String>('library-tree-reveal:${node.path}'),
+                visible: item.revealed,
+                animateInitial: item.animateInitialReveal,
+                child: treeItem,
+              ),
+      );
       return AnimatedReorderItem(
         key: itemKey,
         id: id,
-        child: BrowseAnchor(
-          id: id,
-          child: item.depth == 0
-              ? treeItem
-              : AnimatedTreeReveal(
-                  key: ValueKey<String>('library-tree-reveal:${node.path}'),
-                  visible: item.revealed,
-                  animateInitial: item.animateInitialReveal,
-                  child: treeItem,
-                ),
-        ),
+        child: switch (leasedGlobalKey) {
+          final key? => _RowGlobalKeyLease(
+            onDispose: () => _releaseItemKey(id, key),
+            child: rowContent,
+          ),
+          null => rowContent,
+        },
       );
     }
 
@@ -1026,7 +1058,12 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             itemCount: rowCount,
             findChildIndexCallback: columnCount == 1
-                ? (key) => _itemKeyIndices[key]
+                ? (key) {
+                    if (key is ValueKey<String>) {
+                      return _itemIndexById[key.value];
+                    }
+                    return _itemKeyIndices[key];
+                  }
                 : null,
             itemBuilder: (context, rowIndex) {
               if (columnCount == 1) {
@@ -1070,4 +1107,25 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
       },
     );
   }
+}
+
+class _RowGlobalKeyLease extends StatefulWidget {
+  const _RowGlobalKeyLease({required this.onDispose, required this.child});
+
+  final VoidCallback onDispose;
+  final Widget child;
+
+  @override
+  State<_RowGlobalKeyLease> createState() => _RowGlobalKeyLeaseState();
+}
+
+class _RowGlobalKeyLeaseState extends State<_RowGlobalKeyLease> {
+  @override
+  void dispose() {
+    widget.onDispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }

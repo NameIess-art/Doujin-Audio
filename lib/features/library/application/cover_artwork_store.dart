@@ -74,6 +74,8 @@ final class CoverArtworkStore {
   // including references retained by old sidecars or database backups.
   Map<String, int> _managedArtifacts = <String, int>{};
   final Map<String, int> _pendingReferences = <String, int>{};
+  static const int _maxAccessedArtifacts = 1024;
+  static const int _trimmedAccessedArtifacts = 256;
   final Set<String> _accessedArtifacts = <String>{};
   final Set<Future<void>> _activeFileWrites = <Future<void>>{};
   final Map<
@@ -698,6 +700,7 @@ final class CoverArtworkStore {
           await file.delete();
           deletedBytes += stat.size;
           _managedArtifacts.remove(entry.key);
+          _accessedArtifacts.remove(reference);
           changed = true;
         }
       } finally {
@@ -705,6 +708,12 @@ final class CoverArtworkStore {
       }
       return deletedBytes;
     });
+  }
+
+  void trimMemory() {
+    while (_accessedArtifacts.length > _trimmedAccessedArtifacts) {
+      _accessedArtifacts.remove(_accessedArtifacts.first);
+    }
   }
 
   void _recordCreatedArtifact(File file) {
@@ -717,7 +726,12 @@ final class CoverArtworkStore {
   void _rememberAccess(String value) {
     final key = _artifactRelativePath(value);
     if (key != null && (_managedArtifacts[key] ?? 0) > 0) {
-      _accessedArtifacts.add(_referenceKey(value));
+      final reference = _referenceKey(value);
+      _accessedArtifacts.remove(reference);
+      _accessedArtifacts.add(reference);
+      while (_accessedArtifacts.length > _maxAccessedArtifacts) {
+        _accessedArtifacts.remove(_accessedArtifacts.first);
+      }
     }
   }
 

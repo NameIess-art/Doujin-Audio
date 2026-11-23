@@ -39,19 +39,24 @@ function Test-InnoCompilerIntegrity([string]$CompilerRoot, [string]$ExpectedInst
     if (!(Test-Path -LiteralPath $markerPath)) { return $false }
     try {
         $marker = Get-Content -LiteralPath $markerPath -Raw | ConvertFrom-Json
+        if ($null -eq $marker) { return $false }
+        $installerProp = $marker.PSObject.Properties['installerSha256']
+        if ($null -eq $installerProp -or $installerProp.Value -ne $ExpectedInstallerSha256) { return $false }
+        $filesProp = $marker.PSObject.Properties['files']
+        if ($null -eq $filesProp -or $null -eq $filesProp.Value) { return $false }
+        $files = $filesProp.Value
+        foreach ($fileName in $innoRequiredFiles) {
+            $filePath = Join-Path $CompilerRoot $fileName
+            if (!(Test-Path -LiteralPath $filePath)) { return $false }
+            $expectedProp = $files.PSObject.Properties[$fileName]
+            if ($null -eq $expectedProp -or !$expectedProp.Value) { return $false }
+            $actualHash = (Get-FileHash -LiteralPath $filePath -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actualHash -ne $expectedProp.Value) { return $false }
+        }
+        return $true
     } catch {
         return $false
     }
-    if ($marker.installerSha256 -ne $ExpectedInstallerSha256) { return $false }
-    foreach ($fileName in $innoRequiredFiles) {
-        $filePath = Join-Path $CompilerRoot $fileName
-        if (!(Test-Path -LiteralPath $filePath)) { return $false }
-        $expectedHash = $marker.files.$fileName
-        if (!$expectedHash) { return $false }
-        $actualHash = (Get-FileHash -LiteralPath $filePath -Algorithm SHA256).Hash.ToLowerInvariant()
-        if ($actualHash -ne $expectedHash) { return $false }
-    }
-    return $true
 }
 
 function Write-InnoCompilerMarker([string]$CompilerRoot, [string]$InstallerSha256) {

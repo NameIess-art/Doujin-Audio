@@ -1074,6 +1074,53 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets(
+    'DlsiteMetadataBatchReviewPage listens to session and enables next work when background lookup finishes',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: CoverArtworkCacheService(
+          libraryService: LibraryService(),
+          remoteCoverDownloader: (_) async => null,
+        ),
+      );
+      addTearDown(fixture.dispose);
+      final secondLookup = Completer<List<DlsiteMetadata>>();
+      final session = DlsiteMetadataBatchSession(
+        entries: [resultEntry('001'), resultEntry('002')],
+        lookup: (query) => switch (query.rjCode) {
+          'RJ000001' => Future<List<DlsiteMetadata>>.value([
+            resultMetadata('001'),
+          ]),
+          _ => secondLookup.future,
+        },
+      );
+      addTearDown(session.dispose);
+      session.start();
+      await tester.pumpWidget(
+        fixture.build(
+          DlsiteMetadataBatchReviewPage(session: session, initialIndex: 0),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final nextButton = find.byKey(
+        const ValueKey<String>('dlsite_review_next_work'),
+      );
+      expect(
+        tester.widget<IconButton>(nextButton).onPressed,
+        isNull,
+      );
+
+      secondLookup.complete([resultMetadata('002')]);
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.widget<IconButton>(nextButton).onPressed,
+        isNotNull,
+      );
+    },
+  );
 }
 
 class _RecordingNavigatorObserver extends NavigatorObserver {

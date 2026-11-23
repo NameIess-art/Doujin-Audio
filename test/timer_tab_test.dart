@@ -710,6 +710,137 @@ void main() {
     },
     variant: const TargetPlatformVariant({TargetPlatform.windows}),
   );
+
+  testWidgets(
+    'expired timer keeps preset and mode changes without snapping back',
+    (tester) async {
+      tester.binding.platformDispatcher.accessibilityFeaturesTestValue =
+          const FakeAccessibilityFeatures(disableAnimations: true);
+      addTearDown(
+        tester.binding.platformDispatcher.clearAccessibilityFeaturesTestValue,
+      );
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      fixture.timerService
+        ..timerMode = TimerMode.manual
+        ..timerDuration = const Duration(minutes: 15)
+        ..timerActive = false
+        ..timerRemaining = Duration.zero
+        ..timerDraftMode = TimerMode.manual
+        ..timerDraftDuration = const Duration(minutes: 15);
+      fixture.timer.syncPresentationState();
+
+      await tester.pumpWidget(fixture.build(const TimerTab(showHeader: false)));
+      await tester.pumpAndSettle();
+
+      final preset60 = find.byKey(const ValueKey('timer_preset_60m'));
+      await tester.scrollUntilVisible(
+        preset60,
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.ensureVisible(preset60);
+      await tester.pumpAndSettle();
+      await tester.tap(preset60);
+      await tester.pumpAndSettle();
+
+      expect(fixture.timer.state.draftDuration, const Duration(minutes: 60));
+      final hourController =
+          tester
+                  .widget<ListWheelScrollView>(
+                    find.byType(ListWheelScrollView).at(0),
+                  )
+                  .controller!
+              as FixedExtentScrollController;
+      final minuteController =
+          tester
+                  .widget<ListWheelScrollView>(
+                    find.byType(ListWheelScrollView).at(1),
+                  )
+                  .controller!
+              as FixedExtentScrollController;
+      expect(hourController.selectedItem % 13, 1);
+      expect(minuteController.selectedItem % 60, 0);
+
+      final triggerOption = find.text(
+        fixture.languageProvider.tr('auto_start_after_play'),
+      );
+      await tester.scrollUntilVisible(
+        triggerOption,
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.ensureVisible(triggerOption);
+      await tester.pumpAndSettle();
+      await tester.tap(triggerOption);
+      await tester.pumpAndSettle();
+
+      expect(fixture.timer.state.draftMode, TimerMode.trigger);
+      expect(
+        find.text(fixture.languageProvider.tr('confirm_wait_playback')),
+        findsOneWidget,
+      );
+      expect(hourController.selectedItem % 13, 1);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'duration wheel stays at 00:00:00 and clamps hours above 12 without wrapping',
+    (tester) async {
+      tester.binding.platformDispatcher.accessibilityFeaturesTestValue =
+          const FakeAccessibilityFeatures(disableAnimations: true);
+      addTearDown(
+        tester.binding.platformDispatcher.clearAccessibilityFeaturesTestValue,
+      );
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      await tester.pumpWidget(
+        fixture.build(const TimerTab(showHeader: false, compactOnly: true)),
+      );
+      await tester.pumpAndSettle();
+
+      // Extended duration past 12 hours clamps hour wheel to 12 rather than wrapping modulo 13.
+      fixture.timer.setTimerDraft(
+        TimerMode.manual,
+        const Duration(hours: 13, minutes: 5),
+      );
+      await tester.pumpAndSettle();
+      final hourController =
+          tester
+                  .widget<ListWheelScrollView>(
+                    find.byType(ListWheelScrollView).at(0),
+                  )
+                  .controller!
+              as FixedExtentScrollController;
+      expect(hourController.selectedItem % 13, 12);
+
+      // Scrolling down to 00:00:00 keeps the wheel at zero instead of snapping back to 00:30:00.
+      fixture.timer.setTimerDraft(
+        TimerMode.manual,
+        const Duration(minutes: 1),
+      );
+      await tester.pumpAndSettle();
+      final minuteWheel = find.byType(ListWheelScrollView).at(1);
+      final minuteController =
+          tester.widget<ListWheelScrollView>(minuteWheel).controller!
+              as FixedExtentScrollController;
+      expect(minuteController.selectedItem % 60, 1);
+      minuteController.jumpToItem(minuteController.selectedItem - 1);
+      await tester.pumpAndSettle();
+
+      expect(minuteController.selectedItem % 60, 0);
+      expect(
+        find.text(fixture.languageProvider.tr('set_duration_first')),
+        findsOneWidget,
+      );
+      expect(
+        tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+        isNull,
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 }
 
 class _CountingPermissionStatusService extends PermissionStatusService {

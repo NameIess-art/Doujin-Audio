@@ -63,7 +63,9 @@ PageRoute<void> buildSessionDetailRoute({
 
 class SessionDetailRoute extends AppPreparedPageRoute<void> {
   static const _portraitRestoreTimeout = Duration(milliseconds: 500);
-  static const _coverDuration = Duration(milliseconds: 450);
+  static const _coverDuration = Duration(milliseconds: 380);
+  static const _reverseCoverDuration = Duration(milliseconds: 320);
+  static const double interactiveReadyThreshold = 0.9;
 
   SessionDetailRoute({
     required this.sessionId,
@@ -75,7 +77,7 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
        _sourceBounds = source?.bounds(),
        super(
          transitionDuration: _coverDuration,
-         reverseTransitionDuration: _coverDuration,
+         reverseTransitionDuration: _reverseCoverDuration,
          pageBuilder: (context, animation, secondaryAnimation) =>
              SessionDetailPage(sessionId: sessionId, routeAnimation: animation),
          transitionsBuilder: (_, animation, secondaryAnimation, child) => child,
@@ -102,9 +104,15 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
   ValueNotifier<bool>? segmentPanelExpandedNotifier;
   SessionCoverAnchorState? _flightStart;
   SessionCoverAnchorState? _flightEnd;
-  late final Animation<double> _progress = animation!.drive(
-    CurveTween(curve: kAppSpringCurve),
+  CurvedAnimation? _progressCurve;
+  Animation<double> get _progress => _progressCurve ??= CurvedAnimation(
+    parent: animation!,
+    curve: kAppSpringCurve,
+    reverseCurve: kAppSpringCurve.flipped,
   );
+  ValueNotifier<double>? _dragDismissOffset;
+  double _dragDismissFrom = 0;
+  double _dragDismissTo = 0;
 
   bool _reducedMotion = false;
   bool _revealBehind = false;
@@ -261,14 +269,21 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
     }
   }
 
+  bool get _canRequestClose {
+    final anim = animation;
+    if (anim == null || anim.status == AnimationStatus.completed) return true;
+    return anim.status == AnimationStatus.forward &&
+        anim.value >= interactiveReadyThreshold;
+  }
+
   Future<void> requestClose() async {
-    if (_closing ||
-        !isCurrent ||
-        animation?.status != AnimationStatus.completed) {
+    if (_closing || !isCurrent || !_canRequestClose) {
       return;
     }
     _closing = true;
+    var popped = false;
     try {
+      _clearFlight();
       await prepareForExit();
       if (!isCurrent) return;
       _playlist.requestCarouselSnap(sessionId, immediately: true);
@@ -281,10 +296,15 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
         if (!isCurrent) return;
         _prepareCoverExit();
       }
-      navigator?.pop();
+      final nav = navigator;
+      if (nav != null) {
+        popped = true;
+        nav.pop();
+      }
     } finally {
-      if (isCurrent) {
+      if (!_disposed && (!popped || isCurrent)) {
         _clearFlight();
+        _clearDragDismissSlide();
         _closing = false;
         _setRevealBehind(false);
       }
@@ -533,6 +553,46 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
     _setRevealBehind(false);
   }
 
+  /// Drives coverless drag-dismiss slide-out from the route's reverse curve
+  /// so content-level TickerMode(enabled: false) cannot freeze the exit motion.
+  void startCoverlessDragDismissSlide({
+    required ValueNotifier<double> offsetNotifier,
+    required double from,
+    required double to,
+  }) {
+    if (_disposed || !isCurrent || _closing) return;
+    _clearDragDismissSlide();
+    _dragDismissOffset = offsetNotifier;
+    _dragDismissFrom = from;
+    _dragDismissTo = to;
+    _progress.addListener(_syncDragDismissSlide);
+  }
+
+  void clearCoverlessDragDismissSlide(ValueNotifier<double> offsetNotifier) {
+    if (identical(_dragDismissOffset, offsetNotifier)) {
+      _clearDragDismissSlide();
+    }
+  }
+
+  void _syncDragDismissSlide() {
+    final notifier = _dragDismissOffset;
+    if (_disposed || notifier == null) return;
+    final status = animation?.status;
+    if (status != AnimationStatus.reverse &&
+        status != AnimationStatus.dismissed) {
+      return;
+    }
+    final t = (1.0 - _progress.value).clamp(0.0, 1.0);
+    notifier.value = ui.lerpDouble(_dragDismissFrom, _dragDismissTo, t)!;
+  }
+
+  void _clearDragDismissSlide() {
+    if (_dragDismissOffset != null) {
+      _progressCurve?.removeListener(_syncDragDismissSlide);
+      _dragDismissOffset = null;
+    }
+  }
+
   void _setRevealBehind(bool value) {
     if (_revealBehind == value) return;
     _revealBehind = value;
@@ -545,6 +605,7 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
   @override
   void dispose() {
     _disposed = true;
+    _clearDragDismissSlide();
     final detailStream = _detailCoverStream;
     final detailListener = _detailCoverListener;
     if (detailStream != null && detailListener != null) {
@@ -555,6 +616,8 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
     final ready = _portraitReady;
     if (ready != null && !ready.isCompleted) ready.complete();
     animation?.removeStatusListener(_handleFlightStatus);
+    _progressCurve?.dispose();
+    _progressCurve = null;
     _sourceImage?.dispose();
     _detailHighResImage?.dispose();
     _detailHighResImage = null;

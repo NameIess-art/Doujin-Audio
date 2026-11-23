@@ -1,5 +1,6 @@
 import '../../core/media/audio_detail.dart';
 import '../../core/media/music_track.dart';
+import '../../core/media/path_matcher.dart';
 import '../../core/persistence/app_database.dart';
 import '../../core/persistence/persistence_records.dart';
 import '../../features/player/domain/time_segment_label.dart';
@@ -8,7 +9,7 @@ import '../../features/library/domain/audio_detail_store.dart';
 import '../../features/library/domain/library_persistence_repository.dart';
 
 class SqliteLibraryRepository
-    implements LibraryPersistenceRepository, AudioDetailStore {
+    implements LibraryPersistenceRepository, AudioDetailFastQueryStore {
   SqliteLibraryRepository({required AppDatabase database})
     : _database = database;
 
@@ -87,6 +88,35 @@ class SqliteLibraryRepository
   Future<List<AudioDetail>> loadMany(
     Iterable<AudioDetailTarget> targets,
   ) async => (await _database.loadAudioDetailRecords(
+    targets.map((target) => (target.targetType.dbValue, target.targetPath)),
+  )).map(_audioDetailFromRecord).toList(growable: false);
+
+  @override
+  Future<Map<String, Duration?>> loadDurations(
+    Iterable<AudioDetailTarget> targets,
+  ) async {
+    final rows = await _database.loadAudioDetailDurations(
+      targets.map((target) => (target.targetType.dbValue, target.targetPath)),
+    );
+    if (rows.isEmpty) return const <String, Duration?>{};
+    final result = <String, Duration?>{};
+    for (final entry in rows.entries) {
+      final separator = entry.key.indexOf('\x1F');
+      if (separator <= 0) continue;
+      final type = entry.key.substring(0, separator);
+      final targetPath = entry.key.substring(separator + 1);
+      final key = '$type|${PathMatcher.equivalenceKey(targetPath)}';
+      result[key] = entry.value > 0
+          ? Duration(milliseconds: entry.value)
+          : null;
+    }
+    return result;
+  }
+
+  @override
+  Future<List<AudioDetail>> loadSearchDetails(
+    Iterable<AudioDetailTarget> targets,
+  ) async => (await _database.loadAudioDetailSearchRecords(
     targets.map((target) => (target.targetType.dbValue, target.targetPath)),
   )).map(_audioDetailFromRecord).toList(growable: false);
   @override

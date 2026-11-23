@@ -451,6 +451,21 @@ final class _FakeAudioDetailRepository implements AudioDetailRepository {
   _FakeAudioDetailRepository(this.detail);
 
   @override
+  bool get supportsFastQueries => false;
+
+  @override
+  Future<Map<String, Duration?>?> loadDurationsIfSupported(
+    Iterable<AudioDetailTarget> targets,
+  ) async => null;
+
+  @override
+  Future<List<AudioDetail>> loadSearchDetails(
+    Iterable<AudioDetailTarget> targets,
+  ) async => (await loadMany(
+    targets,
+  )).map((result) => result.detail).toList(growable: false);
+
+  @override
   Future<bool> exportTimeSegments(AudioDetailTarget target) async => true;
 
   AudioDetail detail;

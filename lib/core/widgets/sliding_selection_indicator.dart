@@ -62,6 +62,7 @@ class SlidingSelectionPainter extends CustomPainter {
     required this.slots,
     required this.position,
     required this.accentColor,
+    this.brightness,
     this.visible = true,
     this.layoutSignature,
     this.width,
@@ -72,6 +73,7 @@ class SlidingSelectionPainter extends CustomPainter {
   final List<GlobalKey> slots;
   final double position;
   final Color accentColor;
+  final Brightness? brightness;
   final bool visible;
   final Object? layoutSignature;
   final double? width;
@@ -110,14 +112,17 @@ class SlidingSelectionPainter extends CustomPainter {
         canvas.clipRect(Rect.fromLTRB(0, top, size.width, size.height));
       }
     }
-    final context = containerKey.currentContext;
-    final brightness = context == null ? null : Theme.of(context).brightness;
+    final resolvedBrightness =
+        brightness ??
+        (containerKey.currentContext == null
+            ? null
+            : Theme.of(containerKey.currentContext!).brightness);
     canvas.drawRRect(
       RRect.fromRectAndRadius(rect, Radius.circular(rect.shortestSide / 2)),
       Paint()
         ..color = SlidingSelectionIndicator.fill(
           accentColor,
-          brightness: brightness,
+          brightness: resolvedBrightness,
         ),
     );
     canvas.restore();
@@ -128,6 +133,7 @@ class SlidingSelectionPainter extends CustomPainter {
       oldDelegate.containerKey != containerKey ||
       oldDelegate.position != position ||
       oldDelegate.accentColor != accentColor ||
+      oldDelegate.brightness != brightness ||
       oldDelegate.visible != visible ||
       oldDelegate.layoutSignature != layoutSignature ||
       oldDelegate.width != width ||

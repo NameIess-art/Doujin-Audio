@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 import 'package:characters/characters.dart';
 import 'package:charset/charset.dart';
@@ -295,12 +296,14 @@ class WorkTextService {
     Future<List<CoverImageReference>> Function(String)? discoverImages,
     Future<List<CoverImageReference>> Function(String, {required bool refresh})?
     discoverImagesWithRefresh,
+    bool combineWindowsLocalDiscovery = false,
     Duration directoryCacheTtl = defaultDirectoryCacheTtl,
     DateTime Function()? clock,
   }) : _platformGateway = platformGateway ?? FileCachePlatformGateway.instance,
        _httpClientFactory = httpClientFactory ?? HttpClient.new,
        _discoverImages = discoverImages,
        _discoverImagesWithRefresh = discoverImagesWithRefresh,
+       _combineWindowsLocalDiscovery = combineWindowsLocalDiscovery,
        _directoryCacheTtl = directoryCacheTtl,
        _clock = clock ?? DateTime.now;
 
@@ -312,6 +315,7 @@ class WorkTextService {
     required bool refresh,
   })?
   _discoverImagesWithRefresh;
+  final bool _combineWindowsLocalDiscovery;
   final Duration _directoryCacheTtl;
   final DateTime Function() _clock;
   final _directoryFiles = <String, Future<List<WorkTextFile>>>{};
@@ -320,6 +324,11 @@ class WorkTextService {
   final _imageRequests = <String, Future<List<CoverImageReference>>>{};
   final _imageSnapshots = <String, List<CoverImageReference>>{};
   final _imageSnapshotTimes = <String, DateTime>{};
+  final _combinedRequests =
+      <
+        String,
+        Future<({List<WorkTextFile> texts, List<CoverImageReference> images})>
+      >{};
   int _cacheGeneration = 0;
   bool _disposed = false;
   final _activeReads = <WorkTextReadRequest>{};
@@ -390,10 +399,153 @@ class WorkTextService {
     refresh: refresh,
   );
 
+  bool canCombineWorkFiles(String folderPath) =>
+      _canUseCombinedWindowsDiscovery(folderPath);
+
+  bool _canUseCombinedWindowsDiscovery(String folderPath) {
+    if (!Platform.isWindows ||
+        folderPath.trim().isEmpty ||
+        PathMatcher.isContentUri(folderPath) ||
+        PathMatcher.isRemoteUri(folderPath)) {
+      return false;
+    }
+    if (!identical(_platformGateway, FileCachePlatformGateway.instance)) {
+      return false;
+    }
+    if (_discoverImages != null) return false;
+    return _discoverImagesWithRefresh == null || _combineWindowsLocalDiscovery;
+  }
+
+  /// Discovers both work text files and work image references together.
+  /// On Windows local folders, uses a single recursive filesystem traversal in
+  /// one background isolate; on Android or custom test harnesses, runs the
+  /// existing independent discovery methods concurrently.
+  Future<({List<WorkTextFile>? texts, List<CoverImageReference>? images})>
+  findWorkFiles(String folderPath, {bool refresh = false}) async {
+    if (_disposed) {
+      throw StateError('WorkTextService is disposed.');
+    }
+    if (folderPath.trim().isEmpty) {
+      return (
+        texts: const <WorkTextFile>[],
+        images: const <CoverImageReference>[],
+      );
+    }
+    if (_canUseCombinedWindowsDiscovery(folderPath)) {
+      final key = PathMatcher.equivalenceKey(folderPath);
+      final cachedTexts = _textSnapshots[key];
+      final cachedImages = _imageSnapshots[key];
+      final textTime = _textSnapshotTimes[key];
+      final imageTime = _imageSnapshotTimes[key];
+      final now = _clock();
+      final textsFresh =
+          cachedTexts != null &&
+          textTime != null &&
+          now.difference(textTime) < _directoryCacheTtl;
+      final imagesFresh =
+          cachedImages != null &&
+          imageTime != null &&
+          now.difference(imageTime) < _directoryCacheTtl;
+      if (!refresh && textsFresh && imagesFresh) {
+        return (texts: cachedTexts, images: cachedImages);
+      }
+      final existing = _combinedRequests[key];
+      if (existing != null) {
+        try {
+          final result = await existing;
+          return (texts: result.texts, images: result.images);
+        } catch (_) {
+          return (texts: cachedTexts, images: cachedImages);
+        }
+      }
+      final generation = _cacheGeneration;
+      late final Future<
+        ({List<WorkTextFile> texts, List<CoverImageReference> images})
+      >
+      request;
+      request =
+          (() async {
+            final discovered = IOOverrides.current == null
+                ? await Isolate.run(
+                    () => _discoverWindowsWorkFilesSync(folderPath),
+                  )
+                : _discoverWindowsWorkFilesSync(folderPath);
+            final texts =
+                cachedTexts != null && listEquals(cachedTexts, discovered.texts)
+                ? cachedTexts
+                : List<WorkTextFile>.unmodifiable(discovered.texts);
+            final images =
+                cachedImages != null &&
+                    listEquals(cachedImages, discovered.images)
+                ? cachedImages
+                : List<CoverImageReference>.unmodifiable(discovered.images);
+            if (generation == _cacheGeneration &&
+                identical(_combinedRequests[key], request)) {
+              final stamp = _clock();
+              _textSnapshots[key] = texts;
+              _textSnapshotTimes[key] = stamp;
+              _imageSnapshots[key] = images;
+              _imageSnapshotTimes[key] = stamp;
+            }
+            return (texts: texts, images: images);
+          })().whenComplete(() {
+            if (!identical(_combinedRequests[key], request)) return;
+            _combinedRequests.remove(key);
+            if (_textSnapshots.length > 32) {
+              final evictedKey = _textSnapshots.keys.first;
+              _textSnapshots.remove(evictedKey);
+              _textSnapshotTimes.remove(evictedKey);
+            }
+            if (_imageSnapshots.length > 32) {
+              final evictedKey = _imageSnapshots.keys.first;
+              _imageSnapshots.remove(evictedKey);
+              _imageSnapshotTimes.remove(evictedKey);
+            }
+          });
+      _combinedRequests[key] = request;
+      try {
+        final result = await request;
+        return (texts: result.texts, images: result.images);
+      } catch (error, stackTrace) {
+        AppLogService.warning(
+          'discover_local_directory_failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        return (texts: cachedTexts, images: cachedImages);
+      }
+    }
+
+    List<WorkTextFile>? texts;
+    List<CoverImageReference>? images;
+    await Future.wait<void>([
+      () async {
+        try {
+          texts = refresh
+              ? await refreshWorkTextFiles(folderPath)
+              : await findWorkTextFiles(folderPath);
+        } catch (_) {
+          // Keep indexed audio and image files available if text discovery fails.
+        }
+      }(),
+      () async {
+        try {
+          images = refresh
+              ? await refreshWorkImageFiles(folderPath)
+              : await findWorkImageFiles(folderPath);
+        } catch (_) {
+          // Keep indexed audio and text files available if image discovery fails.
+        }
+      }(),
+    ]);
+    return (texts: texts, images: images);
+  }
+
   Future<void> clearDirectoryCache() async {
     _cacheGeneration++;
     _directoryFiles.clear();
     _imageRequests.clear();
+    _combinedRequests.clear();
     _textSnapshots.clear();
     _textSnapshotTimes.clear();
     _imageSnapshots.clear();
@@ -631,4 +783,123 @@ final class WorkTextReadRequest {
 
 final class WorkTextReadCancelled implements Exception {
   const WorkTextReadCancelled();
+}
+
+final RegExp _windowsWorkImageExtension = RegExp(
+  r'\.(png|jpe?g|webp|bmp|gif)$',
+  caseSensitive: false,
+);
+
+const List<String> _windowsPreferredCoverNames = <String>[
+  'cover',
+  'folder',
+  'front',
+  'album',
+  'artwork',
+  'poster',
+];
+
+const Set<String> _windowsWorkTextExtensions = <String>{
+  ...supportedSubtitleExtensions,
+  '.md',
+  '.pdf',
+};
+
+int _windowsImagePriority(String filePath) {
+  final stem = paths.basenameWithoutExtension(filePath).trim().toLowerCase();
+  final exact = _windowsPreferredCoverNames.indexOf(stem);
+  if (exact >= 0) return exact;
+  for (var i = 0; i < _windowsPreferredCoverNames.length; i++) {
+    if (stem.contains(_windowsPreferredCoverNames[i])) {
+      return 100 + i;
+    }
+  }
+  return 200;
+}
+
+int _compareWindowsImages(File a, File b) {
+  final priority = _windowsImagePriority(
+    a.path,
+  ).compareTo(_windowsImagePriority(b.path));
+  if (priority != 0) return priority;
+  final lower = a.path.toLowerCase().compareTo(b.path.toLowerCase());
+  if (lower != 0) return lower;
+  return a.path.compareTo(b.path);
+}
+
+({List<WorkTextFile> texts, List<CoverImageReference> images})
+_discoverWindowsWorkFilesSync(String folderPath) {
+  final directory = Directory(folderPath);
+  if (!directory.existsSync()) {
+    throw FileSystemException(
+      'Document directory is unavailable.',
+      folderPath,
+    );
+  }
+  final texts = <WorkTextFile>[];
+  final imageFiles = <File>[];
+  final pendingDirs = <Directory>[directory];
+  var isRoot = true;
+  while (pendingDirs.isNotEmpty) {
+    final current = pendingDirs.removeLast();
+    final List<FileSystemEntity> entries;
+    try {
+      entries = current.listSync(followLinks: false);
+    } on FileSystemException {
+      if (isRoot) rethrow;
+      continue;
+    }
+    isRoot = false;
+    for (final entity in entries) {
+      if (entity is File) {
+        final filePath = entity.path;
+        if (_windowsWorkImageExtension.hasMatch(filePath)) {
+          imageFiles.add(entity);
+        } else if (_windowsWorkTextExtensions.contains(
+          paths.extension(filePath).toLowerCase(),
+        )) {
+          try {
+            final relativePath = paths
+                .relative(filePath, from: folderPath)
+                .replaceAll(r'\', '/');
+            final name = paths.basename(filePath);
+            if (name.isNotEmpty && filePath.isNotEmpty) {
+              texts.add(
+                WorkTextFile(
+                  name: name,
+                  relativePath: relativePath,
+                  path: filePath,
+                  fileSizeBytes: entity.lengthSync(),
+                ),
+              );
+            }
+          } on FileSystemException {
+            // Skip unreadable or vanished text files.
+          }
+        }
+      } else if (entity is Directory) {
+        pendingDirs.add(entity);
+      }
+    }
+  }
+  texts.sort(
+    (a, b) =>
+        a.relativePath.toLowerCase().compareTo(b.relativePath.toLowerCase()),
+  );
+  imageFiles.sort(_compareWindowsImages);
+  final images = <CoverImageReference>[];
+  for (final file in imageFiles) {
+    try {
+      images.add(
+        CoverImageReference(
+          displayPath: file.path,
+          sourcePath: file.path,
+          fileSizeBytes: file.lengthSync(),
+        ),
+      );
+    } on FileSystemException {
+      // Skip unreadable or vanished image files.
+    }
+  }
+  return (texts: texts, images: images);
 }

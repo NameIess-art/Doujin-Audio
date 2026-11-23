@@ -246,7 +246,7 @@ class _DlsiteMetadataReviewPageState
         widget.detail != oldWidget.detail ||
         widget.batchIndex != oldWidget.batchIndex ||
         widget.rjCode != oldWidget.rjCode ||
-        widget.initialCandidates != oldWidget.initialCandidates ||
+        !listEquals(widget.initialCandidates, oldWidget.initialCandidates) ||
         !listEquals(widget.searchTitles, oldWidget.searchTitles);
 
     if (workChanged) {
@@ -522,9 +522,6 @@ class _DlsiteMetadataReviewPageState
       });
       return;
     }
-    setState(() {
-      _saving = true;
-    });
     final edited = metadata.copyWith(
       rjCode: widget.editing
           ? _rjCodeController.text.trim().toUpperCase()
@@ -544,16 +541,21 @@ class _DlsiteMetadataReviewPageState
           : double.tryParse(_ratingController.text.trim()),
     );
 
+    if (!widget.editing && widget.onCompleted != null) {
+      _finish(DlsiteMetadataReviewResult.confirmed(edited, _saveCover));
+      return;
+    }
+
+    setState(() {
+      _saving = true;
+    });
+
     if (widget.editing) {
       await _saveEdits(edited);
       return;
     }
 
-    if (widget.onCompleted != null) {
-      _finish(DlsiteMetadataReviewResult.confirmed(edited, _saveCover));
-      return;
-    }
-
+    var popped = false;
     try {
       final language = ref
           .read(settingsRepositoryProvider)
@@ -581,29 +583,37 @@ class _DlsiteMetadataReviewPageState
                   missingOnly: widget.missingOnly,
                 ),
           );
-      if (!mounted || readAppRoute(context)?.isCurrent != true) return;
-      if (result.coverFailed) {
+      if (!mounted) return;
+      if (readAppRoute(context)?.isCurrent == true) {
+        if (result.coverFailed) {
+          showAppSnackBar(
+            context,
+            ProviderScope.containerOf(context, listen: false)
+                .read(appLanguageProviderInstanceProvider)
+                .tr('dlsite_cover_save_failed'),
+            tone: AppFeedbackTone.warning,
+          );
+        }
+        popped = _finish(
+          DlsiteMetadataReviewResult.applied(result.detail, _saveCover),
+        );
+      }
+    } catch (_) {
+      if (mounted && readAppRoute(context)?.isCurrent == true) {
         showAppSnackBar(
           context,
           ProviderScope.containerOf(context, listen: false)
               .read(appLanguageProviderInstanceProvider)
-              .tr('dlsite_cover_save_failed'),
+              .tr('audio_detail_save_failed'),
           tone: AppFeedbackTone.warning,
         );
       }
-      _finish(DlsiteMetadataReviewResult.applied(result.detail, _saveCover));
-    } catch (_) {
-      if (!mounted || readAppRoute(context)?.isCurrent != true) return;
-      setState(() {
-        _saving = false;
-      });
-      showAppSnackBar(
-        context,
-        ProviderScope.containerOf(context, listen: false)
-            .read(appLanguageProviderInstanceProvider)
-            .tr('audio_detail_save_failed'),
-        tone: AppFeedbackTone.warning,
-      );
+    } finally {
+      if (mounted && !popped && _saving) {
+        setState(() {
+          _saving = false;
+        });
+      }
     }
   }
 
@@ -611,6 +621,7 @@ class _DlsiteMetadataReviewPageState
     final paths = ref.read(audioPathCoordinatorProvider);
     final library = ref.read(libraryFacadeProvider);
     final operations = ref.read(uiOperationServiceProvider);
+    var popped = false;
     try {
       var detail = _editingDetail ?? widget.detail;
       var backupFailed = false;
@@ -648,41 +659,53 @@ class _DlsiteMetadataReviewPageState
           preserveExistingDuration: !_durationEdited,
         ),
       );
-      if (!mounted || readAppRoute(context)?.isCurrent != true) return;
-      if (backupFailed || saveResult.documentFailed) {
+      if (!mounted) return;
+      if (readAppRoute(context)?.isCurrent == true) {
+        if (backupFailed || saveResult.documentFailed) {
+          showAppSnackBar(
+            context,
+            ProviderScope.containerOf(context, listen: false)
+                .read(appLanguageProviderInstanceProvider)
+                .tr('audio_detail_backup_failed'),
+            tone: AppFeedbackTone.warning,
+          );
+        }
+        popped = _finish(
+          DlsiteMetadataReviewResult.applied(saveResult.detail, false),
+        );
+      } else {
+        _rememberDraft();
+      }
+    } on AudioDetailRenameException catch (error) {
+      if (mounted && readAppRoute(context)?.isCurrent == true) {
         showAppSnackBar(
           context,
           ProviderScope.containerOf(context, listen: false)
               .read(appLanguageProviderInstanceProvider)
-              .tr('audio_detail_backup_failed'),
+              .tr(
+                error.reason == 'nameConflict'
+                    ? 'audio_detail_rename_conflict'
+                    : 'audio_detail_rename_failed',
+              ),
           tone: AppFeedbackTone.warning,
         );
       }
-      _finish(DlsiteMetadataReviewResult.applied(saveResult.detail, false));
-    } on AudioDetailRenameException catch (error) {
-      if (!mounted || readAppRoute(context)?.isCurrent != true) return;
-      setState(() => _saving = false);
-      showAppSnackBar(
-        context,
-        ProviderScope.containerOf(context, listen: false)
-            .read(appLanguageProviderInstanceProvider)
-            .tr(
-              error.reason == 'nameConflict'
-                  ? 'audio_detail_rename_conflict'
-                  : 'audio_detail_rename_failed',
-            ),
-        tone: AppFeedbackTone.warning,
-      );
     } catch (_) {
-      if (!mounted || readAppRoute(context)?.isCurrent != true) return;
-      setState(() => _saving = false);
-      showAppSnackBar(
-        context,
-        ProviderScope.containerOf(context, listen: false)
-            .read(appLanguageProviderInstanceProvider)
-            .tr('audio_detail_save_failed'),
-        tone: AppFeedbackTone.warning,
-      );
+      if (mounted && readAppRoute(context)?.isCurrent == true) {
+        showAppSnackBar(
+          context,
+          ProviderScope.containerOf(context, listen: false)
+              .read(appLanguageProviderInstanceProvider)
+              .tr('audio_detail_save_failed'),
+          tone: AppFeedbackTone.warning,
+        );
+      }
+    } finally {
+      if (mounted && !popped && _saving) {
+        setState(() {
+          _saving = false;
+        });
+      }
     }
   }
 
@@ -722,16 +745,18 @@ class _DlsiteMetadataReviewPageState
     }
   }
 
-  void _finish(DlsiteMetadataReviewResult result) {
+  bool _finish(DlsiteMetadataReviewResult result) {
     _dirty = false;
     final onCompleted = widget.onCompleted;
     if (onCompleted != null) {
       onCompleted(result);
-      return;
+      return false;
     }
     if (readAppRoute(context)?.isCurrent == true) {
       Navigator.of(context).pop(result);
+      return true;
     }
+    return false;
   }
 
   void _scheduleHeaderMeasurement(Object layoutKey) {

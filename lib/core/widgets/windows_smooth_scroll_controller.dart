@@ -45,12 +45,13 @@ class WindowsSmoothScrollController extends ScrollController {
   WindowsSmoothScrollController({super.keepScrollOffset});
 
   bool get isWheelScrolling =>
-      hasClients &&
+      positions.length == 1 &&
       position is _WindowsSmoothScrollPosition &&
       (position as _WindowsSmoothScrollPosition).isWheelScrolling;
 
   /// Scrolls to a wheel-selected item whose offset is already known.
   void scrollWheelTo(double offset) {
+    if (positions.length != 1) return;
     final current = position;
     if (current is _WindowsSmoothScrollPosition) {
       current.scrollWheelTo(offset);
@@ -223,6 +224,8 @@ class _WheelScrollSimulation extends Simulation {
   double _initialSlope = _startingSlope;
   double _startTime = 0;
   double _lastSampleTime = 0;
+  bool _hasMoved = false;
+  double? _sameFrameVelocity;
 
   void retarget(double from, double nextTarget, double velocity) {
     final distance = nextTarget - from;
@@ -230,8 +233,18 @@ class _WheelScrollSimulation extends Simulation {
     _startTime = _lastSampleTime;
     _from = from;
     target = nextTarget;
-    _initialSlope = velocity * distance > 0
-        ? (velocity * _seconds / distance).clamp(0.0, 3.0)
+    if (!_hasMoved) {
+      // Multiple wheel ticks arriving before the first motion frame accumulate
+      // into the same launch from rest; keep full starting slope instead of
+      // diluting it by the larger combined distance.
+      _initialSlope = _startingSlope;
+      _sameFrameVelocity = null;
+      return;
+    }
+    final incomingVelocity = _sameFrameVelocity ?? velocity;
+    _sameFrameVelocity = incomingVelocity;
+    _initialSlope = incomingVelocity * distance > 0
+        ? (incomingVelocity * _seconds / distance).clamp(0.0, 3.0)
         : _startingSlope;
   }
 
@@ -243,6 +256,10 @@ class _WheelScrollSimulation extends Simulation {
   // Cubic Hermite interpolation joins the incoming velocity to a full stop.
   @override
   double x(double time) {
+    if (time > _lastSampleTime) {
+      _hasMoved = true;
+      _sameFrameVelocity = null;
+    }
     _lastSampleTime = time;
     if (isDone(time)) return target;
     final t = (time - _startTime) / _seconds;

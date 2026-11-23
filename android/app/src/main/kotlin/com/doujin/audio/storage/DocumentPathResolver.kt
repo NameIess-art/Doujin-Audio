@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
+import com.doujin.audio.metadata.MediaNameMetadata
 import java.util.Locale
 import java.io.IOException
 
@@ -345,15 +346,24 @@ internal class DocumentPathResolver(private val context: Context) {
                 )
                 val mimeIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
                 if (documentIdIndex < 0 || nameIndex < 0 || (directoryOnly && mimeIndex < 0)) return null
+                var fallbackMatchId: String? = null
                 while (cursor.moveToNext()) {
                     if (directoryOnly &&
                         cursor.getString(mimeIndex) != DocumentsContract.Document.MIME_TYPE_DIR
                     ) continue
-                    val name = normalizeDisplayName(cursor.getString(nameIndex)?.trim().orEmpty())
-                    if (!name.equals(displayName, ignoreCase = ignoreCase)) continue
-                    return cursor.getString(documentIdIndex)
+                    val rawName = cursor.getString(nameIndex)?.trim().orEmpty()
+                    val name = normalizeDisplayName(rawName)
+                    if (name.equals(displayName, ignoreCase = ignoreCase)) {
+                        return cursor.getString(documentIdIndex)
+                    }
+                    if (fallbackMatchId == null &&
+                        MediaNameMetadata.normalizeDisplayName(rawName)
+                            .equals(displayName, ignoreCase = ignoreCase)
+                    ) {
+                        fallbackMatchId = cursor.getString(documentIdIndex)
+                    }
                 }
-                null
+                fallbackMatchId
             }
         } catch (_: Exception) {
             null

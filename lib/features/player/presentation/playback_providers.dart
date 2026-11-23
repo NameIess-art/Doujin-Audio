@@ -88,17 +88,20 @@ final timerConfigurationUiProvider = Provider<TimerConfigurationUiState>((ref) {
   final state =
       ref.watch(timerStateProvider).value ??
       ref.read(timerFacadeProvider).state;
+  final expired =
+      state.duration != null &&
+      !state.active &&
+      state.remaining != null &&
+      state.remaining! <= Duration.zero;
   return (
     mode: state.mode,
     duration: state.duration,
     draftMode: state.draftMode,
-    selectedDuration: state.duration ?? state.remaining ?? state.draftDuration,
+    selectedDuration: expired
+        ? state.draftDuration
+        : state.duration ?? state.remaining ?? state.draftDuration,
     active: state.active,
-    expired:
-        state.duration != null &&
-        !state.active &&
-        state.remaining != null &&
-        state.remaining! <= Duration.zero,
+    expired: expired,
     waitingTrigger:
         state.duration != null &&
         !state.active &&

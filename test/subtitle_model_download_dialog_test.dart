@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/core/widgets/app_dialog.dart';
 import 'package:doujin_audio/features/player/application/subtitle_model_store.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/subtitle_model_download_dialog.dart';
 import 'package:flutter/material.dart';
@@ -96,7 +97,7 @@ void main() {
             body: Builder(
               builder: (context) => TextButton(
                 onPressed: () async => results.add(
-                  await showDialog<bool>(
+                  await showAppDialog<bool>(
                     context: context,
                     builder: (_) => SubtitleModelDownloadDialog(
                       store: store,
@@ -222,4 +223,78 @@ void main() {
       expect(find.text(language.tr('retry')), findsOneWidget);
     },
   );
+
+  testWidgets('barrier tap and back dismissal cancel active download', (
+    tester,
+  ) async {
+    final language = AppLanguageProvider();
+    final store = _DownloadStore();
+    final results = <bool?>[];
+    const spec = SubtitleModelSpec(
+      'model.gguf',
+      'https://example.com',
+      2 * 1048576,
+      'checksum',
+    );
+    const status = SubtitleModelStatus(
+      ready: false,
+      bytes: 2 * 1048576,
+      availableBytes: 4 * 1048576,
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLanguageProviderInstanceProvider.overrideWithValue(language),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () async => results.add(
+                  await showAppDialog<bool>(
+                    context: context,
+                    builder: (_) => SubtitleModelDownloadDialog(
+                      store: store,
+                      spec: spec,
+                      status: status,
+                    ),
+                  ),
+                ),
+                child: const Text('Open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // Dismissing via barrier tap cancels the active download.
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(language.tr('confirm')));
+    await tester.pump();
+    expect(store.snapshot(spec).active, isTrue);
+
+    await tester.tapAt(const Offset(5, 5));
+    await tester.pumpAndSettle();
+    expect(find.byType(SubtitleModelDownloadDialog), findsNothing);
+    expect(store.cancelCalls, 1);
+    expect(store.snapshot(spec).active, isFalse);
+    expect(results, [null]);
+
+    // Dismissing via system back/pop cancels the active download.
+    store.done = Completer<String>();
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(language.tr('confirm')));
+    await tester.pump();
+    expect(store.snapshot(spec).active, isTrue);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byType(SubtitleModelDownloadDialog), findsNothing);
+    expect(store.cancelCalls, 2);
+    expect(store.snapshot(spec).active, isFalse);
+    expect(results, [null, null]);
+  });
 }

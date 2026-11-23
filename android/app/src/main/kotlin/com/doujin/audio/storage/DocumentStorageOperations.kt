@@ -275,14 +275,11 @@ internal class DocumentStorageOperations(
     }
 
     internal fun writeFileBytesToDocumentFolder(
-        folderUri: Uri, name: String, bytes: ByteArray, mimeType: String?,
+        folderUri: Uri, name: String, bytes: ByteArray, @Suppress("UNUSED_PARAMETER") mimeType: String?,
         isValidCommitted: (String) -> Boolean = { true }
     ): String? {
-        val resolvedMimeType = mimeType ?: MimeTypeMap.getSingleton()
-            .getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase(Locale.US))
-            ?: "application/octet-stream"
         val saved = replaceSafDocumentInFolder(
-            folderUri, name, resolvedMimeType,
+            folderUri, name,
             isValidCommitted = { isValidCommitted(it.uri.toString()) }
         ) { temporary ->
             contentResolver.openOutputStream(temporary.uri, "w")?.use { output ->
@@ -360,7 +357,7 @@ internal class DocumentStorageOperations(
             ) { targetUri ->
                 java.io.FileInputStream(source).use { input ->
                     contentResolver.openOutputStream(targetUri, "w")?.use { output ->
-                        input.copyTo(output)
+                        input.copyTo(output, 64 * 1024)
                         output.flush()
                     } ?: return@writeSafDocumentIfAbsent false
                 }
@@ -368,10 +365,10 @@ internal class DocumentStorageOperations(
             }
         }
 
-        return replaceSafDocumentInFolder(targetFolder.uri, targetName, mimeType) { temporary ->
+        return replaceSafDocumentInFolder(targetFolder.uri, targetName) { temporary ->
             java.io.FileInputStream(source).use { input ->
                 contentResolver.openOutputStream(temporary.uri, "w")?.use { output ->
-                    input.copyTo(output)
+                    input.copyTo(output, 64 * 1024)
                     output.flush()
                 } ?: return@replaceSafDocumentInFolder false
             }
@@ -382,7 +379,6 @@ internal class DocumentStorageOperations(
     private fun replaceSafDocumentInFolder(
         folder: Uri,
         targetName: String,
-        mimeType: String,
         isValidCommitted: (DocumentFile) -> Boolean = { true },
         writeTemp: (DocumentFile) -> Boolean
     ): DocumentFile? {
@@ -407,8 +403,14 @@ internal class DocumentStorageOperations(
             existing = existing,
             staleBackup = staleBackup,
             createTemp = {
-                DocumentsContract.createDocument(contentResolver, folder, mimeType, tempName)
-                    ?.let { DocumentFile.fromSingleUri(context, it) }
+                // ExternalStorageProvider appends an extension when MIME type does not
+                // match the .part suffix; octet-stream preserves the exact staging filename.
+                DocumentsContract.createDocument(
+                    contentResolver,
+                    folder,
+                    "application/octet-stream",
+                    tempName
+                )?.let { DocumentFile.fromSingleUri(context, it) }
             },
             writeTemp = writeTemp,
             isValidCommitted = isValidCommitted,
@@ -424,10 +426,17 @@ internal class DocumentStorageOperations(
         }
         val uri = Uri.parse(targetUri)
         java.io.FileInputStream(source).use { input ->
-            contentResolver.openOutputStream(uri, "w")?.use { output ->
+            val outputStream = try {
+                contentResolver.openOutputStream(uri, "wt")
+            } catch (_: IllegalArgumentException) {
+                contentResolver.openOutputStream(uri, "w")
+            } catch (_: UnsupportedOperationException) {
+                contentResolver.openOutputStream(uri, "w")
+            } ?: throw IllegalStateException("cannot open export destination")
+            outputStream.use { output ->
                 input.copyTo(output, 64 * 1024)
                 output.flush()
-            } ?: throw IllegalStateException("cannot open export destination")
+            }
         }
         return true
     }

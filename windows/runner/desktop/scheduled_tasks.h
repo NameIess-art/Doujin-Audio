@@ -3,7 +3,6 @@
 #include <flutter/method_result.h>
 #include <windows.h>
 #include <memory>
-#include <thread>
 
 // Schedules only wakeups. Timer state and execution stay in the Dart runtime.
 // Also used by the installer cleanup command before a window is created.
@@ -21,5 +20,4 @@ class ScheduledTasks {
  private:
   struct State;
   std::shared_ptr<State> state_;
-  std::thread worker_;
 };

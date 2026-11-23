@@ -1537,6 +1537,21 @@ MusicTrack _track({required String path, required String groupKey}) {
 
 class _FakeAudioDetailRepository implements AudioDetailRepository {
   @override
+  bool get supportsFastQueries => false;
+
+  @override
+  Future<Map<String, Duration?>?> loadDurationsIfSupported(
+    Iterable<AudioDetailTarget> targets,
+  ) async => null;
+
+  @override
+  Future<List<AudioDetail>> loadSearchDetails(
+    Iterable<AudioDetailTarget> targets,
+  ) async => (await loadMany(
+    targets,
+  )).map((result) => result.detail).toList(growable: false);
+
+  @override
   Future<bool> exportTimeSegments(AudioDetailTarget target) async => true;
 
   _FakeAudioDetailRepository({

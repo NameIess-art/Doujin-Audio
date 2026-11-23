@@ -1,21 +1,20 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
-import 'package:flutter/services.dart';
 
 import '../../../core/persistence/json_document_store.dart';
 import '../domain/asmr_download.dart';
 import '../domain/asmr_models.dart';
 import '../../../core/cache/app_cache_service.dart';
-import '../../../core/persistence/app_preferences.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/media/dlsite_metadata.dart';
+import '../../library/application/dlsite_metadata_service.dart'
+    show DlsiteRequestCancellation;
 import '../../library/data/audio_detail_json_codec.dart';
 import 'asmr_download_models.dart';
 import 'asmr_download_task_store.dart';
@@ -23,8 +22,6 @@ import 'asmr_download_task_store.dart';
 import 'asmr_download_planner.dart';
 import 'asmr_download_transfer_executor.dart';
 import 'asmr_download_cleanup.dart';
-import 'asmr_download_io.dart';
-import 'asmr_download_serialization.dart';
 import 'asmr_download_internal_models.dart';
 
 export 'asmr_download_models.dart';
@@ -51,6 +48,8 @@ class AsmrDownloadManager {
     Future<void> Function(String? payload)? persistenceWriter,
     @visibleForTesting Future<String?> Function()? persistenceReader,
     @visibleForTesting
+    Future<Directory> Function()? persistenceDirectoryProvider,
+    @visibleForTesting
     void Function(AsmrDownloadStoreOperation operation)? storeOperationObserver,
   }) : _fileCacheGateway =
            fileCacheGateway ?? FileCachePlatformGateway.instance,
@@ -74,6 +73,7 @@ class AsmrDownloadManager {
       persistTasks: persistTasks,
       persistenceReady: !persistTasks,
       persistenceWriter: persistenceWriter,
+      persistenceDirectoryProvider: persistenceDirectoryProvider,
       persistenceSnapshot: _outputs.capturePersistenceSnapshot,
       operationObserver: storeOperationObserver,
     );
@@ -95,6 +95,7 @@ class AsmrDownloadManager {
       StreamController<AsmrDownloadTaskSnapshot>.broadcast();
   final List<String> _queue = [];
   final Set<String> _startingTasks = {};
+  final Map<String, Future<void>> _startingTaskFutures = {};
   final Set<String> _activeTasks = {};
   final Map<String, Future<void>> _taskRemovals = {};
   final Map<String, List<PlannedDownloadFile>> _plannedFilesMap = {};
@@ -214,52 +215,21 @@ class AsmrDownloadManager {
   }
 
   Future<void> _initializeOnce() async {
+    var restoredFromFile = false;
     if (_persistTasks) {
-      await _restorePersistedTasksFromPreferences();
+      restoredFromFile = await _restorePersistedTasksFromPreferences();
     }
     if (_disposed) return;
     _initialized = true;
-    _store.markPersistenceReady();
+    _store.markPersistenceReady(restoredFromFile: restoredFromFile);
     _store.notifyTaskChanged(forcePersistedUriReferenceRevision: true);
   }
 
-  Future<String?> pickDestinationFolder({String? dialogTitle}) async {
-    try {
-      if (Platform.isAndroid) {
-        final pathValue = await _fileCacheGateway.pickAudioFolder();
-        if (pathValue != null && pathValue.isNotEmpty) {
-          return pathValue;
-        }
-      }
-    } on PlatformException {
-      // Fall through to the file picker.
-    } catch (_) {
-      // Native folder selection is optional; fall through to the file picker.
-    }
+  Future<String?> pickDestinationFolder({String? dialogTitle}) =>
+      _outputs.pickDestinationFolder(dialogTitle: dialogTitle);
 
-    if (!Platform.isAndroid || kIsWeb) {
-      final directory = await FilePicker.getDirectoryPath(
-        dialogTitle: dialogTitle ?? 'Choose download folder',
-      );
-      if (directory != null && directory.trim().isNotEmpty) {
-        return directory.trim();
-      }
-    }
-    return null;
-  }
-
-  Future<bool> destinationExists(String folderPath) async {
-    final normalized = folderPath.trim();
-    if (normalized.isEmpty) return false;
-    if (PathMatcher.isContentUri(normalized)) {
-      try {
-        return await _fileCacheGateway.documentPathExists(normalized);
-      } catch (_) {
-        return false;
-      }
-    }
-    return localDownloadDirectory(normalized).exists();
-  }
+  Future<bool> destinationExists(String folderPath) =>
+      _outputs.destinationExists(folderPath);
 
   Future<void> _runTaskRemoval(
     String workId,
@@ -360,7 +330,12 @@ class AsmrDownloadManager {
 
   Future<void> _deleteTask(String workId) async {
     if (_disposed || _shutdownFuture != null) return;
-    await initialize();
+    if (!_initialized) await initialize();
+    while (!_disposed && _shutdownFuture == null) {
+      final starting = _startingTaskFutures[workId];
+      if (starting == null) break;
+      await starting;
+    }
     if (_disposed || _shutdownFuture != null) return;
     if (_store[workId] == null || !_startingTasks.add(workId)) return;
     AsmrDownloadTaskSnapshot? deletingTask;
@@ -491,13 +466,14 @@ class AsmrDownloadManager {
 
     final workId = work.workKey;
     if (!_startingTasks.add(workId)) return;
+    final startingCompleter = Completer<void>();
+    _startingTaskFutures[workId] = startingCompleter.future;
     try {
       var workFolderName =
           customWorkFolderName != null && customWorkFolderName.trim().isNotEmpty
           ? customWorkFolderName.trim()
           : buildAsmrDownloadWorkFolderName(work, folderNameFields);
-      if (Platform.isWindows &&
-          !PathMatcher.isContentUri(normalizedDestination)) {
+      if (!PathMatcher.isContentUri(normalizedDestination)) {
         workFolderName = _planner.localRelativePath(workFolderName);
       }
       final plannedFiles = _planner.collectPlannedFiles(selectedRoots);
@@ -563,6 +539,12 @@ class AsmrDownloadManager {
       _processQueue();
     } finally {
       _startingTasks.remove(workId);
+      if (identical(_startingTaskFutures[workId], startingCompleter.future)) {
+        unawaited(_startingTaskFutures.remove(workId));
+      }
+      if (!startingCompleter.isCompleted) {
+        startingCompleter.complete();
+      }
     }
   }
 
@@ -794,6 +776,7 @@ class AsmrDownloadManager {
         failedFiles: failed,
         downloadedBytes: finalDownloadedBytes,
         fileDownloadedBytes: fileDownloadedBytes,
+        fileProgressFractions: const <String, double>{},
         fileRetryAttempts: const <String, int>{},
         fileEntityTags: const <String, String>{},
         failedFilePaths: failedFilePaths,
@@ -943,10 +926,15 @@ class AsmrDownloadManager {
   ) async {
     final lookup = _metadataLookup;
     if (lookup == null || work.rjCode.isEmpty) return null;
+    final dlsiteCancellation = DlsiteRequestCancellation();
     try {
       return await _transfers.waitForExternal(
         workId,
-        () => lookup(work.rjCode),
+        () => DlsiteRequestCancellation.runScoped(
+          dlsiteCancellation,
+          () => lookup(work.rjCode),
+        ),
+        onCancel: dlsiteCancellation.cancel,
       );
     } on DownloadCancelled {
       rethrow;
@@ -957,6 +945,8 @@ class AsmrDownloadManager {
         stackTrace: stackTrace,
       );
       return null;
+    } finally {
+      dlsiteCancellation.cancel();
     }
   }
 
@@ -1031,27 +1021,20 @@ class AsmrDownloadManager {
     _processQueue();
   }
 
-  Future<void> _restorePersistedTasksFromPreferences() async {
+  Future<bool> _restorePersistedTasksFromPreferences() async {
     try {
-      final reader = _persistenceReader;
-      final raw = reader != null
-          ? await reader()
-          : await AppPreferences.getString(
-              AppPreferences.asmrDownloadTasksKey,
-              throwOnError: true,
-            );
-      if (_disposed || raw == null || raw.isEmpty) return;
-      final restored = await compute(decodePersistedDownloadTasks, raw);
-      if (_disposed) return;
-      if (restored.error != null) {
-        Error.throwWithStackTrace(restored.error!, restored.stackTrace!);
-      }
+      final restored = await _store.restorePersistedTasks(
+        reader: _persistenceReader,
+        isDisposed: () => _disposed,
+      );
+      if (_disposed) return restored.fromFile;
       for (final snapshot in restored.tasks) {
         final workKey = snapshot.task.work.workKey;
         _store.restoreTask(snapshot.task);
         _outputs.createdOutputPaths[workKey] = snapshot.createdOutputPaths;
         _outputs.createdJsonDocuments[workKey] = snapshot.createdJsonDocuments;
       }
+      return restored.fromFile;
     } catch (error, stackTrace) {
       AppLogService.warning(
         'asmr_download_restore_failed',

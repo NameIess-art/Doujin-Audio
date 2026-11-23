@@ -144,12 +144,14 @@ class CoverArtworkFrame extends StatelessWidget {
     this.borderRadius = const BorderRadius.all(Radius.circular(8)),
     this.clipBehavior = Clip.antiAlias,
     this.showShadow = true,
+    this.showBorder = false,
   });
 
   final Widget child;
   final BorderRadius borderRadius;
   final Clip clipBehavior;
   final bool showShadow;
+  final bool showBorder;
 
   @override
   Widget build(BuildContext context) {
@@ -158,7 +160,22 @@ class CoverArtworkFrame extends StatelessWidget {
       clipBehavior: clipBehavior,
       child: child,
     );
-    if (!showShadow) return clipped;
+    if (!showShadow) {
+      if (!showBorder) return clipped;
+      return DecoratedBox(
+        position: DecorationPosition.foreground,
+        decoration: BoxDecoration(
+          borderRadius: borderRadius,
+          border: Border.all(
+            color: Theme.of(
+              context,
+            ).colorScheme.outlineVariant.withValues(alpha: 0.32),
+            width: 0.75,
+          ),
+        ),
+        child: clipped,
+      );
+    }
     return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: borderRadius,
@@ -699,6 +716,7 @@ class AsyncRemoteCoverImage extends StatelessWidget {
     this.useDefaultCacheWidth = true,
     this.browseThumbnail = false,
     this.deferLoadDuringInteraction = false,
+    this.retainInImageCache,
     this.filterQuality = FilterQuality.medium,
     this.duration = kCoverImageTransitionDuration,
     this.retryDelay = const Duration(seconds: 2),
@@ -720,6 +738,7 @@ class AsyncRemoteCoverImage extends StatelessWidget {
   final bool useDefaultCacheWidth;
   final bool browseThumbnail;
   final bool deferLoadDuringInteraction;
+  final bool? retainInImageCache;
   final FilterQuality filterQuality;
   final Duration duration;
   final Duration retryDelay;
@@ -757,6 +776,7 @@ class AsyncRemoteCoverImage extends StatelessWidget {
           useDefaultCacheWidth: useDefaultCacheWidth,
           browseThumbnail: browseThumbnail,
           deferLoadDuringInteraction: deferLoadDuringInteraction,
+          retainInImageCache: retainInImageCache,
           filterQuality: filterQuality,
           loadingBuilder: loadingBuilder,
           fallbackBuilder: fallbackBuilder,
@@ -783,6 +803,7 @@ class RetryingFileImage extends ConsumerWidget {
     this.useDefaultCacheWidth = true,
     this.browseThumbnail = false,
     this.deferLoadDuringInteraction = false,
+    this.retainInImageCache,
     this.filterQuality = FilterQuality.medium,
     this.gaplessPlayback = true,
     this.retryDelay = const Duration(seconds: 2),
@@ -802,6 +823,7 @@ class RetryingFileImage extends ConsumerWidget {
   final bool useDefaultCacheWidth;
   final bool browseThumbnail;
   final bool deferLoadDuringInteraction;
+  final bool? retainInImageCache;
   final FilterQuality filterQuality;
   final bool gaplessPlayback;
   final Duration retryDelay;
@@ -842,8 +864,9 @@ class RetryingFileImage extends ConsumerWidget {
       browseThumbnail: browseThumbnail,
       deferLoadDuringInteraction: deferLoadDuringInteraction,
       retainInImageCache:
-          defaultTargetPlatform == TargetPlatform.windows ||
-          defaultTargetPlatform == TargetPlatform.android,
+          retainInImageCache ??
+          (defaultTargetPlatform == TargetPlatform.windows ||
+              defaultTargetPlatform == TargetPlatform.android),
     );
   }
 }
@@ -1178,7 +1201,9 @@ class _RetryingImageState extends State<RetryingImage> {
     if (_cacheCheckKey == checkKey) return null;
     _cacheCheckKey = checkKey;
 
-    restoreRetainedCoverImage(provider);
+    if (widget.retainInImageCache) {
+      restoreRetainedCoverImage(provider);
+    }
     final configuration = createLocalImageConfiguration(context);
     var callbackIsSynchronous = true;
     var cachedSynchronously = false;

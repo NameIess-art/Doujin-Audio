@@ -9,6 +9,7 @@ import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/file_tree_expansion_motion.dart';
 import '../../../../core/widgets/file_tree_row.dart';
 import '../../../../core/widgets/playing_sound_wave_indicator.dart';
+import '../../../../core/widgets/scroll_activity_gate.dart';
 import '../../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../../application/session_switcher_tree.dart';
@@ -155,26 +156,28 @@ class _SessionTrackSwitcherSheetState
     final indices = identical(rows, _rows)
         ? _rowIndices
         : {for (var i = 0; i < rows.length; i++) rows[i].key: i};
-    return ListView.builder(
-      controller: _scrollController,
-      padding: AppBottomSheet.contentPadding,
-      itemCount: rows.length + 1,
-      findChildIndexCallback: (key) {
-        if (key == const ValueKey<String>('queue_switcher_header')) return 0;
-        final index = indices[(key as ValueKey<String>).value];
-        return index == null ? null : index + 1;
-      },
-      itemBuilder: (context, index) {
-        if (index == 0) {
-          return Padding(
-            key: const ValueKey<String>('queue_switcher_header'),
-            padding: const EdgeInsets.only(bottom: 6),
-            child: _QueueSheetHeader(count: widget.trackCount),
-          );
-        }
-        final rowIndex = index - 1;
-        return _buildRow(rows[rowIndex], rowIndex);
-      },
+    return ScrollActivityGate(
+      child: ListView.builder(
+        controller: _scrollController,
+        padding: AppBottomSheet.contentPadding,
+        itemCount: rows.length + 1,
+        findChildIndexCallback: (key) {
+          if (key == const ValueKey<String>('queue_switcher_header')) return 0;
+          final index = indices[(key as ValueKey<String>).value];
+          return index == null ? null : index + 1;
+        },
+        itemBuilder: (context, index) {
+          if (index == 0) {
+            return Padding(
+              key: const ValueKey<String>('queue_switcher_header'),
+              padding: const EdgeInsets.only(bottom: 6),
+              child: _QueueSheetHeader(count: widget.trackCount),
+            );
+          }
+          final rowIndex = index - 1;
+          return _buildRow(rows[rowIndex], rowIndex);
+        },
+      ),
     );
   }
 

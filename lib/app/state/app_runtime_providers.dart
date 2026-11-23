@@ -6,6 +6,7 @@ import 'package:flutter/painting.dart' show PaintingBinding;
 import '../../core/platform/platform_channels.dart' show WindowsWindowCommand;
 import '../../features/library/application/work_text_service.dart';
 import 'listening_activity_provider.dart';
+import 'subtitle_settings_provider.dart';
 import '../../features/asmr/presentation/asmr_providers.dart';
 import '../../features/library/presentation/library_providers.dart';
 import '../../features/player/presentation/playback_providers.dart';
@@ -126,6 +127,7 @@ final dataBackupServiceProvider = Provider<DataBackupService>((ref) {
       await Future.wait([
         ref.read(settingsRepositoryProvider).flushPendingWrites(),
         ref.read(themeProviderInstanceProvider).flushPendingWrites(),
+        ref.read(subtitleSettingsProvider.notifier).flushPendingWrites(),
       ]);
       await ref.read(listeningActivityServiceProvider)?.refresh();
       await ref.read(libraryFacadeProvider).flushPendingPersistence();

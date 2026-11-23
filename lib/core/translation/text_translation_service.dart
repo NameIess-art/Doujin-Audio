@@ -394,6 +394,7 @@ class TextTranslationService {
       }
       return _parse(body, texts.length);
     } finally {
+      aborted = true;
       _lastRequestAt = _now();
       request._abort = null;
       await responseSubscription?.cancel();

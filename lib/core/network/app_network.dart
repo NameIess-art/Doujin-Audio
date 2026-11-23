@@ -29,7 +29,7 @@ class AppNetwork extends HttpOverrides {
 
   static final instance = AppNetwork();
   static final _clock = Stopwatch()..start();
-  static const _systemProxyCacheTtl = Duration(seconds: 4);
+  static const _systemProxyCacheTtl = Duration(seconds: 20);
   static const _systemProxyCacheLimit = 128;
   final Future<String> Function(Uri) _resolveSystemProxy;
   final Future<void> Function(NetworkRouteSettings, String?) _applyNativeRoute;
@@ -68,6 +68,7 @@ class AppNetwork extends HttpOverrides {
       final server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
       _server = server;
       server.listen((socket) {
+        _enableTcpNoDelay(socket);
         _sockets.add(socket);
         unawaited(_handle(socket));
       });
@@ -178,6 +179,7 @@ class AppNetwork extends HttpOverrides {
       attempt.cancel();
     }
     _connectionAttempts.clear();
+    _settings = const NetworkRouteSettings();
     _password = null;
     _dnsResolver?.closeNow();
     _dnsResolver = null;
@@ -403,7 +405,8 @@ class AppNetwork extends HttpOverrides {
           timeout: const Duration(seconds: 8),
         );
       } else if (route.type == 'DIRECT' &&
-          settings.customDnsServer.isNotEmpty) {
+          settings.customDnsServer.isNotEmpty &&
+          dnsResolver != null) {
         final connected = Completer<Socket>();
         _connecting.add(connected);
         pendingConnection = connected;
@@ -480,7 +483,7 @@ class AppNetwork extends HttpOverrides {
             );
           }
         };
-        final subscription = dnsResolver!
+        final subscription = dnsResolver
             .lookupAddresses(host)
             .listen(
               (address) {
@@ -519,6 +522,7 @@ class AppNetwork extends HttpOverrides {
       if (_server == null) {
         throw const SocketException('Application network is closed');
       }
+      _enableTcpNoDelay(socket);
       _sockets.add(socket);
       final connection = NetworkSocket(socket);
       if (route.type == 'SOCKS' || route.type == 'SOCKS5') {
@@ -549,6 +553,14 @@ class AppNetwork extends HttpOverrides {
       rethrow;
     } finally {
       timer.cancel();
+    }
+  }
+
+  static void _enableTcpNoDelay(Socket socket) {
+    try {
+      socket.setOption(SocketOption.tcpNoDelay, true);
+    } catch (_) {
+      // Test doubles or closed sockets may not support TCP options.
     }
   }
 

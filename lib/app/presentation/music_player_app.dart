@@ -44,6 +44,7 @@ Widget createAudioPlayerApp({
   StartupRestoreOutcome? startupRestoreOutcome,
   VoidCallback? onBootstrapSettled,
   WindowsRuntimeBinding? windowsRuntime,
+  Future<void> Function()? presentationInitializer,
 }) {
   final (
     :runtimeGraph,
@@ -52,7 +53,6 @@ Widget createAudioPlayerApp({
     :asmrDownloadManager,
     :asmrLibraryController,
     :asmrPlaybackCoordinator,
-    :initializePresentation,
     :initializeRuntimeData,
   ) = createProductionAppRuntime(
     windowsRuntime: windowsRuntime,
@@ -96,7 +96,7 @@ Widget createAudioPlayerApp({
       shouldShowOnboarding: shouldShowOnboarding,
       startupRestoreOutcome: startupRestoreOutcome,
       onBootstrapSettled: onBootstrapSettled,
-      presentationInitializer: initializePresentation,
+      presentationInitializer: presentationInitializer,
       runtimeInitializer: initializeRuntimeData,
     ),
   );
@@ -145,10 +145,19 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
   double _stableLandscapeTopPadding = 0;
   late final AppOrientationController _orientationController;
   late final AppLanguageProvider _languageProvider;
+  late final ValueNotifier<bool> _appTickersEnabled;
+  late final Widget Function(BuildContext, Widget) _windowsRootPageFrameBuilder =
+      _buildWindowsRootPageFrame;
 
   @override
   void initState() {
     super.initState();
+    final initialLifecycle = WidgetsBinding.instance.lifecycleState;
+    _appTickersEnabled = ValueNotifier<bool>(
+      initialLifecycle != AppLifecycleState.hidden &&
+          initialLifecycle != AppLifecycleState.paused &&
+          initialLifecycle != AppLifecycleState.detached,
+    );
     _languageProvider = ref.read(appLanguageProviderInstanceProvider);
     if (defaultTargetPlatform == TargetPlatform.windows) {
       final language = _languageProvider;
@@ -251,6 +260,18 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    final enabled =
+        state != AppLifecycleState.hidden &&
+        state != AppLifecycleState.paused &&
+        state != AppLifecycleState.detached;
+    if (_appTickersEnabled.value != enabled) {
+      _appTickersEnabled.value = enabled;
+    }
+  }
+
+  @override
   void didChangeMetrics() => _updateDisplayOrientation();
 
   @override
@@ -300,6 +321,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
     _runtimeBootstrapController.removeListener(_scheduleSecondaryInitialization);
     _runtimeBootstrapController.dispose();
     _workDetailNavigation.dispose();
+    _appTickersEnabled.dispose();
     unawaited(
       _runtime.dispose().catchError((Object error, StackTrace stack) {
         AppLogService.error(
@@ -317,6 +339,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
         AppBootstrapPhase.ready) {
       return;
     }
+    _scheduleRestoreOutcomeFeedback(_languageProvider);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _handlePresentationSettled();
     });
@@ -381,6 +404,23 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
       );
     }
   }
+
+  Widget _buildWindowsRootPageFrame(BuildContext context, Widget page) =>
+      Column(
+        children: [
+          WindowsWindowTitleBar(language: _languageProvider),
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) => MediaQuery(
+                data: MediaQuery.of(
+                  context,
+                ).copyWith(size: constraints.biggest),
+                child: page,
+              ),
+            ),
+          ),
+        ],
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -459,67 +499,80 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
                   context,
                   child ?? const SizedBox(),
                 );
-                final navigatorContent = Builder(
-                  builder: (context) {
-                    final mediaQuery = MediaQuery.of(context);
-                    final rawTop = mediaQuery.padding.top;
-                    final isLandscape =
-                        defaultTargetPlatform == TargetPlatform.windows ||
-                        mediaQuery.orientation == Orientation.landscape;
+                final isWindows =
+                    defaultTargetPlatform == TargetPlatform.windows;
+                final navigatorContent = isWindows
+                    ? (!reduceAnimations
+                          ? routedContent
+                          : Builder(
+                              builder: (context) => MediaQuery(
+                                data: MediaQuery.of(
+                                  context,
+                                ).copyWith(disableAnimations: true),
+                                child: routedContent,
+                              ),
+                            ))
+                    : Builder(
+                        builder: (context) {
+                          final mediaQuery = MediaQuery.of(context);
+                          final rawTop = mediaQuery.padding.top;
+                          final isLandscape =
+                              mediaQuery.orientation == Orientation.landscape;
 
-                    if (!isLandscape && rawTop > _stablePortraitTopPadding) {
-                      _stablePortraitTopPadding = rawTop;
-                    }
+                          if (!isLandscape &&
+                              rawTop > _stablePortraitTopPadding) {
+                            _stablePortraitTopPadding = rawTop;
+                          }
 
-                    final isAndroidLandscape =
-                        defaultTargetPlatform == TargetPlatform.android &&
-                        mediaQuery.orientation == Orientation.landscape;
-                    if (isAndroidLandscape) {
-                      // Playback hides the status bar; retain the same header inset
-                      // for the main page and every route in the navigator.
-                      _stableLandscapeTopPadding = math.max(
-                        _stableLandscapeTopPadding,
-                        math.max(rawTop, mediaQuery.viewPadding.top),
+                          final isAndroidLandscape =
+                              defaultTargetPlatform == TargetPlatform.android &&
+                              mediaQuery.orientation == Orientation.landscape;
+                          if (isAndroidLandscape) {
+                            // Playback hides the status bar; retain the same header inset
+                            // for the main page and every route in the navigator.
+                            _stableLandscapeTopPadding = math.max(
+                              _stableLandscapeTopPadding,
+                              math.max(rawTop, mediaQuery.viewPadding.top),
+                            );
+                          }
+                          final stableTop = isAndroidLandscape
+                              // The first landscape frame can arrive after immersive
+                              // mode has hidden both inset values. Retain the known
+                              // portrait height until Android reports a landscape inset.
+                              ? (_stableLandscapeTopPadding > 0
+                                    ? _stableLandscapeTopPadding
+                                    : _stablePortraitTopPadding)
+                              : !isLandscape
+                              ? _stablePortraitTopPadding
+                              : 0.0;
+                          final effectiveTop = math.max(rawTop, stableTop);
+                          final effectivePadding = effectiveTop != rawTop
+                              ? mediaQuery.padding.copyWith(top: effectiveTop)
+                              : mediaQuery.padding;
+                          final effectiveViewPadding = stableTop > 0
+                              ? mediaQuery.viewPadding.copyWith(
+                                  top: math.max(
+                                    mediaQuery.viewPadding.top,
+                                    stableTop,
+                                  ),
+                                )
+                              : mediaQuery.viewPadding;
+
+                          final effectiveMediaQuery = mediaQuery.copyWith(
+                            padding: effectivePadding,
+                            viewPadding: effectiveViewPadding,
+                            disableAnimations:
+                                disableAnimations ||
+                                mediaQuery.disableAnimations,
+                          );
+
+                          return MediaQuery(
+                            data: effectiveMediaQuery,
+                            child: routedContent,
+                          );
+                        },
                       );
-                    }
-                    final stableTop = isAndroidLandscape
-                        // The first landscape frame can arrive after immersive
-                        // mode has hidden both inset values. Retain the known
-                        // portrait height until Android reports a landscape inset.
-                        ? (_stableLandscapeTopPadding > 0
-                              ? _stableLandscapeTopPadding
-                              : _stablePortraitTopPadding)
-                        : !isLandscape
-                        ? _stablePortraitTopPadding
-                        : 0.0;
-                    final effectiveTop = math.max(rawTop, stableTop);
-                    final effectivePadding = effectiveTop != rawTop
-                        ? mediaQuery.padding.copyWith(top: effectiveTop)
-                        : mediaQuery.padding;
-                    final effectiveViewPadding = stableTop > 0
-                        ? mediaQuery.viewPadding.copyWith(
-                            top: math.max(
-                              mediaQuery.viewPadding.top,
-                              stableTop,
-                            ),
-                          )
-                        : mediaQuery.viewPadding;
-
-                    final effectiveMediaQuery = mediaQuery.copyWith(
-                      padding: effectivePadding,
-                      viewPadding: effectiveViewPadding,
-                      disableAnimations:
-                          disableAnimations || mediaQuery.disableAnimations,
-                    );
-
-                    return MediaQuery(
-                      data: effectiveMediaQuery,
-                      child: routedContent,
-                    );
-                  },
-                );
-                final lockedContent =
-                    defaultTargetPlatform == TargetPlatform.windows
+                final lockedContent = isWindows
                     ? navigatorContent
                     : AppNavigationInputLock(
                         navigationAllowed: UiInteractionCoordinator
@@ -549,34 +602,24 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
                     },
                   ),
                 );
-                if (defaultTargetPlatform == TargetPlatform.windows) {
-                  final windowsContent = !widget.showWindowsTitleBar
-                      ? content
-                      : AppRootPageFrame(
-                          navigatorKey: _navigatorKey,
-                          builder: (context, page) => Column(
-                            children: [
-                              WindowsWindowTitleBar(language: languageProvider),
-                              Expanded(
-                                child: LayoutBuilder(
-                                  builder: (context, constraints) => MediaQuery(
-                                    data: MediaQuery.of(
-                                      context,
-                                    ).copyWith(size: constraints.biggest),
-                                    child: page,
-                                  ),
-                                ),
+                final platformContent = isWindows
+                    ? TooltipVisibility(
+                        visible: false,
+                        child: !widget.showWindowsTitleBar
+                            ? content
+                            : AppRootPageFrame(
+                                navigatorKey: _navigatorKey,
+                                builder: _windowsRootPageFrameBuilder,
+                                child: content,
                               ),
-                            ],
-                          ),
-                          child: content,
-                        );
-                  return TooltipVisibility(
-                    visible: false,
-                    child: windowsContent,
-                  );
-                }
-                return content;
+                      )
+                    : content;
+                return ValueListenableBuilder<bool>(
+                  valueListenable: _appTickersEnabled,
+                  child: platformContent,
+                  builder: (context, enabled, child) =>
+                      TickerMode(enabled: enabled, child: child!),
+                );
               },
               home: AppBootstrapGate(
                 controller: _presentationBootstrapController,
@@ -620,7 +663,12 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
 
   void _scheduleRestoreOutcomeFeedback(AppLanguageProvider languageProvider) {
     final outcome = widget.startupRestoreOutcome;
-    if (_restoreOutcomeScheduled || outcome == null) return;
+    if (_restoreOutcomeScheduled ||
+        outcome == null ||
+        _presentationBootstrapController.state.phase !=
+            AppBootstrapPhase.ready) {
+      return;
+    }
     _restoreOutcomeScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -638,5 +686,6 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
             : AppFeedbackTone.destructive,
       );
     });
+    WidgetsBinding.instance.scheduleFrame();
   }
 }

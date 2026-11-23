@@ -301,9 +301,7 @@ class _TopPageHeaderState extends State<TopPageHeader> {
               );
             },
           )
-        : trailing == null
-        ? null
-        : Opacity(opacity: 1, child: trailing);
+        : trailing;
 
     final hasEmptyTitleWidget =
         widget.titleWidget is SizedBox &&
@@ -409,19 +407,21 @@ class _TopPageHeaderState extends State<TopPageHeader> {
                   height: topCapsuleHeight,
                   // Skip offscreen ColorFilterLayer at full opacity so child
                   // BackdropFilter blurs underlying content directly.
-                  child: _ModulateOpacity(
-                    opacity: topCapsuleOpacity,
-                    child: IgnorePointer(
-                      ignoring: collapseT > 0.8,
-                      child: ExcludeFocus(
-                        excluding: collapseT > 0.8,
-                        child: ExcludeSemantics(
-                          excluding: collapseT > 0.8,
-                          child: topCapsuleWidget,
+                  child: widget.collapseController == null
+                      ? topCapsuleWidget
+                      : _ModulateOpacity(
+                          opacity: topCapsuleOpacity,
+                          child: IgnorePointer(
+                            ignoring: collapseT > 0.8,
+                            child: ExcludeFocus(
+                              excluding: collapseT > 0.8,
+                              child: ExcludeSemantics(
+                                excluding: collapseT > 0.8,
+                                child: topCapsuleWidget,
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                  ),
                 ),
               if (hasSecondaryContent)
                 Positioned(
@@ -443,18 +443,24 @@ class _TopPageHeaderState extends State<TopPageHeader> {
 
     final headerContent = Padding(
       padding: EdgeInsets.only(top: topPadding),
-      child: AnimatedBuilder(
-        animation: _collapseProgress,
-        child: widget.additionalChild,
-        builder: (context, additionalChild) {
-          final collapseT = _computeCollapseProgress();
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [buildHeaderContent(collapseT), ?additionalChild],
-          );
-        },
-      ),
+      child: widget.collapseController == null
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [buildHeaderContent(0.0), ?widget.additionalChild],
+            )
+          : AnimatedBuilder(
+              animation: _collapseProgress,
+              child: widget.additionalChild,
+              builder: (context, additionalChild) {
+                final collapseT = _computeCollapseProgress();
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [buildHeaderContent(collapseT), ?additionalChild],
+                );
+              },
+            ),
     );
     final surface = _AppHeaderSurface(
       showFadeMask: widget.showFadeMask,
@@ -552,18 +558,20 @@ class HeaderFloatingSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final tokens = AppDesignTokens.of(context);
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final isHovered = hovered ?? false;
     final isPressed = pressed ?? false;
-    final background = isDark ? cs.surfaceBright : cs.surfaceContainerHigh;
+    final background = cs.brightness == Brightness.dark
+        ? cs.surfaceBright
+        : cs.surfaceContainerHigh;
     final borderRadius = BorderRadius.circular(radius);
     // Content capsules opt in explicitly; full-width glass bars own their filter.
     final headerSurface = context
         .findAncestorWidgetOfExactType<_AppHeaderSurface>();
     final useGlass =
         backgroundOpacity > 0 &&
-        AppDesignTokens.of(context).barGlassEnabled &&
+        tokens.barGlassEnabled &&
         (followBarGlass ||
             context.findAncestorWidgetOfExactType<AppPageHeaderTransition>() !=
                 null);
@@ -577,7 +585,7 @@ class HeaderFloatingSurface extends StatelessWidget {
       hovered: isHovered,
     );
     final border = Border.all(
-      color: cs.outlineVariant.withValues(alpha: isDark ? 0.24 : 0.42),
+      color: appOverlayBorderColor(cs, tokens, elevated: true),
     );
     final innerChild = padding != null
         ? Padding(padding: padding!, child: child)
@@ -1085,6 +1093,7 @@ class _SegmentedCategoryPillStripState<T>
                 position: position,
                 visible: activeIndex >= 0 && widget.items.isNotEmpty,
                 accentColor: activeColor,
+                brightness: theme.brightness,
                 slots: _slotKeys,
                 layoutSignature: labelSignature,
               ),
@@ -1139,14 +1148,11 @@ class _HeaderCategorySegmentItemState
 
   @override
   Widget build(BuildContext context) {
-    final selectedStyle = widget.baseStyle?.copyWith(
-      color: widget.activeColor,
-      fontWeight: widget.isWindows ? FontWeight.w600 : FontWeight.w700,
-      fontSize: widget.isWindows ? null : 12.5,
-    );
-    final unselectedStyle = widget.baseStyle?.copyWith(
-      color: widget.inactiveColor,
-      fontWeight: widget.isWindows ? null : FontWeight.w600,
+    final fontWeight = widget.selected
+        ? (widget.isWindows ? FontWeight.w600 : FontWeight.w700)
+        : (widget.isWindows ? null : FontWeight.w600);
+    final labelStyle = widget.baseStyle?.copyWith(
+      fontWeight: fontWeight,
       fontSize: widget.isWindows ? null : 12.5,
     );
 
@@ -1181,10 +1187,14 @@ class _HeaderCategorySegmentItemState
                       states: _states,
                       label: widget.label,
                       accentColor: widget.activeColor,
-                      style: TextStyle.lerp(
-                        unselectedStyle,
-                        selectedStyle,
-                        selection,
+                      // Animate color only; interpolating fontWeight steps
+                      // glyph widths mid-transition and shifts sibling tabs.
+                      style: labelStyle?.copyWith(
+                        color: Color.lerp(
+                          widget.inactiveColor,
+                          widget.activeColor,
+                          selection,
+                        ),
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -1332,16 +1342,22 @@ class _ModulateOpacity extends SingleChildRenderObjectWidget {
 }
 
 class _RenderModulateOpacity extends RenderProxyBox {
-  _RenderModulateOpacity({required double opacity}) : _opacity = opacity;
+  _RenderModulateOpacity({required double opacity})
+    : _opacity = opacity.clamp(0.0, 1.0),
+      _alpha = (opacity.clamp(0.0, 1.0) * 255).round();
 
   double _opacity;
+  int _alpha;
   double get opacity => _opacity;
   set opacity(double value) {
     final clamped = value.clamp(0.0, 1.0);
     if (_opacity == clamped) return;
-    final wasOpaqueOrHidden = _opacity == 0 || _opacity == 1;
-    final isOpaqueOrHidden = clamped == 0 || clamped == 1;
+    final nextAlpha = (clamped * 255).round();
+    final wasOpaqueOrHidden = _alpha == 0 || _alpha == 255;
+    final isOpaqueOrHidden = nextAlpha == 0 || nextAlpha == 255;
     _opacity = clamped;
+    if (_alpha == nextAlpha) return;
+    _alpha = nextAlpha;
     if (wasOpaqueOrHidden != isOpaqueOrHidden) {
       markNeedsCompositingBitsUpdate();
     }
@@ -1349,16 +1365,15 @@ class _RenderModulateOpacity extends RenderProxyBox {
   }
 
   @override
-  bool get alwaysNeedsCompositing =>
-      child != null && _opacity > 0 && _opacity < 1;
+  bool get alwaysNeedsCompositing => child != null && _alpha > 0 && _alpha < 255;
 
   @override
   void paint(PaintingContext context, Offset offset) {
-    if (child == null || _opacity <= 0) {
+    if (child == null || _alpha == 0) {
       layer = null;
       return;
     }
-    if (_opacity >= 1) {
+    if (_alpha == 255) {
       layer = null;
       context.paintChild(child!, offset);
       return;
@@ -1366,7 +1381,7 @@ class _RenderModulateOpacity extends RenderProxyBox {
     layer = context.pushColorFilter(
       offset,
       ColorFilter.mode(
-        Colors.white.withValues(alpha: _opacity),
+        Colors.white.withValues(alpha: _alpha / 255),
         BlendMode.modulate,
       ),
       super.paint,

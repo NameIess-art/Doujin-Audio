@@ -414,7 +414,7 @@ class UiInteractionNavigatorObserver extends NavigatorObserver {
     if (route is! TransitionRoute<dynamic>) {
       _coordinator.beginNavigation(_nonTransitionInteractionSource);
       WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _coordinator.endNavigation(_nonTransitionInteractionSource),
+        (_) => _coordinator.cancelNavigation(_nonTransitionInteractionSource),
       );
       SchedulerBinding.instance.scheduleFrame();
       return;
@@ -512,7 +512,8 @@ class UiInteractionNavigatorObserver extends NavigatorObserver {
     if (interaction == null) return;
     final listener = interaction.listener;
     if (listener != null) route.animation?.removeStatusListener(listener);
-    _coordinator.endNavigation(interaction.source);
+    // Deterministic route completion already waited for its terminal frame.
+    _coordinator.cancelNavigation(interaction.source);
   }
 
   @override
@@ -575,7 +576,7 @@ class UiInteractionNavigatorObserver extends NavigatorObserver {
         },
       );
     }
-    _coordinator.endNavigation(_gestureInteractionSource);
+    _coordinator.cancelNavigation(_gestureInteractionSource);
   }
 
   @visibleForTesting

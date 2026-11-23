@@ -31,9 +31,9 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
     return baseSize * scale;
   }
 
-  static const folderIconColor = Color(0xFFD97706);
-  static const textFileIconColor = Color(0xFF0284C7);
-  static const imageFileIconColor = Color(0xFFDB2777);
+  static const folderIconColor = Color(0xFFAE4E06);
+  static const textFileIconColor = Color(0xFF0369A1);
+  static const imageFileIconColor = Color(0xFFBE185D);
 
   const AppDesignTokens({
     required this.subtleBorderAlpha,
@@ -51,6 +51,7 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
     required this.imageFileColor,
     this.barGlassEnabled = false,
     this.pureBlack = false,
+    this.highContrast = false,
     this.spaceXxs = 4,
     this.spaceXs = 8,
     this.spaceSm = 12,
@@ -77,13 +78,13 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
   });
 
   static const light = AppDesignTokens(
-    subtleBorderAlpha: 0.30,
-    standardBorderAlpha: 0.50,
-    success: Color(0xFF216E39),
+    subtleBorderAlpha: 0.28,
+    standardBorderAlpha: 0.46,
+    success: Color(0xFF1E6B38),
     onSuccess: Color(0xFFF7FBF8),
     successContainer: Color(0xFFD7F4DE),
     onSuccessContainer: Color(0xFF0E4A24),
-    warning: Color(0xFF8A4B00),
+    warning: Color(0xFF92400E),
     onWarning: Color(0xFFFFF9F2),
     warningContainer: Color(0xFFFFDDB7),
     onWarningContainer: Color(0xFF5A3000),
@@ -92,8 +93,25 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
     imageFileColor: imageFileIconColor,
   );
 
+  static const highContrastLight = AppDesignTokens(
+    subtleBorderAlpha: 0.50,
+    standardBorderAlpha: 0.72,
+    success: Color(0xFF14532D),
+    onSuccess: Color(0xFFFFFFFF),
+    successContainer: Color(0xFFC6F0D1),
+    onSuccessContainer: Color(0xFF083318),
+    warning: Color(0xFF78350F),
+    onWarning: Color(0xFFFFFFFF),
+    warningContainer: Color(0xFFFED09A),
+    onWarningContainer: Color(0xFF451A03),
+    folderColor: Color(0xFF92400E),
+    textFileColor: Color(0xFF075985),
+    imageFileColor: Color(0xFF9D174D),
+    highContrast: true,
+  );
+
   static const dark = AppDesignTokens(
-    subtleBorderAlpha: 0.16,
+    subtleBorderAlpha: 0.18,
     standardBorderAlpha: 0.30,
     success: Color(0xFF8FDBA6),
     onSuccess: Color(0xFF0B3A1D),
@@ -106,6 +124,23 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
     folderColor: Color(0xFFFBBF24),
     textFileColor: Color(0xFF67C6F0),
     imageFileColor: Color(0xFFF48FB1),
+  );
+
+  static const highContrastDark = AppDesignTokens(
+    subtleBorderAlpha: 0.34,
+    standardBorderAlpha: 0.56,
+    success: Color(0xFFB2F0C4),
+    onSuccess: Color(0xFF052410),
+    successContainer: Color(0xFF1E5F35),
+    onSuccessContainer: Color(0xFFDDFCE5),
+    warning: Color(0xFFFFD08A),
+    onWarning: Color(0xFF2D1600),
+    warningContainer: Color(0xFF75490B),
+    onWarningContainer: Color(0xFFFFEBD2),
+    folderColor: Color(0xFFFDE047),
+    textFileColor: Color(0xFF93DCFA),
+    imageFileColor: Color(0xFFF9B4CE),
+    highContrast: true,
   );
 
   static AppDesignTokens of(BuildContext context) {
@@ -129,6 +164,7 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
   final Color imageFileColor;
   final bool barGlassEnabled;
   final bool pureBlack;
+  final bool highContrast;
   final double spaceXxs;
   final double spaceXs;
   final double spaceSm;
@@ -170,6 +206,7 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
     Color? imageFileColor,
     bool? barGlassEnabled,
     bool? pureBlack,
+    bool? highContrast,
     double? spaceXxs,
     double? spaceXs,
     double? spaceSm,
@@ -210,6 +247,7 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
       imageFileColor: imageFileColor ?? this.imageFileColor,
       barGlassEnabled: barGlassEnabled ?? this.barGlassEnabled,
       pureBlack: pureBlack ?? this.pureBlack,
+      highContrast: highContrast ?? this.highContrast,
       spaceXxs: spaceXxs ?? this.spaceXxs,
       spaceXs: spaceXs ?? this.spaceXs,
       spaceSm: spaceSm ?? this.spaceSm,
@@ -245,6 +283,7 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
     return AppDesignTokens(
       barGlassEnabled: other.barGlassEnabled,
       pureBlack: other.pureBlack,
+      highContrast: other.highContrast,
       subtleBorderAlpha: lerpDouble(
         subtleBorderAlpha,
         other.subtleBorderAlpha,

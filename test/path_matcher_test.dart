@@ -1,3 +1,5 @@
+import 'dart:collection';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
 
@@ -362,6 +364,60 @@ void main() {
         index.mostSpecificContaining('relative/root/track.mp3'),
         'relative/root',
       );
+    },
+  );
+
+  test(
+    'equivalenceEquals and equivalenceHashCode agree with equivalenceKey across fast and fallback paths',
+    () {
+      const equivalentGroups = <List<String>>[
+        ['/', '///', '/a/..'],
+        ['/library/Work/01.mp3', '/library/Work/01.mp3/', '/library/./Work/sub/../01.mp3'],
+        [r'C:\', 'c:/', r'C:\.'],
+        [r'D:\作品\RJ123\01.mp3', 'd:/作品/rj123/01.mp3', r'D:\作品\.\RJ123\..\rj123\01.mp3/'],
+        [r'C:\Café\É.mp3', 'c:/café/é.mp3', r'C:\Café\Sub\..\É.mp3'],
+        [r'C:\ＡＢＣ\01.mp3', 'c:/ａｂｃ/01.mp3'],
+        [r'\\Server\Share\Album\01.mp3', r'\\server\share\album\.\01.mp3'],
+        [
+          'content://com.android.externalstorage.documents/tree/primary%3AMusic/document/primary%3AMusic%2FAlbum',
+          'content://com.android.externalstorage.documents/tree/primary%3AMusic::Album',
+        ],
+        ['HTTPS://example.com/audio///', 'HTTPS://example.com/audio'],
+      ];
+
+      for (var i = 0; i < equivalentGroups.length; i++) {
+        final group = equivalentGroups[i];
+        final expectedKey = PathMatcher.equivalenceKey(group.first);
+        final expectedHash = PathMatcher.equivalenceHashCode(group.first);
+        final map = HashMap<String, int>(
+          equals: PathMatcher.equivalenceEquals,
+          hashCode: PathMatcher.equivalenceHashCode,
+        )..[group.first] = i;
+
+        for (final candidate in group) {
+          expect(PathMatcher.equivalenceKey(candidate), expectedKey);
+          expect(PathMatcher.equivalenceHashCode(candidate), expectedHash);
+          expect(PathMatcher.equivalenceEquals(group.first, candidate), isTrue);
+          expect(PathMatcher.equivalenceEquals(candidate, group.first), isTrue);
+          expect(map[candidate], i);
+        }
+
+        for (var j = 0; j < equivalentGroups.length; j++) {
+          if (i == j) continue;
+          expect(
+            PathMatcher.equivalenceEquals(group.first, equivalentGroups[j].first),
+            isFalse,
+          );
+        }
+      }
+
+      // Verify the CJK/Hangul direct-lowercase ranges never fold under toLowerCase().
+      for (final (start, end) in [(0x3000, 0x9FFF), (0xAC00, 0xD7AF)]) {
+        for (var code = start; code <= end; code++) {
+          final ch = String.fromCharCode(code);
+          expect(ch.toLowerCase(), ch, reason: 'U+${code.toRadixString(16)}');
+        }
+      }
     },
   );
 }

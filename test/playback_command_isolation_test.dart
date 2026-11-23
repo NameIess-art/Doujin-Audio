@@ -795,6 +795,79 @@ void main() {
       expect(catalog.coverReads, 0);
     },
   );
+
+  test(
+    'Android paused track switch advances transportCommandId to ignore stale pause snapshot',
+    () async {
+      native.handlesQueueCompletionValue = true;
+      final session = register('android-pause', playing: true)
+        ..loadedPath = catalog.tracks.first.path
+        ..setOptimisticPosition(const Duration(seconds: 25));
+
+      expect(
+        await commands.prepareSession(
+          session,
+          nextPath: catalog.tracks[2].path,
+          autoPlay: false,
+        ),
+        isTrue,
+      );
+      expect(session.currentTrackPath, catalog.tracks[2].path);
+      expect(session.position, Duration.zero);
+      expect(native.lastPauseCommandId, greaterThan(0));
+
+      // Deliver a late pause snapshot from Android carrying the old pause command ID.
+      commands.handleNativeSnapshot(
+        NativePlaybackSnapshot(
+          sessionId: session.id,
+          path: catalog.tracks.first.path,
+          playing: false,
+          playWhenReady: false,
+          processingState: 'ready',
+          position: const Duration(seconds: 25),
+          bufferedPosition: Duration.zero,
+          volume: 1,
+          boostGain: 1,
+          channelSwapEnabled: false,
+          transportCommandId: native.lastPauseCommandId,
+        ),
+      );
+
+      expect(session.currentTrackPath, catalog.tracks[2].path);
+      expect(session.position, Duration.zero);
+    },
+  );
+
+  test(
+    'yielding nativePlaybackQueueFor recovers non-empty queue on concurrent coverGeneration bump',
+    () async {
+      final session = register('yield-cover', queue: true);
+      var triggered = false;
+      Future<List<Map<String, Object?>>>? concurrentRequest;
+      catalog.onCoverRead = () {
+        if (triggered) return;
+        triggered = true;
+        final spin = Stopwatch()..start();
+        while (spin.elapsedMicroseconds < 3000) {}
+        Future<void>.microtask(() {
+          catalog.coverGenerationValue++;
+          concurrentRequest = commands.nativePlaybackQueueFor(
+            session,
+            currentPath: session.currentTrackPath,
+          );
+        });
+      };
+
+      final first = await commands.nativePlaybackQueueFor(
+        session,
+        currentPath: session.currentTrackPath,
+      );
+      expect(triggered, isTrue);
+      expect(first, hasLength(catalog.tracks.length));
+      expect(concurrentRequest, isNotNull);
+      expect(await concurrentRequest!, hasLength(catalog.tracks.length));
+    },
+  );
 }
 
 class _Persistence extends Fake implements PlaybackPersistenceRepository {}
@@ -815,12 +888,14 @@ class _Catalog implements PlaybackLibraryCatalog {
   );
   int coverReads = 0;
   int groupReads = 0;
+  int coverGenerationValue = 0;
+  void Function()? onCoverRead;
   @override
   int get structureRevision => 0;
   @override
   int get contentRevision => 0;
   @override
-  int get coverGeneration => 0;
+  int get coverGeneration => coverGenerationValue;
   @override
   MusicTrack? trackByPath(String path) {
     for (final track in tracks) {
@@ -843,6 +918,7 @@ class _Catalog implements PlaybackLibraryCatalog {
     String? trackPath,
   }) {
     coverReads++;
+    onCoverRead?.call();
     return null;
   }
 
@@ -854,7 +930,12 @@ class _Catalog implements PlaybackLibraryCatalog {
 }
 
 class _Native extends NativePlaybackRepository {
+  bool? handlesQueueCompletionValue;
+  int lastPauseCommandId = 0;
   final trackStops = <String, bool>{};
+  @override
+  bool get handlesQueueCompletion =>
+      handlesQueueCompletionValue ?? super.handlesQueueCompletion;
   List<NativePlaybackSnapshot> runtimeSnapshots = [];
   final blocked = <String, Future<void>>{};
   final blockedPlay = <String, Future<void>>{};
@@ -912,6 +993,7 @@ class _Native extends NativePlaybackRepository {
     List<Uri>? candidateUris,
     bool deferPlayerCreation = false,
     bool isTemporary = false,
+    bool reuseExistingQueue = false,
   }) async {
     prepared.add(sessionId);
     if (deferPlayerCreation) deferredPrepared.add(sessionId);
@@ -950,6 +1032,7 @@ class _Native extends NativePlaybackRepository {
     int transportCommandId = 0,
   }) async {
     paused.add(sessionId);
+    lastPauseCommandId = transportCommandId;
     return NativeSuccess(
       _snapshot(
         sessionId,

@@ -46,22 +46,50 @@ final class AudioDetailCoverStore {
         PathMatcher.isRemoteUri(coverPath)) {
       return const <String, Object?>{relativePathKey: null, embeddedKey: null};
     }
+    if (IOOverrides.current == null) {
+      return Isolate.run(() => buildDocumentFieldsSync(detail));
+    }
+    return buildDocumentFieldsSync(detail);
+  }
+
+  /// Synchronously prepares portable cover metadata (reading and base64-encoding
+  /// external local cover files). Intended to run inside a background isolate
+  /// together with JSON encoding so base64 payloads never cross isolate
+  /// boundaries twice.
+  static Map<String, Object?> buildDocumentFieldsSync(AudioDetail detail) {
+    final coverPath = detail.cardCoverPath;
+    if (coverPath == null) {
+      return const <String, Object?>{relativePathKey: null, embeddedKey: null};
+    }
+    final basePath = _portableBasePathStatic(detail.target);
+    final relative = basePath == null
+        ? null
+        : _normalizeRelativePathStatic(
+            PathMatcher.relativeWithin(coverPath, basePath),
+          );
+    if (relative != null) {
+      return <String, Object?>{relativePathKey: relative, embeddedKey: null};
+    }
+    if (PathMatcher.isContentUri(coverPath) ||
+        PathMatcher.isRemoteUri(coverPath)) {
+      return const <String, Object?>{relativePathKey: null, embeddedKey: null};
+    }
     try {
       final file = File(coverPath);
-      if (!await file.exists()) {
+      if (!file.existsSync()) {
         return const <String, Object?>{
           relativePathKey: null,
           embeddedKey: null,
         };
       }
-      final length = await file.length();
+      final length = file.lengthSync();
       if (length <= 0 || length > maxCoverFileBytes) {
         return const <String, Object?>{
           relativePathKey: null,
           embeddedKey: null,
         };
       }
-      final bytes = await file.readAsBytes();
+      final bytes = file.readAsBytesSync();
       final mimeType = detectCoverMimeType(coverPath, bytes);
       if (mimeType == null) {
         return const <String, Object?>{
@@ -69,18 +97,16 @@ final class AudioDetailCoverStore {
           embeddedKey: null,
         };
       }
-      return await Isolate.run(
-        () => <String, Object?>{
-          relativePathKey: null,
-          embeddedKey: <String, Object?>{
-            'encoding': 'base64',
-            'mimeType': mimeType,
-            'sha256': sha256.convert(bytes).toString(),
-            'byteLength': bytes.length,
-            'data': base64Encode(bytes),
-          },
+      return <String, Object?>{
+        relativePathKey: null,
+        embeddedKey: <String, Object?>{
+          'encoding': 'base64',
+          'mimeType': mimeType,
+          'sha256': sha256.convert(bytes).toString(),
+          'byteLength': bytes.length,
+          'data': base64Encode(bytes),
         },
-      );
+      };
     } on Object {
       return const <String, Object?>{relativePathKey: null, embeddedKey: null};
     }
@@ -175,11 +201,17 @@ final class AudioDetailCoverStore {
   }
 
   String? _portableBasePath(AudioDetailTarget target) =>
+      _portableBasePathStatic(target);
+
+  static String? _portableBasePathStatic(AudioDetailTarget target) =>
       target.isLibraryRootFolder
       ? target.targetPath
       : PathMatcher.parentPath(target.targetPath);
 
-  String? _normalizeRelativePath(Object? value) {
+  String? _normalizeRelativePath(Object? value) =>
+      _normalizeRelativePathStatic(value);
+
+  static String? _normalizeRelativePathStatic(Object? value) {
     if (value is! String) return null;
     final normalized = value.trim().replaceAll('\\', '/');
     if (normalized.isEmpty || normalized.startsWith('/')) return null;

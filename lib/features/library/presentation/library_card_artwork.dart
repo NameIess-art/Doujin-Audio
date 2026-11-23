@@ -1,6 +1,7 @@
 import 'library_providers.dart';
 import '../../settings/presentation/settings_providers.dart';
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -11,6 +12,7 @@ import '../../../core/media/music_track.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../settings/application/settings_state.dart';
 import '../../../core/ui/visual_settings_providers.dart';
+import '../application/cover_artwork_cache_service.dart';
 import 'library_cover_ui_controller.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/library_like_cards.dart';
@@ -58,8 +60,26 @@ class _LibraryCoverThumbnailState extends ConsumerState<LibraryCoverThumbnail> {
   Future<String?>? _coverPathFuture;
   String? _lastFolderPath;
   Object? _lastCoverRevision;
+  CoverArtworkCacheService? _observedCache;
+  String? _observedScope;
+  ValueListenable<int>? _scopeListenable;
+
+  ValueListenable<int> _listenableFor(
+    CoverArtworkCacheService cache,
+    String scope,
+  ) {
+    if (!identical(_observedCache, cache) ||
+        _observedScope != scope ||
+        _scopeListenable == null) {
+      _observedCache = cache;
+      _observedScope = scope;
+      _scopeListenable = cache.scopeNotifier(scope);
+    }
+    return _scopeListenable!;
+  }
 
   Future<String?> _coverFutureFor(
+    CoverArtworkCacheService cache,
     LibraryCoverUiController coverUi,
     Object coverRevision,
   ) {
@@ -68,10 +88,7 @@ class _LibraryCoverThumbnailState extends ConsumerState<LibraryCoverThumbnail> {
       _lastFolderPath = widget.folderPath;
       _lastCoverRevision = coverRevision;
       _coverPathFuture =
-          ref
-              .read(libraryFacadeProvider)
-              .coverArtworkCacheService
-              .cachedFutureForFolder(widget.folderPath) ??
+          cache.cachedFutureForFolder(widget.folderPath) ??
           deferLibraryCardCoverLookup(
             isMounted: () => mounted,
             lookup: () => coverUi.deferredFolderCover(
@@ -86,16 +103,9 @@ class _LibraryCoverThumbnailState extends ConsumerState<LibraryCoverThumbnail> {
   @override
   Widget build(BuildContext context) {
     final libraryFacade = ref.read(libraryFacadeProvider);
-    final coverRevision = ref.watch(
-      coverGenerationProvider.select(
-        (_) => libraryFacade.coverArtworkCacheService.revisionForScope(
-          widget.folderPath,
-        ),
-      ),
-    );
+    final cache = libraryFacade.coverArtworkCacheService;
     final resolution = ref.watch(coverImageResolutionProvider);
     final coverUi = ref.read(libraryCoverUiControllerProvider);
-    final coverPathFuture = _coverFutureFor(coverUi, coverRevision);
     final width = widget.width;
     final height = width / kStandardCoverAspectRatio;
     final coverCacheWidth = coverThumbnailCacheWidth(
@@ -103,45 +113,57 @@ class _LibraryCoverThumbnailState extends ConsumerState<LibraryCoverThumbnail> {
       devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
       resolution: resolution,
     );
-    return SizedBox(
-      width: width,
-      height: height,
-      child: Stack(
-        children: [
-          SizedBox(
-            width: width,
-            height: height,
-            child: CoverArtworkFrame(
-              borderRadius: BorderRadius.circular(
-                LibraryLikeCardMetrics.coverRadius,
-              ),
-              child: AsyncLocalCoverImage(
-                deferLoadDuringInteraction: true,
-                browseThumbnail: true,
-                onImageError: libraryFacade
-                    .coverArtworkCacheService
-                    .reportArtworkReadFailure,
-                future: coverPathFuture,
-                requestKey: widget.folderPath,
-                initialPath: libraryFacade.resolvedCoverPathForFolder(
-                  widget.folderPath,
+    return ValueListenableBuilder<int>(
+      valueListenable: _listenableFor(cache, widget.folderPath),
+      builder: (context, revisionToken, _) {
+        final coverRevision = (
+          cache,
+          cache.revisionForScope(widget.folderPath),
+          revisionToken,
+        );
+        final coverPathFuture = _coverFutureFor(cache, coverUi, coverRevision);
+        return SizedBox(
+          width: width,
+          height: height,
+          child: Stack(
+            children: [
+              SizedBox(
+                width: width,
+                height: height,
+                child: CoverArtworkFrame(
+                  clipBehavior: Clip.hardEdge,
+                  showShadow: false,
+                  showBorder: true,
+                  borderRadius: BorderRadius.circular(
+                    LibraryLikeCardMetrics.coverRadius,
+                  ),
+                  child: AsyncLocalCoverImage(
+                    deferLoadDuringInteraction: true,
+                    browseThumbnail: true,
+                    onImageError: cache.reportArtworkReadFailure,
+                    future: coverPathFuture,
+                    requestKey: widget.folderPath,
+                    initialPath: libraryFacade.resolvedCoverPathForFolder(
+                      widget.folderPath,
+                    ),
+                    // Discovery caches a missing cover too. Imports, selection and
+                    // repair publish scope revisions; no per-card polling is needed.
+                    cacheWidth: coverCacheWidth,
+                    useDefaultCacheWidth: false,
+                    fit: BoxFit.cover,
+                  ),
                 ),
-                // Discovery caches a missing cover too. Imports, selection and
-                // repair publish scope revisions; no per-card polling is needed.
-                cacheWidth: coverCacheWidth,
-                useDefaultCacheWidth: false,
-                fit: BoxFit.cover,
               ),
-            ),
+              if (widget.duration != null && widget.duration! > Duration.zero)
+                Positioned(
+                  left: 4,
+                  bottom: 4,
+                  child: DurationOverlay(duration: widget.duration!),
+                ),
+            ],
           ),
-          if (widget.duration != null && widget.duration! > Duration.zero)
-            Positioned(
-              left: 4,
-              bottom: 4,
-              child: DurationOverlay(duration: widget.duration!),
-            ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -168,8 +190,26 @@ class _LibraryTrackCoverThumbnailState
   Future<String?>? _coverPathFuture;
   String? _lastTrackPath;
   Object? _lastCoverRevision;
+  CoverArtworkCacheService? _observedCache;
+  String? _observedScope;
+  ValueListenable<int>? _scopeListenable;
+
+  ValueListenable<int> _listenableFor(
+    CoverArtworkCacheService cache,
+    String scope,
+  ) {
+    if (!identical(_observedCache, cache) ||
+        _observedScope != scope ||
+        _scopeListenable == null) {
+      _observedCache = cache;
+      _observedScope = scope;
+      _scopeListenable = cache.scopeNotifier(scope);
+    }
+    return _scopeListenable!;
+  }
 
   Future<String?> _coverFutureFor(
+    CoverArtworkCacheService cache,
     LibraryCoverUiController coverUi,
     Object coverRevision,
   ) {
@@ -178,10 +218,7 @@ class _LibraryTrackCoverThumbnailState
       _lastTrackPath = widget.track.path;
       _lastCoverRevision = coverRevision;
       _coverPathFuture =
-          ref
-              .read(libraryFacadeProvider)
-              .coverArtworkCacheService
-              .cachedFutureForTrack(widget.track) ??
+          cache.cachedFutureForTrack(widget.track) ??
           deferLibraryCardCoverLookup(
             isMounted: () => mounted,
             lookup: () =>
@@ -195,18 +232,10 @@ class _LibraryTrackCoverThumbnailState
   Widget build(BuildContext context) {
     final libraryFacade = ref.read(libraryFacadeProvider);
     final cache = libraryFacade.coverArtworkCacheService;
-    final coverRevision = ref.watch(
-      coverGenerationProvider.select(
-        (_) => cache.revisionForScope(
-          cache.coverSearchKeyForTrack(widget.track) ?? widget.track.path,
-        ),
-      ),
-    );
     final resolution = ref.watch(coverImageResolutionProvider);
     final coverUi = ref.read(libraryCoverUiControllerProvider);
-    final coverPathFuture = _coverFutureFor(coverUi, coverRevision);
     final track = widget.track;
-
+    final scope = cache.coverSearchKeyForTrack(track) ?? track.path;
     final width = widget.width;
     final height = width / kStandardCoverAspectRatio;
     final coverCacheWidth = coverThumbnailCacheWidth(
@@ -214,37 +243,49 @@ class _LibraryTrackCoverThumbnailState
       devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
       resolution: resolution,
     );
-    return Stack(
-      children: [
-        SizedBox(
-          width: width,
-          height: height,
-          child: CoverArtworkFrame(
-            borderRadius: BorderRadius.circular(
-              LibraryLikeCardMetrics.coverRadius,
+    return ValueListenableBuilder<int>(
+      valueListenable: _listenableFor(cache, scope),
+      builder: (context, revisionToken, _) {
+        final coverRevision = (
+          cache,
+          cache.revisionForScope(scope),
+          revisionToken,
+        );
+        final coverPathFuture = _coverFutureFor(cache, coverUi, coverRevision);
+        return Stack(
+          children: [
+            SizedBox(
+              width: width,
+              height: height,
+              child: CoverArtworkFrame(
+                clipBehavior: Clip.hardEdge,
+                showShadow: false,
+                showBorder: true,
+                borderRadius: BorderRadius.circular(
+                  LibraryLikeCardMetrics.coverRadius,
+                ),
+                child: AsyncLocalCoverImage(
+                  deferLoadDuringInteraction: true,
+                  browseThumbnail: true,
+                  onImageError: cache.reportArtworkReadFailure,
+                  future: coverPathFuture,
+                  requestKey: track.path,
+                  initialPath: libraryFacade.resolvedCoverPathForTrack(track),
+                  cacheWidth: coverCacheWidth,
+                  useDefaultCacheWidth: false,
+                  fit: BoxFit.cover,
+                ),
+              ),
             ),
-            child: AsyncLocalCoverImage(
-              deferLoadDuringInteraction: true,
-              browseThumbnail: true,
-              onImageError: libraryFacade
-                  .coverArtworkCacheService
-                  .reportArtworkReadFailure,
-              future: coverPathFuture,
-              requestKey: track.path,
-              initialPath: libraryFacade.resolvedCoverPathForTrack(track),
-              cacheWidth: coverCacheWidth,
-              useDefaultCacheWidth: false,
-              fit: BoxFit.cover,
-            ),
-          ),
-        ),
-        if (widget.duration != null && widget.duration! > Duration.zero)
-          Positioned(
-            left: 4,
-            bottom: 4,
-            child: DurationOverlay(duration: widget.duration!),
-          ),
-      ],
+            if (widget.duration != null && widget.duration! > Duration.zero)
+              Positioned(
+                left: 4,
+                bottom: 4,
+                child: DurationOverlay(duration: widget.duration!),
+              ),
+          ],
+        );
+      },
     );
   }
 }

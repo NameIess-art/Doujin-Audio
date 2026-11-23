@@ -61,7 +61,12 @@ final class PlaybackTimeSegmentService {
     await _database.upsertTimeSegmentLabel(label);
     for (final entry in _loops.entries.toList(growable: false)) {
       if (entry.value.labelId == label.id) {
-        _loops[entry.key] = _TimeSegmentLoopRuntime.fromLabel(label);
+        final session = _playback.sessionById(entry.key);
+        _loops[entry.key] = _TimeSegmentLoopRuntime.fromLabel(
+          label,
+          cachedTrackPath: session?.currentTrackPath,
+          cachedTrackKey: trackKeyForSession(entry.key),
+        );
       }
     }
     return await _exportLabels?.call(label.trackKey) ?? true;
@@ -96,10 +101,14 @@ final class PlaybackTimeSegmentService {
       _clearLoop(sessionId);
       return;
     }
-    _loops[sessionId] = _TimeSegmentLoopRuntime.fromLabel(label);
+    final currentTrackKey = trackKeyForSession(sessionId);
+    _loops[sessionId] = _TimeSegmentLoopRuntime.fromLabel(
+      label,
+      cachedTrackPath: session.currentTrackPath,
+      cachedTrackKey: currentTrackKey,
+    );
     _bindPosition(sessionId);
-    if (trackKeyForSession(sessionId) == label.trackKey &&
-        !label.contains(session.position)) {
+    if (currentTrackKey == label.trackKey && !label.contains(session.position)) {
       _seekToStart(sessionId, label.start);
     }
   }
@@ -107,7 +116,7 @@ final class PlaybackTimeSegmentService {
   void handleManualSeek(String sessionId, Duration position) {
     final loop = _loops[sessionId];
     if (loop == null ||
-        loop.trackKey != trackKeyForSession(sessionId) ||
+        !_matchesLoopTrackKey(sessionId, loop) ||
         loop.contains(position)) {
       return;
     }
@@ -160,9 +169,25 @@ final class PlaybackTimeSegmentService {
     );
   }
 
+  bool _matchesLoopTrackKey(
+    String sessionId,
+    _TimeSegmentLoopRuntime loop,
+  ) {
+    final session = _playback.sessionById(sessionId);
+    final trackPath = session?.currentTrackPath;
+    if (session == null || trackPath == null || trackPath.isEmpty) return false;
+    if (loop.cachedTrackPath == trackPath) {
+      return loop.cachedTrackKey == loop.trackKey;
+    }
+    final trackKey = trackKeyForSession(sessionId);
+    loop.cachedTrackPath = trackPath;
+    loop.cachedTrackKey = trackKey;
+    return trackKey == loop.trackKey;
+  }
+
   void _handlePosition(String sessionId, Duration position) {
     final loop = _loops[sessionId];
-    if (loop == null || loop.trackKey != trackKeyForSession(sessionId)) return;
+    if (loop == null || !_matchesLoopTrackKey(sessionId, loop)) return;
     const tolerance = Duration(milliseconds: 1500);
     if (position < loop.start - tolerance || position > loop.end + tolerance) {
       _seekToStart(sessionId, loop.start);
@@ -215,25 +240,34 @@ final class PlaybackTimeSegmentService {
 }
 
 final class _TimeSegmentLoopRuntime {
-  const _TimeSegmentLoopRuntime({
+  _TimeSegmentLoopRuntime({
     required this.trackKey,
     required this.labelId,
     required this.start,
     required this.end,
+    this.cachedTrackPath,
+    this.cachedTrackKey,
   });
 
-  factory _TimeSegmentLoopRuntime.fromLabel(TimeSegmentLabel label) =>
-      _TimeSegmentLoopRuntime(
-        trackKey: label.trackKey,
-        labelId: label.id,
-        start: label.start,
-        end: label.end,
-      );
+  factory _TimeSegmentLoopRuntime.fromLabel(
+    TimeSegmentLabel label, {
+    String? cachedTrackPath,
+    String? cachedTrackKey,
+  }) => _TimeSegmentLoopRuntime(
+    trackKey: label.trackKey,
+    labelId: label.id,
+    start: label.start,
+    end: label.end,
+    cachedTrackPath: cachedTrackPath,
+    cachedTrackKey: cachedTrackKey,
+  );
 
   final String trackKey;
   final String labelId;
   final Duration start;
   final Duration end;
+  String? cachedTrackPath;
+  String? cachedTrackKey;
 
   bool contains(Duration position) => position >= start && position <= end;
 }

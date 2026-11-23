@@ -82,6 +82,20 @@ bool _hasReadableContrast(Color foreground, Color? background) {
       2.2;
 }
 
+/// Computes the hover/press accent shift when a button's resting foreground is
+/// already [accent]. Very light accents (such as dark monochrome `#F5F5F7`)
+/// step subtly darker so pointer feedback stays clearly visible.
+Color appAccentFeedbackColor(ColorScheme cs, Color accent) {
+  if (accent.computeLuminance() > 0.78) {
+    return Color.lerp(accent, cs.onSurfaceVariant, 0.28)!;
+  }
+  return Color.lerp(
+    accent,
+    cs.brightness == Brightness.dark ? Colors.white : cs.onPrimaryContainer,
+    cs.brightness == Brightness.dark ? 0.32 : 0.35,
+  )!;
+}
+
 /// Computes the icon transform, opacity, color, and duration for pointer button
 /// feedback while respecting [TickerMode], reduced motion, and Windows hover.
 ({double scale, double opacity, Color? color, Duration duration})
@@ -111,7 +125,7 @@ resolveAppButtonIconFeedback({
     color = baseColor;
   } else if (baseColor != null &&
       baseColor.toARGB32() == cs.primary.toARGB32()) {
-    color = Color.lerp(cs.primary, cs.onPrimaryContainer, 0.35);
+    color = appAccentFeedbackColor(cs, cs.primary);
   } else {
     color = cs.primary;
   }
@@ -147,7 +161,6 @@ resolveAppTextButtonFeedback({
 }) {
   final theme = Theme.of(context);
   final isWindows = theme.platform == TargetPlatform.windows;
-  final isDark = theme.brightness == Brightness.dark;
   final visible = TickerMode.valuesOf(context).enabled;
   final reduceMotion = MediaQuery.disableAnimationsOf(context);
   final isPressed = visible && enabled && pressed;
@@ -159,7 +172,7 @@ resolveAppTextButtonFeedback({
   final color = !canHighlight
       ? baseColor
       : baseColor == accent
-      ? Color.lerp(accent, isDark ? Colors.white : cs.onPrimaryContainer, 0.35)
+      ? appAccentFeedbackColor(cs, accent)
       : accent;
   return (
     scale: !isWindows && !reduceMotion && isPressed ? 0.94 : 1.0,

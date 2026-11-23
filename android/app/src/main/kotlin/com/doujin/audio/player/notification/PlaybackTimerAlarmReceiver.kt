@@ -15,7 +15,9 @@ import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
 import java.util.Calendar
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 class PlaybackTimerAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
@@ -62,6 +64,12 @@ object PlaybackTimerAlarmScheduler {
         timerRecoveryExecutor.execute(task)
     }
 
+    internal fun awaitPendingForTest(timeoutMs: Long = 10_000L): Boolean {
+        val latch = CountDownLatch(1)
+        timerRecoveryExecutor.execute { latch.countDown() }
+        return latch.await(timeoutMs, TimeUnit.MILLISECONDS)
+    }
+
     private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
     private val timerRecoveryExecutor by lazy {
         Executors.newSingleThreadExecutor { runnable ->
@@ -69,29 +77,38 @@ object PlaybackTimerAlarmScheduler {
         }
     }
 
-    private fun commandDelivery(context: Context) = PlaybackTimerCommandDelivery(
+    private fun commandDelivery(context: Context): PlaybackTimerCommandDelivery {
+        val appContext = context.applicationContext
+        return PlaybackTimerCommandDelivery(
             startService = {
-                NativePlaybackService.ensureStarted(context, requireForegroundBootstrap = true)?.let { service ->
+                NativePlaybackService.ensureStarted(appContext, requireForegroundBootstrap = true)?.let { service ->
                     { action, runtime, generation, attempt, complete ->
                         when (action) {
                             actionTimerExpired -> {
-                                executeTimerExpired(context, service, runtime, complete)
+                                executeTimerExpired(appContext, service, runtime, complete)
                             }
                             actionAutoResume -> {
-                                executeAutoResume(context, service, runtime, generation, attempt, complete)
+                                executeAutoResume(appContext, service, runtime, generation, attempt, complete)
                             }
                             else -> complete(resultFailed)
                         }
                     }
                 }
             },
-            loadRuntimeState = { NativePlaybackStateStore.loadTimerRuntimeState(context) },
+            loadRuntimeState = { NativePlaybackStateStore.loadTimerRuntimeState(appContext) },
             postDelayed = { task, delay -> mainHandler.postDelayed(task, delay) },
             beginCommandDelivery = NativePlaybackService::beginCommandDelivery,
             endCommandDelivery = NativePlaybackService::endCommandDelivery,
-            logInfo = { logInfo(context, it) },
-            logWarn = { message, error -> logWarn(context, message, error) }
+            logInfo = { logInfo(appContext, it) },
+            logWarn = { message, error -> logWarn(appContext, message, error) },
+            loadRuntimeStateAsync = { callback ->
+                executeOnTimerExecutor {
+                    val state = NativePlaybackStateStore.loadTimerRuntimeState(appContext)
+                    mainHandler.post { callback(state) }
+                }
+            }
         )
+    }
 
     fun acquireDeliveryWakeLock(context: Context): PowerManager.WakeLock? = try {
         val manager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
@@ -330,6 +347,41 @@ object PlaybackTimerAlarmScheduler {
         }
     }
 
+    fun clearAllAsync(context: Context) {
+        val appContext = context.applicationContext
+        executeOnTimerExecutor {
+            NativePlaybackStateStore.clearPausedSessionIds(appContext)
+            NativePlaybackStateStore.clearTimerCandidateSessionIds(appContext)
+            NativePlaybackStateStore.clearTimerRuntimeState(appContext)
+            rescheduleFromStoredState(appContext)
+        }
+    }
+
+    internal fun loadPlaybackBehaviorAsync(
+        context: Context,
+        onLoaded: (StoredPlaybackBehavior) -> Unit
+    ) {
+        val appContext = context.applicationContext
+        executeOnTimerExecutor {
+            val loaded = NativePlaybackStateStore.loadPlaybackBehavior(appContext)
+            mainHandler.post { onLoaded(loaded) }
+        }
+    }
+
+    internal fun savePlaybackBehaviorAsync(context: Context, behavior: StoredPlaybackBehavior) {
+        val appContext = context.applicationContext
+        executeOnTimerExecutor {
+            NativePlaybackStateStore.savePlaybackBehavior(appContext, behavior)
+        }
+    }
+
+    fun completeTimerStopAfterCurrentTracksAsync(context: Context, generation: Int?) {
+        val appContext = context.applicationContext
+        executeOnTimerExecutor {
+            completeTimerStopAfterCurrentTracks(appContext, generation)
+        }
+    }
+
     fun completeTimerStopAfterCurrentTracks(context: Context, generation: Int?) {
         val runtimeState = NativePlaybackStateStore.loadTimerRuntimeState(context) ?: return
         if (generation != null && runtimeState.generation != generation) return
@@ -362,54 +414,71 @@ object PlaybackTimerAlarmScheduler {
             complete(resultStale)
             return
         }
+        val appContext = context.applicationContext
         val pauseResult = service.pausePlayingSessionsForTimer(
             runtimeState.generation,
             runtimeState.stopAfterCurrentTrack
         )
         if (pauseResult.sessionIds.isNotEmpty()) {
-            finishTimerExpired(context, runtimeState, pauseResult.sessionIds, pauseResult.waitingForTrackEnd)
-            complete(resultExecuted)
+            executeOnTimerExecutor {
+                val outcome = try {
+                    finishTimerExpired(appContext, runtimeState, pauseResult.sessionIds, pauseResult.waitingForTrackEnd)
+                    resultExecuted
+                } catch (error: Exception) {
+                    logWarn(appContext, "timer_expiry_failed", error)
+                    resultFailed
+                }
+                mainHandler.post { complete(outcome) }
+            }
             return
         }
-        timerRecoveryExecutor.execute {
+        executeOnTimerExecutor {
             val recovered = runCatching {
-                NativePlaybackStateStore.loadActiveSessionRevisions(context)
+                NativePlaybackStateStore.loadActiveSessionRevisions(appContext)
             }.getOrElse { error ->
-                logWarn(context, "timer_expiry_candidate_read_failed", error)
+                logWarn(appContext, "timer_expiry_candidate_read_failed", error)
                 emptyMap()
             }
+            val currentState = NativePlaybackStateStore.loadTimerRuntimeState(appContext)
+            if (currentState == null ||
+                currentState.generation != runtimeState.generation ||
+                currentState.timerEndsAtWallClockMs != runtimeState.timerEndsAtWallClockMs ||
+                currentState.stopAfterCurrentTrack != runtimeState.stopAfterCurrentTrack
+            ) {
+                mainHandler.post { complete(resultStale) }
+                return@executeOnTimerExecutor
+            }
+            val fallbackCandidates = NativePlaybackStateStore.loadTimerCandidateSessionIds(appContext)
             mainHandler.post {
-                val currentState = NativePlaybackStateStore.loadTimerRuntimeState(context)
-                if (currentState == null ||
-                    currentState.generation != runtimeState.generation ||
-                    currentState.timerEndsAtWallClockMs != runtimeState.timerEndsAtWallClockMs ||
-                    currentState.stopAfterCurrentTrack != runtimeState.stopAfterCurrentTrack
-                ) {
-                    complete(resultStale)
-                    return@post
-                }
-                try {
+                val recheckPause = try {
                     // Sticky recovery may have started playback while the candidate read was queued.
-                    val recheckPause = NativePlaybackService.controller()
+                    NativePlaybackService.controller()
                         ?.pausePlayingSessionsForTimer(
                             runtimeState.generation,
                             currentState.stopAfterCurrentTrack
                         )
-                    val paused = recheckPause?.sessionIds.orEmpty()
-                    val waitingForTrackEnd = paused.isNotEmpty() && recheckPause?.waitingForTrackEnd == true
-                    val ids = paused.ifEmpty {
-                        recovered.filter { (id, revision) ->
-                            NativePlaybackStateStore.sessionRevision(id) == revision
-                        }.keys.toList()
-                    }
-                        .ifEmpty { NativePlaybackStateStore.loadTimerCandidateSessionIds(context) }
-                    finishTimerExpired(context, currentState, ids, waitingForTrackEnd)
                 } catch (error: Exception) {
-                    logWarn(context, "timer_expiry_failed", error)
+                    logWarn(appContext, "timer_expiry_failed", error)
                     complete(resultFailed)
                     return@post
                 }
-                complete(resultExecuted)
+                val paused = recheckPause?.sessionIds.orEmpty()
+                val waitingForTrackEnd = paused.isNotEmpty() && recheckPause?.waitingForTrackEnd == true
+                val ids = paused.ifEmpty {
+                    recovered.filter { (id, revision) ->
+                        NativePlaybackStateStore.sessionRevision(id) == revision
+                    }.keys.toList()
+                }.ifEmpty { fallbackCandidates }
+                executeOnTimerExecutor {
+                    val outcome = try {
+                        finishTimerExpired(appContext, currentState, ids, waitingForTrackEnd)
+                        resultExecuted
+                    } catch (error: Exception) {
+                        logWarn(appContext, "timer_expiry_failed", error)
+                        resultFailed
+                    }
+                    mainHandler.post { complete(outcome) }
+                }
             }
         }
     }
@@ -453,43 +522,80 @@ object PlaybackTimerAlarmScheduler {
         autoResumeAttempt: Int,
         complete: (String) -> Unit
     ) {
-        val pausedSessionIds = runtimeState?.pausedSessionIds
-            ?.ifEmpty {
-                NativePlaybackStateStore.loadPausedSessionIds(context)
-            }
-            ?.ifEmpty {
-                NativePlaybackStateStore.loadTimerCandidateSessionIds(context)
-            }
-            ?: NativePlaybackStateStore.loadPausedSessionIds(context)
-                .ifEmpty {
-                    NativePlaybackStateStore.loadTimerCandidateSessionIds(context)
+        val appContext = context.applicationContext
+        fun restoreAndResume(pausedSessionIds: List<String>) {
+            service.restoreSessionsForTimer(pausedSessionIds) { restored ->
+                val valid = try {
+                    restored.getOrThrow()
+                } catch (error: Throwable) {
+                    logWarn(appContext, "auto_resume_failed", error)
+                    complete(resultFailed)
+                    return@restoreSessionsForTimer
                 }
-        service.restoreSessionsForTimer(pausedSessionIds) { restored ->
-            try {
-                val currentState = NativePlaybackStateStore.loadTimerRuntimeState(context)
-                if (restored.getOrThrow() && currentState?.generation == runtimeState?.generation) {
-                    finishAutoResume(context, service, runtimeState, generation, autoResumeAttempt, pausedSessionIds)
-                    complete(resultExecuted)
-                } else {
+                if (!valid) {
                     complete(resultStale)
+                    return@restoreSessionsForTimer
                 }
-            } catch (error: Throwable) {
-                logWarn(context, "auto_resume_failed", error)
-                complete(resultFailed)
+                executeOnTimerExecutor {
+                    val currentState = NativePlaybackStateStore.loadTimerRuntimeState(appContext)
+                    mainHandler.post {
+                        if (currentState?.generation != runtimeState?.generation) {
+                            complete(resultStale)
+                            return@post
+                        }
+                        val resumeResult = try {
+                            if (pausedSessionIds.isNotEmpty()) {
+                                service.resumeSessionsForTimer(pausedSessionIds)
+                            } else {
+                                null
+                            }
+                        } catch (error: Throwable) {
+                            logWarn(appContext, "auto_resume_failed", error)
+                            complete(resultFailed)
+                            return@post
+                        }
+                        executeOnTimerExecutor {
+                            val outcome = try {
+                                persistAutoResumeOutcome(
+                                    context = appContext,
+                                    runtimeState = runtimeState,
+                                    generation = generation,
+                                    autoResumeAttempt = autoResumeAttempt,
+                                    pausedSessionIds = pausedSessionIds,
+                                    resumeResult = resumeResult
+                                )
+                                resultExecuted
+                            } catch (error: Throwable) {
+                                logWarn(appContext, "auto_resume_failed", error)
+                                resultFailed
+                            }
+                            mainHandler.post { complete(outcome) }
+                        }
+                    }
+                }
             }
+        }
+        val knownPausedIds = runtimeState?.pausedSessionIds.orEmpty()
+        if (knownPausedIds.isNotEmpty()) {
+            restoreAndResume(knownPausedIds)
+            return
+        }
+        executeOnTimerExecutor {
+            val fallbackIds = NativePlaybackStateStore.loadPausedSessionIds(appContext)
+                .ifEmpty { NativePlaybackStateStore.loadTimerCandidateSessionIds(appContext) }
+            mainHandler.post { restoreAndResume(fallbackIds) }
         }
     }
 
-    private fun finishAutoResume(
+    private fun persistAutoResumeOutcome(
         context: Context,
-        service: NativePlaybackService,
         runtimeState: StoredPlaybackTimerRuntimeState?,
         generation: Int?,
         autoResumeAttempt: Int,
-        pausedSessionIds: List<String>
+        pausedSessionIds: List<String>,
+        resumeResult: NativeTimerResumeResult?
     ) {
-        if (pausedSessionIds.isNotEmpty()) {
-            val resumeResult = service.resumeSessionsForTimer(pausedSessionIds)
+        if (resumeResult != null) {
             val resumedSessionIds = resumeResult.resumedSessionIds
             logInfo(
                 context,

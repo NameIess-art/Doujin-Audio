@@ -89,7 +89,7 @@ class _TimerTabState extends ConsumerState<TimerTab>
   TimerMode _selectedMode = TimerMode.manual;
   bool _showCompactDetail = false;
   bool _draftInitialized = false;
-  String? _lastSyncedDraftKey;
+  String? _lastExternalDraftKey;
   Future<_TimerReliabilityStatus>? _reliabilityStatusFuture;
   bool _reliabilityRefreshNeeded = true;
   late final String _reliabilityLoadKey =
@@ -158,14 +158,16 @@ class _TimerTabState extends ConsumerState<TimerTab>
 
   void _syncDraftFromState(TimerConfigurationUiState state) {
     final duration = state.selectedDuration;
-    final mode = state.mode ?? state.draftMode;
+    final mode = state.expired
+        ? state.draftMode
+        : (state.mode ?? state.draftMode);
     final key = _draftKey(mode, duration);
-    if (_draftInitialized && _lastSyncedDraftKey == key) {
+    if (_draftInitialized && _lastExternalDraftKey == key) {
       return;
     }
     _draftInitialized = true;
-    _lastSyncedDraftKey = key;
-    final nextHours = duration.inHours;
+    _lastExternalDraftKey = key;
+    final nextHours = duration.inHours.clamp(0, 12);
     final nextMinutes = duration.inMinutes.remainder(60);
     final nextSeconds = duration.inSeconds.remainder(60);
     if (_hours == nextHours &&

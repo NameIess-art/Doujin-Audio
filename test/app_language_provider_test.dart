@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/widgets.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
@@ -292,13 +294,88 @@ void main() {
     expect(provider.tr('mute'), 'ミュート');
     expect(provider.tr('unmute'), 'ミュート解除');
   });
+
+  test('copied feedback key is localized across zh, en, and ja', () async {
+    final provider = AppLanguageProvider();
+    addTearDown(provider.dispose);
+
+    await provider.setLanguage(AppLanguage.zh);
+    expect(provider.tr('copied'), '已复制');
+
+    await provider.setLanguage(AppLanguage.en);
+    expect(provider.tr('copied'), 'Copied');
+
+    await provider.setLanguage(AppLanguage.ja);
+    expect(provider.tr('copied'), 'コピーしました');
+  });
+
+  test(
+    'reloadPersistedState awaits in-flight write and ignores stale preference updates',
+    () async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final store = _RejectableLanguagePreferences();
+      SharedPreferencesStorePlatform.instance = store;
+      await AppPreferences.init();
+      final provider = AppLanguageProvider();
+      addTearDown(provider.dispose);
+      await provider.initialized;
+      await provider.setLanguage(AppLanguage.zh);
+
+      final writeEntered = Completer<void>();
+      final writeGate = Completer<void>();
+      store.onWrite = () async {
+        writeEntered.complete();
+        await writeGate.future;
+      };
+
+      final writing = provider.setLanguagePreference(AppLanguagePreference.en);
+      await writeEntered.future;
+
+      var reloadDone = false;
+      final reload = provider.reloadPersistedState().then((_) {
+        reloadDone = true;
+      });
+      await Future<void>.delayed(Duration.zero);
+      expect(reloadDone, isFalse);
+
+      store.reject = true;
+      writeGate.complete();
+      await expectLater(writing, throwsStateError);
+      await reload;
+      expect(reloadDone, isTrue);
+      expect(provider.preference, AppLanguagePreference.zh);
+      expect(provider.language, AppLanguage.zh);
+
+      // Concurrent language switches must not apply an older superseded write.
+      store.reject = false;
+      final firstEntered = Completer<void>();
+      final firstGate = Completer<void>();
+      store.onWrite = () async {
+        firstEntered.complete();
+        await firstGate.future;
+      };
+      final observed = <AppLanguagePreference>[];
+      provider.addListener(() => observed.add(provider.preference));
+      final first = provider.setLanguagePreference(AppLanguagePreference.en);
+      await firstEntered.future;
+      final second = provider.setLanguagePreference(AppLanguagePreference.ja);
+      firstGate.complete();
+      await Future.wait([first, second]);
+      expect(provider.preference, AppLanguagePreference.ja);
+      expect(observed, <AppLanguagePreference>[AppLanguagePreference.ja]);
+    },
+  );
 }
 
 class _RejectableLanguagePreferences extends InMemorySharedPreferencesStore {
   _RejectableLanguagePreferences() : super.empty();
   bool reject = false;
+  Future<void> Function()? onWrite;
   @override
   Future<bool> setValue(String type, String key, Object value) async {
+    final hook = onWrite;
+    onWrite = null;
+    if (hook != null) await hook();
     if (reject) return false;
     return super.setValue(type, key, value);
   }

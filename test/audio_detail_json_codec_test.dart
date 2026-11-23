@@ -3,6 +3,8 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
+import 'package:doujin_audio/core/media/path_matcher.dart';
+import 'package:doujin_audio/core/media/time_segment_label.dart';
 import 'package:doujin_audio/features/library/data/audio_detail_json_codec.dart';
 
 void main() {
@@ -117,4 +119,82 @@ void main() {
       expect(() => codec.decode(bytes, target), throwsFormatException);
     }
   });
+
+  test(
+    'timeSegmentFields skips unrepresentable track paths and allows POSIX colons',
+    () {
+      final target = AudioDetailTarget.libraryRootFolder('/library/work');
+      final now = DateTime.utc(2026);
+      TimeSegmentLabel makeLabel(String id, String trackKey) =>
+          TimeSegmentLabel(
+            id: id,
+            trackKey: trackKey,
+            name: 'Seg $id',
+            start: const Duration(seconds: 1),
+            end: const Duration(seconds: 10),
+            colorValue: 0xff112233,
+            createdAt: now,
+            updatedAt: now,
+          );
+
+      final fields = codec.timeSegmentFields(target, [
+        makeLabel('outside', '/other/track.mp3'),
+        makeLabel('root', '/library/work'),
+        makeLabel('posix-colon', '/library/work/01: Intro.mp3'),
+      ]);
+      final encodedList = fields['timeSegmentLabels'] as List<Object?>;
+      expect(encodedList, hasLength(1));
+      expect(
+        (encodedList.single as Map<String, Object?>)['trackPath'],
+        '01: Intro.mp3',
+      );
+
+      final bytes = codec.encodeNew(
+        AudioDetail.empty(target),
+        additionalFields: fields,
+      );
+      final decoded = codec.decodeDocument(bytes, target);
+      expect(decoded.timeSegmentLabels, hasLength(1));
+      expect(
+        PathMatcher.equalsNormalized(
+          decoded.timeSegmentLabels.single.trackKey,
+          '/library/work/01: Intro.mp3',
+        ),
+        isTrue,
+      );
+
+      for (final badPath in <String>[
+        'C:/outside.mp3',
+        'C:relative.mp3',
+        'content://provider/track.mp3',
+        'tree::sub/01.mp3',
+      ]) {
+        final badBytes = Uint8List.fromList(
+          utf8.encode(
+            jsonEncode(<String, Object?>{
+              'schemaVersion': 1,
+              'type': 'audio-detail',
+              'timeSegmentLabels': [
+                <String, Object?>{
+                  'id': 'bad',
+                  'trackPath': badPath,
+                  'name': 'Bad',
+                  'startMs': 1000,
+                  'endMs': 2000,
+                  'colorValue': 0xff112233,
+                  'createdAt': now.toIso8601String(),
+                  'updatedAt': now.toIso8601String(),
+                },
+              ],
+            }),
+          ),
+        );
+        expect(
+          () => codec.decodeDocument(badBytes, target),
+          throwsFormatException,
+          reason: 'Expected $badPath to be rejected',
+        );
+      }
+    },
+  );
 }

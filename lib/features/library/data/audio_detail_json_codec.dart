@@ -148,24 +148,63 @@ final class AudioDetailJsonCodec {
     return _encode(updated);
   }
 
+  static final RegExp _driveLetterPrefix = RegExp(r'^[A-Za-z]:');
+
+  static bool _isValidRelativeTrackPath(
+    String relative, {
+    required bool isLibraryRootFolder,
+  }) {
+    if (isLibraryRootFolder ? relative.isEmpty : relative.isNotEmpty) {
+      return false;
+    }
+    if (relative.isEmpty) return true;
+    if (relative.contains('\\') ||
+        relative.contains('\x00') ||
+        relative.startsWith('/') ||
+        relative.contains('://') ||
+        relative.contains('::') ||
+        _driveLetterPrefix.hasMatch(relative)) {
+      return false;
+    }
+    return !relative
+        .split('/')
+        .any((part) => part.isEmpty || part == '.' || part == '..');
+  }
+
+  String? _encodedTimeSegmentTrackPath(
+    AudioDetailTarget target,
+    TimeSegmentLabel label,
+  ) {
+    final trackPath = target.isLibraryRootFolder
+        ? PathMatcher.relativeWithin(label.trackKey, target.targetPath)
+        : '';
+    if (trackPath == null ||
+        !_isValidRelativeTrackPath(
+          trackPath,
+          isLibraryRootFolder: target.isLibraryRootFolder,
+        )) {
+      return null;
+    }
+    return trackPath;
+  }
+
   Map<String, Object?> timeSegmentFields(
     AudioDetailTarget target,
     Iterable<TimeSegmentLabel> labels,
   ) => {
     'timeSegmentLabels': [
       for (final label in labels)
-        {
-          'id': label.id,
-          'trackPath': target.isLibraryRootFolder
-              ? PathMatcher.relativeWithin(label.trackKey, target.targetPath)
-              : '',
-          'name': label.name,
-          'startMs': label.start.inMilliseconds,
-          'endMs': label.end.inMilliseconds,
-          'colorValue': label.colorValue,
-          'createdAt': label.createdAt.toIso8601String(),
-          'updatedAt': label.updatedAt.toIso8601String(),
-        },
+        if (_encodedTimeSegmentTrackPath(target, label) case final trackPath?)
+          {
+            'id': label.id,
+            'trackPath': trackPath,
+            'name': label.name,
+            'startMs': label.start.inMilliseconds,
+            'endMs': label.end.inMilliseconds,
+            'colorValue': label.colorValue,
+            'createdAt': label.createdAt.toIso8601String(),
+            'updatedAt': label.updatedAt.toIso8601String(),
+          },
     ],
   };
 
@@ -192,19 +231,10 @@ final class AudioDetailJsonCodec {
           !ids.add(id) ||
           name.trim().isEmpty ||
           relative is! String ||
-          (target.isLibraryRootFolder
-              ? relative.isEmpty
-              : relative.isNotEmpty) ||
-          relative.contains('\\') ||
-          relative.contains(':') ||
-          relative.contains('\x00') ||
-          relative.startsWith('/') ||
-          (relative.isNotEmpty &&
-              relative
-                  .split('/')
-                  .any(
-                    (part) => part.isEmpty || part == '.' || part == '..',
-                  ))) {
+          !_isValidRelativeTrackPath(
+            relative,
+            isLibraryRootFolder: target.isLibraryRootFolder,
+          )) {
         throw const FormatException('Invalid time segment identity or path');
       }
       final start = _integer(fields, 'startMs', minimum: 0);
@@ -261,6 +291,60 @@ final class AudioDetailJsonCodec {
     onlyMissingDuration: true,
     additionalFields: additionalFields,
   );
+
+  /// Attempts to patch a missing duration directly onto an existing entry in
+  /// [bytes] without requiring cover or time-segment fields. Returns
+  /// `missingEntry: true` only when a single-file list document does not yet
+  /// contain an entry for [detail.target].
+  ({bool missingEntry, Uint8List? bytes}) mergeMissingDurationExisting(
+    Uint8List bytes,
+    AudioDetail detail,
+  ) {
+    final target = detail.target;
+    final root = _decodeRoot(bytes);
+    final durationField = <String, Object?>{
+      'durationMs': detail.duration!.inMilliseconds,
+    };
+    if (root is Map && target.isLibraryRootFolder) {
+      final entry = Map<String, Object?>.from(root);
+      final current = _detailFromJson(target, entry);
+      _labelsFromJson(entry, target);
+      if (current.duration != null) {
+        return (missingEntry: false, bytes: null);
+      }
+      return (missingEntry: false, bytes: _encode({...entry, ...durationField}));
+    }
+    if (root is List && !target.isLibraryRootFolder) {
+      if (!root.any(
+        (item) =>
+            item is Map &&
+            item['targetPath'] is String &&
+            PathMatcher.equalsNormalized(
+              item['targetPath'] as String,
+              target.targetPath,
+            ),
+      )) {
+        return (missingEntry: true, bytes: null);
+      }
+      final entry = _findTargetEntry(root, target);
+      final current = _detailFromJson(target, entry);
+      _labelsFromJson(entry, target);
+      if (current.duration != null) {
+        return (missingEntry: false, bytes: null);
+      }
+      return (
+        missingEntry: false,
+        bytes: _encode([
+          for (final item in root)
+            if (item is Map && item['targetPath'] == entry['targetPath'])
+              {...entry, ...durationField}
+            else
+              item,
+        ]),
+      );
+    }
+    throw const FormatException('Audio detail document layout mismatch');
+  }
 
   Uint8List? _mergeFields(
     Uint8List bytes,

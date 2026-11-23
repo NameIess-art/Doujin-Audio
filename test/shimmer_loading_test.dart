@@ -55,14 +55,17 @@ void main() {
       Future<List<int>> sample() =>
           _sampleRedChannels(tester, skeletonKey, [0.25, 0.5, 0.75]);
 
-      expect(find.byType(ShaderMask), findsNothing);
+      final shimmerMaskFinder = find.byWidgetPredicate(
+        (widget) => widget is ShaderMask,
+      );
+      expect(shimmerMaskFinder, findsNothing);
       final duringEntrance = await sample();
       expect(duringEntrance, [0x30, 0x60, 0x60]);
 
       await tester.pump(
         kAppPagePushDuration - const Duration(milliseconds: 99),
       );
-      expect(find.byType(ShaderMask), findsOneWidget);
+      expect(shimmerMaskFinder, findsOneWidget);
       expect(await sample(), duringEntrance);
       await tester.pump(const Duration(milliseconds: 16));
       expect(await sample(), duringEntrance);

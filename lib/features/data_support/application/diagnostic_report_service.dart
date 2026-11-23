@@ -70,6 +70,7 @@ class DiagnosticReportService {
       'privacy':
           'Generated locally. Credentials, media files, and URL query parameters are excluded.',
     };
+    await AppLogService.flush();
     final logPaths = [for (final file in await _logFilesProvider()) file.path];
     await _writeArchive(outputPath, report, logPaths);
     return File(outputPath);
@@ -79,32 +80,58 @@ class DiagnosticReportService {
     String outputPath,
     Map<String, Object?> report,
     List<String> logPaths,
-  ) => Isolate.run(() async {
+  ) => IOOverrides.current == null
+      ? Isolate.run(() => _writeArchiveImpl(outputPath, report, logPaths))
+      : _writeArchiveImpl(outputPath, report, logPaths);
+
+  static Future<void> _writeArchiveImpl(
+    String outputPath,
+    Map<String, Object?> report,
+    List<String> logPaths,
+  ) async {
     final archive = Archive();
+    final logReadErrors = <Map<String, String>>[];
+    for (final logPath in logPaths) {
+      final logFile = File(logPath);
+      final nonEmptySegments = logFile.uri.pathSegments.where(
+        (segment) => segment.isNotEmpty,
+      );
+      final fileName = nonEmptySegments.isNotEmpty
+          ? nonEmptySegments.last
+          : logPath;
+      try {
+        if (!await logFile.exists()) continue;
+        final rawBytes = await logFile.readAsBytes();
+        final sanitized = AppLogService.sanitize(
+          utf8.decode(rawBytes, allowMalformed: true),
+        );
+        final bytes = utf8.encode(sanitized);
+        archive.addFile(
+          ArchiveFile('logs/$fileName', bytes.length, bytes),
+        );
+      } on Object catch (error) {
+        logReadErrors.add(<String, String>{
+          'file': fileName,
+          'error': AppLogService.sanitize(error.toString()),
+        });
+      }
+    }
+
+    final finalReport = <String, Object?>{
+      ...report,
+      if (logReadErrors.isNotEmpty) 'logReadErrors': logReadErrors,
+    };
     final reportBytes = utf8.encode(
-      const JsonEncoder.withIndent('  ').convert(report),
+      const JsonEncoder.withIndent('  ').convert(finalReport),
     );
     archive.addFile(
       ArchiveFile('diagnostic.json', reportBytes.length, reportBytes),
     );
-    for (final logPath in logPaths) {
-      final logFile = File(logPath);
-      if (!await logFile.exists()) continue;
-      final sanitized = AppLogService.sanitize(await logFile.readAsString());
-      final bytes = utf8.encode(sanitized);
-      archive.addFile(
-        ArchiveFile(
-          'logs/${logFile.uri.pathSegments.last}',
-          bytes.length,
-          bytes,
-        ),
-      );
-    }
 
     final output = File(outputPath);
     await output.parent.create(recursive: true);
     await output.writeAsBytes(ZipEncoder().encode(archive), flush: true);
-  });
+  }
 
   static Future<List<File>> _defaultLogFiles() async {
     final directoryPath = AppLogService.logDirectoryPath;

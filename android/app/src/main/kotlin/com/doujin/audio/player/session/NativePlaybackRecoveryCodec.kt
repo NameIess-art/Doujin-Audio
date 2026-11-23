@@ -3,14 +3,13 @@ package com.doujin.audio.player.session
 import org.json.JSONArray
 import org.json.JSONObject
 
-internal fun StoredNativePlaybackSession.encodeDefinition(): JSONObject = JSONObject()
+internal fun StoredNativePlaybackSession.encodeMetadata(): JSONObject = JSONObject()
     .put("sessionId", sessionId)
     .put("uri", uri)
     .put("path", path)
     .put("title", title)
     .put("subtitle", subtitle)
     .put("artUri", artUri)
-    .put("positionMs", positionMs)
     .put("volume", volume.toDouble())
     .put("speed", speed.toDouble())
     .put("skipSilenceEnabled", skipSilenceEnabled)
@@ -36,37 +35,43 @@ internal fun StoredNativePlaybackSession.encodeDefinition(): JSONObject = JSONOb
     .put("repeatAll", repeatAll)
     .put("shuffleModeEnabled", shuffleModeEnabled)
     .put("queueStartIndex", queueStartIndex)
-    .put(
-        "queue",
-        JSONArray().apply {
-            queue.forEach { queueItem ->
-                put(
-                    JSONObject()
-                        .put("path", queueItem.path)
-                        .put("uri", queueItem.uri)
-                        .put("title", queueItem.title)
-                        .put("subtitle", queueItem.subtitle)
-                        .put("artUri", queueItem.artUri)
-                        .put("usageDescriptor", queueItem.usageDescriptor?.let { JSONObject(it) })
-                        .put("clipStartMs", queueItem.clipStartMs)
-                        .put("clipEndMs", queueItem.clipEndMs)
-                        .put("httpHeaders", JSONObject(queueItem.httpHeaders))
-                        .put("playOnceBeforeQueue", queueItem.playOnceBeforeQueue)
-                        .put(
-                            "candidateUris",
-                            JSONArray(queueItem.candidateUris)
-                        )
-                )
-            }
-        }
-    )
     .put("channelSwapEnabled", channelSwapEnabled)
-    .put("playing", playing)
-    .put("playWhenReady", playWhenReady)
     .put("completed", completed)
     .put("discardedQueuePrefix", discardedQueuePrefix)
 
-internal fun JSONObject.decodeDefinition(): StoredNativePlaybackSession? {
+internal fun StoredNativePlaybackSession.encodeQueueDefinition(): JSONObject = JSONObject()
+    .put("sessionId", sessionId)
+    .put("queue", encodeQueueItems())
+
+internal fun StoredNativePlaybackSession.encodeDefinition(): JSONObject = encodeMetadata()
+    .put("positionMs", positionMs)
+    .put("playing", playing)
+    .put("playWhenReady", playWhenReady)
+    .put("queue", encodeQueueItems())
+
+private fun StoredNativePlaybackSession.encodeQueueItems(): JSONArray = JSONArray().apply {
+    queue.forEach { queueItem ->
+        put(
+            JSONObject()
+                .put("path", queueItem.path)
+                .put("uri", queueItem.uri)
+                .put("title", queueItem.title)
+                .put("subtitle", queueItem.subtitle)
+                .put("artUri", queueItem.artUri)
+                .put("usageDescriptor", queueItem.usageDescriptor?.let { JSONObject(it) })
+                .put("clipStartMs", queueItem.clipStartMs)
+                .put("clipEndMs", queueItem.clipEndMs)
+                .put("httpHeaders", JSONObject(queueItem.httpHeaders))
+                .put("playOnceBeforeQueue", queueItem.playOnceBeforeQueue)
+                .put(
+                    "candidateUris",
+                    JSONArray(queueItem.candidateUris)
+                )
+        )
+    }
+}
+
+internal fun JSONObject.decodeDefinition(queueSource: JSONObject = this): StoredNativePlaybackSession? {
     val sessionId = optNullableString("sessionId") ?: return null
     val uri = optNullableString("uri") ?: return null
     return StoredNativePlaybackSession(
@@ -91,7 +96,7 @@ internal fun JSONObject.decodeDefinition(): StoredNativePlaybackSession? {
         repeatAll = optBoolean("repeatAll", false),
         shuffleModeEnabled = optBoolean("shuffleModeEnabled", false),
         queueStartIndex = optInt("queueStartIndex", 0).coerceAtLeast(0),
-        queue = optQueueItems(),
+        queue = queueSource.optQueueItems(),
         channelSwapEnabled = optBoolean("channelSwapEnabled", false),
         playing = optBoolean("playing", false),
         playWhenReady = optBoolean("playWhenReady", false),

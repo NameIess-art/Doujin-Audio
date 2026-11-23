@@ -253,6 +253,39 @@ void main() {
     });
 
     testWidgets(
+      'expired trigger timer does not display waiting_to_start_countdown',
+      (tester) async {
+        final i18n = fixture.languageProvider;
+        fixture.timerService
+          ..timerMode = TimerMode.trigger
+          ..timerDuration = const Duration(minutes: 15)
+          ..timerActive = false
+          ..timerRemaining = const Duration(minutes: 15);
+        fixture.timer.syncPresentationState();
+
+        await tester.pumpWidget(fixture.build(const BedtimeCanvasPage()));
+        await tester.pump();
+        expect(
+          find.text(i18n.tr('waiting_to_start_countdown')),
+          findsOneWidget,
+        );
+
+        fixture.timerService
+          ..timerActive = false
+          ..timerRemaining = Duration.zero;
+        fixture.timer.syncPresentationState();
+        await tester.pump();
+        await tester.pump();
+
+        expect(
+          find.text(i18n.tr('waiting_to_start_countdown')),
+          findsNothing,
+        );
+        expect(find.text(i18n.tr('no_timer_set')), findsOneWidget);
+      },
+    );
+
+    testWidgets(
       'double tap pauses and resumes multiple selected/playing sessions (not first in playlist)',
       (tester) async {
         // Session 1: first in playlist, paused

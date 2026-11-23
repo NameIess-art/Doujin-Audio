@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show setEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -23,6 +24,7 @@ import 'audio_detail_sheet.dart' show showAudioDetailEditor;
 import 'library_providers.dart';
 import 'library_search_all_results.dart';
 import 'library_tab_ui_helpers.dart';
+import 'library_view_models.dart';
 
 class LibrarySearchPage extends ConsumerStatefulWidget {
   const LibrarySearchPage({super.key, this.initialQuery = ''});
@@ -37,12 +39,19 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
   final _draftQuery = ValueNotifier<String>('');
+  final _suggestionSelection = ValueNotifier<_LibrarySuggestionSelection>(
+    const _LibrarySuggestionSelection(),
+  );
   final _resultsScrollController = WindowsSmoothScrollController(
     keepScrollOffset: false,
   );
   final _suggestionsScrollController = WindowsSmoothScrollController(
     keepScrollOffset: false,
   );
+  final _searchIndex = LibrarySearchIndex();
+  SearchElements? _parsedDraftElements = emptySearchElements;
+  String _canonicalDraftQuery = '';
+  SearchElements? _parsedSubmittedElements;
   String? _submittedQuery;
   SearchFilters _filters = emptySearchFilters;
   bool _matchAll = true;
@@ -53,6 +62,34 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   Future<AudioLibraryCategorySnapshot>? _categorySnapshotFuture;
   int? _categorySnapshotStructureRevision;
   int? _categorySnapshotDetailRevision;
+
+  bool _canSubmitElements(SearchElements? elements, SearchFilters filters) =>
+      elements != null &&
+      (elements.all.isNotEmpty ||
+          elements.any.isNotEmpty ||
+          filters != emptySearchFilters);
+
+  bool get _canSubmitDraft =>
+      _canSubmitElements(_parsedDraftElements, _filters);
+
+  void _syncSuggestionSelection({bool allowDuringComposing = false}) {
+    if (!allowDuringComposing) {
+      final composing = _controller.value.composing;
+      if (composing.isValid && !composing.isCollapsed) return;
+    }
+    final elements = _parsedDraftElements;
+    final selected = _matchAll ? elements?.all : elements?.any;
+    final selectedLower = selected == null || selected.isEmpty
+        ? const <String>{}
+        : <String>{for (final term in selected) term.toLowerCase()};
+    final next = _LibrarySuggestionSelection(
+      canonicalDraft: _canonicalDraftQuery,
+      selectedLowerTerms: selectedLower,
+    );
+    if (_suggestionSelection.value != next) {
+      _suggestionSelection.value = next;
+    }
+  }
 
   @override
   void initState() {
@@ -77,14 +114,19 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   }
 
   void _onChanged(String value) {
-    final enabled = canSubmitSearch(value, _filters);
-    final wasEnabled = canSubmitSearch(_draftQuery.value, _filters);
+    final wasEnabled = _canSubmitDraft;
+    final parsed = parseSearchElements(value);
+    _parsedDraftElements = parsed;
+    _canonicalDraftQuery = parsed == null ? '' : formatSearchElements(parsed);
+    final enabled = _canSubmitElements(parsed, _filters);
     _draftQuery.value = value;
+    _syncSuggestionSelection();
     if (_submittedQuery == null && !_isSelectionMode && enabled == wasEnabled) {
       return;
     }
     setState(() {
       _submittedQuery = null;
+      _parsedSubmittedElements = null;
       _queryRevision++;
       _searchSelectionTree = const [];
       _clearSelection();
@@ -100,7 +142,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   }
 
   void _toggleTerm(String element) {
-    final elements = parseSearchElements(_controller.text);
+    final elements = _parsedDraftElements;
     if (elements == null) return;
     _setDraft(toggleSearchElement(elements, element, matchAll: _matchAll));
   }
@@ -114,15 +156,22 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   }
 
   void _onSubmitted(String value, {bool recordHistory = true}) {
-    if (!canSubmitSearch(value, _filters)) return;
-    final query = canonicalElementQuery(value);
+    final parsed = value == _draftQuery.value
+        ? _parsedDraftElements
+        : parseSearchElements(value);
+    if (!_canSubmitElements(parsed, _filters)) return;
+    final query = parsed == null ? '' : formatSearchElements(parsed);
+    _parsedDraftElements = parsed;
+    _canonicalDraftQuery = query;
     _draftQuery.value = query;
     _controller.value = TextEditingValue(
       text: query,
       selection: TextSelection.collapsed(offset: query.length),
     );
+    _syncSuggestionSelection(allowDuringComposing: true);
     setState(() {
       _submittedQuery = query;
+      _parsedSubmittedElements = query.isEmpty ? null : parsed;
       _queryRevision++;
       _searchSelectionTree = const [];
       _clearSelection();
@@ -196,26 +245,23 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     });
   }
 
-  void _updateSubmittedFilters(SearchFilters nextFilters) {
-    final currentQuery = _submittedQuery ?? '';
+  void _clearFilters() {
     setState(() {
-      _filters = nextFilters;
+      _filters = emptySearchFilters;
       _queryRevision++;
       _clearSelection();
-      if (currentQuery.isEmpty && nextFilters == emptySearchFilters) {
+      if (_submittedQuery == '') {
         _submittedQuery = null;
+        _parsedSubmittedElements = null;
         _searchSelectionTree = const [];
       }
     });
   }
 
-  void _clearFilters() {
-    _updateSubmittedFilters(emptySearchFilters);
-  }
-
   void _editSearch() {
     setState(() {
       _submittedQuery = null;
+      _parsedSubmittedElements = null;
       _searchSelectionTree = const [];
       _clearSelection();
     });
@@ -285,9 +331,11 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     _controller.dispose();
     _focusNode.dispose();
     _draftQuery.dispose();
+    _suggestionSelection.dispose();
     _resultsScrollController.dispose();
     HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
     _suggestionsScrollController.dispose();
+    _searchIndex.dispose();
     super.dispose();
   }
 
@@ -315,16 +363,12 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
       hintText: i18n.tr('search_audio_placeholder'),
       onChanged: _onChanged,
       onSubmitted: _onSubmitted,
-      committedElements: query == null || query.isEmpty
-          ? null
-          : parseSearchElements(query),
+      committedElements: _parsedSubmittedElements,
       onRemoveElement: _removeElement,
       translate: i18n.tr,
       onCloseOrClear: _closeOrClear,
       showConfirmButton: query == null,
-      onConfirm: canSubmitSearch(_controller.text, _filters)
-          ? () => _onSubmitted(_controller.text)
-          : null,
+      onConfirm: _canSubmitDraft ? () => _onSubmitted(_controller.text) : null,
       confirmLabel: i18n.tr('confirm'),
       controlsOverlay: _isSelectionMode ? _buildSelectionHeader(i18n) : null,
       body: PageHeaderInset(
@@ -365,7 +409,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
                   onEnterSelectionMode: _enterSelectionMode,
                   onToggleSelection: _toggleLibrarySelection,
                   onTreeChanged: (tree) => _searchSelectionTree = tree,
-                  onFiltersChanged: _updateSubmittedFilters,
+                  searchIndex: _searchIndex,
                   onClearFilters: _clearFilters,
                   onEditSearch: _editSearch,
                 ),
@@ -419,115 +463,127 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
               (state) => state.value?.librarySearchHistory ?? const <String>[],
             ),
           );
-          return ValueListenableBuilder<String>(
-            valueListenable: _draftQuery,
-            builder: (context, draft, _) {
-              final elements = parseSearchElements(draft);
-              final selected = _matchAll ? elements?.all : elements?.any;
-              final selectedLowerSet = selected == null
-                  ? const <String>{}
-                  : <String>{for (final term in selected) term.toLowerCase()};
-              final canonicalDraft = canonicalElementQuery(draft);
-              bool isSelected(String element) =>
-                  selectedLowerSet.isNotEmpty &&
-                  selectedLowerSet.contains(element.toLowerCase());
+          return CustomScrollView(
+            key: const ValueKey('library_search_suggestions'),
+            controller: _suggestionsScrollController,
+            physics: const ClampingScrollPhysics(),
+            slivers: [
+              SliverPadding(
+                padding: EdgeInsets.only(
+                  top: topInset,
+                  bottom: AppSearchPageScaffold.contentBottomInset(context),
+                ),
+                sliver: SliverMainAxisGroup(
+                  slivers: [
+                    SliverToBoxAdapter(
+                      child: ValueListenableBuilder<String>(
+                        valueListenable: _draftQuery,
+                        builder: (context, draft, _) => AppSearchElementTabs(
+                          draft: draft,
+                          matchAll: _matchAll,
+                          onSelected: (value) {
+                            setState(() => _matchAll = value);
+                            _syncSuggestionSelection(
+                              allowDuringComposing: true,
+                            );
+                          },
+                          translate: i18n.tr,
+                          filters: _filters,
+                          onFiltersChanged: (value) =>
+                              setState(() => _filters = value),
+                        ),
+                      ),
+                    ),
+                    ValueListenableBuilder<_LibrarySuggestionSelection>(
+                      valueListenable: _suggestionSelection,
+                      builder: (context, selection, _) {
+                        final selectedLowerSet = selection.selectedLowerTerms;
+                        final canonicalDraft = selection.canonicalDraft;
+                        bool isSelected(String element) =>
+                            selectedLowerSet.isNotEmpty &&
+                            selectedLowerSet.contains(element.toLowerCase());
 
-              AppSearchSuggestionSection section(
-                String key,
-                String title,
-                List<String> items,
-                String emptyText, {
-                bool metadata = false,
-                bool isHistory = false,
-                VoidCallback? onClear,
-              }) => AppSearchSuggestionSection(
-                key: ValueKey(key),
-                title: title,
-                items: items,
-                isSelected: isHistory
-                    ? (item) => item == canonicalDraft
-                    : isSelected,
-                onToggle: isHistory ? _onSubmitted : _toggleTerm,
-                buildItemMenu: isHistory
-                    ? (item) =>
-                          buildSearchHistoryMenu(context, item, online: false)
-                    : null,
-                emptyText: emptyText,
-                expandLabel: i18n.tr('expand'),
-                collapseLabel: i18n.tr('collapse'),
-                onClear: onClear,
-                clearLabel: i18n.tr('clear'),
-                isLoading:
-                    metadata &&
-                    state.connectionState == ConnectionState.waiting &&
-                    state.data == null,
-                errorText: metadata && state.hasError
-                    ? i18n.tr('operation_failed_retry')
-                    : null,
-                retryLabel: i18n.tr('retry'),
-                onRetry: metadata && state.hasError
-                    ? () => setState(() {
-                        _categorySnapshotFuture = loadSnapshot();
-                      })
-                    : null,
-              );
-              return CustomScrollView(
-                key: const ValueKey('library_search_suggestions'),
-                controller: _suggestionsScrollController,
-                physics: const ClampingScrollPhysics(),
-                slivers: [
-                  SliverPadding(
-                    padding: EdgeInsets.only(
-                      top: topInset,
-                      bottom: AppSearchPageScaffold.contentBottomInset(context),
-                    ),
-                    sliver: SliverMainAxisGroup(
-                      slivers: [
-                        SliverToBoxAdapter(
-                          child: AppSearchElementTabs(
-                            draft: draft,
-                            matchAll: _matchAll,
-                            onSelected: (value) =>
-                                setState(() => _matchAll = value),
-                            translate: i18n.tr,
-                            filters: _filters,
-                            onFiltersChanged: (value) =>
-                                setState(() => _filters = value),
-                          ),
-                        ),
-                        section(
-                          'library_search_history',
-                          i18n.tr('search_history'),
-                          history,
-                          i18n.tr('search_history_empty'),
-                          isHistory: true,
-                          onClear: () => unawaited(
-                            clearSearchHistoryWithFeedback(
-                              context,
-                              online: false,
+                        AppSearchSuggestionSection section(
+                          String key,
+                          String title,
+                          List<String> items,
+                          String emptyText, {
+                          bool metadata = false,
+                          bool isHistory = false,
+                          VoidCallback? onClear,
+                        }) => AppSearchSuggestionSection(
+                          key: ValueKey(key),
+                          title: title,
+                          items: items,
+                          isSelected: isHistory
+                              ? (item) => item == canonicalDraft
+                              : isSelected,
+                          onToggle: isHistory ? _onSubmitted : _toggleTerm,
+                          buildItemMenu: isHistory
+                              ? (item) => buildSearchHistoryMenu(
+                                  context,
+                                  item,
+                                  online: false,
+                                )
+                              : null,
+                          emptyText: emptyText,
+                          expandLabel: i18n.tr('expand'),
+                          collapseLabel: i18n.tr('collapse'),
+                          onClear: onClear,
+                          clearLabel: i18n.tr('clear'),
+                          isLoading:
+                              metadata &&
+                              state.connectionState ==
+                                  ConnectionState.waiting &&
+                              state.data == null,
+                          errorText: metadata && state.hasError
+                              ? i18n.tr('operation_failed_retry')
+                              : null,
+                          retryLabel: i18n.tr('retry'),
+                          onRetry: metadata && state.hasError
+                              ? () => setState(() {
+                                  _categorySnapshotFuture = loadSnapshot();
+                                })
+                              : null,
+                        );
+
+                        return SliverMainAxisGroup(
+                          slivers: [
+                            section(
+                              'library_search_history',
+                              i18n.tr('search_history'),
+                              history,
+                              i18n.tr('search_history_empty'),
+                              isHistory: true,
+                              onClear: () => unawaited(
+                                clearSearchHistoryWithFeedback(
+                                  context,
+                                  online: false,
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
-                        section(
-                          'library_search_voices',
-                          i18n.tr('library_category_voice_actors'),
-                          state.data?.voiceActorTerms ?? const [],
-                          i18n.tr('library_category_no_voice_actors'),
-                          metadata: true,
-                        ),
-                        section(
-                          'library_search_tags',
-                          i18n.tr('library_category_tags'),
-                          state.data?.tagTerms ?? const [],
-                          i18n.tr('library_category_no_tags'),
-                          metadata: true,
-                        ),
-                      ],
+                            section(
+                              'library_search_voices',
+                              i18n.tr('library_category_voice_actors'),
+                              state.data?.voiceActorTerms ?? const [],
+                              i18n.tr('library_category_no_voice_actors'),
+                              metadata: true,
+                            ),
+                            section(
+                              'library_search_tags',
+                              i18n.tr('library_category_tags'),
+                              state.data?.tagTerms ?? const [],
+                              i18n.tr('library_category_no_tags'),
+                              metadata: true,
+                            ),
+                          ],
+                        );
+                      },
                     ),
-                  ),
-                ],
-              );
-            },
+                  ],
+                ),
+              ),
+            ],
           );
         },
       ),
@@ -589,4 +645,25 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
       onExit: _exitSelectionMode,
     );
   }
+}
+
+@immutable
+class _LibrarySuggestionSelection {
+  const _LibrarySuggestionSelection({
+    this.canonicalDraft = '',
+    this.selectedLowerTerms = const <String>{},
+  });
+
+  final String canonicalDraft;
+  final Set<String> selectedLowerTerms;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _LibrarySuggestionSelection &&
+      other.canonicalDraft == canonicalDraft &&
+      setEquals(other.selectedLowerTerms, selectedLowerTerms);
+
+  @override
+  int get hashCode =>
+      Object.hash(canonicalDraft, Object.hashAllUnordered(selectedLowerTerms));
 }

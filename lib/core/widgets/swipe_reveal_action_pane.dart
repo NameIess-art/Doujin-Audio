@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../app/theme/theme_provider.dart';
 import 'app_buttons.dart';
 
 import 'app_feedback.dart';
@@ -41,20 +42,8 @@ class SwipeRevealActionPane extends StatelessWidget {
     required this.onAction,
     this.color,
     this.dragging = false,
+    this.progressAnimation,
   });
-
-  static Color? _cachedSeedPrimary;
-  static Color? _cachedDarkError;
-
-  static Color _darkDestructiveError(Color primary) {
-    if (_cachedSeedPrimary == primary && _cachedDarkError != null) {
-      return _cachedDarkError!;
-    }
-    final resolved = ColorScheme.fromSeed(seedColor: primary).error;
-    _cachedSeedPrimary = primary;
-    _cachedDarkError = resolved;
-    return resolved;
-  }
 
   final List<SwipeRevealAction> actions;
   final bool fromStart;
@@ -66,7 +55,16 @@ class SwipeRevealActionPane extends StatelessWidget {
   final String tooltip;
   final Color? color;
   final bool dragging;
+  final Animation<double>? progressAnimation;
   final ValueChanged<VoidCallback> onAction;
+
+  static double _scaleForProgress(double value) {
+    final clamped = value.clamp(0.0, 1.0);
+    if (clamped <= 0) return 0.84;
+    if (clamped < 0.58) return 0.86 + (clamped * 0.12);
+    final t = ((clamped - 0.58) / 0.42).clamp(0.0, 1.0);
+    return 0.9296 + (1.0 - 0.9296) * Curves.easeOutCubic.transform(t);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -74,22 +72,26 @@ class SwipeRevealActionPane extends StatelessWidget {
     final disableAnimations =
         dragging || MediaQuery.disableAnimationsOf(context);
     final destructive = actions.any((action) => action.destructive);
+    final useDarkErrorContainer =
+        color == null &&
+        destructive &&
+        Theme.of(context).brightness == Brightness.dark;
     final baseColor =
         color ??
         (destructive
-            ? Theme.of(context).brightness == Brightness.dark
-                  ? _darkDestructiveError(cs.primary)
+            ? useDarkErrorContainer
+                  ? cs.errorContainer
                   : cs.error
             : cs.primary);
-    final onColor =
-        ThemeData.estimateBrightnessForColor(baseColor) == Brightness.dark
-        ? const Color(0xFFF8F5F7)
-        : const Color(0xFF211F23);
+    final onColor = useDarkErrorContainer
+        ? cs.onErrorContainer
+        : appReadableOnColor(baseColor);
     final revealShape = switch (shape) {
       final OutlinedBorder shape => shape.copyWith(side: BorderSide.none),
       final ShapeBorder shape => shape,
     };
     final showVertical = vertical && actions.length > 1;
+    final liveAnimation = progressAnimation;
 
     Widget button(SwipeRevealAction action, double size) {
       final background = action.primary
@@ -111,6 +113,88 @@ class SwipeRevealActionPane extends StatelessWidget {
         size: size,
       );
     }
+
+    final hintContent = LayoutBuilder(
+      builder: (context, constraints) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: onColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: onColor.withValues(alpha: 0.18)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.swipe_left_rounded, size: 14, color: onColor),
+                const SizedBox(width: 4),
+                Text(
+                  label,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: onColor,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (constraints.maxHeight >= 64) ...[
+            const SizedBox(height: 8),
+            Text(
+              tooltip,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: onColor,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+
+    final buttonsContent = showVertical
+        ? SizedBox(
+            width: width - 20,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                const gap = 4.0;
+                final available =
+                    (constraints.maxHeight - gap * (actions.length - 1)) /
+                    actions.length;
+                final size = available.clamp(38.0, 48.0);
+                return Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    for (var index = 0; index < actions.length; index++) ...[
+                      if (index > 0) const SizedBox(height: gap),
+                      button(actions[index], size),
+                    ],
+                  ],
+                );
+              },
+            ),
+          )
+        : LayoutBuilder(
+            builder: (context, constraints) {
+              final size = constraints.maxHeight.isFinite
+                  ? (constraints.maxHeight - 12).clamp(40.0, 54.0)
+                  : 54.0;
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (var index = 0; index < actions.length; index++) ...[
+                    if (index > 0) const SizedBox(width: 8),
+                    button(actions[index], size),
+                  ],
+                ],
+              );
+            },
+          );
 
     return DecoratedBox(
       decoration: ShapeDecoration(
@@ -136,7 +220,16 @@ class SwipeRevealActionPane extends StatelessWidget {
                     ? 158
                     : 86,
               ),
-              child: fromStart || progress == 0
+              child: fromStart
+                  ? const SizedBox.shrink()
+                  : liveAnimation != null
+                  ? FadeTransition(
+                      opacity: liveAnimation.drive(
+                        CurveTween(curve: Curves.easeOutCubic),
+                      ),
+                      child: hintContent,
+                    )
+                  : progress == 0
                   ? const SizedBox.shrink()
                   : AnimatedOpacity(
                       opacity: 0.24 + progress * 0.76,
@@ -144,61 +237,7 @@ class SwipeRevealActionPane extends StatelessWidget {
                           ? Duration.zero
                           : const Duration(milliseconds: 220),
                       curve: Curves.easeOutCubic,
-                      child: LayoutBuilder(
-                        builder: (context, constraints) => Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 5,
-                              ),
-                              decoration: BoxDecoration(
-                                color: onColor.withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(999),
-                                border: Border.all(
-                                  color: onColor.withValues(alpha: 0.18),
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.swipe_left_rounded,
-                                    size: 14,
-                                    color: onColor,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    label,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .labelMedium
-                                        ?.copyWith(
-                                          color: onColor,
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            if (constraints.maxHeight >= 64) ...[
-                              const SizedBox(height: 8),
-                              Text(
-                                tooltip,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.bodySmall
-                                    ?.copyWith(
-                                      color: onColor,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
+                      child: hintContent,
                     ),
             ),
           ),
@@ -211,64 +250,29 @@ class SwipeRevealActionPane extends StatelessWidget {
                 left: fromStart ? (showVertical ? 10 : 14) : 0,
                 right: fromStart ? 0 : (showVertical ? 10 : 14),
               ),
-              child: AnimatedScale(
-                scale: progress <= 0
-                    ? 0.84
-                    : (progress < 0.58 ? 0.86 + (progress * 0.12) : 1.0),
-                duration: disableAnimations
-                    ? Duration.zero
-                    : (progress >= 0.58 ? kAppMotionStandard : kAppMotionFast),
-                curve: progress >= 0.58
-                    ? kAppSpringBackCurve
-                    : Curves.easeOutCubic,
-                child: showVertical
-                    ? SizedBox(
-                        width: width - 20,
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            const gap = 4.0;
-                            final available =
-                                (constraints.maxHeight -
-                                        gap * (actions.length - 1)) /
-                                    actions.length;
-                            final size = available.clamp(38.0, 48.0);
-                            return Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                for (
-                                  var index = 0;
-                                  index < actions.length;
-                                  index++
-                                ) ...[
-                                  if (index > 0) const SizedBox(height: gap),
-                                  button(actions[index], size),
-                                ],
-                              ],
-                            );
-                          },
-                        ),
-                      )
-                    : LayoutBuilder(
-                        builder: (context, constraints) {
-                          final size = constraints.maxHeight.isFinite
-                              ? (constraints.maxHeight - 12).clamp(40.0, 54.0)
-                              : 54.0;
-                          return Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              for (
-                                var index = 0;
-                                index < actions.length;
-                                index++
-                              ) ...[
-                                if (index > 0) const SizedBox(width: 8),
-                                button(actions[index], size),
-                              ],
-                            ],
-                          );
-                        },
+              child: liveAnimation != null
+                  ? AnimatedBuilder(
+                      animation: liveAnimation,
+                      child: buttonsContent,
+                      builder: (context, child) => Transform.scale(
+                        scale: _scaleForProgress(liveAnimation.value),
+                        child: child,
                       ),
-              ),
+                    )
+                  : AnimatedScale(
+                      scale: progress <= 0
+                          ? 0.84
+                          : (progress < 0.58 ? 0.86 + (progress * 0.12) : 1.0),
+                      duration: disableAnimations
+                          ? Duration.zero
+                          : (progress >= 0.58
+                                ? kAppMotionStandard
+                                : kAppMotionFast),
+                      curve: progress >= 0.58
+                          ? kAppSpringBackCurve
+                          : Curves.easeOutCubic,
+                      child: buttonsContent,
+                    ),
             ),
           ),
         ],

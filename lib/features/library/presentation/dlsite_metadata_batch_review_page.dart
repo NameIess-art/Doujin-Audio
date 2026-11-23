@@ -70,22 +70,27 @@ class _DlsiteMetadataBatchReviewPageState
 
   @override
   Widget build(BuildContext context) {
-    final item = _currentItem;
-    return DlsiteMetadataReviewPage(
-      key: const ValueKey<String>('dlsite_metadata_batch_review_page'),
-      detail: item.entry.detail,
-      batchIndex: _currentIndex + 1,
-      batchTotal: widget.session.items.length,
-      allowSkip: true,
-      initialSaveCover: item.saveCover ?? _saveCover,
-      initialCandidates: item.reviewCandidates,
-      canNavigatePrevious:
-          widget.session.reviewableIndexFrom(_currentIndex, -1) != null,
-      canNavigateNext:
-          widget.session.reviewableIndexFrom(_currentIndex, 1) != null,
-      onBatchNavigate: _navigate,
-      onBatchExclude: _excludeCurrent,
-      onCompleted: _complete,
+    return ListenableBuilder(
+      listenable: widget.session,
+      builder: (context, _) {
+        final item = _currentItem;
+        return DlsiteMetadataReviewPage(
+          key: const ValueKey<String>('dlsite_metadata_batch_review_page'),
+          detail: item.entry.detail,
+          batchIndex: _currentIndex + 1,
+          batchTotal: widget.session.items.length,
+          allowSkip: true,
+          initialSaveCover: item.saveCover ?? _saveCover,
+          initialCandidates: item.reviewCandidates,
+          canNavigatePrevious:
+              widget.session.reviewableIndexFrom(_currentIndex, -1) != null,
+          canNavigateNext:
+              widget.session.reviewableIndexFrom(_currentIndex, 1) != null,
+          onBatchNavigate: _navigate,
+          onBatchExclude: _excludeCurrent,
+          onCompleted: _complete,
+        );
+      },
     );
   }
 }

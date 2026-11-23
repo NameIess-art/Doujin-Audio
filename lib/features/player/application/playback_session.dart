@@ -203,14 +203,16 @@ class PlaybackSession {
   bool _isAdvancingAfterCompletion = false;
   int? nativePlaybackQueueBaseKey;
   int? nativePlaybackQueueCacheKey;
+  int? syncedNativeQueueBaseKey;
   List<Map<String, Object?>>? nativePlaybackQueueCache;
   int? nativePlaybackQueueScopeCacheKey;
   PlaybackQueueScope? nativePlaybackQueueScopeCache;
-  Future<List<Map<String, Object?>>>? nativePlaybackQueueFuture;
+  Future<List<Map<String, Object?>>?>? nativePlaybackQueueFuture;
 
   void clearNativePlaybackQueueCache() {
     nativePlaybackQueueBaseKey = null;
     nativePlaybackQueueCacheKey = null;
+    syncedNativeQueueBaseKey = null;
     nativePlaybackQueueCache = null;
   }
   Duration lastKnownPosition = Duration.zero;

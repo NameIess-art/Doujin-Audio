@@ -618,6 +618,102 @@ void main() {
       await server.close(force: true);
     }
   });
+
+  test(
+    'fetchByRjCode probes maniax first, races remaining sites, and caches results',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final transport = HttpClient();
+      final requests = <String>[];
+      var now = DateTime(2026, 1, 1, 12);
+      server.listen((request) async {
+        requests.add(request.uri.path);
+        if (request.uri.path == '/girls/api/=/product.json') {
+          request.response.write(
+            jsonEncode({
+              'workno': 'RJ01999999',
+              'work_name': 'Girls Work',
+              'maker_name': 'Circle G',
+              'genres': [
+                {'name': 'Tag'},
+              ],
+              'image_main': {'url': '//img.dlsite.jp/cover.jpg'},
+              'regist_date': '2026-10-03 00:00:00',
+              'creaters': {
+                'voice_by': [
+                  {'name': 'VA'},
+                ],
+              },
+              'rate_average_star': 48,
+            }),
+          );
+        } else {
+          request.response.statusCode = HttpStatus.notFound;
+        }
+        await request.response.close();
+      });
+      try {
+        final service = DlsiteMetadataService(
+          httpClient: _LocalDlsiteHttpClient(transport, server.port),
+          now: () => now,
+        );
+        final first = await service.fetchByRjCode('RJ01999999');
+        expect(first.workTitle, 'Girls Work');
+        expect(requests.first, '/maniax/api/=/product.json');
+        final countAfterFirst = requests.length;
+
+        // Second lookup within TTL hits in-memory cache without HTTP requests.
+        final cached = await service.fetchByRjCode('RJ01999999');
+        expect(cached.workTitle, 'Girls Work');
+        expect(requests.length, countAfterFirst);
+
+        // After TTL expires, fetches again.
+        now = now.add(const Duration(minutes: 16));
+        await service.fetchByRjCode('RJ01999999');
+        expect(requests.length, greaterThan(countAfterFirst));
+      } finally {
+        transport.close(force: true);
+        await server.close(force: true);
+      }
+    },
+  );
+
+  test(
+    'fetchByRjCodeCancellable aborts in-flight DLsite request on cancel',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final transport = HttpClient();
+      final started = Completer<void>();
+      final release = Completer<void>();
+      server.listen((request) async {
+        if (!started.isCompleted) started.complete();
+        await release.future;
+        await request.response.close();
+      });
+      try {
+        final service = DlsiteMetadataService(
+          httpClient: _LocalDlsiteHttpClient(transport, server.port),
+          requestTimeout: const Duration(seconds: 5),
+        );
+        final cancellation = DlsiteRequestCancellation();
+        final pending = service.fetchByRjCodeCancellable(
+          'RJ01888888',
+          cancellation: cancellation,
+        );
+        final assertion = expectLater(
+          pending,
+          throwsA(isA<DlsiteMetadataCancelledException>()),
+        );
+        await started.future;
+        cancellation.cancel();
+        await assertion;
+      } finally {
+        if (!release.isCompleted) release.complete();
+        transport.close(force: true);
+        await server.close(force: true);
+      }
+    },
+  );
 }
 
 class _HangingHttpClient implements HttpClient {

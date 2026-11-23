@@ -9,6 +9,7 @@ abstract interface class LibraryCatalogReader {
   List<String> get watchedFolders;
   List<String> get watchedLibraries;
   bool get isScanning;
+  Future<void> get scanIdle;
   int get scanFoundCount;
   int get scanDuplicateCount;
   int get scanFailureCount;

@@ -10,6 +10,7 @@ import 'package:doujin_audio/app/application/app_runtime_graph.dart';
 import 'package:doujin_audio/app/application/windows_runtime_binding.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/core/platform/windows_desktop_service.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
@@ -24,6 +25,7 @@ import 'package:doujin_audio/features/player/domain/playback_persistence_reposit
 import 'package:doujin_audio/features/player/application/playback_notification_service.dart';
 import 'package:doujin_audio/features/player/application/timer_facade.dart';
 import 'package:doujin_audio/features/settings/application/settings_repository.dart';
+import 'package:doujin_audio/infrastructure/sqlite/sqlite_playback_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/test_persistence_repository.dart';
@@ -617,6 +619,76 @@ void main() {
   );
 
   test(
+    'persisted URI reconciliation restarts when download root changes mid-collect',
+    () async {
+      const destinationA =
+          'content://com.android.externalstorage.documents/tree/primary%3AA';
+      const destinationB =
+          'content://com.android.externalstorage.documents/tree/primary%3AB';
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final firstSettings = SettingsRepository();
+      await firstSettings.setAsmrDownloadDestinationRoot(destinationA);
+      await firstSettings.dispose();
+
+      final settings = SettingsRepository();
+      await settings.loadPersistedState();
+      final library = _createLibraryFacade();
+      library.syncPresentationState(isInitialized: true);
+      final repository = _GatedQueueUriPlaybackRepository();
+      final playback = PlaybackFacade.create(databaseRepository: repository);
+      playback.syncPresentationState(
+        focusedSessionId: null,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      playback.replaceNativeRetainedContentUris(const []);
+      final downloads = AsmrDownloadManager(persistTasks: false);
+      await downloads.initialize();
+      final gateway = _RecordingFileCachePlatformGateway();
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      final graph = createAppRuntimeGraph(
+        library: library,
+        playback: playback,
+        timer: TimerFacade.create(),
+        notifications: NotificationFacade.create(
+          service: PlaybackNotificationService(),
+        ),
+        settings: settings,
+        asmrDownloads: downloads,
+        libraryScanLabels: () => const LibraryScanLabels(
+          chooseMusicFolder: 'Choose music folder',
+          chooseLibraryFolder: 'Choose library folder',
+          chooseAudioFiles: 'Choose audio files',
+          importedFiles: 'Imported files',
+          manuallySelectedFiles: 'Selected files',
+        ),
+        fileCacheGateway: gateway,
+        persistenceEnabled: false,
+      );
+      addTearDown(() async {
+        debugDefaultTargetPlatformOverride = null;
+        await graph.runtime.dispose();
+        await gateway.dispose();
+      });
+
+      await repository.firstCollectStarted.future;
+      final retainedB = gateway.calls.firstWhere(
+        (uris) => uris.contains(destinationB),
+      );
+      await settings.setAsmrDownloadDestinationRoot(destinationB);
+      repository.releaseFirstCollect.complete();
+
+      expect(await retainedB.timeout(const Duration(seconds: 1)), {
+        destinationB,
+      });
+      await Future<void>.delayed(Duration.zero);
+      expect(gateway.recordedCalls, <Set<String>>[
+        <String>{destinationB},
+      ]);
+    },
+  );
+
+  test(
     'runtime graph exposes single shared LibraryScanCoordinator & AudioPathCoordinator and closes database on dispose',
     () async {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
@@ -833,6 +905,24 @@ final class _RecordingFileCachePlatformGateway
   }
 
   Future<void> dispose() => _calls.close();
+}
+
+final class _GatedQueueUriPlaybackRepository extends SqlitePlaybackRepository {
+  _GatedQueueUriPlaybackRepository() : super(database: AppDatabase.instance);
+
+  final firstCollectStarted = Completer<void>();
+  final releaseFirstCollect = Completer<void>();
+  int _collectCount = 0;
+
+  @override
+  Future<Set<String>> loadQueueContentUris() async {
+    _collectCount++;
+    if (_collectCount == 1) {
+      firstCollectStarted.complete();
+      await releaseFirstCollect.future;
+    }
+    return const <String>{};
+  }
 }
 
 final class _ManualWindowsDesktopService extends WindowsDesktopService {

@@ -71,6 +71,8 @@ class AudioDetailRepository {
   final AudioDetailCoverStore _coverStore;
   final DateTime Function() _now;
 
+  bool get supportsFastQueries => _store is AudioDetailFastQueryStore;
+
   bool get _canCommit {
     final guard = Zone.current[_audioDetailCommitGuardZoneKey];
     return guard is! bool Function() || guard();
@@ -109,6 +111,34 @@ class AudioDetailRepository {
         AudioDetailLoadResult(
           detail: byKey[_key(target)] ?? AudioDetail.empty(target),
         ),
+    ];
+  }
+
+  Future<Map<String, Duration?>?> loadDurationsIfSupported(
+    Iterable<AudioDetailTarget> targets,
+  ) async {
+    final store = _store;
+    if (store is! AudioDetailFastQueryStore) return null;
+    final ordered = targets.map(_normalizeTarget).toList(growable: false);
+    if (ordered.isEmpty) return const <String, Duration?>{};
+    return store.loadDurations(ordered);
+  }
+
+  Future<List<AudioDetail>> loadSearchDetails(
+    Iterable<AudioDetailTarget> targets,
+  ) async {
+    final ordered = targets.map(_normalizeTarget).toList(growable: false);
+    if (ordered.isEmpty) return const <AudioDetail>[];
+    final store = _store;
+    final details = store is AudioDetailFastQueryStore
+        ? await store.loadSearchDetails(ordered)
+        : await store.loadMany(ordered);
+    final byKey = <String, AudioDetail>{
+      for (final detail in details) _key(detail.target): detail,
+    };
+    return <AudioDetail>[
+      for (final target in ordered)
+        byKey[_key(target)] ?? AudioDetail.empty(target),
     ];
   }
 

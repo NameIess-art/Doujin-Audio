@@ -21,9 +21,10 @@ class _CollapsingAsmrWork {
   final AsmrWork work;
   final int originalIndex;
   late final AnimationController controller;
-  late final Animation<double> animation;
+  late final CurvedAnimation animation;
 
   void dispose() {
+    animation.dispose();
     controller.dispose();
   }
 }
@@ -36,6 +37,7 @@ class _AsmrWorkRowsDelegate extends SliverChildBuilderDelegate {
     required this.searchQuery,
     required this.searchSession,
     required this.collapsingWorks,
+    required this.loadAnimationRevision,
     super.childCount,
     super.findChildIndexCallback,
   }) : // Each card already isolates its paint, including cards sharing a row.
@@ -46,6 +48,7 @@ class _AsmrWorkRowsDelegate extends SliverChildBuilderDelegate {
   final String searchQuery;
   final bool searchSession;
   final Map<String, _CollapsingAsmrWork> collapsingWorks;
+  final int loadAnimationRevision;
 
   @override
   bool shouldRebuild(covariant _AsmrWorkRowsDelegate oldDelegate) {
@@ -55,7 +58,8 @@ class _AsmrWorkRowsDelegate extends SliverChildBuilderDelegate {
         columnCount != oldDelegate.columnCount ||
         searchQuery != oldDelegate.searchQuery ||
         searchSession != oldDelegate.searchSession ||
-        !identical(collapsingWorks, oldDelegate.collapsingWorks);
+        !identical(collapsingWorks, oldDelegate.collapsingWorks) ||
+        loadAnimationRevision != oldDelegate.loadAnimationRevision;
   }
 }
 
@@ -127,6 +131,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   final Set<AnimationController> _loadingBatchControllers = {};
   final List<AnimationController> _pendingDisposedLoadControllers = [];
   bool _loadControllerDisposeScheduled = false;
+  int _loadAnimationRevision = 0;
   final Map<String, GlobalKey> _itemKeys = {};
   final Map<String, _SelectableAsmrWorkCard> _workCardCache = {};
   List<AsmrWork>? _visibleWorksSource;
@@ -334,7 +339,10 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   }
 
   void _clearLoadAnimations({bool immediate = false}) {
-    _loadingWorkAnimations.clear();
+    if (_loadingWorkAnimations.isNotEmpty) {
+      _loadingWorkAnimations.clear();
+      _loadAnimationRevision++;
+    }
     if (_loadingBatchControllers.isEmpty) {
       if (immediate) _disposePendingLoadControllers();
       return;
@@ -362,14 +370,14 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     }
     final previous = _lastLoadState;
     _lastLoadState = state;
-    if (reduceMotion ||
-        (_coverContext?.mounted == true &&
-            ScrollActivityGate.isFastScrollingWithoutDependencyOf(
-              _coverContext!,
-            )) ||
-        state.isLoading ||
-        state.isRefreshing) {
+    if (reduceMotion || state.isLoading || state.isRefreshing) {
       _clearLoadAnimations();
+      return;
+    }
+    // Skip fading newly appended batches during fast scroll without cutting
+    // off already-visible older batches mid-fade.
+    if (_coverContext?.mounted == true &&
+        ScrollActivityGate.isFastScrollingWithoutDependencyOf(_coverContext!)) {
       return;
     }
     if (previous == null ||
@@ -399,6 +407,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     for (final work in works.skip(previous.works.length)) {
       _loadingWorkAnimations[work.workKey] = animation;
     }
+    _loadAnimationRevision++;
     controller.forward().then((_) {
       if (!_loadingBatchControllers.remove(controller)) return;
       _loadingWorkAnimations.removeWhere((_, value) => value == animation);
@@ -408,7 +417,9 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       }
       // Rebuild first so mounted FadeTransitions detach before dispose.
       _retireLoadControllers([controller]);
-      setState(() {});
+      setState(() {
+        _loadAnimationRevision++;
+      });
     });
   }
 
@@ -568,19 +579,13 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       );
       final collapsing = _collapsingWorks[work.workKey];
       if (collapsing != null) {
-        workCard = AnimatedBuilder(
-          animation: collapsing.controller,
-          builder: (context, child) {
-            return SizeTransition(
-              sizeFactor: collapsing.animation,
-              axisAlignment: -1.0,
-              child: FadeTransition(
-                opacity: collapsing.animation,
-                child: IgnorePointer(child: ExcludeSemantics(child: child)),
-              ),
-            );
-          },
-          child: workCard,
+        workCard = SizeTransition(
+          sizeFactor: collapsing.animation,
+          axisAlignment: -1.0,
+          child: FadeTransition(
+            opacity: collapsing.animation,
+            child: IgnorePointer(child: ExcludeSemantics(child: workCard)),
+          ),
         );
       }
       // Rows regroup on resize; retain the complete card, including its
@@ -968,6 +973,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                     searchQuery: widget.searchQuery,
                     searchSession: widget.searchSession,
                     collapsingWorks: _visibleCollapsing,
+                    loadAnimationRevision: _loadAnimationRevision,
                     childCount: rowCount,
                     findChildIndexCallback: columnCount == 1
                         ? (key) {

@@ -472,8 +472,15 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
           _revision(committed) != _revision(bytes)) {
         throw const FormatException('commit_validation_failed');
       }
-      if (movedExisting != null && await movedExisting.exists()) {
-        await movedExisting.delete();
+      if (movedExisting != null) {
+        try {
+          if (await movedExisting.exists()) {
+            await movedExisting.delete();
+          }
+        } on Object {
+          // The replacement is already committed and validated; stale backup
+          // files are cleaned up on the next recovery pass.
+        }
       }
       return JsonDocumentWriteResult(
         status: mode == JsonDocumentWriteMode.createIfAbsent

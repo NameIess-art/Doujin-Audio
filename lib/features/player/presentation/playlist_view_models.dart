@@ -112,7 +112,10 @@ class MainOverlayUiState {
   @override
   bool operator ==(Object other) {
     return other is MainOverlayUiState &&
-        listEquals(other.overlaySessions, overlaySessions) &&
+        (other.overlaySessions == overlaySessions ||
+            (other.overlaySessions is! PlaybackSessionOverlayList &&
+                overlaySessions is! PlaybackSessionOverlayList &&
+                listEquals(other.overlaySessions, overlaySessions))) &&
         other.playingSessionCount == playingSessionCount &&
         other.hasPlayingAudioSession == hasPlayingAudioSession &&
         other.activeSessionCount == activeSessionCount &&
@@ -122,7 +125,9 @@ class MainOverlayUiState {
 
   @override
   int get hashCode => Object.hash(
-    Object.hashAll(overlaySessions),
+    overlaySessions is PlaybackSessionOverlayList
+        ? overlaySessions
+        : Object.hashAll(overlaySessions),
     playingSessionCount,
     hasPlayingAudioSession,
     activeSessionCount,

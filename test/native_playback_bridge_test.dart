@@ -524,4 +524,44 @@ void main() {
       }
     },
   );
+
+  test(
+    'EventChannel disconnect still schedules reconnect when subscription cancel throws',
+    () async {
+      const eventsChannel = EventChannel(NativePlaybackChannel.eventName);
+      final eventSinks = <MockStreamHandlerEventSink>[];
+      var listenCount = 0;
+      var cancelAttempts = 0;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockStreamHandler(
+            eventsChannel,
+            MockStreamHandler.inline(
+              onListen: (_, events) {
+                listenCount++;
+                eventSinks.add(events);
+              },
+              onCancel: (_) {
+                cancelAttempts++;
+                if (cancelAttempts == 1) {
+                  throw PlatformException(code: 'cancel_failed');
+                }
+              },
+            ),
+          );
+      final bridge = NativePlaybackBridge.instance;
+      await bridge.stopListening();
+
+      try {
+        bridge.startListening();
+        await Future<void>.delayed(Duration.zero);
+        expect(listenCount, 1);
+
+        eventSinks[0].error(code: 'disconnect');
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        expect(listenCount, 2);
+      } finally {
+        await bridge.stopListening();
+      }
+    },
+  );
 }

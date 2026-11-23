@@ -140,6 +140,7 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
   bool _secondaryInitialized = false;
   bool _historyInitialized = false;
   bool _closing = false;
+  bool _fastShutdown = false;
   late final AudioRuntimeCoordinator _runtime;
   bool _bindingsDisposed = false;
   Future<void>? _disposeFuture;
@@ -215,7 +216,10 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
   Future<void> handleMemoryPressure() => _runtime.handleMemoryPressure();
 
   @override
-  Future<void> dispose() => _disposeFuture ??= _dispose();
+  Future<void> dispose({bool fastShutdown = false}) {
+    if (fastShutdown) _fastShutdown = true;
+    return _disposeFuture ??= _dispose();
+  }
 
   Future<void> _dispose() async {
     _closing = true;
@@ -286,26 +290,39 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
       }
     }
 
-    for (final pending in [
-      _secondaryInitialization,
-      _listeningInitialization,
-    ]) {
-      if (pending == null) continue;
-      try {
-        await pending;
-      } catch (_) {
-        // The initializer reports its failure. Drain it before closing owners.
+    if (!_fastShutdown) {
+      for (final pending in [
+        _secondaryInitialization,
+        _listeningInitialization,
+      ]) {
+        if (pending == null) continue;
+        try {
+          await pending;
+        } catch (_) {
+          // The initializer reports its failure. Drain it before closing owners.
+        }
       }
     }
 
     if (_persistence.hasLoadedState) {
       await attempt(_playback.saveResumeBatchForExit);
       await attempt(_playback.flushSessionStatePersistence);
-      if (_historyInitialized) {
+      if (_historyInitialized && !_fastShutdown) {
         await attempt(() => _listeningActivity?.refresh());
       }
     }
-    await attempt(() => _listeningActivity?.dispose());
+    if (_listeningActivity != null) {
+      await attempt(() {
+        final dispose = _listeningActivity.dispose();
+        if (_fastShutdown) {
+          return dispose.timeout(
+            const Duration(milliseconds: 200),
+            onTimeout: () {},
+          );
+        }
+        return dispose;
+      });
+    }
     if (_disposeWorkTexts != null) await attempt(_disposeWorkTexts);
     await attempt(_persistence.dispose);
     await attempt(_playback.cancelScheduledPersistence);
@@ -318,7 +335,6 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
         await attempt(binding.dispose);
       }
     }
-    await attempt(() => _asmrDownloads?.shutdown());
     if (_disposeSecondaryData != null) await attempt(_disposeSecondaryData);
     if (_disposeLibraryScans != null) await attempt(_disposeLibraryScans);
     await attempt(_library.dispose);

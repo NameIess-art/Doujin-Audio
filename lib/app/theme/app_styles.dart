@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'app_design_tokens.dart';
+
 Color landscapeNavigationBackground(ColorScheme colors) {
   if (colors.brightness == Brightness.dark) {
     // Pure black keeps a true-black chrome rather than inverting lighter than
@@ -7,6 +9,45 @@ Color landscapeNavigationBackground(ColorScheme colors) {
     return colors.surfaceContainerLowest;
   }
   return colors.surfaceContainerLow;
+}
+
+/// Elevated surface color shared by floating chrome and overlays (header pills,
+/// dock, menus, snackbars, dialogs). Dark mode lifts above the canvas via
+/// [ColorScheme.surfaceBright]; light mode uses [ColorScheme.surfaceContainerLowest]
+/// so floating chrome stays crisp and luminous above the tinted page background.
+Color appFloatingSurfaceColor(ColorScheme colors) {
+  if (colors.brightness == Brightness.dark) {
+    return colors.surfaceBright;
+  }
+  return colors.surfaceContainerLowest;
+}
+
+/// Unified border color for cards, shells, and floating overlays.
+Color appOverlayBorderColor(
+  ColorScheme colors,
+  AppDesignTokens tokens, {
+  bool elevated = false,
+}) {
+  if (colors.brightness == Brightness.dark) {
+    final base = elevated
+        ? Color.alphaBlend(
+            Colors.white.withValues(alpha: 0.08),
+            colors.outlineVariant,
+          )
+        : colors.outlineVariant;
+    final alpha = tokens.highContrast
+        ? tokens.standardBorderAlpha
+        : elevated
+        ? (tokens.pureBlack ? 0.36 : 0.30)
+        : tokens.standardBorderAlpha;
+    return base.withValues(alpha: alpha);
+  }
+  final alpha = tokens.highContrast
+      ? tokens.standardBorderAlpha
+      : elevated
+      ? 0.34
+      : tokens.standardBorderAlpha;
+  return colors.outlineVariant.withValues(alpha: alpha);
 }
 
 class AppSpacing {

@@ -19,6 +19,15 @@ internal class NativePlaybackSessionManager(
 
     fun get(sessionId: String): NativePlaybackSession? = sessions[sessionId]
 
+    fun reusableSessionFor(
+        sessionId: String,
+        queueStartIndex: Int,
+        uri: String,
+        explicitPath: String?
+    ): NativePlaybackSession? = sessions[sessionId]?.takeIf {
+        it.matchesReusableQueueItem(queueStartIndex, uri, explicitPath)
+    }
+
     fun contains(sessionId: String): Boolean = sessions.containsKey(sessionId)
 
     fun getOrCreate(sessionId: String): NativePlaybackSession {
@@ -54,18 +63,15 @@ internal class NativePlaybackSessionManager(
 
     fun hasActivePlayback(): Boolean = sessions.values.any { it.isPlaybackActive() }
 
-    fun syncAudioOffloadPolicies(
-        offloadAllowedForProcess: Boolean,
-        intendedSessionCount: Int,
-        isVideo: (NativePlaybackSession) -> Boolean
-    ) {
-        val activeCount = maxOf(sessions.values.count { it.isPlaybackActive() }, intendedSessionCount)
-        for (session in sessions.values) {
-            if (session.hasPlayer()) {
-                session.applyAudioOffloadPolicy(offloadAllowedForProcess, activeCount, isVideo(session))
-            }
+    fun playbackIntentBySessionId(isIntended: (String) -> Boolean): Map<String, Boolean> =
+        sessions.values.associate { candidate ->
+            val player = candidate.playerOrNull()
+            candidate.sessionId to (
+                isIntended(candidate.sessionId) ||
+                    player?.isPlaying == true ||
+                    player?.playWhenReady == true
+                )
         }
-    }
 
     fun usageItems(): List<Map<String, Any?>> = sessions.values.mapNotNull(NativePlaybackSession::usageItem)
 

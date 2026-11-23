@@ -2,6 +2,8 @@ import '../domain/asmr_tag_interest.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 
@@ -388,7 +390,8 @@ class AsmrApiService {
     Map<String, String>? queryParameters,
     String? token,
     Object? body,
-    ComputeCallback<String, Object?> decodeResponse = jsonDecode,
+    ComputeCallback<TransferableTypedData, Object?> decodeResponse =
+        _decodeJsonPayload,
     AsmrRequestCancellationToken? cancellationToken,
   }) async {
     final domains = List<String>.of(_candidateDomains, growable: false);
@@ -448,7 +451,7 @@ class AsmrApiService {
         });
         final response = await (cancellationToken?.waitFor(closing) ?? closing)
             .timeout(_requestTimeout);
-        final responseBody = await _readResponseBody(
+        final responseBytes = await _readResponseBytes(
           response,
           cancellationToken,
         );
@@ -474,12 +477,16 @@ class AsmrApiService {
           _currentDomainIndex = activeIndex;
         }
 
-        if (responseBody.isEmpty) {
+        if (responseBytes.isEmpty) {
           return null;
         }
         // Responses can arrive during a later navigation or dock animation.
-        // Decode off the UI isolate even when the request started while idle.
-        final decoding = compute(decodeResponse, responseBody);
+        // Transfer raw bytes off the UI isolate so UTF-8 decoding and JSON
+        // parsing both happen off-thread without copying large strings.
+        final decoding = compute(
+          decodeResponse,
+          TransferableTypedData.fromList(<Uint8List>[responseBytes]),
+        );
         return await (cancellationToken?.waitFor(decoding) ?? decoding);
       } catch (error, stackTrace) {
         cancellationToken?.throwIfCancelled();
@@ -513,26 +520,24 @@ class AsmrApiService {
     throw const HttpException('All ASMR API candidates failed.');
   }
 
-  Future<String> _readResponseBody(
+  Future<Uint8List> _readResponseBytes(
     HttpClientResponse response,
     AsmrRequestCancellationToken? cancellationToken,
   ) async {
-    final body = StringBuffer();
-    final completed = Completer<String>();
-    final subscription = response
-        .transform(utf8.decoder)
-        .listen(
-          body.write,
-          onError: (Object error, StackTrace stackTrace) {
-            if (!completed.isCompleted) {
-              completed.completeError(error, stackTrace);
-            }
-          },
-          onDone: () {
-            if (!completed.isCompleted) completed.complete(body.toString());
-          },
-          cancelOnError: true,
-        );
+    final builder = BytesBuilder(copy: false);
+    final completed = Completer<Uint8List>();
+    final subscription = response.listen(
+      builder.add,
+      onError: (Object error, StackTrace stackTrace) {
+        if (!completed.isCompleted) {
+          completed.completeError(error, stackTrace);
+        }
+      },
+      onDone: () {
+        if (!completed.isCompleted) completed.complete(builder.takeBytes());
+      },
+      cancelOnError: true,
+    );
     // HttpClientRequest.abort no longer affects an already received response;
     // cancel its body subscription too to stop downloading stale response data.
     final removeListener = cancellationToken?.addListener(() {
@@ -550,21 +555,26 @@ class AsmrApiService {
   }
 }
 
+Object? _decodeJsonPayload(TransferableTypedData data) =>
+    jsonDecode(utf8.decode(data.materialize().asUint8List()));
+
 // These top-level factories capture only the language, never the service's
 // HttpClient, so the complete model conversion can run in the decode isolate.
-ComputeCallback<String, Object?> _workPageDecoder(
+ComputeCallback<TransferableTypedData, Object?> _workPageDecoder(
   AsmrContentLanguage language,
 ) {
-  return (body) {
-    final response = jsonDecode(body);
+  return (data) {
+    final response = _decodeJsonPayload(data);
     if (response is! Map<String, dynamic>) return response;
     return AsmrWorkPage.fromJson(response, language: language);
   };
 }
 
-ComputeCallback<String, Object?> _reviewDecoder(AsmrContentLanguage language) {
-  return (body) {
-    final response = jsonDecode(body);
+ComputeCallback<TransferableTypedData, Object?> _reviewDecoder(
+  AsmrContentLanguage language,
+) {
+  return (data) {
+    final response = _decodeJsonPayload(data);
     if (response is! Map<String, dynamic>) return response;
     return (response['works'] as List<dynamic>? ?? const <dynamic>[])
         .whereType<Map<String, dynamic>>()
@@ -573,14 +583,13 @@ ComputeCallback<String, Object?> _reviewDecoder(AsmrContentLanguage language) {
   };
 }
 
-Object? _decodeTrackTree(String body) {
-  final response = jsonDecode(body);
+Object? _decodeTrackTree(TransferableTypedData data) {
+  final response = _decodeJsonPayload(data);
   // Keep shape validation at the caller, outside endpoint failover.
   if (response is! List<dynamic>) return response;
-  return response
-      .whereType<Map<String, dynamic>>()
-      .map(AsmrTrackFile.fromJson)
-      .toList(growable: false);
+  return sortAsmrTrackTreeNaturally(
+    response.whereType<Map<String, dynamic>>().map(AsmrTrackFile.fromJson),
+  );
 }
 
 class AsmrApiException extends HttpException {
@@ -597,8 +606,8 @@ class AsmrApiException extends HttpException {
       error is AsmrApiException && error.isAuthenticationFailure;
 }
 
-Object _decodeInterestCatalog(String body) {
-  final response = jsonDecode(body);
+Object _decodeInterestCatalog(TransferableTypedData data) {
+  final response = _decodeJsonPayload(data);
   if (response is! List || response.isEmpty) {
     return const FormatException('Expected complete ASMR interest directory');
   }

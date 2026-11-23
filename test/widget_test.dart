@@ -60,6 +60,7 @@ import 'package:doujin_audio/core/ui/warmup_scheduler.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/widgets/app_search_page.dart';
 import 'package:doujin_audio/core/widgets/glass_refresh_indicator.dart';
+import 'package:doujin_audio/core/widgets/app_entry_ink_well.dart';
 import 'package:doujin_audio/core/widgets/library_like_cards.dart';
 import 'package:doujin_audio/core/widgets/marquee_text.dart';
 import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
@@ -3053,7 +3054,8 @@ void main() {
     tester,
   ) async {
     _setLogicalTestViewSize(tester, const Size(390, 820));
-    await _pumpAppShell(tester);
+    final captureKey = GlobalKey();
+    await _pumpAppShell(tester, captureKey: captureKey);
     final mainCard = find.byKey(const ValueKey('mobile_dock_playback'));
     await tester.longPress(mainCard);
     await tester.pumpAndSettle();
@@ -3073,7 +3075,7 @@ void main() {
           (context) => buildAppPageRoute<void>(
             context: context,
             settings: const RouteSettings(name: workDetailRouteName),
-            child: const Scaffold(body: SizedBox.expand()),
+            child: const Scaffold(backgroundColor: Color(0xFF324578)),
           ),
         ),
       );
@@ -3116,6 +3118,49 @@ void main() {
     await tester.pumpAndSettle();
     final settledDetailRect = tester.getRect(routedCard);
     expect(settledDetailRect.bottom, 850 - 32);
+    final capsuleRadius = BorderRadius.circular(settledDetailRect.height / 2);
+    expect(tester.widget<ClipRRect>(routedCard).borderRadius, capsuleRadius);
+    final cardClip = find.descendant(
+      of: routedCard,
+      matching: find.byKey(
+        const ValueKey('active_session_card_orientation_session'),
+      ),
+    );
+    expect(tester.widget<ClipRRect>(cardClip).borderRadius, capsuleRadius);
+    final ink = find.descendant(
+      of: cardClip,
+      matching: find.byKey(
+        const ValueKey('active_session_ink_orientation_session_expanded'),
+      ),
+    );
+    expect(tester.widget<InkResponse>(ink).customBorder, const StadiumBorder());
+
+    final pixels = (await tester.runAsync(() async {
+      final capture = tester.renderObject<RenderRepaintBoundary>(
+        find.byKey(captureKey),
+      );
+      final image = await capture.toImage();
+      try {
+        final bytes = (await image.toByteData())!;
+        int sample(Offset point) {
+          final local = capture.globalToLocal(point);
+          return bytes.getUint32(
+            (local.dy.floor() * image.width + local.dx.floor()) * 4,
+          );
+        }
+
+        final origin = settledDetailRect.bottomLeft;
+        return (
+          sample(origin + const Offset(-3, -8)),
+          sample(origin + const Offset(5, -8)),
+          sample(origin + const Offset(64, -8)),
+        );
+      } finally {
+        image.dispose();
+      }
+    }))!;
+    expect(pixels.$2, pixels.$1);
+    expect(pixels.$3, isNot(pixels.$1));
     final returnRect = tester.getRect(mainCard);
     expect(returnRect.top, 850 - 32 - homeRect.height * 2);
     expect(returnRect.size, homeRect.size);
@@ -4325,6 +4370,16 @@ void main() {
       tester.getTopLeft(asmrCard).dy,
       closeTo(tester.getTopLeft(localCard).dy, 0.01),
     );
+    for (final card in [localCard, asmrCard]) {
+      final ink = find.descendant(
+        of: card,
+        matching: find.byType(AppEntryInkWell),
+      ).first;
+      expect(
+        tester.widget<AppEntryInkWell>(ink).customBorder,
+        tester.widget<SwipeRevealCard>(card).shape,
+      );
+    }
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 10));
     unawaited(coverUi.dispose());
@@ -4713,9 +4768,10 @@ void main() {
     final harness = AppRuntimeWidgetTestFixture();
     addTearDown(harness.dispose);
 
+    final captureKey = GlobalKey();
     await tester.pumpWidget(
       harness.build(
-        const AsmrTab(),
+        RepaintBoundary(key: captureKey, child: const AsmrTab()),
         overrides: [
           asmrLibraryControllerProvider.overrideWithValue(controller),
         ],
@@ -4725,6 +4781,46 @@ void main() {
 
     final workTitle = find.text('Loaded work', findRichText: true);
     expect(workTitle, findsOneWidget);
+    final ink = find.ancestor(
+      of: workTitle,
+      matching: find.byType(AppEntryInkWell),
+    ).first;
+    final bounds = tester.getRect(ink);
+    Future<(int, int)> sampleInk() async =>
+        (await tester.runAsync(() async {
+          final boundary = tester.renderObject<RenderRepaintBoundary>(
+            find.byKey(captureKey),
+          );
+          final image = await boundary.toImage();
+          try {
+            final bytes = (await image.toByteData())!;
+            int colorAt(Offset point) {
+              final local = boundary.globalToLocal(point);
+              return bytes.getUint32(
+                (local.dy.floor() * image.width + local.dx.floor()) * 4,
+              );
+            }
+
+            return (
+              colorAt(bounds.bottomLeft + const Offset(2, -2)),
+              colorAt(bounds.bottomCenter + const Offset(0, -2)),
+            );
+          } finally {
+            image.dispose();
+          }
+        }))!;
+    final resting = await sampleInk();
+    final press = await tester.startGesture(
+      bounds.bottomCenter + const Offset(0, -6),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 180));
+    final pressed = await sampleInk();
+    await press.cancel();
+    await tester.pumpAndSettle();
+    expect(pressed.$1, resting.$1);
+    expect(pressed.$2, isNot(resting.$2));
+
     final workCard = tester.widget<Material>(
       find.ancestor(of: workTitle, matching: find.byType(Material)).first,
     );
@@ -7534,7 +7630,7 @@ void main() {
       await _pumpAppShell(tester);
       final navigator = Navigator.of(tester.element(find.byType(MainScreen)));
       final route = buildSessionDetailRoute(sessionId: 'orientation_session');
-      expect(route.transitionDuration, const Duration(milliseconds: 320));
+      expect(route.transitionDuration, const Duration(milliseconds: 380));
       expect(
         route.reverseTransitionDuration,
         const Duration(milliseconds: 320),
@@ -7552,11 +7648,11 @@ void main() {
       );
       expect(tester.getTopLeft(content).dy, closeTo(0, 0.1));
       expect(fade.opacity.value, 0);
-      await tester.pump(const Duration(milliseconds: 80));
+      await tester.pump(const Duration(milliseconds: 95));
       expect(route.animation!.value, closeTo(0.25, 0.001));
       expect(tester.getTopLeft(content).dy, closeTo(0, 0.1));
       expect(fade.opacity.value, closeTo(kAppSpringCurve.transform(0.25), 0.001));
-      await tester.pump(const Duration(milliseconds: 241));
+      await tester.pump(const Duration(milliseconds: 286));
       expect(route.animation!.status, AnimationStatus.completed);
       expect(tester.getTopLeft(content).dy, closeTo(0, 0.1));
 

@@ -323,7 +323,7 @@ final class LibraryCoverUiController {
         !request.started &&
         !request.hasUnscopedRequest &&
         request.activeTokens.isEmpty &&
-        !request.contexts.any((context) => context.mounted)) {
+        !request.contextPositions.keys.any((context) => context.mounted)) {
       _deferredLookups.remove(key);
       if (!request.result.isCompleted) request.result.complete(null);
     }
@@ -343,8 +343,10 @@ final class LibraryCoverUiController {
       () => _DeferredCoverLookup(lookup),
     );
     if (context != null) {
-      request.contexts.add(context);
-      final position = Scrollable.maybeOf(context)?.position;
+      final position = request.contextPositions.containsKey(context)
+          ? request.contextPositions[context]
+          : (request.contextPositions[context] =
+                Scrollable.maybeOf(context)?.position);
       if (position != null && _scrollPositions.add(position)) {
         position.addListener(viewportChanged);
       }
@@ -381,10 +383,11 @@ final class LibraryCoverUiController {
   }
 
   void _pruneScrollPositions() {
+    if (_scrollPositions.isEmpty) return;
     final active = <ScrollPosition>{
       for (final request in _deferredLookups.values)
-        for (final context in request.contexts)
-          if (context.mounted) ?Scrollable.maybeOf(context)?.position,
+        for (final entry in request.contextPositions.entries)
+          if (entry.key.mounted) ?entry.value,
     };
     _scrollPositions.removeWhere((position) {
       if (active.contains(position)) return false;
@@ -402,14 +405,14 @@ final class LibraryCoverUiController {
       // A fling can recycle many rows while slow artwork occupies every slot.
       // Retire unsubmitted requests before sorting the next viewport's candidates.
       _deferredLookups.removeWhere((_, request) {
-        request.contexts.removeWhere((context) => !context.mounted);
+        request.contextPositions.removeWhere((context, _) => !context.mounted);
         // Queued keys still belong to the scheduler. Keep their request so a
         // returning row reuses it instead of retrying a duplicate key forever.
         if (request.submitted ||
             request.started ||
             request.hasUnscopedRequest ||
             request.activeTokens.isNotEmpty ||
-            request.contexts.isNotEmpty) {
+            request.contextPositions.isNotEmpty) {
           return false;
         }
         request.result.complete(null);
@@ -480,7 +483,7 @@ final class LibraryCoverUiController {
       final hasMountedRequester =
           request.hasUnscopedRequest ||
           request.activeTokens.isNotEmpty ||
-          request.contexts.any((context) => context.mounted);
+          request.contextPositions.keys.any((context) => context.mounted);
       final value = !_disposed && hasMountedRequester
           ? await request.lookup()
           : null;
@@ -501,7 +504,7 @@ final class LibraryCoverUiController {
   bool _canRunLookup(_DeferredCoverLookup request) =>
       request.hasUnscopedRequest ||
       request.activeTokens.isNotEmpty ||
-      !request.contexts.any((context) => context.mounted) ||
+      !request.contextPositions.keys.any((context) => context.mounted) ||
       (!_scrollUpdateScheduled && _priorityForRequest(request) < 0);
 
   int _priorityForRequest(_DeferredCoverLookup request) {
@@ -509,7 +512,7 @@ final class LibraryCoverUiController {
         (request.hasUnscopedRequest || request.activeTokens.isNotEmpty)
         ? -2000
         : 1 << 30;
-    for (final context in request.contexts) {
+    for (final context in request.contextPositions.keys) {
       if (!context.mounted ||
           !TickerMode.getValuesNotifier(context).value.enabled) {
         continue;
@@ -611,7 +614,7 @@ final class _DeferredCoverLookup {
 
   final Future<String?> Function() lookup;
   final result = Completer<String?>();
-  final contexts = <BuildContext>{};
+  final contextPositions = <BuildContext, ScrollPosition?>{};
   final activeTokens = <Object>{};
   bool hasUnscopedRequest = false;
   bool submitted = false;

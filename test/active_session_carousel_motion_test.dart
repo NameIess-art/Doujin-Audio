@@ -276,7 +276,9 @@ void main() {
                   }
                 }
               }
-              progressWidths.add(tester.getSize(overflowBox.first).width);
+              progressWidths.add(
+                tester.getSize(find.byKey(geometryKey)).width,
+              );
             }
             expect(tester.takeException(), isNull);
           }
@@ -296,11 +298,6 @@ void main() {
 
         expanded = false;
         await tester.pumpWidget(shell());
-        if (desktop) {
-          expect(tester.getSize(find.byKey(geometryKey)).width, 56);
-          expect(tester.getRect(cover).left, expandedCoverLeft);
-          expect(paragraph(firstCue), findsNothing);
-        }
         await sampleFrames(4);
         expanded = true;
         await tester.pumpWidget(shell());
@@ -308,12 +305,12 @@ void main() {
         await tester.pumpAndSettle();
         expanded = false;
         await tester.pumpWidget(shell());
+        await sampleFrames(24);
+        await tester.pumpAndSettle();
         if (desktop) {
           expect(tester.getSize(find.byKey(geometryKey)).width, 56);
           expect(tester.getRect(cover).left, expandedCoverLeft);
         }
-        await sampleFrames(24);
-        await tester.pumpAndSettle();
         expect(paragraph(firstCue).hitTestable(), findsNothing);
         if (!desktop) {
           await tester.tap(
@@ -337,13 +334,19 @@ void main() {
         final subtitleScroll = tester
             .state<ScrollableState>(marqueeViewport(firstCue).first)
             .position;
-        final titleOffset = titleScroll.pixels;
-        final subtitleOffset = subtitleScroll.pixels;
-        for (var frame = 0; frame < 20; frame++) {
+        var titlePrev = titleScroll.pixels;
+        var subtitlePrev = subtitleScroll.pixels;
+        var titleAdvanced = false;
+        var subtitleAdvanced = false;
+        for (var frame = 0; frame < 45; frame++) {
           await tester.pump(const Duration(milliseconds: 100));
+          if (titleScroll.pixels > titlePrev) titleAdvanced = true;
+          if (subtitleScroll.pixels > subtitlePrev) subtitleAdvanced = true;
+          titlePrev = titleScroll.pixels;
+          subtitlePrev = subtitleScroll.pixels;
         }
-        expect(titleScroll.pixels, greaterThan(titleOffset));
-        expect(subtitleScroll.pixels, greaterThan(subtitleOffset));
+        expect(titleAdvanced, isTrue);
+        expect(subtitleAdvanced, isTrue);
         await tester.pump(interaction.idleDelay);
         session.setOptimisticPosition(const Duration(seconds: 90));
         await tester.pump();

@@ -31,13 +31,12 @@ Future<void> _stageEqualizerPresetRemoval(
 ) async {
   final commands = ref.read(settingsCommandControllerProvider);
   final service = ref.read(undoableRemovalServiceProvider);
+  final settings = ref.read(settingsRepositoryProvider);
   final staged = await service.stage(
     UndoableRemovalAction(
       key: equalizerPresetRemovalKey(preset.id),
-      prepare: () => ref
-          .read(settingsRepositoryProvider)
-          .customEqPresets
-          .any((value) => value.id == preset.id),
+      prepare: () =>
+          settings.customEqPresets.any((value) => value.id == preset.id),
       undo: () {},
       commit: () => commands.deleteCustomEqPreset(preset.id),
     ),

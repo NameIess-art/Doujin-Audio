@@ -4,6 +4,8 @@ import 'dart:ui' as ui;
 
 import 'package:doujin_audio/app/presentation/app_orientation_controller.dart';
 import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
+import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/app/theme/theme_provider.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/media/cover_image_resolution.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
@@ -30,7 +32,9 @@ import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/app_runtime_test_fixture.dart';
 
@@ -153,6 +157,119 @@ void main() {
       expect(find.byType(SessionDetailPage), findsNothing);
     },
     variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
+  testWidgets(
+    'video detail keeps credits inside the cover and switches to the selected folder image',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = defaultTargetPlatform == TargetPlatform.android
+          ? const Size(450, 900)
+          : const Size(1280, 800);
+      addTearDown(tester.view.reset);
+
+      late final AppRuntimeWidgetTestFixture fixture;
+      final cache = CoverArtworkCacheService(
+        libraryService: LibraryService(),
+        preferEmbeddedCover: () => fixture.settings.preferEmbeddedCover,
+      );
+      fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: cache,
+        providedNotificationService: PlaybackNotificationService(
+          notificationsPlatformService: NotificationsPlatformService(
+            isWindowsOverride: false,
+          ),
+        ),
+        configureSettingsRepository: (settings) =>
+            settings.preferEmbeddedCover = true,
+      );
+      addTearDown(fixture.dispose);
+      final ownCover = File(
+        'android/app/src/main/res/mipmap-hdpi/ic_launcher.png',
+      ).absolute.path;
+      final folderImage = File('assets/icons/app_mark_light.png').absolute;
+      final folderCover = folderImage.path;
+      final track = testMusicTrack(
+        name: 'Video',
+        path: '${folderImage.parent.path}/video.mp4',
+        groupKey: '__single_files__',
+        groupTitle: 'Imported files',
+        isSingle: true,
+      ).copyWith(isVideo: true, coverCachePath: ownCover);
+      fixture.library.addTracks([track], persist: false);
+      await tester.runAsync(() async {
+        await fixture.library.setFolderManualCover(
+          folderImage.parent.path,
+          folderCover,
+        );
+        expect(await cache.futureForPlaybackTrack(track), ownCover);
+      });
+      final session = fixture.playback.createTrackSession(track)
+        ..loadedPath = track.path;
+      addTearDown(session.shutdown);
+      fixture.playbackService.syncSlice(
+        activeSessions: [session],
+        playingSessionCount: 0,
+        focusedSessionId: session.id,
+        coverGeneration: cache.generation,
+        isInitialized: true,
+      );
+      final target = fixture.library.audioDetailTargetForTrack(track);
+      await tester.pumpWidget(
+        fixture.build(
+          SessionDetailPage(sessionId: session.id),
+          overrides: [
+            libraryDetailForTargetProvider(target).overrideWith(
+              (_) => AudioDetail.empty(target).copyWith(
+                circleName: 'Video Circle',
+                voiceActors: const ['Video Voice'],
+              ),
+            ),
+          ],
+        ),
+      );
+      final cover = find.byKey(ValueKey('session_detail_cover_${session.id}'));
+      Finder imageAt(String path) => find.descendant(
+        of: cover,
+        matching: find.byWidgetPredicate(
+          (widget) => widget is RetryingFileImage && widget.path == path,
+        ),
+      );
+      Finder decodedImageAt(String path) => find.descendant(
+        of: imageAt(path),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is RawImage && widget.image != null,
+        ),
+      );
+      await pumpUntilFound(tester, decodedImageAt(ownCover));
+      expect(find.byKey(const ValueKey('session_video_surface')), findsOneWidget);
+      final coverRect = tester.getRect(cover);
+      final filename = tester.getRect(
+        find.byKey(ValueKey('title_marquee_${session.id}')),
+      );
+      expect(filename.top, greaterThan(coverRect.center.dy));
+      expect(coverRect.contains(filename.topLeft), isTrue);
+      for (final credit in ['Video Circle', 'Video Voice']) {
+        final creditRect = tester.getRect(find.text(credit));
+        expect(creditRect.top, greaterThan(filename.bottom));
+        expect(coverRect.contains(creditRect.bottomRight), isTrue);
+      }
+      final settings = ProviderScope.containerOf(
+        tester.element(cover),
+      ).read(settingsCommandControllerProvider);
+      await settings.setPreferEmbeddedCover(false);
+      await pumpUntilFound(tester, decodedImageAt(folderCover));
+      await pumpUntilNotFound(tester, imageAt(ownCover));
+      expect(imageAt(folderCover), findsOneWidget);
+      expect(imageAt(ownCover), findsNothing);
+      expect(tester.getRect(cover), coverRect);
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 
   testWidgets(
@@ -978,12 +1095,17 @@ void main() {
             ? find.byKey(const ValueKey('fullscreen_video_play_pause'))
             : find.byType(SessionDetailScaffold);
         final brightness = Theme.of(tester.element(detail)).brightness;
-        final expected = (await tester.runAsync(
+        final rawExpected = (await tester.runAsync(
           () => ColorScheme.fromImageProvider(
             provider: FileImage(cover),
             brightness: brightness,
+            dynamicSchemeVariant: DynamicSchemeVariant.fidelity,
           ),
         ))!;
+        final expected = applyAppSurfaceRamp(
+          rawExpected,
+          seedColor: rawExpected.primary,
+        );
         for (var attempt = 0; attempt < 100; attempt++) {
           await tester.runAsync(
             () => Future<void>.delayed(const Duration(milliseconds: 10)),
@@ -1551,7 +1673,7 @@ void main() {
   );
 
   testWidgets(
-    'fullscreen video controls disable BackdropFilter and cap blurred cover cacheWidth',
+    'fullscreen video volume controls have no capsule and cap blurred cover cacheWidth',
     (tester) async {
       tester.view.physicalSize = const Size(1280, 720);
       tester.view.devicePixelRatio = 1;
@@ -1600,10 +1722,8 @@ void main() {
         ),
         findsNothing,
       );
-      final surface = tester.widget<PlaybackSecondaryControlSurface>(
-        find.byType(PlaybackSecondaryControlSurface),
-      );
-      expect(surface.blurEnabled, isFalse);
+      expect(find.byType(PlaybackSecondaryControlSurface), findsNothing);
+      expect(find.byType(SessionVolumeControls), findsOneWidget);
       final backdropImage = tester.widget<AsyncLocalCoverImage>(
         find.descendant(
           of: find.byKey(const ValueKey('session_video_blurred_backdrop')),

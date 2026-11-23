@@ -23,6 +23,74 @@ extension AppDatabaseAudioDetails on AppDatabase {
     return _runDatabaseRead((db) => _loadAudioDetailRecords(db, normalized));
   }
 
+  /// Queries only `duration_ms` for the requested `(targetType, targetPath)`
+  /// pairs without hydrating child tables or unused columns. Keys in the
+  /// returned map use `'${targetType}\x1F${normalizedTargetPath}'`.
+  Future<Map<String, int>> loadAudioDetailDurations(
+    Iterable<(String, String)> targets,
+  ) async {
+    final pathsByType = <String, Set<String>>{};
+    for (final target in targets) {
+      pathsByType
+          .putIfAbsent(target.$1, () => <String>{})
+          .add(PathMatcher.normalize(target.$2));
+    }
+    if (pathsByType.isEmpty) return const <String, int>{};
+    return _runDatabaseRead((db) async {
+      final result = <String, int>{};
+      for (final entry in pathsByType.entries) {
+        final paths = entry.value.toList(growable: false);
+        for (
+          var start = 0;
+          start < paths.length;
+          start += _sqliteInClauseBatchSize
+        ) {
+          final end = (start + _sqliteInClauseBatchSize).clamp(0, paths.length);
+          final chunk = paths.sublist(start, end);
+          final placeholders = List.filled(chunk.length, '?').join(', ');
+          final rows = await db.query(
+            'audio_details',
+            columns: const <String>['target_path', 'duration_ms'],
+            where: 'target_type = ? AND target_path IN ($placeholders)',
+            whereArgs: <Object?>[entry.key, ...chunk],
+          );
+          for (final row in rows) {
+            final key = '${entry.key}\x1F${row['target_path']}';
+            result[key] = (row['duration_ms'] as num?)?.toInt() ?? 0;
+          }
+        }
+      }
+      return result;
+    });
+  }
+
+  /// Lightweight projection query for library search & category snapshots.
+  /// Selects only columns used by search, filtering, and sorting.
+  Future<List<AudioDetailRecord>> loadAudioDetailSearchRecords(
+    Iterable<(String, String)> targets,
+  ) async {
+    final normalized = targets
+        .map((target) => (target.$1, PathMatcher.normalize(target.$2)))
+        .toList(growable: false);
+    if (normalized.isEmpty) return const <AudioDetailRecord>[];
+    return _runDatabaseRead(
+      (db) => _loadAudioDetailRecords(
+        db,
+        normalized,
+        parentColumns: const <String>[
+          'target_type',
+          'target_path',
+          'rj_code',
+          'work_title',
+          'circle_name',
+          'release_date_ms',
+          'duration_ms',
+          'rating',
+        ],
+      ),
+    );
+  }
+
   Future<void> upsertAudioDetailRecord(AudioDetailRecord detail) async {
     await _runDatabaseWrite((db) async {
       await db.transaction((transaction) async {
@@ -347,8 +415,9 @@ Map<String, Object?> _timeSegmentLabelRow(TimeSegmentLabelRecord label) => {
 
 Future<List<AudioDetailRecord>> _loadAudioDetailRecords(
   DatabaseExecutor db,
-  Iterable<(String, String)> targets,
-) async {
+  Iterable<(String, String)> targets, {
+  List<String>? parentColumns,
+}) async {
   final pathsByType = <String, Set<String>>{};
   for (final target in targets) {
     pathsByType.putIfAbsent(target.$1, () => <String>{}).add(target.$2);
@@ -369,6 +438,7 @@ Future<List<AudioDetailRecord>> _loadAudioDetailRecords(
       parentRows.addAll(
         await db.query(
           'audio_details',
+          columns: parentColumns,
           where: 'target_type = ? AND target_path IN ($placeholders)',
           whereArgs: <Object?>[entry.key, ...chunk],
         ),

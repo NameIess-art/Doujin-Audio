@@ -3,6 +3,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:doujin_audio/core/media/playback_media_reference.dart';
+import 'package:doujin_audio/core/persistence/json_document_store.dart';
+import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_download_cleanup.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_download_internal_models.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_io.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_planner.dart';
@@ -424,6 +428,244 @@ void main() {
 
       await completed.future.timeout(const Duration(seconds: 5));
       expect(seenReferer, isNull);
+    },
+  );
+
+  test(
+    'M26 resuming after a completed file is deleted does not double-count downloadedBytes',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+
+      final payload = List<int>.filled(16, 0x41);
+      final part2Started = Completer<void>();
+      final releasePart2 = Completer<void>();
+      var failPart2 = false;
+
+      server.listen((request) async {
+        if (request.uri.path == '/file1.mp3') {
+          request.response.statusCode = HttpStatus.ok;
+          request.response.contentLength = payload.length;
+          request.response.add(payload);
+          await request.response.close();
+          return;
+        }
+        if (request.uri.path == '/file2.mp3') {
+          if (failPart2) {
+            request.response.statusCode = HttpStatus.internalServerError;
+            await request.response.close();
+            return;
+          }
+          if (!part2Started.isCompleted) part2Started.complete();
+          request.response.statusCode = HttpStatus.ok;
+          await request.response.flush();
+          await releasePart2.future;
+          try {
+            await request.response.close();
+          } catch (_) {}
+          return;
+        }
+        request.response.statusCode = HttpStatus.notFound;
+        await request.response.close();
+      });
+
+      final tempRoot = await Directory.systemTemp.createTemp('asmr_m26_');
+      addTearDown(() async {
+        if (await tempRoot.exists()) {
+          await tempRoot.delete(recursive: true);
+        }
+      });
+
+      final manager = AsmrDownloadManager(
+        maxConcurrentDownloads: 1,
+        persistTasks: false,
+        temporaryDirectoryProvider: () async => tempRoot,
+        automaticFileRetryDelay: Duration.zero,
+      );
+      addTearDown(() async {
+        if (!releasePart2.isCompleted) releasePart2.complete();
+        await manager.shutdown();
+      });
+
+      final baseUrl = 'http://127.0.0.1:${server.port}';
+      final work = _testWork(id: 2601, title: 'Work26');
+
+      await manager.startDownload(
+        work: work,
+        selectedRoots: [
+          _audioNode(
+            workId: 2601,
+            title: 'file1.mp3',
+            relativePath: 'file1.mp3',
+            url: '$baseUrl/file1.mp3',
+            size: payload.length,
+          ),
+          _audioNode(
+            workId: 2601,
+            title: 'file2.mp3',
+            relativePath: 'file2.mp3',
+            url: '$baseUrl/file2.mp3',
+            size: 1024,
+          ),
+        ],
+        destinationRoot: tempRoot.path,
+        conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+        saveMetadata: false,
+        saveCover: false,
+        automaticFileRetryCount: 0,
+      );
+
+      final file1Committed = Completer<void>();
+      final sub = manager.taskStream(work.workKey).listen((snapshot) {
+        if (snapshot?.completedFilePaths.contains('file1.mp3') == true &&
+            !file1Committed.isCompleted) {
+          file1Committed.complete();
+        }
+      });
+      addTearDown(sub.cancel);
+
+      await Future.wait([part2Started.future, file1Committed.future]);
+      await manager.pauseTask(work.workKey);
+
+      final file1 = File(path.join(tempRoot.path, 'Work26', 'file1.mp3'));
+      expect(await file1.exists(), isTrue);
+      await file1.delete();
+
+      failPart2 = true;
+      final failedDone = manager
+          .taskStream(work.workKey)
+          .firstWhere(
+            (snapshot) => snapshot?.status == AsmrDownloadTaskStatus.failed,
+          );
+      await manager.resumeTask(work.workKey);
+      final finalTask = await failedDone.timeout(const Duration(seconds: 5));
+
+      expect(await file1.exists(), isTrue);
+      expect(finalTask!.completedFilePaths, contains('file1.mp3'));
+      expect(finalTask.downloadedBytes, payload.length);
+      expect(finalTask.fileDownloadedBytes['file1.mp3'], payload.length);
+    },
+  );
+
+  test(
+    'M28 posixLocalRelativePath sanitizes FAT/FUSE-illegal and control chars while keeping Windows-only rules under Windows',
+    () {
+      const planner = AsmrDownloadPlanner();
+      expect(
+        planner.posixLocalRelativePath('Folder?:<1>/01*|"track\x00\x1F.mp3.'),
+        'Folder___1_/01___track__.mp3',
+      );
+      expect(
+        planner.posixLocalRelativePath('CON.txt'),
+        'CON.txt',
+      );
+      expect(
+        planner.windowsLocalRelativePath('CON.txt'),
+        '_CON.txt',
+      );
+      expect(
+        planner.posixLocalRelativePath('folder/.../track.mp3'),
+        'folder/_/track.mp3',
+      );
+    },
+  );
+
+  test(
+    'L12 deleteTask awaits an in-flight startDownload instead of returning as a no-op',
+    () async {
+      final tempRoot = await Directory.systemTemp.createTemp('asmr_l12_');
+      addTearDown(() async {
+        if (await tempRoot.exists()) {
+          await tempRoot.delete(recursive: true);
+        }
+      });
+
+      final persistenceEntered = Completer<void>();
+      final releasePersistence = Completer<void>();
+      var writeCalls = 0;
+      final manager = AsmrDownloadManager(
+        maxConcurrentDownloads: 1,
+        temporaryDirectoryProvider: () async => tempRoot,
+        persistenceReader: () async => null,
+        persistenceWriter: (_) async {
+          writeCalls++;
+          if (writeCalls == 1) {
+            if (!persistenceEntered.isCompleted) persistenceEntered.complete();
+            await releasePersistence.future;
+          }
+        },
+      );
+      addTearDown(() async {
+        if (!releasePersistence.isCompleted) releasePersistence.complete();
+        await manager.shutdown();
+      });
+      await manager.initialize();
+
+      // Hold _persistenceTail open so startDownload suspends while holding _startingTasks.
+      final pendingFlush = manager.flushPersistence();
+      await persistenceEntered.future.timeout(const Duration(seconds: 3));
+
+      final work = _testWork(id: 1201, title: 'Work12');
+      final startFuture = manager.startDownload(
+        work: work,
+        selectedRoots: [
+          _audioNode(
+            workId: 1201,
+            title: 'track.mp3',
+            relativePath: 'track.mp3',
+            url: 'http://127.0.0.1:1/track.mp3',
+            size: 16,
+          ),
+        ],
+        destinationRoot: tempRoot.path,
+        conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+        saveMetadata: false,
+        saveCover: false,
+      );
+
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(manager.getTask(work.workKey), isNotNull);
+      // Trigger deleteTask while startDownload still holds _startingTasks.
+      final deleteFuture = manager.deleteTask(work.workKey);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      releasePersistence.complete();
+
+      await Future.wait([
+        pendingFlush.timeout(const Duration(seconds: 5)),
+        startFuture.timeout(const Duration(seconds: 5)),
+        deleteFuture.timeout(const Duration(seconds: 5)),
+      ]);
+      expect(manager.getTask(work.workKey), isNull);
+    },
+  );
+
+  test(
+    'L13 AsmrDownloadOutputStore.targetFileExists probes .gif cover files',
+    () async {
+      final tempRoot = await Directory.systemTemp.createTemp('asmr_l13_');
+      addTearDown(() async {
+        if (await tempRoot.exists()) {
+          await tempRoot.delete(recursive: true);
+        }
+      });
+
+      final gifCover = File(path.join(tempRoot.path, 'cover', 'cover.gif'));
+      await gifCover.parent.create(recursive: true);
+      await gifCover.writeAsBytes(const <int>[0x47, 0x49, 0x46, 0x38]);
+
+      final outputs = AsmrDownloadOutputStore(
+        fileCacheGateway: FileCachePlatformGateway.instance,
+        jsonDocumentStore: DefaultJsonDocumentStore(),
+        stagingDirectoryProvider: () async => tempRoot,
+      );
+      const coverItem = PlannedDownloadFile.cover(
+        url: 'https://example.test/cover-without-ext',
+        relativePath: 'cover/cover.cover',
+        coverFileStem: 'cover',
+        maxBytes: 1024,
+      );
+
+      expect(await outputs.targetFileExists(tempRoot.path, coverItem), isTrue);
     },
   );
 }

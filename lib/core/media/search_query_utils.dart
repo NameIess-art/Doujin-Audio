@@ -127,8 +127,21 @@ bool matchesNormalizedSearchText(String text, SearchElements terms) =>
     terms.all.every(text.contains) &&
     (terms.any.isEmpty || terms.any.any(text.contains));
 
-final _elementSeparator = RegExp(r'[,/，、]');
 final _elementEscape = RegExp(r'[\\(),/（），、]');
+
+bool _isElementSeparator(int codeUnit) =>
+    codeUnit == 0x2C || // ','
+    codeUnit == 0x2F || // '/'
+    codeUnit == 0xFF0C || // '，'
+    codeUnit == 0x3001; // '、'
+
+bool _isElementEscape(int codeUnit) =>
+    codeUnit == 0x5C || // '\'
+    codeUnit == 0x28 || // '('
+    codeUnit == 0x29 || // ')'
+    codeUnit == 0xFF08 || // '（'
+    codeUnit == 0xFF09 || // '）'
+    _isElementSeparator(codeUnit);
 
 String _escapeElement(String term) =>
     term.replaceAllMapped(_elementEscape, (match) => '\\${match[0]}');
@@ -147,7 +160,7 @@ SearchElements? parseSearchElements(String input) {
   final all = <String>[];
   final any = <String>[];
   final buffer = StringBuffer();
-  String? close;
+  int? closeCodeUnit;
   var escaped = false;
   String take() {
     final term = buffer
@@ -165,31 +178,32 @@ SearchElements? parseSearchElements(String input) {
     }
   }
 
-  for (final char in input.split('')) {
+  for (var i = 0; i < input.length; i++) {
+    final codeUnit = input.codeUnitAt(i);
     if (escaped) {
-      if (!_elementEscape.hasMatch(char)) buffer.write('\\');
-      buffer.write(char);
+      if (!_isElementEscape(codeUnit)) buffer.writeCharCode(0x5C);
+      buffer.writeCharCode(codeUnit);
       escaped = false;
-    } else if (char == '\\') {
+    } else if (codeUnit == 0x5C) {
       escaped = true;
-    } else if (char == '(' || char == '（') {
-      if (close != null) return null;
+    } else if (codeUnit == 0x28 || codeUnit == 0xFF08) {
+      if (closeCodeUnit != null) return null;
       add(all, take());
-      close = char == '(' ? ')' : '）';
-    } else if (char == ')' || char == '）') {
-      if (close != char) return null;
+      closeCodeUnit = codeUnit == 0x28 ? 0x29 : 0xFF09;
+    } else if (codeUnit == 0x29 || codeUnit == 0xFF09) {
+      if (closeCodeUnit != codeUnit) return null;
       final term = take();
       if (term.isEmpty) return null;
       add(any, term);
-      close = null;
-    } else if (close == null && _elementSeparator.hasMatch(char)) {
+      closeCodeUnit = null;
+    } else if (closeCodeUnit == null && _isElementSeparator(codeUnit)) {
       add(all, take());
     } else {
-      buffer.write(char);
+      buffer.writeCharCode(codeUnit);
     }
   }
-  if (close != null) return null;
-  if (escaped) buffer.write('\\');
+  if (closeCodeUnit != null) return null;
+  if (escaped) buffer.writeCharCode(0x5C);
   add(all, take());
   return (all: all, any: any);
 }

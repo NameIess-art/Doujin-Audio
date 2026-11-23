@@ -229,7 +229,7 @@ class NativePlaybackStatePersistenceCoordinatorTest {
     }
 
     @Test
-    fun `structural changes still write the full snapshot`() {
+    fun `scalar metadata changes update metadata only while queue changes write full snapshot`() {
         val environment = FakeStatePersistenceEnvironment()
         var snapshots = listOf(storedSession(positionMs = 1_000L))
         val coordinator = coordinator(environment, storedSessions = { snapshots })
@@ -240,8 +240,47 @@ class NativePlaybackStatePersistenceCoordinatorTest {
         coordinator.persistNow()
         environment.runBackgroundTasks()
 
-        assertEquals(2, environment.savedSessions.size)
+        assertEquals(1, environment.savedSessions.size)
+        assertEquals(1, environment.savedMetadata.size)
+        assertEquals(1.5f, environment.storedDefinitions.single().speed)
         assertEquals(0, environment.savedProgress.size)
+
+        val nextQueue = listOf(
+            com.doujin.audio.player.session.StoredNativePlaybackQueueItem(
+                path = "/music/track2.mp3",
+                uri = "file:///music/track2.mp3",
+                title = "Track 2",
+                subtitle = null,
+                artUri = null
+            )
+        )
+        snapshots = listOf(storedSession(positionMs = 0L, speed = 1.5f).copy(queue = nextQueue))
+        coordinator.persistNow()
+        environment.runBackgroundTasks()
+
+        assertEquals(2, environment.savedSessions.size)
+        assertEquals(1, environment.savedMetadata.size)
+    }
+
+    @Test
+    fun `persistSession uses progress only write when structure was already persisted`() {
+        val environment = FakeStatePersistenceEnvironment()
+        val initial = storedSession(positionMs = 1_000L).copy(playing = true, playWhenReady = true)
+        val coordinator = coordinator(environment, storedSessions = { listOf(initial) })
+
+        coordinator.persistNow()
+        environment.runBackgroundTasks()
+        assertEquals(1, environment.savedSessions.size)
+
+        val paused = initial.copy(positionMs = 4_500L, playing = false, playWhenReady = false)
+        coordinator.persistSession(paused, NativePlaybackStateStore.sessionRevision(initial.sessionId))
+        environment.runBackgroundTasks()
+
+        assertEquals(1, environment.savedSessions.size)
+        assertEquals(0, environment.savedMetadata.size)
+        assertEquals(1, environment.savedProgress.size)
+        assertEquals(4_500L, environment.storedDefinitions.single().positionMs)
+        assertEquals(false, environment.storedDefinitions.single().playing)
     }
 
     @Test
@@ -381,14 +420,16 @@ class NativePlaybackStatePersistenceCoordinatorTest {
     }
 
     @Test
-    fun `shutdown awaits bounded persistence termination`() {
+    fun `shutdown flushes asynchronously without blocking caller thread`() {
         val environment = FakeStatePersistenceEnvironment()
         val coordinator = coordinator(environment, storedSessions = { listOf(storedSession(100L)) })
 
         coordinator.shutdown()
 
         assertTrue(environment.shutdownCalled)
-        assertEquals(listOf(NativePlaybackStatePersistenceCoordinator.SHUTDOWN_AWAIT_TIMEOUT_MS), environment.awaitTimeouts)
+        assertTrue(environment.awaitTimeouts.isEmpty())
+        assertTrue(coordinator.awaitPendingForTest(5_000L))
+        assertEquals(listOf(5_000L), environment.awaitTimeouts)
     }
 
     private fun coordinator(
@@ -410,6 +451,7 @@ private class FakeStatePersistenceEnvironment(private val filterRevisions: Boole
     val delayedTasks = linkedMapOf<Runnable, Long>()
     val backgroundTasks = mutableListOf<() -> Unit>()
     val savedSessions = mutableListOf<List<StoredNativePlaybackSession>>()
+    val savedMetadata = mutableListOf<List<StoredNativePlaybackSession>>()
     val savedProgress = mutableListOf<List<StoredNativePlaybackProgress>>()
     var clearCount = 0
     var shutdownCalled = false
@@ -432,6 +474,13 @@ private class FakeStatePersistenceEnvironment(private val filterRevisions: Boole
         val accepted = sessions.filter { !filterRevisions || revisions[it.sessionId] == NativePlaybackStateStore.sessionRevision(it.sessionId) }
         if (accepted.isEmpty()) return
         savedSessions += accepted
+        storedDefinitions = (storedDefinitions + accepted).associateBy { it.sessionId }.values.toList()
+    }
+
+    override fun saveSessionMetadata(sessions: List<StoredNativePlaybackSession>, revisions: Map<String, Long>) {
+        val accepted = sessions.filter { !filterRevisions || revisions[it.sessionId] == NativePlaybackStateStore.sessionRevision(it.sessionId) }
+        if (accepted.isEmpty()) return
+        savedMetadata += accepted
         storedDefinitions = (storedDefinitions + accepted).associateBy { it.sessionId }.values.toList()
     }
 

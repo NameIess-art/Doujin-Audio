@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import '../../core/widgets/app_buttons.dart';
 import '../../core/widgets/app_dialog.dart';
 import '../../core/widgets/app_feedback.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
@@ -12,6 +13,21 @@ import '../../core/widgets/app_transitions.dart';
 import '../../core/widgets/windows_horizontal_wheel_scroll.dart';
 import '../../core/widgets/shimmer_loading.dart';
 import '../localization/app_language_provider.dart';
+import '../theme/theme_provider.dart';
+
+/// Computes clean, non-muddy heatmap step fills for levels `0..4`.
+Color listeningHeatmapFillColor(ColorScheme colors, int level) {
+  final emptyColor = colors.brightness == Brightness.dark
+      ? colors.surfaceContainerHigh
+      : colors.surfaceContainer;
+  final clamped = level.clamp(0, 4);
+  if (clamped == 0) return emptyColor;
+  const alphas = <double>[0.0, 0.24, 0.48, 0.74, 1.0];
+  return Color.alphaBlend(
+    colors.primary.withValues(alpha: alphas[clamped]),
+    emptyColor,
+  );
+}
 
 enum ListeningInterval { day, week, month, quarter, year }
 
@@ -158,6 +174,38 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
   DateTime? _aggregatedSelected;
   List<ListeningPeriod> _periods = const [];
   int _maximum = 1;
+  MaterialLocalizations? _formattedLocalizations;
+  ListeningInterval? _formattedInterval;
+  Locale? _formattedLocale;
+  List<ListeningDay>? _formattedDays;
+  final Map<(DateTime, DateTime), String> _periodRangeCache =
+      <(DateTime, DateTime), String>{};
+  final Map<(DateTime, DateTime, int), String> _periodDescriptionCache =
+      <(DateTime, DateTime, int), String>{};
+
+  void _syncFormatCaches(
+    MaterialLocalizations localizations,
+    ListeningInterval interval,
+    Locale locale,
+  ) {
+    final rangeInvalidated =
+        _formattedLocalizations != localizations ||
+        _formattedInterval != interval;
+    if (rangeInvalidated) {
+      _periodRangeCache.clear();
+      _periodDescriptionCache.clear();
+      _formattedLocalizations = localizations;
+      _formattedInterval = interval;
+      _formattedLocale = locale;
+      _formattedDays = widget.days;
+      return;
+    }
+    if (_formattedLocale != locale || !identical(_formattedDays, widget.days)) {
+      _periodDescriptionCache.clear();
+      _formattedLocale = locale;
+      _formattedDays = widget.days;
+    }
+  }
 
   List<ListeningPeriod> _currentPeriods() {
     final now = DateTime.now();
@@ -277,6 +325,8 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
         ? periods.last
         : periods.where(_containsSelection).firstOrNull ?? periods.last;
     final localizations = MaterialLocalizations.of(context);
+    final disableAnimations = MediaQuery.disableAnimationsOf(context);
+    _syncFormatCaches(localizations, interval, i18n.locale);
     final labelStyle = Theme.of(context).textTheme.labelSmall!;
     final labelHeight =
         MediaQuery.textScalerOf(context).scale(labelStyle.fontSize!) *
@@ -305,11 +355,21 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
             ],
           )
         : child;
-    String range(ListeningPeriod period) {
-      final start = localizations.formatMediumDate(period.start);
-      if (interval == ListeningInterval.day) return start;
-      return '$start – ${localizations.formatMediumDate(DateTime(period.end.year, period.end.month, period.end.day - 1))}';
-    }
+    String range(ListeningPeriod period) => _periodRangeCache.putIfAbsent(
+      (period.start, period.end),
+      () {
+        final start = localizations.formatMediumDate(period.start);
+        if (interval == ListeningInterval.day) return start;
+        return '$start – ${localizations.formatMediumDate(DateTime(period.end.year, period.end.month, period.end.day - 1))}';
+      },
+    );
+
+    String descriptionFor(ListeningPeriod period) =>
+        _periodDescriptionCache.putIfAbsent(
+          (period.start, period.end, period.duration.inSeconds),
+          () =>
+              '${range(period)}: ${listeningDurationText(i18n, period.duration)}',
+        );
 
     String label(ListeningPeriod period) {
       final date = period.start;
@@ -328,8 +388,7 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
       Widget child, {
       double radius = 8,
     }) {
-      final description =
-          '${range(period)}: ${listeningDurationText(i18n, period.duration)}';
+      final description = descriptionFor(period);
       return Tooltip(
         message: description,
         child: Semantics(
@@ -348,6 +407,21 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
     }
 
     final colors = Theme.of(context).colorScheme;
+    final heatmapFillColors = heatmap && !skeleton
+        ? List<Color>.generate(
+            5,
+            (level) => listeningHeatmapFillColor(colors, level),
+            growable: false,
+          )
+        : null;
+    final heatmapBorderColors = heatmapFillColors == null
+        ? null
+        : List<Color>.generate(5, (level) {
+            final fillColor = heatmapFillColors[level];
+            return appColorContrastRatio(colors.onSurface, fillColor) >= 3.0
+                ? colors.onSurface
+                : appReadableOnColor(fillColor);
+          }, growable: false);
     Widget heatmapCell(int index) {
       if (skeleton) return const ShimmerContainer(borderRadius: 3);
       final period = index >= 0
@@ -361,18 +435,12 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
       final level = milliseconds <= 0
           ? 0
           : ((milliseconds * 4 + maximum - 1) ~/ maximum).clamp(1, 4);
-      final description =
-          '${range(period)}: ${listeningDurationText(i18n, period.duration)}';
       return _HeatmapPeriodCell(
         periodKey: ValueKey(period.start),
-        description: description,
+        description: descriptionFor(period),
         selected: selected.start == period.start,
-        fillColor: Color.lerp(
-          colors.surfaceContainerHighest,
-          colors.primary,
-          level / 4,
-        )!,
-        borderColor: colors.onSurface,
+        fillColor: heatmapFillColors![level],
+        borderColor: heatmapBorderColors![level],
         onTap: () => setState(() => _selected = period.start),
       );
     }
@@ -533,11 +601,7 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
               height: 10,
               margin: EdgeInsets.only(left: level == 0 ? 0 : 3),
               decoration: BoxDecoration(
-                color: Color.lerp(
-                  colors.surfaceContainerHighest,
-                  colors.primary,
-                  level / 4,
-                ),
+                color: listeningHeatmapFillColor(colors, level),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -640,9 +704,7 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
           key: const ValueKey('listening-chart-bars'),
           height: 152 + labelHeight.ceilToDouble(),
           child: AnimatedSwitcher(
-            duration: MediaQuery.disableAnimationsOf(context)
-                ? Duration.zero
-                : kAppFadeDuration,
+            duration: disableAnimations ? Duration.zero : kAppFadeDuration,
             switchInCurve: kAppFadeCurve,
             switchOutCurve: kAppFadeCurve,
             layoutBuilder: (current, previous) => Stack(
@@ -722,153 +784,27 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
                         );
                       }
 
-                      int visibleWindowMaximum() {
-                        final offset = controller.hasClients
-                            ? controller.offset
-                            : 0.0;
-                        final firstReversed = (offset / itemExtent)
-                            .floor()
-                            .clamp(0, periods.length - 1);
-                        final lastReversed =
-                            ((offset + constraints.maxWidth) / itemExtent)
-                                .ceil()
-                                .clamp(0, periods.length - 1);
-                        final startIdx = (periods.length - 1 - lastReversed)
-                            .clamp(0, periods.length - 1);
-                        final endIdx = (periods.length - 1 - firstReversed)
-                            .clamp(0, periods.length - 1);
-                        var windowMax = 0;
-                        for (var i = startIdx; i <= endIdx; i++) {
-                          final ms = periods[i].duration.inMilliseconds;
-                          if (ms > windowMax) windowMax = ms;
-                        }
-                        return windowMax;
-                      }
-
-                      return ListenableBuilder(
-                        listenable: controller,
-                        builder: (context, _) {
-                          final windowMaxMs = skeleton
-                              ? maximum
-                              : visibleWindowMaximum();
-                          final scaleDenom = math.max(1, windowMaxMs);
-                          const barPlotHeight = 144.0;
-                          return Stack(
-                            children: [
-                              if (!skeleton && windowMaxMs > 0)
-                                Positioned(
-                                  top: 0,
-                                  left: 0,
-                                  right: 0,
-                                  child: IgnorePointer(
-                                    child: Row(
-                                      children: [
-                                        Expanded(
-                                          child: Container(
-                                            height: 1,
-                                            color: colors.outlineVariant
-                                                .withValues(alpha: 0.35),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Text(
-                                          key: const ValueKey(
-                                            'listening-chart-window-max',
-                                          ),
-                                          _compactAxisDuration(
-                                            Duration(milliseconds: windowMaxMs),
-                                          ),
-                                          style: labelStyle.copyWith(
-                                            color: colors.onSurfaceVariant,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ListView.builder(
-                                key: ValueKey(
-                                  'listening-chart-${chartStyle.name}',
-                                ),
-                                controller: controller,
-                                reverse: true,
-                                scrollDirection: Axis.horizontal,
-                                padding: EdgeInsets.zero,
-                                itemExtent: itemExtent,
-                                itemCount: itemCount,
-                                itemBuilder: (context, index) {
-                                  final period =
-                                      periods[periods.length - index - 1];
-                                  final active = selected.start == period.start;
-                                  final color = Theme.of(context).colorScheme;
-                                  return selectablePeriod(
-                                    period,
-                                    Column(
-                                      children: [
-                                        SizedBox(
-                                          height: barPlotHeight,
-                                          child: Align(
-                                            alignment: Alignment.bottomCenter,
-                                            child: skeleton
-                                                ? ShimmerContainer(
-                                                    width: 18,
-                                                    height:
-                                                        28.0 +
-                                                        (index % 4) * 30,
-                                                    borderRadius: 5,
-                                                  )
-                                                : Container(
-                                                    width: 18,
-                                                    height: math.max(
-                                                      2,
-                                                      132 *
-                                                          period
-                                                              .duration
-                                                              .inMilliseconds /
-                                                          scaleDenom,
-                                                    ),
-                                                    decoration: BoxDecoration(
-                                                      color: active
-                                                          ? color.primary
-                                                          : color
-                                                                .primaryContainer,
-                                                      borderRadius:
-                                                          const BorderRadius.vertical(
-                                                            top:
-                                                                Radius.circular(
-                                                                  5,
-                                                                ),
-                                                          ),
-                                                    ),
-                                                  ),
-                                          ),
-                                        ),
-                                        const SizedBox(height: 6),
-                                        SizedBox(
-                                          height:
-                                              labelHeight.ceilToDouble() + 2,
-                                          child: placeholderFor(
-                                            FittedBox(
-                                              fit: BoxFit.scaleDown,
-                                              child: Text(
-                                                label(period),
-                                                maxLines: 1,
-                                                style: labelStyle,
-                                              ),
-                                            ),
-                                            width: 30,
-                                            height: 12,
-                                            alignment: Alignment.center,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                },
-                              ),
-                            ],
-                          );
-                        },
+                      return _BarListeningChart(
+                        listKey: ValueKey('listening-chart-${chartStyle.name}'),
+                        controller: controller,
+                        periods: periods,
+                        itemExtent: itemExtent,
+                        viewportWidth: constraints.maxWidth,
+                        skeleton: skeleton,
+                        fallbackMaximum: maximum,
+                        selectedStart: selected.start,
+                        disableAnimations: disableAnimations,
+                        labelHeight: labelHeight,
+                        labelStyle: labelStyle,
+                        colors: colors,
+                        labelFor: label,
+                        wrapPeriod: selectablePeriod,
+                        wrapPlaceholder: (child) => placeholderFor(
+                          child,
+                          width: 30,
+                          height: 12,
+                          alignment: Alignment.center,
+                        ),
                       );
                     },
                   ),
@@ -921,16 +857,272 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
             ),
           ),
         ),
-        if (heatmap)
-          placeholderFor(
+        TweenAnimationBuilder<double>(
+          tween: Tween<double>(end: heatmap ? 1.0 : 0.0),
+          duration: disableAnimations ? Duration.zero : kAppFadeDuration,
+          curve: kAppFadeCurve,
+          builder: (context, factor, child) {
+            if (factor == 0 && !heatmap) {
+              return const SizedBox.shrink();
+            }
+            return ClipRect(
+              child: Align(
+                alignment: Alignment.topCenter,
+                heightFactor: factor,
+                child: Opacity(opacity: factor, child: child),
+              ),
+            );
+          },
+          child: placeholderFor(
             heatmapLegend(),
             width: 120,
             height: 12,
             alignment: Alignment.centerRight,
           ),
+        ),
       ],
     );
     return widget.builder(duration, chart);
+  }
+}
+
+class _WindowMaxNotifier extends ChangeNotifier implements ValueListenable<int> {
+  _WindowMaxNotifier(this._value);
+
+  int _value;
+
+  @override
+  int get value => _value;
+
+  set value(int next) {
+    if (_value == next) return;
+    _value = next;
+    notifyListeners();
+  }
+
+  void syncWithoutNotify(int next) {
+    _value = next;
+  }
+}
+
+class _BarListeningChart extends StatefulWidget {
+  const _BarListeningChart({
+    required this.listKey,
+    required this.controller,
+    required this.periods,
+    required this.itemExtent,
+    required this.viewportWidth,
+    required this.skeleton,
+    required this.fallbackMaximum,
+    required this.selectedStart,
+    required this.disableAnimations,
+    required this.labelHeight,
+    required this.labelStyle,
+    required this.colors,
+    required this.labelFor,
+    required this.wrapPeriod,
+    required this.wrapPlaceholder,
+  });
+
+  final Key listKey;
+  final ScrollController controller;
+  final List<ListeningPeriod> periods;
+  final double itemExtent;
+  final double viewportWidth;
+  final bool skeleton;
+  final int fallbackMaximum;
+  final DateTime selectedStart;
+  final bool disableAnimations;
+  final double labelHeight;
+  final TextStyle labelStyle;
+  final ColorScheme colors;
+  final String Function(ListeningPeriod period) labelFor;
+  final Widget Function(ListeningPeriod period, Widget child) wrapPeriod;
+  final Widget Function(Widget child) wrapPlaceholder;
+
+  @override
+  State<_BarListeningChart> createState() => _BarListeningChartState();
+}
+
+class _BarListeningChartState extends State<_BarListeningChart> {
+  static const double _barPlotHeight = 144.0;
+  static const Duration _barHeightTransitionDuration = Duration(
+    milliseconds: 140,
+  );
+
+  late final _WindowMaxNotifier _windowMaxMs;
+
+  @override
+  void initState() {
+    super.initState();
+    _windowMaxMs = _WindowMaxNotifier(_computeWindowMax());
+    widget.controller.addListener(_handleScroll);
+  }
+
+  @override
+  void didUpdateWidget(covariant _BarListeningChart oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_handleScroll);
+      widget.controller.addListener(_handleScroll);
+    }
+    _windowMaxMs.syncWithoutNotify(_computeWindowMax());
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_handleScroll);
+    _windowMaxMs.dispose();
+    super.dispose();
+  }
+
+  void _handleScroll() {
+    if (widget.skeleton) return;
+    _windowMaxMs.value = _computeWindowMax();
+  }
+
+  int _computeWindowMax() {
+    if (widget.skeleton) return widget.fallbackMaximum;
+    final periods = widget.periods;
+    if (periods.isEmpty) return 0;
+    final offset = widget.controller.hasClients ? widget.controller.offset : 0.0;
+    final firstReversed = (offset / widget.itemExtent).floor().clamp(
+      0,
+      periods.length - 1,
+    );
+    final lastReversed = ((offset + widget.viewportWidth) / widget.itemExtent)
+        .ceil()
+        .clamp(0, periods.length - 1);
+    final startIdx = (periods.length - 1 - lastReversed).clamp(
+      0,
+      periods.length - 1,
+    );
+    final endIdx = (periods.length - 1 - firstReversed).clamp(
+      0,
+      periods.length - 1,
+    );
+    var windowMax = 0;
+    for (var i = startIdx; i <= endIdx; i++) {
+      final ms = periods[i].duration.inMilliseconds;
+      if (ms > windowMax) windowMax = ms;
+    }
+    return windowMax;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final periods = widget.periods;
+    final colors = widget.colors;
+    final barDuration = widget.disableAnimations
+        ? Duration.zero
+        : _barHeightTransitionDuration;
+    return Stack(
+      children: [
+        if (!widget.skeleton)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: IgnorePointer(
+              child: ValueListenableBuilder<int>(
+                valueListenable: _windowMaxMs,
+                builder: (context, windowMaxMs, _) {
+                  if (windowMaxMs <= 0) return const SizedBox.shrink();
+                  return Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          height: 1,
+                          color: colors.outlineVariant.withValues(alpha: 0.35),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        key: const ValueKey('listening-chart-window-max'),
+                        _compactAxisDuration(
+                          Duration(milliseconds: windowMaxMs),
+                        ),
+                        style: widget.labelStyle.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
+        ListView.builder(
+          key: widget.listKey,
+          controller: widget.controller,
+          reverse: true,
+          scrollDirection: Axis.horizontal,
+          padding: EdgeInsets.zero,
+          itemExtent: widget.itemExtent,
+          itemCount: periods.length,
+          itemBuilder: (context, index) {
+            final period = periods[periods.length - index - 1];
+            final active = widget.selectedStart == period.start;
+            final barColor = active ? colors.primary : colors.primaryContainer;
+            final durationMs = period.duration.inMilliseconds;
+            return widget.wrapPeriod(
+              period,
+              Column(
+                children: [
+                  SizedBox(
+                    height: _barPlotHeight,
+                    child: Align(
+                      alignment: Alignment.bottomCenter,
+                      child: widget.skeleton
+                          ? ShimmerContainer(
+                              width: 18,
+                              height: 28.0 + (index % 4) * 30,
+                              borderRadius: 5,
+                            )
+                          : ValueListenableBuilder<int>(
+                              valueListenable: _windowMaxMs,
+                              builder: (context, windowMaxMs, _) {
+                                final scaleDenom = math.max(1, windowMaxMs);
+                                return AnimatedContainer(
+                                  duration: barDuration,
+                                  curve: Curves.easeOutCubic,
+                                  width: 18,
+                                  height: math.max(
+                                    2,
+                                    132 * durationMs / scaleDenom,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: barColor,
+                                    borderRadius: const BorderRadius.vertical(
+                                      top: Radius.circular(5),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  SizedBox(
+                    height: widget.labelHeight.ceilToDouble() + 2,
+                    child: widget.wrapPlaceholder(
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          widget.labelFor(period),
+                          maxLines: 1,
+                          style: widget.labelStyle,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ],
+    );
   }
 }
 
@@ -960,29 +1152,26 @@ class _HeatmapPeriodCellState extends State<_HeatmapPeriodCell> {
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: widget.description,
-      child: Semantics(
-        label: widget.description,
-        selected: widget.selected,
-        button: true,
-        child: InkWell(
-          key: widget.periodKey,
-          mouseCursor: WidgetStateMouseCursor.clickable,
-          onTap: widget.onTap,
-          onHover: (hovering) {
-            if (_hovered != hovering) setState(() => _hovered = hovering);
-          },
-          borderRadius: BorderRadius.circular(3),
-          child: ExcludeSemantics(
-            child: Container(
-              decoration: BoxDecoration(
-                color: widget.fillColor,
-                borderRadius: BorderRadius.circular(3),
-                border: widget.selected || _hovered
-                    ? Border.all(color: widget.borderColor, width: 1.5)
-                    : null,
-              ),
+    return Semantics(
+      label: widget.description,
+      selected: widget.selected,
+      button: true,
+      child: InkWell(
+        key: widget.periodKey,
+        mouseCursor: WidgetStateMouseCursor.clickable,
+        onTap: widget.onTap,
+        onHover: (hovering) {
+          if (_hovered != hovering) setState(() => _hovered = hovering);
+        },
+        borderRadius: BorderRadius.circular(3),
+        child: ExcludeSemantics(
+          child: Container(
+            decoration: BoxDecoration(
+              color: widget.fillColor,
+              borderRadius: BorderRadius.circular(3),
+              border: widget.selected || _hovered
+                  ? Border.all(color: widget.borderColor, width: 1.5)
+                  : null,
             ),
           ),
         ),

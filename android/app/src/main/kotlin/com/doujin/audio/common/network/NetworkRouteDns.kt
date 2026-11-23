@@ -14,10 +14,15 @@ import java.net.Socket
 import java.net.UnknownHostException
 import java.security.SecureRandom
 import java.util.Locale
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutionException
-import java.util.concurrent.Executors
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 /** Plain DNS is scoped to this app. Numeric server addresses avoid DNS bootstrap recursion. */
 internal class NetworkRouteDns(
@@ -36,13 +41,37 @@ internal class NetworkRouteDns(
         val minTtlSeconds: Long?
     )
 
+    private class InFlightLookup {
+        private val latch = CountDownLatch(1)
+        @Volatile
+        private var outcome: Result<List<InetAddress>>? = null
+
+        fun complete(result: Result<List<InetAddress>>) {
+            outcome = result
+            latch.countDown()
+        }
+
+        fun await(): List<InetAddress> {
+            try {
+                latch.await()
+            } catch (error: InterruptedException) {
+                Thread.currentThread().interrupt()
+                throw UnknownHostException("DNS lookup interrupted").apply { initCause(error) }
+            }
+            return checkNotNull(outcome).getOrThrow()
+        }
+    }
+
     private val endpoint by lazy { InetSocketAddress(InetAddress.getByName(server), port) }
+    private val cacheGeneration = AtomicLong(0L)
     private val cache = object : LinkedHashMap<String, CachedEntry>(16, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CachedEntry>?): Boolean =
             size > MAX_CACHE_ENTRIES
     }
+    private val inFlight = HashMap<String, InFlightLookup>()
 
     fun clearCache() {
+        cacheGeneration.incrementAndGet()
         synchronized(cache) {
             cache.clear()
         }
@@ -62,10 +91,50 @@ internal class NetworkRouteDns(
             }
         }
 
-        val aaaaFuture = queryExecutor.submit<Result<DnsLookupResult>> {
-            runCatching { lookup(hostname, 28, 0) }
+        val existing: InFlightLookup?
+        val owned: InFlightLookup?
+        synchronized(inFlight) {
+            val current = inFlight[cacheKey]
+            if (current != null) {
+                existing = current
+                owned = null
+            } else {
+                existing = null
+                owned = InFlightLookup().also { inFlight[cacheKey] = it }
+            }
         }
-        val aResult = runCatching { lookup(hostname, 1, 0) }
+        if (existing != null) {
+            return existing.await()
+        }
+
+        val generationAtStart = cacheGeneration.get()
+        return try {
+            val resolved = resolveUncached(hostname, cacheKey, generationAtStart)
+            owned!!.complete(Result.success(resolved))
+            resolved
+        } catch (error: Throwable) {
+            owned!!.complete(Result.failure(error))
+            throw error
+        } finally {
+            synchronized(inFlight) {
+                if (inFlight[cacheKey] === owned) {
+                    inFlight.remove(cacheKey)
+                }
+            }
+        }
+    }
+
+    private fun resolveUncached(
+        hostname: String,
+        cacheKey: String,
+        generationAtStart: Long
+    ): List<InetAddress> {
+        val aaaaCancelled = AtomicBoolean(false)
+        val aaaaSocketRef = AtomicReference<DatagramSocket?>(null)
+        val aaaaFuture = queryExecutor.submit<Result<DnsLookupResult>> {
+            runCatching { lookup(hostname, 28, 0, aaaaCancelled, aaaaSocketRef) }
+        }
+        val aResult = runCatching { lookup(hostname, 1, 0, null, null) }
 
         val addresses = mutableListOf<InetAddress>()
         var minTtlSeconds: Long? = null
@@ -83,10 +152,14 @@ internal class NetworkRouteDns(
             val waitMs = if (addresses.isNotEmpty()) aaaaGraceTimeoutMs else FULL_QUERY_TIMEOUT_MS
             aaaaFuture.get(waitMs, TimeUnit.MILLISECONDS)
         } catch (_: TimeoutException) {
+            aaaaCancelled.set(true)
+            aaaaSocketRef.getAndSet(null)?.close()
             aaaaFuture.cancel(true)
             null
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
+            aaaaCancelled.set(true)
+            aaaaSocketRef.getAndSet(null)?.close()
             aaaaFuture.cancel(true)
             null
         } catch (error: ExecutionException) {
@@ -109,20 +182,32 @@ internal class NetworkRouteDns(
         val distinct = addresses.distinct()
         val ttlSeconds = (minTtlSeconds ?: MIN_TTL_SECONDS).coerceIn(MIN_TTL_SECONDS, MAX_TTL_SECONDS)
         val expiresAtMs = clockMs() + ttlSeconds * 1_000L
-        synchronized(cache) {
-            cache[cacheKey] = CachedEntry(distinct, expiresAtMs)
+        if (cacheGeneration.get() == generationAtStart) {
+            synchronized(cache) {
+                if (cacheGeneration.get() == generationAtStart) {
+                    cache[cacheKey] = CachedEntry(distinct, expiresAtMs)
+                }
+            }
         }
         return distinct
     }
 
-    private fun lookup(hostname: String, type: Int, depth: Int): DnsLookupResult {
+    private fun lookup(
+        hostname: String,
+        type: Int,
+        depth: Int,
+        cancelled: AtomicBoolean?,
+        activeSocketRef: AtomicReference<DatagramSocket?>?
+    ): DnsLookupResult {
         if (depth > 8) throw IOException("DNS CNAME chain too long")
+        if (cancelled?.get() == true) throw IOException("DNS query cancelled")
+        val asciiHostname = java.net.IDN.toASCII(hostname).trimEnd('.').lowercase(Locale.ROOT)
         val id = random.nextInt(65536)
         val query = ByteArrayOutputStream().also { bytes ->
             DataOutputStream(bytes).apply {
                 writeShort(id); writeShort(0x0100); writeShort(1)
                 repeat(3) { writeShort(0) }
-                java.net.IDN.toASCII(hostname).trimEnd('.').split('.').forEach { label ->
+                asciiHostname.split('.').forEach { label ->
                     val encoded = label.toByteArray(Charsets.US_ASCII)
                     if (encoded.size !in 1..63) throw IOException("Invalid DNS label")
                     writeByte(encoded.size); write(encoded)
@@ -131,15 +216,22 @@ internal class NetworkRouteDns(
             }
         }.toByteArray()
         var response = DatagramSocket().use { socket ->
-            socket.soTimeout = SOCKET_TIMEOUT_MS
-            socket.connect(endpoint)
-            socket.send(DatagramPacket(query, query.size))
-            val packet = DatagramPacket(ByteArray(UDP_BUFFER_SIZE), UDP_BUFFER_SIZE)
-            socket.receive(packet)
-            packet.data.copyOf(packet.length)
+            activeSocketRef?.set(socket)
+            try {
+                if (cancelled?.get() == true) throw IOException("DNS query cancelled")
+                socket.soTimeout = SOCKET_TIMEOUT_MS
+                socket.connect(endpoint)
+                socket.send(DatagramPacket(query, query.size))
+                val packet = DatagramPacket(ByteArray(UDP_BUFFER_SIZE), UDP_BUFFER_SIZE)
+                socket.receive(packet)
+                packet.data.copyOf(packet.length)
+            } finally {
+                activeSocketRef?.compareAndSet(socket, null)
+            }
         }
         if (response.size < 12 || unsignedShort(response, 0) != id) throw IOException("Invalid DNS response")
         if (unsignedShort(response, 2) and 0x0200 != 0) {
+            if (cancelled?.get() == true) throw IOException("DNS query cancelled")
             response = Socket(Proxy.NO_PROXY).use { socket ->
                 socket.connect(endpoint, SOCKET_TIMEOUT_MS); socket.soTimeout = SOCKET_TIMEOUT_MS
                 DataOutputStream(socket.getOutputStream()).apply { writeShort(query.size); write(query); flush() }
@@ -179,7 +271,7 @@ internal class NetworkRouteDns(
             }
             cursor = start + length
         }
-        var canonical = hostname.trimEnd('.').lowercase(Locale.ROOT)
+        var canonical = asciiHostname
         val owners = mutableSetOf(canonical)
         var minTtl: Long? = null
         repeat(8) {
@@ -193,8 +285,8 @@ internal class NetworkRouteDns(
             minTtl = minNullable(minTtl, record.ttlSeconds)
             InetAddress.getByAddress(hostname, record.bytes)
         }
-        return if (addresses.isEmpty() && canonical != hostname.trimEnd('.').lowercase(Locale.ROOT)) {
-            val followed = lookup(canonical, type, depth + 1)
+        return if (addresses.isEmpty() && canonical != asciiHostname) {
+            val followed = lookup(canonical, type, depth + 1, cancelled, activeSocketRef)
             DnsLookupResult(
                 addresses = followed.addresses,
                 minTtlSeconds = minNullable(minTtl, followed.minTtlSeconds)
@@ -260,11 +352,18 @@ internal class NetworkRouteDns(
         const val MAX_CACHE_ENTRIES = 128
         const val MIN_TTL_SECONDS = 30L
         const val MAX_TTL_SECONDS = 300L
+        const val MAX_DNS_THREADS = 4
 
         val ipv4LiteralRegex = Regex("[0-9.]+")
         val random = SecureRandom()
-        val queryExecutor = Executors.newCachedThreadPool { runnable ->
+        val queryExecutor = ThreadPoolExecutor(
+            MAX_DNS_THREADS,
+            MAX_DNS_THREADS,
+            30L,
+            TimeUnit.SECONDS,
+            LinkedBlockingQueue()
+        ) { runnable ->
             Thread(runnable, "NetworkRouteDns").apply { isDaemon = true }
-        }
+        }.apply { allowCoreThreadTimeOut(true) }
     }
 }

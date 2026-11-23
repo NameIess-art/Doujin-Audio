@@ -67,10 +67,20 @@ DWORD BlendAndScalePremul(DWORD outer, DWORD inner, double inner_cov, double out
 }
 }
 
-SubtitleWindow::SubtitleWindow(HINSTANCE instance) {
+SubtitleWindow::SubtitleWindow(HINSTANCE instance) : instance_(instance) {}
+SubtitleWindow::~SubtitleWindow() {
+  if (window_) {
+    SavePlacement();
+    DestroyWindow(window_);
+  }
+  ReleaseSurface();
+  if (font_) DeleteObject(font_);
+}
+bool SubtitleWindow::EnsureWindow() {
+  if (window_) return true;
   WNDCLASSW wc{};
   wc.lpfnWndProc = WndProc;
-  wc.hInstance = instance;
+  wc.hInstance = instance_;
   wc.lpszClassName = L"DoujinAudioSubtitle";
   wc.hCursor = LoadCursor(nullptr, IDC_SIZEALL);
   RegisterClassW(&wc);
@@ -93,18 +103,11 @@ SubtitleWindow::SubtitleWindow(HINSTANCE instance) {
   window_ = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED,
       wc.lpszClassName, L"Doujin Audio subtitles", WS_POPUP,
       initial_x, initial_y, initial_width, initial_height,
-      nullptr, nullptr, instance, this);
+      nullptr, nullptr, instance_, this);
+  return window_ != nullptr;
 }
-SubtitleWindow::~SubtitleWindow() {
-  if (window_) {
-    SavePlacement();
-    DestroyWindow(window_);
-  }
-  ReleaseSurface();
-  if (font_) DeleteObject(font_);
-}
-void SubtitleWindow::SavePlacement() const {
-  if (!window_) return;
+void SubtitleWindow::SavePlacement() {
+  if (!window_ || !placement_dirty_) return;
   RECT bounds{};
   if (!GetWindowRect(window_, &bounds)) return;
   SubtitleWindowPlacement placement{};
@@ -118,6 +121,7 @@ void SubtitleWindow::SavePlacement() const {
     RegSetValueExW(key, L"SubtitleWindowPlacement", 0, REG_BINARY,
                    reinterpret_cast<const BYTE*>(&placement), sizeof(placement));
     RegCloseKey(key);
+    placement_dirty_ = false;
   }
 }
 void SubtitleWindow::LoadPlacement(LONG& x, LONG& y, LONG& width, LONG& height) const {
@@ -149,14 +153,16 @@ void SubtitleWindow::LoadPlacement(LONG& x, LONG& y, LONG& width, LONG& height) 
   y = std::clamp<LONG>(saved.y, area.top, max_y);
 }
 void SubtitleWindow::Show(bool visible) {
-  if (!window_) return;
-  if (visible && !IsWindowVisible(window_)) FitText();
-  ShowWindow(window_, visible ? SW_SHOWNOACTIVATE : SW_HIDE);
   if (visible) {
+    if (!EnsureWindow()) return;
+    if (!IsWindowVisible(window_)) FitText();
+    ShowWindow(window_, SW_SHOWNOACTIVATE);
     InvalidateRect(window_, nullptr, FALSE);
-    UpdateWindow(window_);
   } else {
+    if (!window_) return;
+    ShowWindow(window_, SW_HIDE);
     hovered_ = false;
+    surface_uploaded_ = false;
     ReleaseSurface();
     std::vector<DWORD>().swap(background_pixels_);
     background_dirty_ = true;
@@ -165,18 +171,16 @@ void SubtitleWindow::Show(bool visible) {
   }
 }
 void SubtitleWindow::Update(const std::string& text) {
-  if (!window_) return;
   const std::wstring next(winrt::to_hstring(text));
   if (text_ == next) return;
   text_ = next;
   measured_text_width_ = 0;
   content_dirty_ = true;
-  if (!IsWindowVisible(window_)) return;
+  if (!window_ || !IsWindowVisible(window_)) return;
   FitText();
   InvalidateRect(window_, nullptr, FALSE);
 }
 void SubtitleWindow::Style(const flutter::EncodableMap& style) {
-  if (!window_) return;
   const auto old_family = family_;
   const auto old_size = font_size_, old_border = border_depth_;
   const auto old_text = text_color_, old_background = background_;
@@ -203,7 +207,7 @@ void SubtitleWindow::Style(const flutter::EncodableMap& style) {
   if (!layout_changed && !background_changed && old_text == text_color_) return;
   background_dirty_ = background_dirty_ || background_changed;
   content_dirty_ = true;
-  if (!IsWindowVisible(window_)) return;
+  if (!window_ || !IsWindowVisible(window_)) return;
   if (layout_changed) FitText();
   InvalidateRect(window_, nullptr, FALSE);
 }
@@ -232,7 +236,13 @@ void SubtitleWindow::FitText() {
     ReleaseDC(window_, dc);
   }
   MONITORINFO monitor{sizeof(MONITORINFO)};
-  GetMonitorInfo(MonitorFromWindow(window_, MONITOR_DEFAULTTONEAREST), &monitor);
+  const HMONITOR target_monitor =
+      MonitorFromWindow(window_, MONITOR_DEFAULTTONEAREST);
+  if (!target_monitor || !GetMonitorInfo(target_monitor, &monitor) ||
+      monitor.rcWork.bottom <= monitor.rcWork.top) {
+    fitting_text_ = false;
+    return;
+  }
   const auto& area = monitor.rcWork;
   const int height = std::min<LONG>(area.bottom - area.top,
       std::max<LONG>(static_cast<LONG>(50 * scale),
@@ -293,6 +303,7 @@ void SubtitleWindow::ReleaseSurface() {
   pixels_ = nullptr;
   surface_width_ = surface_rows_ = 0;
   surface_capacity_width_ = surface_capacity_rows_ = 0;
+  surface_uploaded_ = false;
 }
 bool SubtitleWindow::EnsureSurface(HDC screen, int width, int rows) {
   const auto next_capacity = [this](int size, int capacity, int min_shrink) {
@@ -301,13 +312,13 @@ bool SubtitleWindow::EnsureSurface(HDC screen, int width, int rows) {
       // DIB space so most sizes only change the painted rectangle.
       return std::max(size, capacity + std::max(64, capacity / 4));
     }
-    if (!resizing_ && capacity > min_shrink && size * 2 < capacity) {
-      return size;
+    if (!resizing_ && capacity > min_shrink && size * 4 < capacity) {
+      return size * 2;
     }
     return capacity;
   };
-  const int capacity_width = next_capacity(width, surface_capacity_width_, 256);
-  const int capacity_rows = next_capacity(rows, surface_capacity_rows_, 128);
+  const int capacity_width = next_capacity(width, surface_capacity_width_, 512);
+  const int capacity_rows = next_capacity(rows, surface_capacity_rows_, 384);
   const bool realloc_output = !output_dc_ || !output_bitmap_
       || capacity_width != surface_capacity_width_
       || capacity_rows != surface_capacity_rows_;
@@ -324,6 +335,7 @@ bool SubtitleWindow::EnsureSurface(HDC screen, int width, int rows) {
     pixels_ = nullptr;
     surface_width_ = surface_rows_ = 0;
     surface_capacity_width_ = surface_capacity_rows_ = 0;
+    surface_uploaded_ = false;
 
     BITMAPINFO info{};
     info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
@@ -350,11 +362,13 @@ bool SubtitleWindow::EnsureSurface(HDC screen, int width, int rows) {
   }
   surface_width_ = width;
   surface_rows_ = rows;
-  const size_t pixel_count = static_cast<size_t>(width) * rows;
-  if (!resizing_ && background_pixels_.capacity() > pixel_count * 2) {
-    std::vector<DWORD>(pixel_count).swap(background_pixels_);
-  } else {
-    background_pixels_.resize(pixel_count);
+  if (!resizing_) {
+    const size_t pixel_count = static_cast<size_t>(width) * rows;
+    if (background_pixels_.capacity() > pixel_count * 4) {
+      std::vector<DWORD>(pixel_count).swap(background_pixels_);
+    } else {
+      background_pixels_.resize(pixel_count);
+    }
   }
   background_dirty_ = content_dirty_ = true;
   return true;
@@ -364,13 +378,13 @@ bool SubtitleWindow::EnsureMaskSurface(HDC screen, int width, int rows) {
     if (size > capacity) {
       return std::max(size, capacity + std::max(32, capacity / 4));
     }
-    if (!resizing_ && capacity > min_shrink && size * 2 < capacity) {
-      return size;
+    if (!resizing_ && capacity > min_shrink && size * 4 < capacity) {
+      return size * 2;
     }
     return capacity;
   };
-  const int capacity_width = next_capacity(width, mask_capacity_width_, 128);
-  const int capacity_rows = next_capacity(rows, mask_capacity_rows_, 64);
+  const int capacity_width = next_capacity(width, mask_capacity_width_, 256);
+  const int capacity_rows = next_capacity(rows, mask_capacity_rows_, 256);
   if (mask_dc_ && mask_bitmap_
       && capacity_width == mask_capacity_width_
       && capacity_rows == mask_capacity_rows_) {
@@ -401,7 +415,7 @@ bool SubtitleWindow::EnsureMaskSurface(HDC screen, int width, int rows) {
   mask_capacity_rows_ = capacity_rows;
   return true;
 }
-void SubtitleWindow::PaintBackground(int width, int rows, double scale) {
+void SubtitleWindow::PaintBackground(DWORD* target, size_t stride, int width, int rows, double scale) {
   const bool fully_transparent_hover =
       hovered_ && opacity_ == 0 && border_depth_ <= 0.0;
   // Keep alpha >= 1 inside the rounded rectangle even at 0% opacity so
@@ -427,7 +441,7 @@ void SubtitleWindow::PaintBackground(int width, int rows, double scale) {
   const int side_columns = std::min(width / 2, edge_span);
   const int top_rows = std::min(rows / 2, edge_span);
   const auto row_at = [&](int y) {
-    return background_pixels_.data() + static_cast<size_t>(y) * width;
+    return target + static_cast<size_t>(y) * stride;
   };
   const auto paint_row = [&](int y) {
     auto* row = row_at(y);
@@ -475,19 +489,40 @@ void SubtitleWindow::Paint(HDC screen) {
     surface_dpi_ = dpi;
     background_dirty_ = content_dirty_ = true;
   }
-  const double scale = dpi / 96.0;
   const bool background_changed = background_dirty_;
-  if (background_changed) PaintBackground(width, rows, scale);
-  if (content_dirty_) {
-    const size_t stride = surface_capacity_width_;
-    // Only the previous caption's clipped text and shadow can differ from the
-    // cached background when the window geometry and appearance are unchanged.
-    const RECT restore = background_changed ? rect : painted_text_bounds_;
-    if (restore.right > restore.left && restore.bottom > restore.top) {
-      for (LONG y = restore.top; y < restore.bottom; ++y) {
-        const auto* background_row = background_pixels_.data() + static_cast<size_t>(y) * width;
-        std::copy_n(background_row + restore.left, restore.right - restore.left,
-            pixels_ + y * stride + restore.left);
+  const bool was_content_dirty = content_dirty_;
+  if (!background_changed && !was_content_dirty && surface_uploaded_) return;
+  const double scale = dpi / 96.0;
+  const size_t stride = surface_capacity_width_;
+  bool background_painted_directly = false;
+  if (resizing_) {
+    // During live resize, avoid populating and copying background_pixels_ on
+    // every drag frame; paint straight into the DIB and rebuild the cache once
+    // in WM_EXITSIZEMOVE.
+    if (background_changed || was_content_dirty) {
+      PaintBackground(pixels_, stride, width, rows, scale);
+      background_painted_directly = true;
+    }
+  } else if (background_changed) {
+    const size_t pixel_count = static_cast<size_t>(width) * rows;
+    if (background_pixels_.capacity() > pixel_count * 4) {
+      std::vector<DWORD>(pixel_count).swap(background_pixels_);
+    } else if (background_pixels_.size() != pixel_count) {
+      background_pixels_.resize(pixel_count);
+    }
+    PaintBackground(background_pixels_.data(), width, width, rows, scale);
+  }
+  if (was_content_dirty || (background_changed && !background_painted_directly)) {
+    if (!background_painted_directly) {
+      // Only the previous caption's clipped text and shadow can differ from the
+      // cached background when the window geometry and appearance are unchanged.
+      const RECT restore = background_changed ? rect : painted_text_bounds_;
+      if (restore.right > restore.left && restore.bottom > restore.top) {
+        for (LONG y = restore.top; y < restore.bottom; ++y) {
+          const auto* background_row = background_pixels_.data() + static_cast<size_t>(y) * width;
+          std::copy_n(background_row + restore.left, restore.right - restore.left,
+              pixels_ + y * stride + restore.left);
+        }
       }
     }
     painted_text_bounds_ = {};
@@ -567,8 +602,10 @@ void SubtitleWindow::Paint(HDC screen) {
   RECT bounds; GetWindowRect(window_, &bounds);
   POINT position{bounds.left, bounds.top}, source{}; SIZE size{width, rows};
   BLENDFUNCTION blend{AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
-  UpdateLayeredWindow(window_, screen, &position, &size, output_dc_, &source,
-      0, &blend, ULW_ALPHA);
+  if (UpdateLayeredWindow(window_, screen, &position, &size, output_dc_, &source,
+      0, &blend, ULW_ALPHA)) {
+    surface_uploaded_ = true;
+  }
 }
 LRESULT CALLBACK SubtitleWindow::WndProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
   auto self = reinterpret_cast<SubtitleWindow*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
@@ -621,6 +658,8 @@ LRESULT CALLBACK SubtitleWindow::WndProc(HWND hwnd, UINT message, WPARAM wp, LPA
   }
   if (message == WM_EXITSIZEMOVE) {
     self->resizing_ = false;
+    self->background_dirty_ = true;
+    self->content_dirty_ = true;
     self->SavePlacement();
     if (IsWindowVisible(hwnd)) {
       self->FitText();
@@ -644,8 +683,16 @@ LRESULT CALLBACK SubtitleWindow::WndProc(HWND hwnd, UINT message, WPARAM wp, LPA
     }
     return 0;
   }
+  if (message == WM_MOVE) {
+    if (IsWindowVisible(hwnd) && !self->fitting_text_) {
+      self->placement_dirty_ = true;
+    }
+  }
   if (message == WM_SIZE) {
     if (self->dpi_changing_) self->sized_during_dpi_change_ = true;
+    if (IsWindowVisible(hwnd) && !self->fitting_text_) {
+      self->placement_dirty_ = true;
+    }
     self->content_dirty_ = true;
     if (IsWindowVisible(hwnd)) {
       if (!self->resizing_) self->FitText();

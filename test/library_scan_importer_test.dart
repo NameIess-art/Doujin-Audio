@@ -210,6 +210,8 @@ class _Catalog implements LibraryCatalog {
   @override
   bool isScanning = true;
   @override
+  Future<void> get scanIdle => Future<void>.value();
+  @override
   int scanFoundCount = 0;
   @override
   int scanDuplicateCount = 0;

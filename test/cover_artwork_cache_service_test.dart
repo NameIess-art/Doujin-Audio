@@ -2540,7 +2540,7 @@ void main() {
   );
 
   test(
-    'video cover follows own-cover preference for a selected folder cover',
+    'imported video cover follows own-cover preference for its parent folder',
     () async {
       final directory = await Directory.systemTemp.createTemp(
         'cover_cache_video_preference_',
@@ -2548,15 +2548,19 @@ void main() {
       addTearDown(() async {
         if (await directory.exists()) await directory.delete(recursive: true);
       });
-      final videoPath = '${directory.path}${Platform.pathSeparator}video.mp4';
-      final folderCover = '${directory.path}${Platform.pathSeparator}cover.jpg';
+      final folder = await Directory(
+        '${directory.path}${Platform.pathSeparator}clips',
+      ).create();
+      final videoPath = '${folder.path}${Platform.pathSeparator}video.mp4';
+      final folderCover = '${folder.path}${Platform.pathSeparator}cover.jpg';
       const videoFrame = '/cache/video-frame.image';
       await File(videoPath).writeAsBytes(<int>[1]);
       await File(folderCover).writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
 
       final track = _track(
         path: videoPath,
-        groupKey: directory.path,
+        groupKey: '__single_files__',
+        isSingle: true,
         isVideo: true,
       );
       final library = LibraryService()
@@ -2573,7 +2577,7 @@ void main() {
         preferEmbeddedCover: () => preferEmbedded,
       );
 
-      await cache.setFolderCoverSelection(directory.path, folderCover);
+      await cache.setFolderCoverSelection(folder.path, folderCover);
 
       expect(await cache.futureForTrack(track), videoFrame);
       expect(await cache.futureForPlaybackTrack(track), videoFrame);

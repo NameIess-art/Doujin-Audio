@@ -5,6 +5,8 @@ abstract final class PathMatcher {
   static final path.Context _windowsContext = path.Context(
     style: path.Style.windows,
   );
+  static final int _filePrefixHash = _hashSeed('file:');
+  static final int _windowsPrefixHash = _hashSeed('windows:');
 
   static bool _hasHttpSchemePrefix(String value) {
     final len = value.length;
@@ -58,6 +60,7 @@ abstract final class PathMatcher {
       _hasHttpSchemePrefix(value) && Uri.tryParse(value) != null;
 
   static String safeDecodeComponent(String value) {
+    if (!value.contains('%')) return value;
     final sanitized = value.replaceAll(_invalidPercentEscape, '%25');
     try {
       return Uri.decodeComponent(sanitized);
@@ -226,6 +229,190 @@ abstract final class PathMatcher {
     }
 
     return null;
+  }
+
+  static int _hashCombine(int hash, int codeUnit) {
+    hash = 0x1fffffff & (hash + codeUnit);
+    hash = 0x1fffffff & (hash + ((0x0007ffff & hash) << 10));
+    return hash ^ (hash >> 6);
+  }
+
+  static int _hashFinish(int hash) {
+    hash = 0x1fffffff & (hash + ((0x03ffffff & hash) << 3));
+    hash = hash ^ (hash >> 11);
+    return 0x1fffffff & (hash + ((0x00003fff & hash) << 15));
+  }
+
+  static int _hashSeed(String prefix) {
+    var hash = 0;
+    for (var i = 0; i < prefix.length; i++) {
+      hash = _hashCombine(hash, prefix.codeUnitAt(i));
+    }
+    return hash;
+  }
+
+  static int _hashString(String value) {
+    var hash = 0;
+    for (var i = 0; i < value.length; i++) {
+      hash = _hashCombine(hash, value.codeUnitAt(i));
+    }
+    return _hashFinish(hash);
+  }
+
+  /// Classifies clean absolute POSIX or Windows paths without allocating.
+  ///
+  /// Returns `-1` when normalization or Unicode case-folding fallback is needed.
+  /// Otherwise returns `(effectiveEnd << 1) | kind`, where `kind == 0` is POSIX
+  /// (`file:`) and `kind == 1` is Windows (`windows:`).
+  static int _classifyFastEquivalence(String value) {
+    final len = value.length;
+    if (len == 0) return -1;
+    final c0 = value.codeUnitAt(0);
+
+    // Clean POSIX absolute paths `/...` (not starting with `//`).
+    if (c0 == 0x2F) {
+      if (len == 1) return 1 << 1;
+      if (value.codeUnitAt(1) == 0x2F) return -1;
+      final effectiveEnd = value.codeUnitAt(len - 1) == 0x2F ? len - 1 : len;
+      if (effectiveEnd <= 1) return -1;
+      var segStart = 1;
+      for (var i = 1; i < effectiveEnd; i++) {
+        final c = value.codeUnitAt(i);
+        if (c == 0x5C) return -1;
+        if (c == 0x2F) {
+          final segLen = i - segStart;
+          if (segLen == 0 ||
+              (segLen == 1 && value.codeUnitAt(segStart) == 0x2E) ||
+              (segLen == 2 &&
+                  value.codeUnitAt(segStart) == 0x2E &&
+                  value.codeUnitAt(segStart + 1) == 0x2E)) {
+            return -1;
+          }
+          segStart = i + 1;
+        }
+      }
+      final lastLen = effectiveEnd - segStart;
+      if (lastLen == 0 ||
+          (lastLen == 1 && value.codeUnitAt(segStart) == 0x2E) ||
+          (lastLen == 2 &&
+              value.codeUnitAt(segStart) == 0x2E &&
+              value.codeUnitAt(segStart + 1) == 0x2E)) {
+        return -1;
+      }
+      return effectiveEnd << 1;
+    }
+
+    // Clean Windows drive paths `X:\...` or `X:/...`.
+    if (len >= 3 &&
+        value.codeUnitAt(1) == 0x3A &&
+        ((c0 >= 0x41 && c0 <= 0x5A) || (c0 >= 0x61 && c0 <= 0x7A))) {
+      final c2 = value.codeUnitAt(2);
+      if (c2 != 0x5C && c2 != 0x2F) return -1;
+      if (len == 3) return (3 << 1) | 1;
+      final lastChar = value.codeUnitAt(len - 1);
+      final effectiveEnd = (lastChar == 0x5C || lastChar == 0x2F)
+          ? len - 1
+          : len;
+      if (effectiveEnd <= 3) return -1;
+      var segStart = 3;
+      for (var i = 3; i < effectiveEnd; i++) {
+        final c = value.codeUnitAt(i);
+        // Non-ASCII characters outside CJK/Hangul may fold under toLowerCase().
+        if (c >= 0x80 &&
+            !(c >= 0x3000 && c <= 0x9FFF) &&
+            !(c >= 0xAC00 && c <= 0xD7AF)) {
+          return -1;
+        }
+        if (c == 0x5C || c == 0x2F) {
+          final segLen = i - segStart;
+          if (segLen == 0 ||
+              (segLen == 1 && value.codeUnitAt(segStart) == 0x2E) ||
+              (segLen == 2 &&
+                  value.codeUnitAt(segStart) == 0x2E &&
+                  value.codeUnitAt(segStart + 1) == 0x2E)) {
+            return -1;
+          }
+          segStart = i + 1;
+        }
+      }
+      final lastLen = effectiveEnd - segStart;
+      if (lastLen == 0 ||
+          (lastLen == 1 && value.codeUnitAt(segStart) == 0x2E) ||
+          (lastLen == 2 &&
+              value.codeUnitAt(segStart) == 0x2E &&
+              value.codeUnitAt(segStart + 1) == 0x2E)) {
+        return -1;
+      }
+      return (effectiveEnd << 1) | 1;
+    }
+
+    return -1;
+  }
+
+  /// Allocation-free hash consistent with [equivalenceEquals] and [equivalenceKey].
+  static int equivalenceHashCode(String value) {
+    final fast = _classifyFastEquivalence(value);
+    if (fast >= 0) {
+      final end = fast >> 1;
+      if ((fast & 1) == 0) {
+        var hash = _filePrefixHash;
+        for (var i = 0; i < end; i++) {
+          hash = _hashCombine(hash, value.codeUnitAt(i));
+        }
+        return _hashFinish(hash);
+      }
+      var hash = _windowsPrefixHash;
+      for (var i = 0; i < end; i++) {
+        var c = value.codeUnitAt(i);
+        if (c == 0x5C) {
+          c = 0x2F;
+        } else if (c >= 0x41 && c <= 0x5A) {
+          c += 0x20;
+        }
+        hash = _hashCombine(hash, c);
+      }
+      return _hashFinish(hash);
+    }
+    return _hashString(equivalenceKey(value));
+  }
+
+  /// Allocation-free equivalence check matching `equivalenceKey(first) == equivalenceKey(second)`.
+  static bool equivalenceEquals(String first, String second) {
+    if (identical(first, second)) return true;
+    final firstFast = _classifyFastEquivalence(first);
+    final secondFast = _classifyFastEquivalence(second);
+    if (firstFast >= 0 && secondFast >= 0) {
+      final kind = firstFast & 1;
+      if (kind != (secondFast & 1)) return false;
+      final end = firstFast >> 1;
+      if (end != (secondFast >> 1)) return false;
+      if (kind == 0) {
+        if (end == first.length && end == second.length) {
+          return first == second;
+        }
+        for (var i = 0; i < end; i++) {
+          if (first.codeUnitAt(i) != second.codeUnitAt(i)) return false;
+        }
+        return true;
+      }
+      for (var i = 0; i < end; i++) {
+        var a = first.codeUnitAt(i);
+        if (a == 0x5C) {
+          a = 0x2F;
+        } else if (a >= 0x41 && a <= 0x5A) {
+          a += 0x20;
+        }
+        var b = second.codeUnitAt(i);
+        if (b == 0x5C) {
+          b = 0x2F;
+        } else if (b >= 0x41 && b <= 0x5A) {
+          b += 0x20;
+        }
+        if (a != b) return false;
+      }
+      return true;
+    }
+    return equivalenceKey(first) == equivalenceKey(second);
   }
 
   static String parentEquivalenceKey(String value) {

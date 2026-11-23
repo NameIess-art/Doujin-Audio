@@ -17,21 +17,23 @@ class _AsmrDownloadProgressInlineButton extends ConsumerWidget {
       padding: const EdgeInsets.only(left: 8),
       child: HeaderFloatingButton(
         child: IconButton(
-          icon: Stack(
-            alignment: Alignment.center,
-            children: [
-              const Icon(Icons.downloading_rounded),
-              if (state.progress != null)
-                SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(
-                    value: state.progress,
-                    strokeWidth: 2,
-                    color: Theme.of(context).colorScheme.primary,
+          icon: RepaintBoundary(
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                const Icon(Icons.downloading_rounded),
+                if (state.progress != null)
+                  SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      value: state.progress,
+                      strokeWidth: 2,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
           tooltip: i18n.tr('downloads'),
           onPressed: () {

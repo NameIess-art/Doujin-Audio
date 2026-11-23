@@ -25,6 +25,54 @@ final class PlaybackNativeSnapshotApplication {
 }
 
 extension PlaybackNativeStateCoordinator on PlaybackFacade {
+  bool _isResumeTarget(MapEntry<String, String> target) {
+    final session = _service.sessions[target.key];
+    return session != null &&
+        session.currentTrackPath.isNotEmpty &&
+        PathMatcher.equalsNormalized(session.currentTrackPath, target.value) &&
+        session.state.processingState != ProcessingState.completed;
+  }
+
+  Map<String, String> _captureActivePlayback() => {
+    for (final session in _service.sessions.values)
+      if (_isPlaybackActive(session) &&
+          session.currentTrackPath.isNotEmpty &&
+          session.state.processingState != ProcessingState.completed)
+        session.id: session.currentTrackPath,
+  };
+
+  Future<bool> _resumePlaybackBatch(PlaybackCommandPort commands) async {
+    final sequence = _recordedPauseSequence;
+    final results = await Future.wait(
+      _resumeBatch.entries.where(_isResumeTarget).toList().map((target) async {
+        final session = _service.sessions[target.key]!;
+        if (_isPlaybackActive(session)) return null;
+        session.lastPlayedAt = DateTime.now();
+        try {
+          if (await _startPausedSession(session, commands)) return null;
+        } catch (error, stackTrace) {
+          AppLogService.error(
+            'resume_playback_failed sessionId=${session.id}',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        }
+        return isRegisteredSession(session) ? target : null;
+      }),
+    );
+    final failed = results.whereType<MapEntry<String, String>>().where(
+      (target) =>
+          _isResumeTarget(target) &&
+          !_isPlaybackActive(_service.sessions[target.key]!),
+    );
+    final retryTargets = Map<String, String>.fromEntries(failed);
+    if (!_disposed && sequence == _recordedPauseSequence) {
+      _resumeRetryTargets = retryTargets;
+      _scheduleResumeBatch(Map.of(retryTargets));
+    }
+    return retryTargets.isEmpty;
+  }
+
   Future<void> _reconcileAudioDeviceDisconnection() async {
     final sequence = ++_pauseSequence;
     final generations = {

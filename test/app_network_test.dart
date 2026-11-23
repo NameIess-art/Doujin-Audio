@@ -82,7 +82,11 @@ void main() {
       await get(second);
       expect(calls, [first, second]);
 
-      elapsed = const Duration(seconds: 4);
+      elapsed = const Duration(seconds: 10);
+      await get(first);
+      expect(calls, [first, second]);
+
+      elapsed = const Duration(seconds: 20);
       await get(first);
       expect(calls, [first, second, first]);
 
@@ -744,6 +748,46 @@ void main() {
       expect(errorCancelCalls, 1);
       errorCompleter.completeError(const SocketException('late failure'));
       await Future<void>.delayed(Duration.zero);
+    },
+  );
+
+  test(
+    'close resets settings so restarting without configure does not fail on cleared DNS resolver',
+    () async {
+      final origin = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => origin.close(force: true));
+      origin.listen((request) async {
+        request.response.write('restarted-ok');
+        await request.response.close();
+      });
+
+      var resolverCreations = 0;
+      await network.close();
+      network = AppNetwork(
+        resolveSystemProxy: (_) async => 'DIRECT',
+        applyNativeRoute: (_, _) async {},
+        createDnsResolver: (address) {
+          resolverCreations++;
+          return DnsServerResolver(address);
+        },
+      );
+      await network.ensureStarted();
+      const customDns = NetworkRouteSettings(customDnsServer: '127.0.0.1');
+      await network.configure(customDns, null);
+      expect(resolverCreations, 1);
+
+      await network.close();
+      await network.ensureStarted();
+
+      final response = await (await proxiedClient().getUrl(
+        Uri.parse('http://127.0.0.1:${origin.port}/check'),
+      )).close();
+      expect(response.statusCode, HttpStatus.ok);
+      expect(await utf8.decodeStream(response), 'restarted-ok');
+
+      // Reconfiguring with the same custom DNS server after close recreates it.
+      await network.configure(customDns, null);
+      expect(resolverCreations, 2);
     },
   );
 }

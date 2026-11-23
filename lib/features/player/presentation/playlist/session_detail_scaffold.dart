@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui show Image, ImageFilter;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -85,10 +86,21 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
   bool _dragDismissClosing = false;
   bool _dragDismissCanStart = false;
   bool _dragDismissInteractionActive = false;
+  SessionDetailRoute? _boundDetailRoute;
 
   SessionDetailRoute? get _detailRoute {
     final route = readAppRoute(context);
     return route is SessionDetailRoute ? route : null;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = _detailRoute;
+    if (!identical(_boundDetailRoute, route)) {
+      _boundDetailRoute?.clearCoverlessDragDismissSlide(_dragOffset);
+      _boundDetailRoute = route;
+    }
   }
 
   @override
@@ -163,6 +175,8 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
 
   @override
   void dispose() {
+    _boundDetailRoute?.clearCoverlessDragDismissSlide(_dragOffset);
+    _boundDetailRoute = null;
     _dragDismissInteractionActive = false;
     UiInteractionCoordinator.instance.cancelInteraction(_dragDismissInteraction);
     _dragResetController.dispose();
@@ -173,6 +187,14 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
     UiInteractionCoordinator.instance.cancelCommit(_subtitlePresenceCommitKey);
     _permissionActionController.dispose();
     super.dispose();
+  }
+
+  bool _shouldAllowDragDismissPointer(PointerEvent event) {
+    return !widget.transitionActive.value &&
+        !_dragDismissClosing &&
+        !widget.segmentPanelExpandedNotifier.value &&
+        !SessionProgressBar.isInteracting &&
+        !SessionProgressBar.isInProgressOrBottomControlsZone(event.position);
   }
 
   void _handleDragDismissStart(DragStartDetails details) {
@@ -253,19 +275,26 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
         (offset > 20 && velocity >= _dragDismissVelocity);
     if (shouldDismiss) {
       _dragDismissClosing = true;
-      final hasCoverFlight = _detailRoute?.canRunCoverExitFlight() ?? false;
-      if (!hasCoverFlight &&
-          !MediaQuery.disableAnimationsOf(context) &&
-          TickerMode.valuesOf(context).enabled) {
+      final detailRoute = _detailRoute;
+      final hasCoverFlight = detailRoute?.canRunCoverExitFlight() ?? false;
+      if (!hasCoverFlight && !MediaQuery.disableAnimationsOf(context)) {
         final targetOffset = math.max(
           offset + 120.0,
           MediaQuery.sizeOf(context).height * 0.45,
         );
-        _dragResetAnimation = Tween<double>(begin: offset, end: targetOffset)
-            .chain(CurveTween(curve: Curves.easeOutCubic))
-            .animate(_dragResetController);
-        _dragResetController.duration = kAppMotionStandard;
-        _dragResetController.forward(from: 0);
+        if (detailRoute != null) {
+          detailRoute.startCoverlessDragDismissSlide(
+            offsetNotifier: _dragOffset,
+            from: offset,
+            to: targetOffset,
+          );
+        } else if (TickerMode.valuesOf(context).enabled) {
+          _dragResetAnimation = Tween<double>(begin: offset, end: targetOffset)
+              .chain(CurveTween(curve: Curves.easeOutCubic))
+              .animate(_dragResetController);
+          _dragResetController.duration = kAppMotionStandard;
+          _dragResetController.forward(from: 0);
+        }
       }
       widget.onClose();
       return;
@@ -403,7 +432,9 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
     );
 
     final track = widget.track;
-    final cs = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
     final library = ref.read(libraryFacadeProvider);
     final allowVerticalDismiss = !isWindows && !isLandscape;
     final content = Material(
@@ -413,6 +444,7 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
         fit: StackFit.expand,
         children: [
           _SessionDetailBlurredCoverBackground(
+            isDark: isDark,
             requestKey: (session.id, track?.path ?? session.currentTrackPath),
             coverPathFuture: coverPathFuture,
             initialCoverPath: widget.initialCoverPath,
@@ -761,19 +793,38 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
         ],
       ),
     );
-    return GestureDetector(
+    return RawGestureDetector(
       behavior: HitTestBehavior.translucent,
-      onVerticalDragStart: allowVerticalDismiss ? _handleDragDismissStart : null,
-      onVerticalDragUpdate:
-          allowVerticalDismiss ? _handleDragDismissUpdate : null,
-      onVerticalDragEnd: allowVerticalDismiss ? _handleDragDismissEnd : null,
-      onVerticalDragCancel:
-          allowVerticalDismiss ? _handleDragDismissCancel : null,
+      gestures: allowVerticalDismiss
+          ? <Type, GestureRecognizerFactory>{
+              _DetailDismissVerticalDragGestureRecognizer:
+                  GestureRecognizerFactoryWithHandlers<
+                    _DetailDismissVerticalDragGestureRecognizer
+                  >(
+                    () => _DetailDismissVerticalDragGestureRecognizer(
+                      shouldAllowPointer: _shouldAllowDragDismissPointer,
+                      debugOwner: this,
+                    ),
+                    (instance) {
+                      instance
+                        ..shouldAllowPointer = _shouldAllowDragDismissPointer
+                        ..onStart = _handleDragDismissStart
+                        ..onUpdate = _handleDragDismissUpdate
+                        ..onEnd = _handleDragDismissEnd
+                        ..onCancel = _handleDragDismissCancel;
+                    },
+                  ),
+            }
+          : const <Type, GestureRecognizerFactory>{},
       child: ValueListenableBuilder<double>(
         valueListenable: _dragOffset,
         // Keep the subtitle scroll position and console state across drags and
-        // orientation changes.
-        child: content,
+        // orientation changes, and cache the full page inside ClipRRect so
+        // animating the drag corner radius never repaints content.
+        child: RepaintBoundary(
+          key: const ValueKey('session_detail_content_cache'),
+          child: content,
+        ),
         builder: (context, offset, child) {
           final effectiveOffset = allowVerticalDismiss ? offset : 0.0;
           final dragFraction = (effectiveOffset / 320.0).clamp(0.0, 1.0);
@@ -811,8 +862,27 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
   }
 }
 
-class _SessionDetailBlurredCoverBackground extends StatelessWidget {
+class _DetailDismissVerticalDragGestureRecognizer
+    extends VerticalDragGestureRecognizer {
+  _DetailDismissVerticalDragGestureRecognizer({
+    required this.shouldAllowPointer,
+    super.debugOwner,
+  });
+
+  bool Function(PointerEvent event) shouldAllowPointer;
+
+  @override
+  bool isPointerAllowed(PointerEvent event) {
+    if (!shouldAllowPointer(event)) {
+      return false;
+    }
+    return super.isPointerAllowed(event);
+  }
+}
+
+class _SessionDetailBlurredCoverBackground extends StatefulWidget {
   const _SessionDetailBlurredCoverBackground({
+    required this.isDark,
     required this.requestKey,
     required this.coverPathFuture,
     required this.initialCoverPath,
@@ -820,12 +890,20 @@ class _SessionDetailBlurredCoverBackground extends StatelessWidget {
     required this.onImageError,
   });
 
+  final bool isDark;
   final Object requestKey;
   final Future<String?> coverPathFuture;
   final String? initialCoverPath;
   final ui.Image? coverPreview;
   final ValueChanged<String>? onImageError;
 
+  @override
+  State<_SessionDetailBlurredCoverBackground> createState() =>
+      _SessionDetailBlurredCoverBackgroundState();
+}
+
+class _SessionDetailBlurredCoverBackgroundState
+    extends State<_SessionDetailBlurredCoverBackground> {
   static final _lightBlur = ui.ImageFilter.blur(
     sigmaX: 18,
     sigmaY: 18,
@@ -837,17 +915,30 @@ class _SessionDetailBlurredCoverBackground extends StatelessWidget {
     tileMode: TileMode.clamp,
   );
 
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final surface = theme.colorScheme.surface;
-    final isDark = theme.brightness == Brightness.dark;
+  Widget? _cachedChild;
 
-    Widget buildBackground(Widget image) => Stack(
+  @override
+  void didUpdateWidget(
+    covariant _SessionDetailBlurredCoverBackground oldWidget,
+  ) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isDark != widget.isDark ||
+        oldWidget.requestKey != widget.requestKey ||
+        oldWidget.coverPathFuture != widget.coverPathFuture ||
+        oldWidget.initialCoverPath != widget.initialCoverPath ||
+        oldWidget.coverPreview != widget.coverPreview ||
+        oldWidget.onImageError != widget.onImageError) {
+      _cachedChild = null;
+    }
+  }
+
+  Widget _buildBackground(Widget image) {
+    final isDark = widget.isDark;
+    return Stack(
       fit: StackFit.expand,
       children: [
         // Isolate the full-screen blur in its own RepaintBoundary so animated
-        // surface color transitions repaint only the cheap tint/gradient layers.
+        // surface color transitions repaint only the cheap tint/gradient veil.
         RepaintBoundary(
           key: const ValueKey('session_detail_blurred_cover_layer'),
           child: ClipRect(
@@ -860,6 +951,62 @@ class _SessionDetailBlurredCoverBackground extends StatelessWidget {
             ),
           ),
         ),
+        const _SessionDetailBackgroundVeil(),
+      ],
+    );
+  }
+
+  Widget _buildPreview(BuildContext context) {
+    final preview = widget.coverPreview;
+    if (preview == null) return const SizedBox.shrink();
+    // The route owns this decoded cover and only supplies it for its track.
+    return _buildBackground(RawImage(image: preview, fit: BoxFit.cover));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _cachedChild ??= Positioned.fill(
+      child: IgnorePointer(
+        child: RepaintBoundary(
+          child: AsyncCoverImage(
+            key: ValueKey(widget.requestKey),
+            future: widget.coverPathFuture,
+            requestKey: widget.requestKey,
+            initialPath: widget.initialCoverPath,
+            fallbackBuilder: _buildPreview,
+            loadingBuilder: _buildPreview,
+            imageBuilder: (_, path) => RetryingFileImage(
+              key: ValueKey(path),
+              path: path,
+              onImageError: widget.onImageError,
+              cacheWidth: 200,
+              useDefaultCacheWidth: false,
+              gaplessPlayback: false,
+              fit: BoxFit.cover,
+              fallbackBuilder: _buildPreview,
+              resolvedFrameBuilder: (context, image, frame, synchronous) =>
+                  frame == null && !synchronous
+                  ? _buildPreview(context)
+                  : _buildBackground(image),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SessionDetailBackgroundVeil extends StatelessWidget {
+  const _SessionDetailBackgroundVeil();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surface = theme.colorScheme.surface;
+    final isDark = theme.brightness == Brightness.dark;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
         ColoredBox(color: surface.withValues(alpha: isDark ? 0.62 : 0.68)),
         DecoratedBox(
           decoration: BoxDecoration(
@@ -876,42 +1023,6 @@ class _SessionDetailBlurredCoverBackground extends StatelessWidget {
           ),
         ),
       ],
-    );
-
-    Widget buildPreview(BuildContext context) {
-      final preview = coverPreview;
-      if (preview == null) return const SizedBox.shrink();
-      // The route owns this decoded cover and only supplies it for its track.
-      return buildBackground(RawImage(image: preview, fit: BoxFit.cover));
-    }
-
-    return Positioned.fill(
-      child: IgnorePointer(
-        child: RepaintBoundary(
-          child: AsyncCoverImage(
-            key: ValueKey(requestKey),
-            future: coverPathFuture,
-            requestKey: requestKey,
-            initialPath: initialCoverPath,
-            fallbackBuilder: buildPreview,
-            loadingBuilder: buildPreview,
-            imageBuilder: (_, path) => RetryingFileImage(
-              key: ValueKey(path),
-              path: path,
-              onImageError: onImageError,
-              cacheWidth: 200,
-              useDefaultCacheWidth: false,
-              gaplessPlayback: false,
-              fit: BoxFit.cover,
-              fallbackBuilder: buildPreview,
-              resolvedFrameBuilder: (context, image, frame, synchronous) =>
-                  frame == null && !synchronous
-                  ? buildPreview(context)
-                  : buildBackground(image),
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

@@ -61,30 +61,39 @@ class _AppDeferredFadeState extends State<AppDeferredFade>
     with SingleTickerProviderStateMixin {
   late bool _visible;
   late bool _retained;
-  late final AnimationController _controller;
-  late final Animation<double> _opacity;
-  late Animation<double> _scale;
+  AnimationController? _controller;
+  Animation<double>? _opacity;
+  Animation<double>? _scale;
   bool _delayComplete = true;
   bool _disableAnimations = false;
   Timer? _timer;
 
-  Animation<double> _buildScaleAnimation() => widget.beginScale == 1
+  Animation<double> _buildScaleAnimation(Animation<double> opacity) =>
+      widget.beginScale == 1
       ? kAlwaysCompleteAnimation
-      : Tween<double>(begin: widget.beginScale, end: 1).animate(_opacity);
+      : Tween<double>(begin: widget.beginScale, end: 1).animate(opacity);
+
+  AnimationController _ensureController({required double initialValue}) {
+    final existing = _controller;
+    if (existing != null) return existing;
+    final controller = AnimationController(
+      vsync: this,
+      duration: widget.fadeInDuration,
+      reverseDuration: kAppFadeDuration,
+      value: initialValue,
+    )..addStatusListener(_handleFadeStatus);
+    _controller = controller;
+    final opacity = controller.drive(CurveTween(curve: kAppFadeCurve));
+    _opacity = opacity;
+    _scale = _buildScaleAnimation(opacity);
+    return controller;
+  }
 
   @override
   void initState() {
     super.initState();
     _visible = widget.visible && widget.waitFor?.isAnimating != true;
     _retained = _visible;
-    _controller = AnimationController(
-      vsync: this,
-      duration: widget.fadeInDuration,
-      reverseDuration: kAppFadeDuration,
-      value: _visible ? 1 : 0,
-    )..addStatusListener(_handleFadeStatus);
-    _opacity = _controller.drive(CurveTween(curve: kAppFadeCurve));
-    _scale = _buildScaleAnimation();
     widget.waitFor?.addStatusListener(_handleMotionStatus);
   }
 
@@ -99,7 +108,7 @@ class _AppDeferredFadeState extends State<AppDeferredFade>
       _delayComplete = true;
       _visible = widget.visible;
       _retained = _visible;
-      _controller.value = _visible ? 1 : 0;
+      _controller?.value = _visible ? 1 : 0;
     }
   }
 
@@ -107,13 +116,13 @@ class _AppDeferredFadeState extends State<AppDeferredFade>
   void didUpdateWidget(AppDeferredFade oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.fadeInDuration != widget.fadeInDuration) {
-      _controller.duration = widget.fadeInDuration;
+      _controller?.duration = widget.fadeInDuration;
       if (_visible && widget.fadeInDuration == Duration.zero) {
-        _controller.value = 1;
+        _controller?.value = 1;
       }
     }
-    if (oldWidget.beginScale != widget.beginScale) {
-      _scale = _buildScaleAnimation();
+    if (oldWidget.beginScale != widget.beginScale && _opacity != null) {
+      _scale = _buildScaleAnimation(_opacity!);
     }
     if (oldWidget.waitFor != widget.waitFor) {
       oldWidget.waitFor?.removeStatusListener(_handleMotionStatus);
@@ -129,7 +138,7 @@ class _AppDeferredFadeState extends State<AppDeferredFade>
       if (_disableAnimations) {
         _visible = widget.visible;
         _retained = _visible;
-        _controller.value = _visible ? 1 : 0;
+        _controller?.value = _visible ? 1 : 0;
       } else if (!_delayComplete) {
         // Material's color transition owns the highlight; no badge ticker is
         // needed while it is running. Cancelling selection cancels this wait.
@@ -151,14 +160,26 @@ class _AppDeferredFadeState extends State<AppDeferredFade>
     if (_visible != widget.visible &&
         _delayComplete &&
         (_disableAnimations || widget.waitFor?.isAnimating != true)) {
+      final previousVisible = _visible;
+      if (_disableAnimations) {
+        setState(() {
+          _visible = widget.visible;
+          _retained = _visible;
+        });
+        _controller?.value = _visible ? 1 : 0;
+        return;
+      }
+      final controller = _ensureController(
+        initialValue: previousVisible ? 1 : 0,
+      );
       setState(() {
         _visible = widget.visible;
         if (_visible) _retained = true;
       });
       if (_visible) {
-        _controller.forward();
+        controller.forward();
       } else {
-        _controller.reverse();
+        controller.reverse();
       }
     }
   }
@@ -173,18 +194,22 @@ class _AppDeferredFadeState extends State<AppDeferredFade>
   void dispose() {
     _timer?.cancel();
     widget.waitFor?.removeStatusListener(_handleMotionStatus);
-    _controller.dispose();
+    _controller?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     if (!_retained) return const SizedBox.shrink();
+    final opacity =
+        _opacity ??
+        (_visible ? kAlwaysCompleteAnimation : kAlwaysDismissedAnimation);
+    final scale = _scale ?? kAlwaysCompleteAnimation;
     final animated = FadeTransition(
-      opacity: _opacity,
+      opacity: opacity,
       child: widget.beginScale == 1
           ? widget.child
-          : ScaleTransition(scale: _scale, child: widget.child),
+          : ScaleTransition(scale: scale, child: widget.child),
     );
     return IgnorePointer(
       ignoring: !widget.visible,
@@ -1015,6 +1040,7 @@ class _HeaderOpacityLayer extends OpacityLayer {
 
 class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
   CurvedAnimation? _motion;
+  final ProxyAnimation _slideProgress = ProxyAnimation();
   late final ValueNotifier<Widget> _pageChild;
   final _headerViewport = GlobalKey();
   late Animation<Offset> _position;
@@ -1023,6 +1049,9 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
   late Animation<double> _combinedHeaderOpacity;
   late Listenable _headerAnimation;
   Animation<double>? _routeSecondaryAnimation;
+  ModalRoute<dynamic>? _trackedRoute;
+  AppPreparedPageRoute<dynamic>? _trackedPreparedRoute;
+  bool _disableAnimations = false;
   late bool _interactive;
   Widget? _transition;
 
@@ -1033,14 +1062,28 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
   Animation<double> get _secondaryAnimation =>
       _routeSecondaryAnimation ?? widget.secondaryAnimation;
 
+  bool get _useLinearSlide =>
+      (_trackedPreparedRoute?._useLinearSlide.value ?? false) ||
+      (_trackedRoute?.popGestureInProgress ?? false);
+
   @override
   void initState() {
     super.initState();
     _pageChild = ValueNotifier(widget.child);
+    _position = _slideProgress.drive(
+      Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero),
+    );
     _updateAnimations();
     _interactive = _isInteractive;
     widget.animation.addStatusListener(_handleStatusChanged);
     _secondaryAnimation.addStatusListener(_handleStatusChanged);
+  }
+
+  void _syncSlideProgress() {
+    final parent = _useLinearSlide ? widget.animation : _motion!;
+    if (!identical(_slideProgress.parent, parent)) {
+      _slideProgress.parent = parent;
+    }
   }
 
   void _updateAnimations() {
@@ -1052,9 +1095,7 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
       curve: kAppSpringCurve,
       reverseCurve: Curves.easeOutCubic.flipped,
     );
-    _position = _motion!.drive(
-      Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero),
-    );
+    _syncSlideProgress();
     _opacity = widget.animation.drive(CurveTween(curve: kAppFadeCurve));
     _updateHeaderAnimation();
   }
@@ -1087,6 +1128,8 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
       oldWidget.animation.removeStatusListener(_handleStatusChanged);
       widget.animation.addStatusListener(_handleStatusChanged);
       _updateAnimations();
+    } else {
+      _syncSlideProgress();
     }
     if (secondaryChanged) {
       oldWidget.secondaryAnimation.removeStatusListener(_handleStatusChanged);
@@ -1106,6 +1149,7 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
   }
 
   void _handleStatusChanged(AnimationStatus _) {
+    _syncSlideProgress();
     final interactive = _isInteractive;
     if (_interactive == interactive) return;
     setState(() {
@@ -1117,24 +1161,46 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    _trackedRoute = route;
+    final preparedRoute = route is AppPreparedPageRoute<dynamic> ? route : null;
+    if (!identical(_trackedPreparedRoute, preparedRoute)) {
+      _trackedPreparedRoute?._useLinearSlide.removeListener(_syncSlideProgress);
+      _trackedPreparedRoute = preparedRoute;
+      preparedRoute?._useLinearSlide.addListener(_syncSlideProgress);
+    }
+    _syncSlideProgress();
+
+    final disableAnimations = MediaQuery.disableAnimationsOf(context);
+    final disableChanged = _disableAnimations != disableAnimations;
+    _disableAnimations = disableAnimations;
+
     // MaterialPageRoute replaces the original secondary animation with a
     // dismissed proxy when it delegates transitions to the incoming route.
     // Read the route's real animation so its header still fades when covered.
     final previousSecondary = _secondaryAnimation;
-    final secondaryAnimation = ModalRoute.of(context)?.secondaryAnimation;
+    final secondaryAnimation = route?.secondaryAnimation;
     _routeSecondaryAnimation = secondaryAnimation;
-    if (identical(previousSecondary, _secondaryAnimation)) return;
-    previousSecondary.removeStatusListener(_handleStatusChanged);
-    _secondaryAnimation.addStatusListener(_handleStatusChanged);
-    _interactive = _isInteractive;
-    _updateHeaderAnimation();
-    _transition = null;
+    final secondaryChanged = !identical(previousSecondary, _secondaryAnimation);
+    if (secondaryChanged) {
+      previousSecondary.removeStatusListener(_handleStatusChanged);
+      _secondaryAnimation.addStatusListener(_handleStatusChanged);
+      _interactive = _isInteractive;
+    }
+    if (secondaryChanged || disableChanged) {
+      _updateHeaderAnimation();
+      _transition = null;
+    }
   }
 
   @override
   void dispose() {
+    _trackedPreparedRoute?._useLinearSlide.removeListener(_syncSlideProgress);
+    _trackedPreparedRoute = null;
+    _trackedRoute = null;
     widget.animation.removeStatusListener(_handleStatusChanged);
     _secondaryAnimation.removeStatusListener(_handleStatusChanged);
+    _slideProgress.parent = null;
     _motion?.dispose();
     _pageChild.dispose();
     super.dispose();
@@ -1479,13 +1545,14 @@ class PlaceholderContentTransition extends StatefulWidget {
 class _PlaceholderContentTransitionState
     extends State<PlaceholderContentTransition>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final Animation<double> _placeholderOpacity;
-  late final Animation<double> _contentOpacity;
+  AnimationController? _controller;
+  Animation<double>? _placeholderOpacity;
+  Animation<double>? _contentOpacity;
   bool _fading = false;
   int _fadeGeneration = 0;
   Widget? _departingContent;
   final _interaction = UiInteractionCoordinator.instance;
+  final Object _interactionSource = Object();
 
   bool get _skipMotion =>
       widget.duration == Duration.zero ||
@@ -1493,16 +1560,18 @@ class _PlaceholderContentTransitionState
       !TickerMode.valuesOf(context).enabled ||
       ModalRoute.isCurrentOf(context) == false;
 
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
+  AnimationController _ensureController({required double initialValue}) {
+    final existing = _controller;
+    if (existing != null) return existing;
+    final controller = AnimationController(
       vsync: this,
       duration: widget.duration,
-      value: widget.showPlaceholder ? 0 : 1,
+      value: initialValue,
     )..addStatusListener(_handleAnimationStatus);
-    _contentOpacity = _controller.drive(CurveTween(curve: widget.curve));
-    _placeholderOpacity = ReverseAnimation(_contentOpacity);
+    _controller = controller;
+    _contentOpacity = controller.drive(CurveTween(curve: widget.curve));
+    _placeholderOpacity = ReverseAnimation(_contentOpacity!);
+    return controller;
   }
 
   void _handleAnimationStatus(AnimationStatus status) {
@@ -1512,7 +1581,7 @@ class _PlaceholderContentTransitionState
             status != AnimationStatus.dismissed)) {
       return;
     }
-    _interaction.endInteraction(_controller);
+    _interaction.endInteraction(_interactionSource);
     setState(() {
       _fading = false;
       _departingContent = null;
@@ -1522,31 +1591,40 @@ class _PlaceholderContentTransitionState
   void _cancelFade() {
     _fadeGeneration++;
     _fading = false;
-    _controller.stop();
-    _controller.value = widget.showPlaceholder ? 0 : 1;
+    _controller?.stop();
+    if (_controller != null) {
+      _controller!.value = widget.showPlaceholder ? 0 : 1;
+    }
     _departingContent = null;
-    _interaction.cancelInteraction(_controller);
+    _interaction.cancelInteraction(_interactionSource);
   }
 
-  void _prepareFade() {
+  void _prepareFade({required bool previousShowPlaceholder}) {
     final generation = ++_fadeGeneration;
     _fading = true;
-    _controller.stop();
+    final controller = _ensureController(
+      initialValue: previousShowPlaceholder ? 0.0 : 1.0,
+    );
+    controller.stop();
     // Mount and lay out the incoming subtree before its first visible tick.
     // Reversing keeps the current opacity instead of restarting either fade.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || generation != _fadeGeneration) return;
-      if (_skipMotion) {
+      final target = widget.showPlaceholder ? 0.0 : 1.0;
+      if (_skipMotion || (controller.value - target).abs() < 1e-6) {
         setState(_cancelFade);
         return;
       }
       if (widget.protectInteraction) {
-        _interaction.beginInteraction(_controller, deferVisualUpdates: true);
+        _interaction.beginInteraction(
+          _interactionSource,
+          deferVisualUpdates: true,
+        );
       }
       if (widget.showPlaceholder) {
-        _controller.reverse();
+        controller.reverse();
       } else {
-        _controller.forward();
+        controller.forward();
       }
     });
   }
@@ -1561,18 +1639,18 @@ class _PlaceholderContentTransitionState
   void didUpdateWidget(covariant PlaceholderContentTransition oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.duration != widget.duration) {
-      _controller.duration = widget.duration;
+      _controller?.duration = widget.duration;
     }
-    if (oldWidget.curve != widget.curve) {
-      _contentOpacity = _controller.drive(CurveTween(curve: widget.curve));
-      _placeholderOpacity = ReverseAnimation(_contentOpacity);
+    if (oldWidget.curve != widget.curve && _controller != null) {
+      _contentOpacity = _controller!.drive(CurveTween(curve: widget.curve));
+      _placeholderOpacity = ReverseAnimation(_contentOpacity!);
     }
     if (oldWidget.showPlaceholder != widget.showPlaceholder) {
       _departingContent = widget.showPlaceholder ? oldWidget.content : null;
       if (_skipMotion) {
         _cancelFade();
       } else {
-        _prepareFade();
+        _prepareFade(previousShowPlaceholder: oldWidget.showPlaceholder);
       }
     }
   }
@@ -1586,14 +1664,24 @@ class _PlaceholderContentTransitionState
   @override
   void dispose() {
     _fadeGeneration++;
-    _interaction.cancelInteraction(_controller);
-    _controller.dispose();
+    _interaction.cancelInteraction(_interactionSource);
+    _controller?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final content = _departingContent ?? widget.content;
+    final placeholderOpacity =
+        _placeholderOpacity ??
+        (widget.showPlaceholder
+            ? kAlwaysCompleteAnimation
+            : kAlwaysDismissedAnimation);
+    final contentOpacity =
+        _contentOpacity ??
+        (widget.showPlaceholder
+            ? kAlwaysDismissedAnimation
+            : kAlwaysCompleteAnimation);
     return Stack(
       fit: widget.fit,
       alignment: widget.alignment,
@@ -1607,7 +1695,7 @@ class _PlaceholderContentTransitionState
               child: ExcludeSemantics(
                 excluding: !widget.showPlaceholder,
                 child: FadeTransition(
-                  opacity: _placeholderOpacity,
+                  opacity: placeholderOpacity,
                   child: widget.placeholder,
                 ),
               ),
@@ -1621,7 +1709,7 @@ class _PlaceholderContentTransitionState
               excluding: widget.showPlaceholder,
               child: ExcludeSemantics(
                 excluding: widget.showPlaceholder,
-                child: FadeTransition(opacity: _contentOpacity, child: content),
+                child: FadeTransition(opacity: contentOpacity, child: content),
               ),
             ),
           ),
@@ -1683,23 +1771,27 @@ class AnimatedTreeReveal extends StatefulWidget {
 
 class _AnimatedTreeRevealState extends State<AnimatedTreeReveal>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final CurvedAnimation _curved;
+  AnimationController? _controller;
+  CurvedAnimation? _curved;
 
-  @override
-  void initState() {
-    super.initState();
-    final initialValue = widget.animateInitial && widget.visible
-        ? 0.0
-        : (widget.visible ? 1.0 : 0.0);
-    _controller = AnimationController(
+  AnimationController _ensureController({required double initialValue}) {
+    final existing = _controller;
+    if (existing != null) return existing;
+    final controller = AnimationController(
       vsync: this,
       duration: kAppFadeDuration,
       value: initialValue,
     );
-    _curved = CurvedAnimation(parent: _controller, curve: kAppFadeCurve);
+    _controller = controller;
+    _curved = CurvedAnimation(parent: controller, curve: kAppFadeCurve);
+    return controller;
+  }
+
+  @override
+  void initState() {
+    super.initState();
     if (widget.animateInitial && widget.visible) {
-      _controller.forward();
+      _ensureController(initialValue: 0.0).forward();
     }
   }
 
@@ -1708,45 +1800,73 @@ class _AnimatedTreeRevealState extends State<AnimatedTreeReveal>
     super.didUpdateWidget(oldWidget);
     if (widget.visible != oldWidget.visible) {
       if (MediaQuery.disableAnimationsOf(context)) {
-        _controller.value = widget.visible ? 1.0 : 0.0;
-      } else if (widget.visible) {
-        _controller.forward();
+        _controller?.value = widget.visible ? 1.0 : 0.0;
       } else {
-        _controller.reverse();
+        final controller = _ensureController(
+          initialValue: oldWidget.visible ? 1.0 : 0.0,
+        );
+        if (widget.visible) {
+          controller.forward();
+        } else {
+          controller.reverse();
+        }
       }
     }
   }
 
   @override
   void dispose() {
-    _curved.dispose();
-    _controller.dispose();
+    _curved?.dispose();
+    _controller?.dispose();
     super.dispose();
   }
+
+  Widget _buildCollapsedPlaceholder(Widget child) => IgnorePointer(
+    child: ClipRect(
+      child: Align(
+        alignment: Alignment.topCenter,
+        heightFactor: 0.2,
+        child: Opacity(opacity: 0, child: child),
+      ),
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
     if (MediaQuery.disableAnimationsOf(context)) {
       return widget.visible ? widget.child : const SizedBox.shrink();
     }
-    return IgnorePointer(
-      ignoring: !widget.visible,
-      child: AnimatedBuilder(
-        animation: _curved,
-        child: FadeTransition(opacity: _curved, child: widget.child),
-        builder: (context, child) {
-          // A non-zero extent keeps lazy lists from building every descendant
-          // while the newly inserted rows are still visually collapsed.
-          final heightFactor = 0.2 + (0.8 * _curved.value);
-          return ClipRect(
+    final curved = _curved;
+    if (curved == null) {
+      return widget.visible
+          ? widget.child
+          : _buildCollapsedPlaceholder(widget.child);
+    }
+    return AnimatedBuilder(
+      animation: curved,
+      child: widget.child,
+      builder: (context, child) {
+        final value = curved.value;
+        if (value >= 1.0 && widget.visible) {
+          return child!;
+        }
+        if (value <= 0.0 && !widget.visible) {
+          return _buildCollapsedPlaceholder(child!);
+        }
+        // A non-zero extent keeps lazy lists from building every descendant
+        // while the newly inserted rows are still visually collapsed.
+        final heightFactor = 0.2 + (0.8 * value);
+        return IgnorePointer(
+          ignoring: !widget.visible,
+          child: ClipRect(
             child: Align(
               alignment: Alignment.topCenter,
               heightFactor: heightFactor,
-              child: child,
+              child: FadeTransition(opacity: curved, child: child),
             ),
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 }
@@ -2003,16 +2123,13 @@ class _AppPressScaleState extends State<AppPressScale>
   static const _releaseDuration = Duration(milliseconds: 240);
   static const _cancelMoveDistance = 12.0;
 
-  late final AnimationController _controller;
+  AnimationController? _controller;
   Animation<double> _scaleAnimation = const AlwaysStoppedAnimation<double>(1.0);
   int? _downPointer;
   Offset? _downPosition;
 
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(vsync: this, duration: _pressDuration);
-  }
+  AnimationController _ensureController() => _controller ??=
+      AnimationController(vsync: this, duration: _pressDuration);
 
   @override
   void didUpdateWidget(covariant AppPressScale oldWidget) {
@@ -2024,14 +2141,14 @@ class _AppPressScaleState extends State<AppPressScale>
 
   @override
   void dispose() {
-    _controller.dispose();
+    _controller?.dispose();
     super.dispose();
   }
 
   void _snapToRest() {
     _downPointer = null;
     _downPosition = null;
-    _controller.stop();
+    _controller?.stop();
     _scaleAnimation = const AlwaysStoppedAnimation<double>(1.0);
   }
 
@@ -2040,13 +2157,18 @@ class _AppPressScaleState extends State<AppPressScale>
     required Duration duration,
     required Curve curve,
   }) {
+    final created = _controller == null;
+    final controller = _ensureController();
     final current = _scaleAnimation.value;
     _scaleAnimation = Tween<double>(
       begin: current,
       end: to,
-    ).chain(CurveTween(curve: curve)).animate(_controller);
-    _controller.duration = duration;
-    _controller.forward(from: 0);
+    ).chain(CurveTween(curve: curve)).animate(controller);
+    controller.duration = duration;
+    controller.forward(from: 0);
+    if (created && mounted) {
+      setState(() {});
+    }
   }
 
   void _handlePointerDown(PointerDownEvent event) {
@@ -2104,7 +2226,7 @@ class _AppPressScaleState extends State<AppPressScale>
       onPointerUp: _handlePointerEnd,
       onPointerCancel: _handlePointerEnd,
       child: AnimatedBuilder(
-        animation: _controller,
+        animation: _controller ?? kAlwaysCompleteAnimation,
         child: widget.child,
         // Keep the recognizer mounted from pointer-down through pointer-up.
         builder: (context, child) => Transform.scale(
@@ -2352,7 +2474,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     // enclosing navigation cannot leave the global navigation lock held.
     if ((!TickerMode.valuesOf(context).enabled ||
             MediaQuery.disableAnimationsOf(context)) &&
-        (_isAnimating || _pendingIndex != null)) {
+        (_isAnimating || _isDragging || _pendingIndex != null)) {
       _switchImmediately(
         _safeIndex(widget.indexListenable.value),
         inBuild: true,
@@ -3105,6 +3227,7 @@ class _AppHorizontalPageSwipeRecognizer extends OneSequenceGestureRecognizer {
     required this.onUpdate,
     required this.onEnd,
     required this.onCancel,
+    this.allowLeft = true,
   }) : super(
          supportedDevices: const <PointerDeviceKind>{
            PointerDeviceKind.touch,
@@ -3118,6 +3241,7 @@ class _AppHorizontalPageSwipeRecognizer extends OneSequenceGestureRecognizer {
   ValueChanged<double> onUpdate;
   ValueChanged<double> onEnd;
   VoidCallback onCancel;
+  bool allowLeft;
 
   int? _pointer;
   Offset _startPosition = Offset.zero;
@@ -3127,8 +3251,11 @@ class _AppHorizontalPageSwipeRecognizer extends OneSequenceGestureRecognizer {
   double _touchSlop = kTouchSlop;
   VelocityTracker? _velocityTracker;
 
+  bool _allowsDirection(double dx) => dx > 0 || (dx < 0 && allowLeft);
+
   bool get _hasHorizontalThreshold {
     final total = _lastPosition - _startPosition;
+    if (!_allowsDirection(total.dx)) return false;
     final absDx = total.dx.abs();
     final absDy = total.dy.abs();
     return absDx >= _touchSlop * 1.25 && absDx > absDy * 1.5;
@@ -3186,6 +3313,15 @@ class _AppHorizontalPageSwipeRecognizer extends OneSequenceGestureRecognizer {
           resolve(GestureDisposition.rejected);
         }
         stopTrackingPointer(event.pointer);
+        return;
+      }
+      if (!_allowsDirection(total.dx)) {
+        if (absDx >= _touchSlop && absDx > absDy * 1.5) {
+          if (!_wonArena) {
+            resolve(GestureDisposition.rejected);
+          }
+          stopTrackingPointer(event.pointer);
+        }
         return;
       }
       // Require slightly more horizontal travel than standard touch slop so
@@ -3497,6 +3633,8 @@ class AppPreparedPageRoute<T> extends PageRouteBuilder<T> {
   bool _disposed = false;
   bool _reducedMotion = false;
   bool _interactivePopInProgress = false;
+  final ValueNotifier<bool> _useLinearSlide = ValueNotifier<bool>(false);
+  double? _interactivePopReleaseVelocity;
   NavigatorState? _interactivePopNavigator;
   Timer? _exitCompletionTimer;
 
@@ -3563,19 +3701,30 @@ class AppPreparedPageRoute<T> extends PageRouteBuilder<T> {
     if (!forward &&
         reverseTransitionDuration != Duration.zero &&
         controller!.value > 0) {
+      void scheduleExitCompletion() {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_disposed) return;
+          // Finalize after the offscreen frame has painted, outside the
+          // animation callback that delivered its final position.
+          _exitCompletionTimer = Timer(Duration.zero, () {
+            if (!_disposed) controller!.value = 0;
+          });
+        });
+      }
+
+      if (_useLinearSlide.value) {
+        final releaseVelocity = _interactivePopReleaseVelocity ?? 0.0;
+        _interactivePopReleaseVelocity = null;
+        return _PostFrameInteractiveExitSimulation(
+          initialValue: controller!.value,
+          initialVelocity: (-releaseVelocity).clamp(-8.0, 0.0),
+          onFinished: scheduleExitCompletion,
+        );
+      }
       return _PostFrameExitSimulation(
         initialValue: controller!.value,
         duration: reverseTransitionDuration,
-        onFinished: () {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (_disposed) return;
-            // Finalize after the offscreen frame has painted, outside the
-            // animation callback that delivered its final position.
-            _exitCompletionTimer = Timer(Duration.zero, () {
-              if (!_disposed) controller!.value = 0;
-            });
-          });
-        },
+        onFinished: scheduleExitCompletion,
       );
     }
     if (!forward || _prepared || transitionDuration == Duration.zero) {
@@ -3591,6 +3740,7 @@ class AppPreparedPageRoute<T> extends PageRouteBuilder<T> {
   void dispose() {
     _disposed = true;
     _exitCompletionTimer?.cancel();
+    _useLinearSlide.dispose();
     final nav = _interactivePopNavigator ?? navigator;
     final hadInteractivePop = _interactivePopInProgress;
     _interactivePopInProgress = false;
@@ -3624,6 +3774,9 @@ class AppPreparedPageRoute<T> extends PageRouteBuilder<T> {
   bool _startInteractivePop() {
     if (!_canStartInteractivePop || _interactivePopInProgress) return false;
     final nav = navigator!;
+    controller?.stop();
+    _interactivePopReleaseVelocity = null;
+    _useLinearSlide.value = true;
     nav.didStartUserGesture();
     _interactivePopInProgress = true;
     _interactivePopNavigator = nav;
@@ -3648,11 +3801,14 @@ class AppPreparedPageRoute<T> extends PageRouteBuilder<T> {
         if (!cancelled &&
             (velocityFraction >= 0.65 || controller!.value <= 0.68)) {
           if (isCurrent) {
+            _interactivePopReleaseVelocity = velocityFraction;
             nav.pop();
           }
         } else if (isActive) {
-          if (_reducedMotion) {
+          if (_reducedMotion ||
+              (controller!.value >= 1.0 && velocityFraction <= 0)) {
             controller!.value = 1.0;
+            _useLinearSlide.value = false;
           } else {
             final spring = SpringDescription.withDampingRatio(
               mass: 1.0,
@@ -3665,8 +3821,16 @@ class AppPreparedPageRoute<T> extends PageRouteBuilder<T> {
               1.0,
               (-velocityFraction).clamp(-6.0, 6.0),
             );
-            controller!.animateWith(simulation);
+            controller!.animateWith(simulation).whenCompleteOrCancel(() {
+              if (!_disposed &&
+                  !_interactivePopInProgress &&
+                  controller?.status == AnimationStatus.completed) {
+                _useLinearSlide.value = false;
+              }
+            });
           }
+        } else {
+          _useLinearSlide.value = false;
         }
       }
       if (hadInteractivePop &&
@@ -3790,8 +3954,17 @@ class _EdgeSwipeBackLayerState extends State<_EdgeSwipeBackLayer> {
                         onUpdate: _handleDragUpdate,
                         onEnd: _handleDragEnd,
                         onCancel: _handleDragCancel,
+                        allowLeft: false,
                       ),
-                      (_) {},
+                      (instance) {
+                        instance.canStart = () =>
+                            widget.route._canStartInteractivePop;
+                        instance.onStart = _handleDragStart;
+                        instance.onUpdate = _handleDragUpdate;
+                        instance.onEnd = _handleDragEnd;
+                        instance.onCancel = _handleDragCancel;
+                        instance.allowLeft = false;
+                      },
                     ),
               },
             ),
@@ -3799,6 +3972,43 @@ class _EdgeSwipeBackLayerState extends State<_EdgeSwipeBackLayer> {
       ],
     );
   }
+}
+
+class _PostFrameInteractiveExitSimulation extends Simulation {
+  _PostFrameInteractiveExitSimulation({
+    required double initialValue,
+    required double initialVelocity,
+    required this.onFinished,
+  }) : _spring = SpringSimulation(
+         SpringDescription.withDampingRatio(mass: 1.0, stiffness: 420.0),
+         initialValue,
+         0.0,
+         initialVelocity,
+         tolerance: const Tolerance(velocity: 0.01),
+       );
+
+  final SpringSimulation _spring;
+  final VoidCallback onFinished;
+  bool _completionScheduled = false;
+
+  @override
+  double x(double time) {
+    final value = _spring.x(time);
+    if (_spring.isDone(time) || value <= 0.001) {
+      if (!_completionScheduled) {
+        _completionScheduled = true;
+        onFinished();
+      }
+      return 0.0;
+    }
+    return value.clamp(0.0, 1.0);
+  }
+
+  @override
+  double dx(double time) => _spring.isDone(time) ? 0.0 : _spring.dx(time);
+
+  @override
+  bool isDone(double time) => false;
 }
 
 class _PostFrameExitSimulation extends Simulation {

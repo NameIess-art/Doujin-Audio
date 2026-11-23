@@ -295,8 +295,9 @@ class _SessionVideoViewportState extends State<SessionVideoViewport> {
       _lastHoverPosition = null;
       _fullscreenActionRunning = true;
     });
-    await WidgetsBinding.instance.endOfFrame;
     try {
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted || !widget.videoReady) return;
       await widget.onFullscreen();
     } finally {
       if (mounted) {

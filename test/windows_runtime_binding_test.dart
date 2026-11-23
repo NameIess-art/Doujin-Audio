@@ -280,6 +280,105 @@ void main() {
       ]);
     },
   );
+
+  test(
+    'endSession shares one drain budget across initialization and in-flight actions',
+    () async {
+      final shortBinding = WindowsRuntimeBinding(
+        desktop: WindowsDesktopService(channel: channel),
+        endSessionDrainBudget: const Duration(milliseconds: 60),
+      );
+      await shortBinding.attach();
+      shortBinding.bindRuntime(
+        runtime: runtime,
+        playback: playback,
+        notifications: notifications,
+        timer: timer,
+      );
+      final stuckInit = Completer<void>();
+      final initFuture = shortBinding.initializeRuntime(() => stuckInit.future);
+      final sw = Stopwatch()..start();
+      await _sendAction(channel, 'endSession');
+      sw.stop();
+      expect(calls, ['ready', 'dispose']);
+      expect(sw.elapsedMilliseconds, lessThan(400));
+      stuckInit.complete();
+      await expectLater(initFuture, throwsStateError);
+    },
+  );
+
+  test(
+    'tray exit drains multiple in-flight actions concurrently',
+    () async {
+      final firstGate = Completer<void>();
+      final secondGate = Completer<void>();
+      runtime.resumeEntered = Completer<void>();
+      runtime.resumeGate = firstGate;
+      runtime.backgroundEntered = Completer<void>();
+      runtime.backgroundGate = secondGate;
+      await attach();
+
+      final resumeAction = _sendAction(channel, 'resume');
+      await runtime.resumeEntered!.future;
+      final bgAction = _sendAction(channel, 'background');
+      await runtime.backgroundEntered!.future;
+
+      var exitDone = false;
+      final exitAction = _sendAction(channel, 'exit').then((_) {
+        exitDone = true;
+      });
+      await Future<void>.delayed(Duration.zero);
+      expect(exitDone, isFalse);
+
+      firstGate.complete();
+      await Future<void>.delayed(Duration.zero);
+      expect(exitDone, isFalse);
+
+      secondGate.complete();
+      await Future.wait([resumeAction, bgAction, exitAction]);
+      expect(exitDone, isTrue);
+      expect(calls, containsAllInOrder(['saveTimer', 'dispose', 'exit']));
+    },
+  );
+
+  test('failed attach clears cached future so a retry succeeds', () async {
+    var readyCalls = 0;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call.method);
+      if (call.method == 'ready' && ++readyCalls == 1) {
+        throw PlatformException(code: 'unavailable');
+      }
+      return null;
+    });
+
+    await expectLater(binding.attach(), throwsA(isA<PlatformException>()));
+    await binding.attach();
+    await binding.attach();
+    expect(readyCalls, 2);
+  });
+
+  test(
+    'background and resume before state load apply latest state once loaded',
+    () async {
+      await binding.attach();
+      binding.bindRuntime(
+        runtime: runtime,
+        playback: playback,
+        notifications: notifications,
+        timer: timer,
+      );
+      final gate = Completer<void>();
+      final init = binding.initializeRuntime(() => gate.future);
+      await _sendAction(channel, 'background');
+      await _sendAction(channel, 'resume');
+      await _sendAction(channel, 'background');
+      expect(calls, ['ready']);
+
+      gate.complete();
+      await init;
+      expect(calls, ['ready', 'enterBackground']);
+    },
+  );
 }
 
 Future<void> _sendAction(MethodChannel channel, String action) {
@@ -307,6 +406,8 @@ final class _Runtime implements AppRuntimeLifecycle {
   Completer<void>? disposeGate;
   Completer<void>? resumeEntered;
   Completer<void>? resumeGate;
+  Completer<void>? backgroundEntered;
+  Completer<void>? backgroundGate;
   Object? disposeError;
   Future<void> Function()? disposePlayback;
   @override
@@ -322,7 +423,11 @@ final class _Runtime implements AppRuntimeLifecycle {
   @override
   Future<void> initializeSecondaryData() async {}
   @override
-  Future<void> enterBackground() async {}
+  Future<void> enterBackground() async {
+    calls.add('enterBackground');
+    backgroundEntered?.complete();
+    await backgroundGate?.future;
+  }
   @override
   Future<void> resumeForeground() async {
     calls.add('resumeForeground');

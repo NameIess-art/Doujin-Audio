@@ -459,19 +459,8 @@ class AppDialog extends StatelessWidget {
           enabled: AppDesignTokens.of(context).barGlassEnabled,
           backgroundColor: cs.surfaceContainerHigh,
           borderRadius: AppRadius.borderDialog,
-          child: Container(
+          child: Padding(
             padding: const EdgeInsets.all(AppSpacing.lg),
-            decoration: BoxDecoration(
-              borderRadius: AppRadius.borderDialog,
-              border: Border.all(
-                color: theme.brightness == Brightness.dark
-                    ? Color.alphaBlend(
-                        Colors.white.withValues(alpha: 0.08),
-                        cs.outlineVariant,
-                      ).withValues(alpha: 0.40)
-                    : cs.outlineVariant.withValues(alpha: 0.36),
-              ),
-            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,

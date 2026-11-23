@@ -578,6 +578,10 @@ class _WindowsPlaybackSession {
       } finally {
         opening = false;
       }
+    } else if (player != null && nativeQueueLimited && !restoreNativeQueue) {
+      // Keep the single retained native entry mapped to its new logical index
+      // so disabling stopAfterCurrentTrack later restores the full queue cleanly.
+      nativeQueueIndices.updateAll((_, _) => index);
     }
     final keepRetained =
         retainCurrent ||
@@ -589,6 +593,9 @@ class _WindowsPlaybackSession {
     this.queue = items;
     this.index = index;
     retainedCurrentIndex = keepRetained ? index : null;
+    if (nativeQueueLimited && !restoreNativeQueue) {
+      nativeQueueIndices.updateAll((_, _) => index);
+    }
     if (restoreNativeQueue) nativeQueueLimited = false;
     if (player != null &&
         pendingStart != null &&

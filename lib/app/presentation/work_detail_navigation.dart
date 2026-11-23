@@ -459,9 +459,12 @@ class WorkDetailPane extends StatelessWidget {
       listenable: navigation,
       child: child,
       builder: (context, child) {
+        final isOpen = navigation.isOpen;
         // The main body fills this MediaQuery. Update route metrics before
         // layout, so resizing cannot rebuild navigator overlays during layout.
-        final size = MediaQuery.sizeOf(context);
+        final size = isOpen || isLandscape
+            ? MediaQuery.sizeOf(context)
+            : Size.zero;
         final contentWidth = (size.width - sidebarWidth).clamp(0.0, size.width);
         final paneWidth = isLandscape
             ? detailPaneWidthFor(contentWidth)
@@ -516,10 +519,19 @@ class WorkDetailPane extends StatelessWidget {
                 bottom: 0,
                 width: paneWidth,
                 child: Offstage(
-                  offstage: !navigation.isOpen,
+                  offstage: !isOpen,
                   child: Builder(
                     builder: (context) {
-                      final mediaQuery = MediaQuery.of(context);
+                      // Avoid subscribing to broad MediaQuery changes while the
+                      // detail pane is closed and offstage, while keeping the
+                      // MediaQuery wrapper in place so detailNavigator stays
+                      // mounted across open/close transitions.
+                      final mediaQuery = isOpen
+                          ? MediaQuery.of(context)
+                          : (context
+                                    .getInheritedWidgetOfExactType<MediaQuery>()
+                                    ?.data ??
+                                const MediaQueryData());
                       return MediaQuery(
                         data: mediaQuery.copyWith(
                           size: Size(paneWidth, size.height),

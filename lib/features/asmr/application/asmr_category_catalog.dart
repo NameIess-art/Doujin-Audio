@@ -412,19 +412,24 @@ final class AsmrCategoryCatalog {
         entry.key.category: entry.key.query,
   };
   void invalidateForAuthChange() {
-    for (final entry in _categories.entries) {
-      if (entry.key.searchEpoch == 0 &&
-          isRemote(entry.key.category) &&
-          (entry.value.works != null || entry.value.isLoading)) {
-        _pendingAuthRefreshes[entry.key.category] = entry.key.query;
+    final activeScope = _currentContext().scope;
+    _categories.removeWhere((key, state) {
+      if (key.searchEpoch == 0 &&
+          isRemote(key.category) &&
+          (state.works != null || state.isLoading)) {
+        _pendingAuthRefreshes[key.category] = key.query;
       }
-      entry.value.invalidateRequest();
-      if (!isRemote(entry.key.category)) {
-        entry.value.localSource = null;
-        entry.value.works = null;
-        entry.value.query = null;
+      state.invalidateRequest();
+      if (key.scope != activeScope) {
+        return true;
       }
-    }
+      if (!isRemote(key.category)) {
+        state.localSource = null;
+        state.works = null;
+        state.query = null;
+      }
+      return false;
+    });
     _lastQueries.clear();
   }
 
@@ -435,16 +440,20 @@ final class AsmrCategoryCatalog {
   }
 
   void invalidateForContentChange() {
-    for (final entry in _categories.entries) {
-      final state = entry.value;
+    final activeScope = _currentContext().scope;
+    _categories.removeWhere((key, state) {
       state.invalidateRequest();
+      if (key.scope != activeScope) {
+        return true;
+      }
       state.revision++;
-      if (!isRemote(entry.key.category)) {
+      if (!isRemote(key.category)) {
         state.localSource = null;
         state.works = null;
         state.query = null;
       }
-    }
+      return false;
+    });
     _lastQueries.clear();
   }
 
@@ -530,14 +539,30 @@ final class AsmrCategoryCatalog {
     required String searchQuery,
     required AsmrCategoryRequestContext context,
     bool searchSession = false,
+  }) => _refreshInternal(
+    category,
+    searchQuery: searchQuery,
+    context: context,
+    searchSession: searchSession,
+    waitForLoadMore: true,
+  );
+
+  Future<void> _refreshInternal(
+    AsmrCategoryType category, {
+    required String searchQuery,
+    required AsmrCategoryRequestContext context,
+    required bool searchSession,
+    required bool waitForLoadMore,
   }) async {
     final query = canonicalElementQuery(searchQuery);
     if (searchSession && !isSearchRequestCurrent(query, category)) return;
     if (!searchSession) _lastQueries[category] = query;
     final cacheKey = _key(category, query, context, searchSession);
     final state = _categories.putIfAbsent(cacheKey, _CategoryState.new);
-    final pagination = state.loadMoreTask;
-    if (pagination != null) await pagination;
+    if (waitForLoadMore) {
+      final pagination = state.loadMoreTask;
+      if (pagination != null) await pagination;
+    }
     if (!_isContextCurrent(context) ||
         (searchSession && !isSearchRequestCurrent(query, category)) ||
         (cacheKey.searchEpoch != 0 && cacheKey.searchEpoch != _searchEpoch)) {
@@ -674,6 +699,10 @@ final class AsmrCategoryCatalog {
     } catch (error) {
       if (_isCurrent(cacheKey, request)) state.error = error;
     } finally {
+      if (identical(state.cancellationToken, cancellationToken)) {
+        state.cancellationToken = null;
+        state.refreshTask = null;
+      }
       if (_isCurrent(cacheKey, request)) {
         state.isLoading = false;
         _onChanged();
@@ -690,13 +719,26 @@ final class AsmrCategoryCatalog {
   }) async {
     if (searchSession && !isSearchRequestCurrent(searchQuery, category)) return;
     final state = _state(category, searchQuery, searchSession);
-    final refresh = state.refreshTask;
-    if (refresh != null) await refresh;
+    while (state.refreshTask != null) {
+      await state.refreshTask;
+    }
     if (!_isContextCurrent(context) ||
         (expectedPaginationToken != null &&
             !identical(state.paginationToken, expectedPaginationToken)) ||
         (searchSession && !isSearchRequestCurrent(searchQuery, category)) ||
         (searchSession && !_categories.containsValue(state))) {
+      return;
+    }
+    if (state.works == null) {
+      if (!isRemote(category) || category == AsmrCategoryType.recommendation) {
+        return;
+      }
+      await refresh(
+        category,
+        searchQuery: searchQuery,
+        context: context,
+        searchSession: searchSession,
+      );
       return;
     }
     final existing = state.loadMoreTask;
@@ -734,11 +776,12 @@ final class AsmrCategoryCatalog {
       return;
     }
     if (state.works == null) {
-      await refresh(
+      await _refreshInternal(
         category,
         searchQuery: query,
         context: context,
         searchSession: searchSession,
+        waitForLoadMore: false,
       );
       return;
     }

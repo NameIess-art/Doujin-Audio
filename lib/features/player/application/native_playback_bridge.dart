@@ -278,6 +278,8 @@ class NativePlaybackBundleSnapshot {
   }
 }
 
+const String nativePlaybackQueueResyncRequiredCode = 'queue_resync_required';
+
 abstract interface class NativePlaybackBridgeBase {
   Stream<NativePlaybackSnapshot> get snapshots;
 
@@ -309,6 +311,7 @@ abstract interface class NativePlaybackBridgeBase {
     List<Uri>? candidateUris,
     bool deferPlayerCreation = false,
     bool isTemporary = false,
+    bool reuseExistingQueue = false,
   });
 
   Future<NativeResult<NativePlaybackSnapshot>> play(
@@ -561,7 +564,15 @@ class NativePlaybackBridge
     }
     _eventSubscription = null;
     final reconnectGeneration = ++_subscriptionGeneration;
-    await subscription.cancel();
+    try {
+      await subscription.cancel();
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'native_playback_event_disconnect_cancel_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
     if (reconnectGeneration != _subscriptionGeneration) return;
     _scheduleReconnect(reconnectGeneration);
   }
@@ -629,6 +640,7 @@ class NativePlaybackBridge
     List<Uri>? candidateUris,
     bool deferPlayerCreation = false,
     bool isTemporary = false,
+    bool reuseExistingQueue = false,
   }) {
     return _invokeSnapshot(NativePlaybackMethod.prepareSession, {
       'sessionId': sessionId,
@@ -653,7 +665,9 @@ class NativePlaybackBridge
       'repeatOne': repeatOne,
       'autoPlay': autoPlay,
 
-      if (queue != null && queue.isNotEmpty) 'queue': queue,
+      if (reuseExistingQueue) 'reuseExistingQueue': true,
+      if (!reuseExistingQueue && queue != null && queue.isNotEmpty)
+        'queue': queue,
 
       if (queueStartIndex != null) 'queueStartIndex': queueStartIndex,
       'repeatAll': repeatAll,

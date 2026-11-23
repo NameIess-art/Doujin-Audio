@@ -6,7 +6,6 @@ import '../domain/playback_mode.dart';
 
 import '../../../core/media/music_track.dart';
 import '../../../core/media/subtitle_parser.dart';
-import '../../../core/logging/app_log_service.dart';
 import '../../library/application/cover_artwork_cache_service.dart';
 
 import 'audio_state_services.dart';
@@ -374,7 +373,7 @@ final class NotificationFacade {
         return;
       }
       _setFocusSessionId(session.id);
-      await _pauseNativeSession(playback, session);
+      await playback.pauseSessionForResume(session);
     });
   }
 
@@ -383,8 +382,8 @@ final class NotificationFacade {
       final session = _resolveSession();
       final playback = _playback;
       if (session == null || playback == null) return;
-      if (session.playbackRequested) {
-        await _pauseNativeSession(playback, session);
+      if (session.playbackError == null && session.playbackRequested) {
+        await playback.pauseSessionForResume(session);
         return;
       }
       if (session.isLoading) return;
@@ -418,8 +417,8 @@ final class NotificationFacade {
       final playback = _playback;
       if (session == null || playback == null) return;
       _setFocusSessionId(session.id);
-      if (session.playbackRequested) {
-        await _pauseNativeSession(playback, session);
+      if (session.playbackError == null && session.playbackRequested) {
+        await playback.pauseSessionForResume(session);
         return;
       }
       if (session.isLoading) return;
@@ -486,90 +485,6 @@ final class NotificationFacade {
     _syncKeepAlive();
     _notifyNotificationChanged();
   }
-
-  Future<bool> _pauseNativeSession(
-    PlaybackFacade playback,
-    PlaybackSession session,
-  ) => playback.pauseSessionForResume(
-    session,
-    pause: () async {
-      final hadNativeWork =
-          session.loadedPath != null ||
-          session.pendingNativeTrackPath != null ||
-          session.state.playing;
-      session.invalidatePreparation();
-      final preparationGeneration = session.loadGeneration;
-      final generation = playback.nextTransportCommandId();
-      final token = playback.commandRunner.start(
-        sessionId: session.id,
-        generation: generation,
-        isCurrent: () =>
-            playback.isRegisteredSession(session) &&
-            session.loadGeneration == preparationGeneration &&
-            session.playbackCommandGeneration == generation,
-      );
-      session.beginTransportCommand(commandId: generation, playing: false);
-      playback.publishSessionState(session.id);
-      if (!hadNativeWork) {
-        session.confirmPaused();
-        session.setOptimisticState(processingState: ProcessingState.idle);
-        playback.publishSessionState(session.id);
-        return true;
-      }
-      try {
-        final response = await playback.nativeRepository.pause(
-          session.id,
-          transportCommandId: generation,
-        );
-        if (!playback.isRegisteredSession(session) ||
-            session.loadGeneration != preparationGeneration ||
-            session.playbackCommandGeneration != generation ||
-            !token.isCurrent) {
-          return false;
-        }
-        if (response.isOk) {
-          final snapshot = response.valueOrNull;
-          if (snapshot != null) {
-            playback.applyNativeSnapshot(
-              snapshot,
-              hasLibraryTrack: (path) =>
-                  session.trackForPath(path) != null ||
-                  _trackByPath(path) != null,
-            );
-          } else {
-            session.loadedPath = null;
-            session.setOptimisticState(processingState: ProcessingState.idle);
-          }
-          session.confirmPaused();
-          playback.publishSessionState(session.id);
-          return true;
-        }
-        session.failTransportCommand(generation);
-        playback.publishSessionState(session.id);
-        AppLogService.warning(
-          'NotificationFacade.pause failed '
-          'code=${response.errorCodeOrNull} '
-          'sessionId=${session.id} '
-          'error=${response.errorOrNull}',
-        );
-        return false;
-      } catch (error, stackTrace) {
-        if (playback.isRegisteredSession(session) &&
-            session.loadGeneration == preparationGeneration &&
-            session.playbackCommandGeneration == generation &&
-            token.isCurrent) {
-          session.failTransportCommand(generation);
-          playback.publishSessionState(session.id);
-        }
-        AppLogService.error(
-          'NotificationFacade.pause error',
-          error: error,
-          stackTrace: stackTrace,
-        );
-        return false;
-      }
-    },
-  );
 
   Future<void> _guardAction(Future<void> Function() action) {
     return _stateService.guardNotificationAction(

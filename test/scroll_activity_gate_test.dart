@@ -281,6 +281,41 @@ void main() {
       },
     );
   }
+
+  testWidgets(
+    'scroll end releases UiInteractionCoordinator after a single idle delay without doubling',
+    (tester) async {
+      late BuildContext scope;
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: ScrollActivityGate(
+            child: Builder(
+              builder: (context) {
+                scope = context;
+                return const SizedBox();
+              },
+            ),
+          ),
+        ),
+      );
+      final metrics = FixedScrollMetrics(
+        minScrollExtent: 0,
+        maxScrollExtent: 1000,
+        pixels: 0,
+        viewportDimension: 200,
+        axisDirection: AxisDirection.down,
+        devicePixelRatio: 1,
+      );
+      ScrollStartNotification(metrics: metrics, context: scope).dispatch(scope);
+      expect(interaction.isInteracting, isTrue);
+      ScrollEndNotification(metrics: metrics, context: scope).dispatch(scope);
+      await tester.pump(const Duration(milliseconds: 159));
+      expect(interaction.isInteracting, isTrue);
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(interaction.isInteracting, isFalse);
+    },
+  );
 }
 
 class _NotifyScrollDuringLayout extends SingleChildRenderObjectWidget {

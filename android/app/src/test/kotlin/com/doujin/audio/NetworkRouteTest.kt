@@ -299,6 +299,47 @@ class NetworkRouteTest {
     }
 
     @Test
+    fun customDnsCoalescesConcurrentInFlightLookupsForSameHostname() {
+        DatagramSocket(0).use { server ->
+            val serverExecutor = Executors.newSingleThreadExecutor()
+            val callers = Executors.newFixedThreadPool(4)
+            val queryCount = java.util.concurrent.atomic.AtomicInteger(0)
+            try {
+                val exchange = serverExecutor.submit {
+                    repeat(2) {
+                        val packet = DatagramPacket(ByteArray(512), 512)
+                        server.soTimeout = 3_000
+                        server.receive(packet)
+                        queryCount.incrementAndGet()
+                        Thread.sleep(100)
+                        val query = packet.data.copyOf(packet.length)
+                        val ipv6 = query[query.size - 3].toInt() == 28
+                        val address = if (ipv6) ByteArray(16).also { it[15] = 4 } else byteArrayOf(127, 0, 0, 4)
+                        val response = dnsAnswer(query, address, ipv6)
+                        server.send(DatagramPacket(response, response.size, packet.socketAddress))
+                    }
+                }
+                val dns = NetworkRouteDns("127.0.0.1", server.localPort)
+                val gate = java.util.concurrent.CountDownLatch(1)
+                val futures = List(4) {
+                    callers.submit<List<InetAddress>> {
+                        gate.await(2, TimeUnit.SECONDS)
+                        dns.lookup("coalesce.example")
+                    }
+                }
+                gate.countDown()
+                val results = futures.map { it.get(3, TimeUnit.SECONDS) }
+                assertTrue(results.all { it == results.first() })
+                assertEquals(2, queryCount.get())
+                exchange.get(3, TimeUnit.SECONDS)
+            } finally {
+                callers.shutdownNow()
+                serverExecutor.shutdownNow()
+            }
+        }
+    }
+
+    @Test
     fun socksAuthenticationSendsCredentialsAndUnresolvedDestination() {
         ServerSocket(0).use { server ->
             val executor = Executors.newSingleThreadExecutor()
@@ -383,6 +424,33 @@ class NetworkRouteTest {
         } finally {
             client.connectionPool.evictAll()
             client.dispatcher.executorService.shutdownNow()
+        }
+    }
+
+    @Test
+    fun customDnsMatchesIdnPunycodeAnswerOwnerNames() {
+        DatagramSocket(0).use { server ->
+            val executor = Executors.newSingleThreadExecutor()
+            try {
+                val exchange = executor.submit {
+                    repeat(2) {
+                        val packet = DatagramPacket(ByteArray(512), 512)
+                        server.soTimeout = 3_000
+                        server.receive(packet)
+                        val query = packet.data.copyOf(packet.length)
+                        val ipv6 = query[query.size - 3].toInt() == 28
+                        val address = if (ipv6) ByteArray(16).also { it[15] = 9 } else byteArrayOf(127, 0, 0, 9)
+                        val response = dnsAnswer(query, address, ipv6)
+                        server.send(DatagramPacket(response, response.size, packet.socketAddress))
+                    }
+                }
+                val addresses = NetworkRouteDns("127.0.0.1", server.localPort).lookup("例え.jp")
+                assertEquals(2, addresses.size)
+                assertEquals("127.0.0.9", addresses.first().hostAddress)
+                exchange.get(3, TimeUnit.SECONDS)
+            } finally {
+                executor.shutdownNow()
+            }
         }
     }
 }

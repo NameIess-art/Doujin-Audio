@@ -5,6 +5,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:doujin_audio/core/widgets/swipe_reveal_action_pane.dart';
 import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/library_like_cards.dart';
@@ -372,38 +373,17 @@ void main() {
     );
     await gesture.moveBy(const Offset(-50, 0));
     await tester.pump();
+    final afterFirst = tester.getTopLeft(find.text('Swipe target')).dx;
     await gesture.moveBy(const Offset(-10, 0));
     await tester.pump();
-    final scale = tester.widget<AnimatedScale>(find.byType(AnimatedScale));
-    final scaleTransition = tester.widget<ScaleTransition>(
-      find.descendant(
-        of: find.byType(AnimatedScale),
-        matching: find.byType(ScaleTransition),
-      ),
-    );
-    expect(scale.duration, Duration.zero);
-    expect(scaleTransition.scale.value, scale.scale);
-    final opacity = tester.widget<AnimatedOpacity>(
-      find.byType(AnimatedOpacity),
-    );
-    final fade = tester.widget<FadeTransition>(
-      find.descendant(
-        of: find.byType(AnimatedOpacity),
-        matching: find.byType(FadeTransition),
-      ),
-    );
-    expect(opacity.duration, Duration.zero);
-    expect(fade.opacity.value, opacity.opacity);
+    final afterSecond = tester.getTopLeft(find.text('Swipe target')).dx;
+    expect(afterSecond, lessThan(afterFirst));
+    expect(find.byType(SwipeRevealActionPane), findsOneWidget);
     await gesture.up();
     await tester.pump();
-    expect(
-      tester
-          .widget<TweenAnimationBuilder<double>>(
-            find.byType(TweenAnimationBuilder<double>),
-          )
-          .duration,
-      Duration.zero,
-    );
+    final settledLeft = tester.getTopLeft(find.text('Swipe target')).dx;
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(tester.getTopLeft(find.text('Swipe target')).dx, settledLeft);
     await tester.pump(coordinator.idleDelay);
     expect(coordinator.isInteracting, isFalse);
   });
@@ -627,7 +607,7 @@ void main() {
       );
 
       expect(lightRevealColor, lightScheme.error);
-      expect(darkRevealColor, lightRevealColor);
+      expect(darkRevealColor, darkScheme.errorContainer);
     },
   );
 
@@ -660,12 +640,21 @@ void main() {
       ),
     );
 
-    final closedSurface = tester.widgetList<ColoredBox>(
+    final closedSurface = tester.widgetList<DecoratedBox>(
       find.byWidgetPredicate((widget) {
-        return widget is ColoredBox && widget.color == Colors.red;
+        if (widget is! DecoratedBox) return false;
+        final decoration = widget.decoration;
+        return decoration is BoxDecoration && decoration.color == Colors.red;
       }),
     );
     expect(closedSurface, isNotEmpty);
+    expect(
+      find.descendant(
+        of: find.byType(SwipeRevealCard),
+        matching: find.byType(ClipRRect),
+      ),
+      findsNothing,
+    );
     expect(
       find.byWidgetPredicate((widget) {
         if (widget is! DecoratedBox) return false;
@@ -679,7 +668,7 @@ void main() {
       findsNothing,
       reason: 'The reveal backing must not repaint the child card border.',
     );
-    expect(find.byType(TweenAnimationBuilder<double>), findsNothing);
+    expect(find.byType(SwipeRevealActionPane), findsNothing);
   });
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
@@ -722,14 +711,14 @@ void main() {
         await tester.tapAt(tester.getCenter(find.byType(SwipeRevealCard)));
       }
       await tester.pump(const Duration(milliseconds: 50));
-      expect(find.byType(TweenAnimationBuilder<double>), findsOneWidget);
+      expect(find.byType(SwipeRevealActionPane), findsOneWidget);
       ticking.value = false;
       await tester.pump();
-      expect(find.byType(TweenAnimationBuilder<double>), findsNothing);
+      expect(find.byType(SwipeRevealActionPane), findsNothing);
       expect(coordinator.isInteracting, isFalse);
       ticking.value = true;
       await tester.pump();
-      expect(find.byType(TweenAnimationBuilder<double>), findsNothing);
+      expect(find.byType(SwipeRevealActionPane), findsNothing);
       await tester.pumpWidget(const SizedBox.shrink());
     });
   }
@@ -845,7 +834,7 @@ void main() {
         });
         expect(redPixels, 0, reason: 'Opposite underlayer at frame $frame');
       }
-      expect(find.byType(TweenAnimationBuilder<double>), findsNothing);
+      expect(find.byType(SwipeRevealActionPane), findsNothing);
     });
 
     testWidgets('closing swipe stays on its original side ($direction)', (
@@ -886,9 +875,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.getTopLeft(content).dx - closedLeft, direction * 72);
 
-      await tester.dragFrom(center, Offset(-direction * 180, 0));
+      // Start a closing swipe that leaves the card animating back toward zero,
+      // then catch it mid-close and push further in the closing direction.
+      await tester.dragFrom(center, Offset(-direction * 32, 0));
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 80));
+      await tester.pump(const Duration(milliseconds: 32));
       final gesture = await tester.startGesture(center);
       await gesture.moveBy(Offset(-direction * 180, 0));
       await tester.pump();
@@ -992,7 +983,7 @@ void main() {
       await tester.pump();
       expect(find.byIcon(Icons.swipe_left_rounded), findsNothing);
       await tester.pumpAndSettle();
-      expect(find.byType(TweenAnimationBuilder<double>), findsNothing);
+      expect(find.byType(SwipeRevealActionPane), findsNothing);
       expect(find.text('Swipe target'), findsOneWidget);
     },
   );

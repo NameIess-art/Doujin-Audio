@@ -12,6 +12,7 @@ import '../../../core/media/dlsite_metadata.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
+import '../../../core/platform/windows_media_tools.dart';
 import '../domain/library_persistence_repository.dart';
 import 'audio_detail_cache_service.dart';
 import 'audio_detail_repository.dart';
@@ -68,21 +69,12 @@ final class LibraryMetadataCoordinator {
   bool _pendingCoverNotification = false;
   int _epoch = 0;
   bool _disposed = false;
-  int _rootsGeneration = -1;
-  List<String> _sortedWatchedFolders = const <String>[];
-  List<String> _sortedWatchedLibraries = const <String>[];
-  final Map<String, String> _watchedFolderByPath =
-      LibraryService.createPathIndex<String>();
 
   void prepareForReset() {
     _epoch++;
     _pendingCoverNotification = false;
     _missingDurationBackfill = null;
     _backfillRequestedAgain = false;
-    _rootsGeneration = -1;
-    _sortedWatchedFolders = const <String>[];
-    _sortedWatchedLibraries = const <String>[];
-    _watchedFolderByPath.clear();
   }
 
   void dispose() {
@@ -229,46 +221,31 @@ final class LibraryMetadataCoordinator {
 
   AudioDetailTarget targetForTrack(MusicTrack track) {
     if (track.isSingle) return AudioDetailTarget.singleAudioFile(track.path);
-    _prepareRootPaths();
     return AudioDetailTarget.libraryRootFolder(
       const LibraryOrganizer().rootPathForTrack(
         track,
-        _sortedWatchedFolders,
-        watchedLibraries: _sortedWatchedLibraries,
+        _service.sortedWatchedFolders,
+        watchedLibraries: _service.sortedWatchedLibraries,
         rootsAlreadySorted: true,
+        watchedRootsIndex: _service.watchedFoldersIndex,
+        watchedLibrariesIndex: _service.watchedLibrariesIndex,
       ),
     );
   }
 
   AudioDetailTarget canonicalTarget(AudioDetailTarget target) {
     if (!target.isLibraryRootFolder) return target;
-    _prepareRootPaths();
     return AudioDetailTarget.libraryRootFolder(
       const LibraryOrganizer().rootFolderPath(
         target.targetPath,
-        _sortedWatchedFolders,
-        watchedLibraries: _sortedWatchedLibraries,
+        _service.sortedWatchedFolders,
+        watchedLibraries: _service.sortedWatchedLibraries,
         rootsAlreadySorted: true,
-        watchedFolderByPath: _watchedFolderByPath,
+        watchedFolderByPath: _service.watchedFolderByPath,
+        watchedFoldersIndex: _service.watchedFoldersIndex,
+        watchedLibrariesIndex: _service.watchedLibrariesIndex,
       ),
     );
-  }
-
-  void _prepareRootPaths() {
-    if (_rootsGeneration == _service.libraryDerivedGeneration) return;
-    // The generation changes inside batches before structureRevision commits.
-    _sortedWatchedFolders = _service.watchedFolders.toList(growable: false)
-      ..sort((a, b) => b.length.compareTo(a.length));
-    _sortedWatchedLibraries = _service.watchedLibraries.toList(growable: false)
-      ..sort((a, b) => b.length.compareTo(a.length));
-    _watchedFolderByPath.clear();
-    for (final folderPath in _sortedWatchedFolders) {
-      _watchedFolderByPath.putIfAbsent(
-        folderPath,
-        () => PathMatcher.normalize(folderPath),
-      );
-    }
-    _rootsGeneration = _service.libraryDerivedGeneration;
   }
 
   AudioDetailTarget targetForPath(String trackPath) {
@@ -384,20 +361,41 @@ final class LibraryMetadataCoordinator {
       failuresChanged = failedProbes.length != previousFailureCount;
     }
     final targets = targetsByKey.values.toList(growable: false);
-    final loadResults = <AudioDetailLoadResult>[];
-    for (var start = 0; start < targets.length; start += 64) {
-      if (!await checkpoint()) return;
-      loadResults.addAll(
-        await _detailCacheService.loadMany(targets.skip(start).take(64)),
-      );
-    }
-    if (!_isCurrent(epoch)) return;
-    final missing = <AudioDetailTarget>[
-      for (var index = 0; index < loadResults.length; index++)
-        if (loadResults[index].detail.isEmpty &&
-            loadResults[index].detail.duration == null)
-          targets[index],
+    final targetKeys = <String>[
+      for (final target in targets) _targetKey(target),
     ];
+    final fastDurations = await _detailCacheService.loadDurationsIfSupported(
+      targets,
+    );
+    if (!await checkpoint()) return;
+    final knownDurations = <String, Duration?>{};
+    final missing = <AudioDetailTarget>[];
+    if (fastDurations != null) {
+      for (var index = 0; index < targets.length; index++) {
+        final key = targetKeys[index];
+        if (!fastDurations.containsKey(key)) {
+          missing.add(targets[index]);
+        } else {
+          knownDurations[key] = fastDurations[key];
+        }
+      }
+    } else {
+      final loadResults = <AudioDetailLoadResult>[];
+      for (var start = 0; start < targets.length; start += 64) {
+        if (!await checkpoint()) return;
+        loadResults.addAll(
+          await _detailCacheService.loadMany(targets.skip(start).take(64)),
+        );
+      }
+      if (!_isCurrent(epoch)) return;
+      for (var index = 0; index < loadResults.length; index++) {
+        final detail = loadResults[index].detail;
+        knownDurations[targetKeys[index]] = detail.duration;
+        if (detail.isEmpty && detail.duration == null) {
+          missing.add(targets[index]);
+        }
+      }
+    }
     if (missing.isNotEmpty) {
       if (!await checkpoint()) return;
       final databaseIsAuthoritative =
@@ -420,50 +418,84 @@ final class LibraryMetadataCoordinator {
         // The first pass already owns a complete snapshot, even when its rows
         // outgrow the LRU. Only imported records need to replace that snapshot.
         for (var index = 0; index < targets.length; index++) {
-          final imported = importedDetails[_targetKey(targets[index])];
+          final key = targetKeys[index];
+          final imported = importedDetails[key];
           if (imported != null) {
-            loadResults[index] = AudioDetailLoadResult(detail: imported);
+            knownDurations[key] = imported.duration;
           }
         }
       }
       if (!_isCurrent(epoch)) return;
     }
+
+    var hasTracksToProbe = false;
+    for (final track in tracks) {
+      if (track.duration <= Duration.zero &&
+          failedProbes[PathMatcher.equivalenceKey(track.path)] !=
+              _durationFailureFingerprint(track)) {
+        hasTracksToProbe = true;
+        break;
+      }
+    }
+    final unsynchronizedIndices = <int>[];
+    final unsynchronizedKeys = <String>{};
+    for (var index = 0; index < targets.length; index++) {
+      final target = targets[index];
+      final targetKey = targetKeys[index];
+      final known =
+          _detailCacheService.resolvedDetail(target)?.duration ??
+          knownDurations[targetKey];
+      if (known != null && synchronized[targetKey] == known.inMilliseconds) {
+        continue;
+      }
+      unsynchronizedIndices.add(index);
+      unsynchronizedKeys.add(targetKey);
+    }
+
     var didUpdateTrackDurations = false;
     try {
-      await _probeDurations(
-        tracks,
-        durationReader,
-        epoch: epoch,
-        waitForIdle: waitForIdle,
-        failedFingerprints: failedProbes,
-        onResolved: (track) {
-          if (failedProbes.remove(PathMatcher.equivalenceKey(track.path)) !=
-              null) {
-            failuresChanged = true;
-          }
-        },
-        onUnresolved: (track) {
-          final key = PathMatcher.equivalenceKey(track.path);
-          final fingerprint = _durationFailureFingerprint(track);
-          if (failedProbes[key] != fingerprint) {
-            failedProbes[key] = fingerprint;
-            failuresChanged = true;
-          }
-        },
-        commitBatch: (batch) => _commitDurations(
-          batch,
-          epoch,
-          notify: false,
-          invalidateSnapshots: false,
-          onUpdated: () => didUpdateTrackDurations = true,
-        ),
-      );
+      if (!hasTracksToProbe && unsynchronizedIndices.isEmpty) {
+        return;
+      }
+      if (hasTracksToProbe) {
+        await _probeDurations(
+          tracks,
+          durationReader,
+          epoch: epoch,
+          waitForIdle: waitForIdle,
+          failedFingerprints: failedProbes,
+          onResolved: (track) {
+            if (failedProbes.remove(PathMatcher.equivalenceKey(track.path)) !=
+                null) {
+              failuresChanged = true;
+            }
+          },
+          onUnresolved: (track) {
+            final key = PathMatcher.equivalenceKey(track.path);
+            final fingerprint = _durationFailureFingerprint(track);
+            if (failedProbes[key] != fingerprint) {
+              failedProbes[key] = fingerprint;
+              failuresChanged = true;
+            }
+          },
+          commitBatch: (batch) => _commitDurations(
+            batch,
+            epoch,
+            notify: false,
+            invalidateSnapshots: false,
+            onUpdated: () => didUpdateTrackDurations = true,
+          ),
+        );
+      }
       if (!await checkpoint()) return;
+      if (unsynchronizedIndices.isEmpty) return;
+
       final currentLibrary = List<MusicTrack>.of(_service.library);
       final tracksByTargetKey = <String, List<MusicTrack>>{};
       slice.reset();
       for (final track in currentLibrary) {
         final key = resolveTarget(track).key;
+        if (!unsynchronizedKeys.contains(key)) continue;
         tracksByTargetKey.putIfAbsent(key, () => <MusicTrack>[]).add(track);
         if (slice.elapsedMicroseconds >= 4000) {
           await Future<void>.delayed(Duration.zero);
@@ -471,14 +503,18 @@ final class LibraryMetadataCoordinator {
           slice.reset();
         }
       }
-      for (var index = 0; index < targets.length; index++) {
+
+      final pendingSaves =
+          <({AudioDetailTarget target, String targetKey, Duration duration})>[];
+      for (final index in unsynchronizedIndices) {
         if (!await checkpoint()) return;
-        final detail = loadResults[index].detail;
-        final targetKey = _targetKey(detail.target);
-        final latest =
-            _detailCacheService.resolvedDetail(detail.target) ?? detail;
-        if (latest.duration case final known?
-            when synchronized[targetKey] == known.inMilliseconds) {
+        final target = targets[index];
+        final targetKey = targetKeys[index];
+        final knownDuration =
+            _detailCacheService.resolvedDetail(target)?.duration ??
+            knownDurations[targetKey];
+        if (knownDuration != null &&
+            synchronized[targetKey] == knownDuration.inMilliseconds) {
           continue;
         }
         if (synchronized.remove(targetKey) != null) syncChanged = true;
@@ -495,18 +531,55 @@ final class LibraryMetadataCoordinator {
           total += track.duration;
         }
         final duration =
-            latest.duration ??
+            knownDuration ??
             (!hasUnknown && total > Duration.zero ? total : null);
         if (duration != null) {
-          final result = await saveMissingDuration(
-            latest.target,
-            duration,
-            deferCategoryUpdate: true,
-            skipSynchronizedDocument: true,
+          pendingSaves.add((
+            target: target,
+            targetKey: targetKey,
+            duration: duration,
+          ));
+        }
+      }
+
+      if (pendingSaves.isNotEmpty) {
+        if (pendingSaves.length > 1) {
+          for (var start = 0; start < pendingSaves.length; start += 64) {
+            if (!await checkpoint()) return;
+            await _detailCacheService.loadMany(
+              pendingSaves.skip(start).take(64).map((item) => item.target),
+            );
+          }
+        }
+        const maxConcurrentSaves = 4;
+        for (
+          var start = 0;
+          start < pendingSaves.length;
+          start += maxConcurrentSaves
+        ) {
+          if (!await checkpoint()) return;
+          final end = (start + maxConcurrentSaves).clamp(
+            0,
+            pendingSaves.length,
           );
-          if (!result.documentFailed) {
-            synchronized[targetKey] = result.detail.duration!.inMilliseconds;
-            syncChanged = true;
+          final wave = pendingSaves.sublist(start, end);
+          final results = await Future.wait([
+            for (final item in wave)
+              saveMissingDuration(
+                item.target,
+                item.duration,
+                deferCategoryUpdate: true,
+                skipSynchronizedDocument: true,
+              ),
+          ]);
+          if (!_isCurrent(epoch)) return;
+          for (var i = 0; i < wave.length; i++) {
+            final result = results[i];
+            if (!result.documentFailed && result.detail.duration != null) {
+              synchronized[wave[i].targetKey] =
+                  result.detail.duration!.inMilliseconds;
+              syncChanged = true;
+            }
           }
         }
       }
@@ -729,11 +802,18 @@ final class LibraryMetadataCoordinator {
         updatedTracks: const <MusicTrack>[],
       );
     }
+    final useWindowsBatchHeaders = Platform.isWindows && durationReader == null;
     Future<Duration?> resolve(MusicTrack track) async {
       try {
         if (durationReader != null) return await durationReader(track.path);
-        final duration = await FileCachePlatformGateway.instance
-            .resolveMediaDuration(track.path);
+        final duration = useWindowsBatchHeaders
+            ? await WindowsMediaTools.instance.readDuration(
+                track.path,
+                skipHeaderParse: true,
+              )
+            : await FileCachePlatformGateway.instance.resolveMediaDuration(
+                track.path,
+              );
         return duration != null && duration > Duration.zero ? duration : null;
       } catch (error, stackTrace) {
         AppLogService.warning(
@@ -758,39 +838,69 @@ final class LibraryMetadataCoordinator {
       final batchEnd = (batchStart + commitBatchSize < missing.length)
           ? batchStart + commitBatchSize
           : missing.length;
-      var nextIndex = batchStart;
-
-      Future<void> worker() async {
-        while (!aborted) {
-          if (!(await waitForIdle?.call() ?? true) || !_isCurrent(epoch)) {
-            aborted = true;
-            return;
-          }
-          if (aborted || nextIndex >= batchEnd) return;
-          final track = missing[nextIndex++];
-          final duration = await resolve(track) ?? Duration.zero;
-          if (aborted || !_isCurrent(epoch)) {
-            aborted = true;
-            return;
-          }
-          if (duration > Duration.zero) {
-            total += duration;
-            updated.add(track.copyWith(duration: duration));
+      final batchTracks = missing.sublist(batchStart, batchEnd);
+      List<MusicTrack> fallbackTracks = batchTracks;
+      if (useWindowsBatchHeaders) {
+        if (!(await waitForIdle?.call() ?? true) || !_isCurrent(epoch)) {
+          aborted = true;
+          break;
+        }
+        final headerDurations = await WindowsMediaTools.instance
+            .readHeaderDurationsBatch([
+              for (final track in batchTracks) track.path,
+            ]);
+        if (!_isCurrent(epoch)) {
+          aborted = true;
+          break;
+        }
+        final remaining = <MusicTrack>[];
+        for (final track in batchTracks) {
+          final parsed = headerDurations[track.path];
+          if (parsed != null && parsed > Duration.zero) {
+            total += parsed;
+            updated.add(track.copyWith(duration: parsed));
             onResolved?.call(track);
           } else {
-            hasUnknown = true;
-            onUnresolved?.call(track);
-            AppLogService.warning(
-              'library_duration_unresolved path=${track.path} '
-              'video=${track.isVideo}',
-            );
+            remaining.add(track);
           }
         }
+        fallbackTracks = remaining;
       }
 
-      final remaining = batchEnd - batchStart;
-      final workerCount = remaining < concurrency ? remaining : concurrency;
-      await Future.wait(List.generate(workerCount, (_) => worker()));
+      if (fallbackTracks.isNotEmpty) {
+        var nextIndex = 0;
+        Future<void> worker() async {
+          while (!aborted) {
+            if (!(await waitForIdle?.call() ?? true) || !_isCurrent(epoch)) {
+              aborted = true;
+              return;
+            }
+            if (aborted || nextIndex >= fallbackTracks.length) return;
+            final track = fallbackTracks[nextIndex++];
+            final duration = await resolve(track) ?? Duration.zero;
+            if (aborted || !_isCurrent(epoch)) {
+              aborted = true;
+              return;
+            }
+            if (duration > Duration.zero) {
+              total += duration;
+              updated.add(track.copyWith(duration: duration));
+              onResolved?.call(track);
+            } else {
+              hasUnknown = true;
+              onUnresolved?.call(track);
+              AppLogService.warning(
+                'library_duration_unresolved path=${track.path} '
+                'video=${track.isVideo}',
+              );
+            }
+          }
+        }
+
+        final remaining = fallbackTracks.length;
+        final workerCount = remaining < concurrency ? remaining : concurrency;
+        await Future.wait(List.generate(workerCount, (_) => worker()));
+      }
       if (aborted || !_isCurrent(epoch)) {
         return (totalDuration: null, updatedTracks: const <MusicTrack>[]);
       }
@@ -1013,7 +1123,7 @@ final class LibraryMetadataCoordinator {
           : metadata.releaseDate,
       duration: missingOnly && detail.duration != null
           ? detail.duration
-          : metadata.duration,
+          : metadata.duration ?? detail.duration,
       rating: missingOnly && detail.rating != null
           ? detail.rating
           : metadata.rating,
@@ -1021,6 +1131,7 @@ final class LibraryMetadataCoordinator {
     final saved = await saveAudioDetail(
       next,
       deferCategoryUpdate: deferCategoryUpdate,
+      preserveExistingDuration: metadata.duration == null,
     );
     String? coverPath;
     Object? coverError;

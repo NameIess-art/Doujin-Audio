@@ -28,4 +28,36 @@ void main() {
     expect(track.cues.first.end, const Duration(seconds: 3));
     expect(track.cues.first.text, 'Line one');
   });
+
+  test('parses WebVTT cues with identifiers starting with NOTE while skipping comments', () async {
+    final track = await parseSubtitleTrackFromRaw(
+      sourcePath: 'notes.vtt',
+      raw: '''
+WEBVTT
+
+NOTE
+This multiline comment
+should be ignored.
+
+NOTE inline comment
+Still a comment.
+
+NOTE\ttab comment
+
+NOTE1
+00:00:01.000 --> 00:00:02.000
+First cue
+
+NOTE-2
+00:00:03.000 --> 00:00:04.000
+Second cue
+''',
+      extension: '.vtt',
+    );
+
+    expect(track, isNotNull);
+    expect(track!.cues, hasLength(2));
+    expect(track.cues[0].text, 'First cue');
+    expect(track.cues[1].text, 'Second cue');
+  });
 }

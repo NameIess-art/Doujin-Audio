@@ -20,12 +20,16 @@ internal class VolumeBalanceAudioProcessor : BaseAudioProcessor() {
         val spatialResponses: StereoSpatialResponses? = null
     ) {
         val isActive: Boolean
-            get() = shouldProcessVolumeBalance(panning) || channelSwapEnabled || spatialResponses != null
+            get() = shouldProcessVolumeBalance(panning) ||
+                channelSwapEnabled ||
+                (shouldProcessFrontBack(frontBack) && spatialResponses != null)
     }
 
     @Volatile
     var controls = Controls()
     private var spatialRenderer: StereoSpatialRenderer? = null
+    private var shortScratch = ShortArray(0)
+    private var floatScratch = FloatArray(0)
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         if (!controls.isActive) return AudioProcessor.AudioFormat.NOT_SET
@@ -46,6 +50,8 @@ internal class VolumeBalanceAudioProcessor : BaseAudioProcessor() {
 
     override fun onReset() {
         spatialRenderer = null
+        shortScratch = ShortArray(0)
+        floatScratch = FloatArray(0)
     }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
@@ -114,39 +120,51 @@ internal class VolumeBalanceAudioProcessor : BaseAudioProcessor() {
         renderer: StereoSpatialRenderer?,
         targetFrontBack: Float
     ) {
+        val sampleCount = frameCount * 2
+        if (sampleCount <= 0) return
+        if (shortScratch.size < sampleCount) {
+            shortScratch = ShortArray(sampleCount)
+        }
+        val samples = shortScratch
+        inputBuffer.asShortBuffer().get(samples, 0, sampleCount)
+        var i = 0
         if (renderer != null) {
             if (swap) {
-                for (i in 0 until frameCount) {
-                    val rightIn = inputBuffer.short.toFloat()
-                    val leftIn = inputBuffer.short.toFloat()
+                while (i < sampleCount) {
+                    val rightIn = samples[i].toFloat()
+                    val leftIn = samples[i + 1].toFloat()
                     renderer.process(leftIn, rightIn, targetFrontBack, 32768f)
-                    outputBuffer.putShort(toPcm16(renderer.left * leftMultiplier))
-                    outputBuffer.putShort(toPcm16(renderer.right * rightMultiplier))
+                    samples[i] = toPcm16(renderer.left * leftMultiplier)
+                    samples[i + 1] = toPcm16(renderer.right * rightMultiplier)
+                    i += 2
                 }
             } else {
-                for (i in 0 until frameCount) {
-                    val leftIn = inputBuffer.short.toFloat()
-                    val rightIn = inputBuffer.short.toFloat()
+                while (i < sampleCount) {
+                    val leftIn = samples[i].toFloat()
+                    val rightIn = samples[i + 1].toFloat()
                     renderer.process(leftIn, rightIn, targetFrontBack, 32768f)
-                    outputBuffer.putShort(toPcm16(renderer.left * leftMultiplier))
-                    outputBuffer.putShort(toPcm16(renderer.right * rightMultiplier))
+                    samples[i] = toPcm16(renderer.left * leftMultiplier)
+                    samples[i + 1] = toPcm16(renderer.right * rightMultiplier)
+                    i += 2
                 }
             }
         } else if (swap) {
-            for (i in 0 until frameCount) {
-                val rightIn = inputBuffer.short.toFloat()
-                val leftIn = inputBuffer.short.toFloat()
-                outputBuffer.putShort(toPcm16(leftIn * leftMultiplier))
-                outputBuffer.putShort(toPcm16(rightIn * rightMultiplier))
+            while (i < sampleCount) {
+                val rightIn = samples[i].toFloat()
+                val leftIn = samples[i + 1].toFloat()
+                samples[i] = toPcm16(leftIn * leftMultiplier)
+                samples[i + 1] = toPcm16(rightIn * rightMultiplier)
+                i += 2
             }
         } else {
-            for (i in 0 until frameCount) {
-                val leftIn = inputBuffer.short.toFloat()
-                val rightIn = inputBuffer.short.toFloat()
-                outputBuffer.putShort(toPcm16(leftIn * leftMultiplier))
-                outputBuffer.putShort(toPcm16(rightIn * rightMultiplier))
+            while (i < sampleCount) {
+                samples[i] = toPcm16(samples[i].toFloat() * leftMultiplier)
+                samples[i + 1] = toPcm16(samples[i + 1].toFloat() * rightMultiplier)
+                i += 2
             }
         }
+        outputBuffer.asShortBuffer().put(samples, 0, sampleCount)
+        outputBuffer.position(sampleCount * 2)
     }
 
     private fun processPcmFloat(
@@ -159,39 +177,51 @@ internal class VolumeBalanceAudioProcessor : BaseAudioProcessor() {
         renderer: StereoSpatialRenderer?,
         targetFrontBack: Float
     ) {
+        val sampleCount = frameCount * 2
+        if (sampleCount <= 0) return
+        if (floatScratch.size < sampleCount) {
+            floatScratch = FloatArray(sampleCount)
+        }
+        val samples = floatScratch
+        inputBuffer.asFloatBuffer().get(samples, 0, sampleCount)
+        var i = 0
         if (renderer != null) {
             if (swap) {
-                for (i in 0 until frameCount) {
-                    val rightIn = inputBuffer.float
-                    val leftIn = inputBuffer.float
+                while (i < sampleCount) {
+                    val rightIn = samples[i]
+                    val leftIn = samples[i + 1]
                     renderer.process(leftIn, rightIn, targetFrontBack, 1f)
-                    outputBuffer.putFloat(renderer.left * leftMultiplier)
-                    outputBuffer.putFloat(renderer.right * rightMultiplier)
+                    samples[i] = renderer.left * leftMultiplier
+                    samples[i + 1] = renderer.right * rightMultiplier
+                    i += 2
                 }
             } else {
-                for (i in 0 until frameCount) {
-                    val leftIn = inputBuffer.float
-                    val rightIn = inputBuffer.float
+                while (i < sampleCount) {
+                    val leftIn = samples[i]
+                    val rightIn = samples[i + 1]
                     renderer.process(leftIn, rightIn, targetFrontBack, 1f)
-                    outputBuffer.putFloat(renderer.left * leftMultiplier)
-                    outputBuffer.putFloat(renderer.right * rightMultiplier)
+                    samples[i] = renderer.left * leftMultiplier
+                    samples[i + 1] = renderer.right * rightMultiplier
+                    i += 2
                 }
             }
         } else if (swap) {
-            for (i in 0 until frameCount) {
-                val rightIn = inputBuffer.float
-                val leftIn = inputBuffer.float
-                outputBuffer.putFloat(leftIn * leftMultiplier)
-                outputBuffer.putFloat(rightIn * rightMultiplier)
+            while (i < sampleCount) {
+                val rightIn = samples[i]
+                val leftIn = samples[i + 1]
+                samples[i] = leftIn * leftMultiplier
+                samples[i + 1] = rightIn * rightMultiplier
+                i += 2
             }
         } else {
-            for (i in 0 until frameCount) {
-                val leftIn = inputBuffer.float
-                val rightIn = inputBuffer.float
-                outputBuffer.putFloat(leftIn * leftMultiplier)
-                outputBuffer.putFloat(rightIn * rightMultiplier)
+            while (i < sampleCount) {
+                samples[i] = samples[i] * leftMultiplier
+                samples[i + 1] = samples[i + 1] * rightMultiplier
+                i += 2
             }
         }
+        outputBuffer.asFloatBuffer().put(samples, 0, sampleCount)
+        outputBuffer.position(sampleCount * 4)
     }
 
     private fun toPcm16(value: Float): Short {

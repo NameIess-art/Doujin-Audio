@@ -1310,14 +1310,17 @@ void main() {
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 100));
         final state = tester.state(find.byType(ShimmerLoader).last);
-        expect(find.byType(ShaderMask), findsNothing);
+        final shimmerMaskFinder = find.byWidgetPredicate(
+          (widget) => widget is ShaderMask,
+        );
+        expect(shimmerMaskFinder, findsNothing);
         expect(find.bySemanticsLabel('detail-origin'), findsNothing);
         expect(find.bySemanticsLabel('detail-destination'), findsNothing);
         expect(focus.canRequestFocus, isFalse);
 
         await tester.pump(kAppPagePushDuration - const Duration(milliseconds: 99));
         await tester.pump();
-        expect(find.byType(ShaderMask), findsOneWidget);
+        expect(shimmerMaskFinder, findsOneWidget);
         expect(find.bySemanticsLabel('detail-destination'), findsOneWidget);
         expect(focus.canRequestFocus, isTrue);
         expect(tester.state(find.byType(ShimmerLoader)), same(state));
@@ -1325,7 +1328,7 @@ void main() {
         navigatorKey.currentState!.pop();
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 100));
-        expect(find.byType(ShaderMask), findsNothing);
+        expect(shimmerMaskFinder, findsNothing);
         expect(find.bySemanticsLabel('detail-origin'), findsNothing);
         expect(find.bySemanticsLabel('detail-destination'), findsNothing);
         expect(focus.canRequestFocus, isFalse);
@@ -1333,7 +1336,7 @@ void main() {
         await tester.pump(const Duration(milliseconds: 1));
         await tester.pump();
         await tester.pump();
-        expect(find.byType(ShaderMask), findsOneWidget);
+        expect(shimmerMaskFinder, findsOneWidget);
         expect(find.bySemanticsLabel('detail-origin'), findsOneWidget);
         semantics.dispose();
         await tester.pumpWidget(const SizedBox.shrink());
@@ -2349,6 +2352,46 @@ void main() {
         expect(find.text('Detail'), cancelled ? findsOneWidget : findsNothing);
         if (cancelled) expect(route.animation!.value, 1);
       }
+    },
+    variant: const TargetPlatformVariant({TargetPlatform.android}),
+  );
+
+  testWidgets(
+    'leftward drag in the left edge strip does not start interactive pop',
+    (tester) async {
+      final navigatorKey = GlobalKey<NavigatorState>();
+      final scrollController = ScrollController();
+      addTearDown(scrollController.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorKey: navigatorKey,
+          home: const Scaffold(body: Text('Home')),
+        ),
+      );
+      final navigator = navigatorKey.currentState!;
+      final route = buildAppPageRoute<void>(
+        context: navigator.context,
+        child: Scaffold(
+          body: SingleChildScrollView(
+            controller: scrollController,
+            scrollDirection: Axis.horizontal,
+            child: const SizedBox(width: 1600, height: 600),
+          ),
+        ),
+      );
+      unawaited(navigator.push(route));
+      await tester.pumpAndSettle();
+
+      final gesture = await tester.startGesture(const Offset(24, 300));
+      await gesture.moveBy(const Offset(-20, 0));
+      await gesture.moveBy(const Offset(-120, 0));
+      await tester.pump();
+      expect(navigator.userGestureInProgress, isFalse);
+      expect(route.animation!.value, 1.0);
+      expect(scrollController.offset, greaterThan(0));
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(navigator.userGestureInProgress, isFalse);
     },
     variant: const TargetPlatformVariant({TargetPlatform.android}),
   );
@@ -5542,6 +5585,97 @@ void main() {
         await tester.pumpAndSettle();
         expect(coordinator.navigationAllowed.value, isTrue);
       },
+    );
+
+    testWidgets(
+      'PlaceholderContentTransition same-frame round-trip does not lock UiInteractionCoordinator',
+      (tester) async {
+        final coordinator = UiInteractionCoordinator.instance;
+        coordinator.resetForTest();
+        addTearDown(coordinator.resetForTest);
+        var showPlaceholder = true;
+        late StateSetter setHostState;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: StatefulBuilder(
+              builder: (context, setState) {
+                setHostState = setState;
+                return PlaceholderContentTransition(
+                  showPlaceholder: showPlaceholder,
+                  placeholder: const Text('placeholder'),
+                  content: const Text('content'),
+                );
+              },
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(coordinator.isInteracting, isFalse);
+
+        // Flip true -> false -> true before the post-frame fade callback runs.
+        setHostState(() => showPlaceholder = false);
+        setHostState(() => showPlaceholder = true);
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 500));
+
+        expect(coordinator.isInteracting, isFalse);
+        expect(coordinator.isVisualUpdateDeferred, isFalse);
+        expect(find.text('placeholder'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'edge-swipe back tracks finger 1:1 linearly and ignores leftward drags on the left edge',
+      (tester) async {
+        final coordinator = UiInteractionCoordinator.instance;
+        coordinator.resetForTest();
+        addTearDown(coordinator.resetForTest);
+        final observer = UiInteractionNavigatorObserver(
+          coordinator: coordinator,
+        );
+        final navigatorKey = GlobalKey<NavigatorState>();
+
+        await tester.pumpWidget(
+          MaterialApp(
+            navigatorKey: navigatorKey,
+            navigatorObservers: [observer],
+            home: const Scaffold(body: Center(child: Text('root-page'))),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final route = buildAppPageRoute<void>(
+          context: navigatorKey.currentContext!,
+          child: const Scaffold(body: Center(child: Text('detail-page'))),
+        );
+        unawaited(navigatorKey.currentState!.push(route));
+        await tester.pumpAndSettle();
+
+        final width = tester.getSize(find.byType(MaterialApp)).width;
+        // Leftward drag starting within the left edge must not start interactive pop.
+        final leftGesture = await tester.startGesture(const Offset(16, 200));
+        await leftGesture.moveBy(const Offset(-40, 0));
+        await tester.pump();
+        expect(navigatorKey.currentState!.userGestureInProgress, isFalse);
+        expect(coordinator.navigationAllowed.value, isTrue);
+        await leftGesture.up();
+        await tester.pumpAndSettle();
+
+        // Rightward drag tracks 1:1 linearly (not stuck near 1.5% under kAppSpringCurve).
+        final rightGesture = await tester.startGesture(const Offset(8, 200));
+        await rightGesture.moveBy(Offset(width * 0.35, 0));
+        await tester.pump();
+        final dx = _pageFractionDx(tester, 'detail-page');
+        expect(dx, greaterThan(0.25));
+        expect(dx, lessThan(0.45));
+        await rightGesture.up();
+        await tester.pumpAndSettle();
+        expect(find.text('detail-page'), findsNothing);
+        expect(coordinator.navigationAllowed.value, isTrue);
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.android),
     );
   });
 }

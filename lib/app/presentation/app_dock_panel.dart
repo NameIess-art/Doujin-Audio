@@ -22,14 +22,10 @@ class AppDockPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final tokens = AppDesignTokens.of(context);
     final bgColor = cs.surfaceContainerHigh;
-    final glassEnabled = AppDesignTokens.of(context).barGlassEnabled;
-    final borderColor = isDark
-        ? Color.alphaBlend(
-            Colors.white.withValues(alpha: 0.08),
-            cs.outlineVariant,
-          ).withValues(alpha: 0.34)
-        : cs.outlineVariant.withValues(alpha: 0.42);
+    final glassEnabled = tokens.barGlassEnabled;
+    final borderColor = appOverlayBorderColor(cs, tokens, elevated: true);
     return AppGlassSurface(
       enabled: glassEnabled,
       borderRadius: BorderRadius.circular(radius),

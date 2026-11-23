@@ -1081,9 +1081,10 @@ class AsmrLibraryController extends ChangeNotifier
       }
       _authEpoch++;
       _cancelActiveSync();
+      _authSession = snapshot.session;
       _catalog.invalidateForAuthChange();
       _invalidateRemoteWorkCaches();
-      _applyAccountSnapshot(snapshot);
+      _applyLocalAccountState(snapshot);
       _lastSyncError = null;
       _bumpGlobalRevision();
       notifyListeners();
@@ -1139,9 +1140,9 @@ class AsmrLibraryController extends ChangeNotifier
   Future<void> loginAsmrAccount(String name, String password) async {
     var operationEpoch = ++_authEpoch;
     _cancelActiveSync();
+    _authSession = null;
     _catalog.invalidateForAuthChange();
     _invalidateRemoteWorkCaches();
-    _authSession = null;
     _syncPhase = AsmrSyncPhase.syncing;
     _lastSyncError = null;
     _bumpGlobalRevision();
@@ -1150,9 +1151,10 @@ class AsmrLibraryController extends ChangeNotifier
       final snapshot = await _accountSyncService.login(name, password);
       if (operationEpoch != _authEpoch) return;
       operationEpoch = ++_authEpoch;
+      _authSession = snapshot.session;
       _catalog.invalidateForAuthChange();
       _invalidateRemoteWorkCaches();
-      _applyAccountSnapshot(snapshot);
+      _applyLocalAccountState(snapshot);
       await syncAsmrAccount(force: true);
       _refreshLoadedCategoriesForCurrentAuth();
     } catch (error) {
@@ -1657,8 +1659,10 @@ class AsmrLibraryController extends ChangeNotifier
         ),
       );
       if (_isWorkRequestCurrent(key)) {
-        final sortedTree = await compute(sortAsmrTrackTreeNaturally, tree);
-        // Account, language or cache invalidation can occur during sorting.
+        final sortedTree = isAsmrTrackTreeSortedNaturally(tree)
+            ? tree
+            : await compute(sortAsmrTrackTreeNaturally, tree);
+        // Account, language or cache invalidation can occur during fallback sorting.
         if (_isWorkRequestCurrent(key)) {
           _workContent.clearTrackTreeError(work.workKey);
           final storedTree = _workContent.storeTrackTree(

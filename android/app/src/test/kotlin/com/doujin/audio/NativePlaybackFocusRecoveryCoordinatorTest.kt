@@ -133,6 +133,50 @@ class NativePlaybackFocusRecoveryCoordinatorTest {
         assertTrue(host.paused.isEmpty())
         assertTrue(host.devicePauseBatches.isEmpty())
     }
+
+    @Test
+    fun `explicit playback requests focus during transient loss and clears stale pending resume`() {
+        val host = FakeFocusRecoveryHost(activeIds = linkedSetOf("a", "b"))
+        val focus = FakeAudioFocusAccess(isHeld = true)
+        val coordinator = NativePlaybackFocusRecoveryCoordinator(host, focus)
+        coordinator.onFocusChange(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT)
+        assertTrue(coordinator.interruptionActive)
+        assertTrue(coordinator.isPending("a"))
+        assertTrue(coordinator.isPending("b"))
+
+        // Automatic recovery stays deferred while explicit user play reclaims focus.
+        assertFalse(coordinator.requestIfNeeded())
+        assertEquals(0, focus.requestCount)
+
+        coordinator.removePending("a")
+        assertTrue(coordinator.requestForExplicitPlayback())
+        assertEquals(1, focus.requestCount)
+        assertFalse(coordinator.interruptionActive)
+        assertFalse(coordinator.hasPendingResume())
+        assertEquals(listOf("b"), host.clearedIntents)
+    }
+
+    @Test
+    fun `transient loss does not queue pending resume when auto resume after transient gain is disabled`() {
+        val host = FakeFocusRecoveryHost(activeIds = linkedSetOf("a"))
+        host.behavior = host.behavior.copy(resumeAfterTransientAudioFocusGain = false)
+        val focus = FakeAudioFocusAccess(isHeld = false)
+        val coordinator = NativePlaybackFocusRecoveryCoordinator(host, focus)
+
+        coordinator.onFocusChange(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT)
+
+        assertEquals(listOf("a"), host.paused)
+        assertEquals(listOf("a"), host.clearedIntents)
+        assertFalse(coordinator.interruptionActive)
+        assertFalse(coordinator.hasPendingResume())
+
+        coordinator.onPlayWhenReadyChanged(
+            sessionId = "a",
+            playWhenReady = false,
+            reason = Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS
+        )
+        assertFalse(coordinator.isPending("a"))
+    }
 }
 
 private class FakeAudioFocusAccess(

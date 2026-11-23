@@ -1,7 +1,10 @@
 #include "media_controls.h"
 #include "desktop_integration.h"
 #include <SystemMediaTransportControlsInterop.h>
+#include <combaseapi.h>
 #include <dwmapi.h>
+#include <mmdeviceapi.h>
+#include <roapi.h>
 #include <shlwapi.h>
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Storage.Streams.h>
@@ -109,12 +112,24 @@ class EndpointNotifications : public Microsoft::WRL::RuntimeClass<
     Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>, IMMNotificationClient> {
  public:
   EndpointNotifications(HWND window, const std::wstring& initial) : window_(window), current_(initial) {}
+  void InvalidateWindow() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    window_ = nullptr;
+  }
   HRESULT STDMETHODCALLTYPE OnDeviceStateChanged(LPCWSTR id,DWORD state) override {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (id && current_ == id && state != DEVICE_STATE_ACTIVE) {
-      current_.clear();
-      disconnected_ = true;
-      PostMessage(window_, kAudioEndpointChanged, 0, 0);
+    if (!id) return S_OK;
+    const ULONGLONG now = GetTickCount64();
+    PruneRecentDefaultsLocked(now);
+    if (state != DEVICE_STATE_ACTIVE) {
+      if (current_ == id) {
+        current_.clear();
+        disconnected_ = true;
+        if (window_) PostMessage(window_, kAudioEndpointChanged, 0, 0);
+      } else if (EraseRecentDefaultLocked(id)) {
+        disconnected_ = true;
+        if (window_) PostMessage(window_, kAudioEndpointChanged, 0, 0);
+      }
     }
     return S_OK;
   }
@@ -124,12 +139,17 @@ class EndpointNotifications : public Microsoft::WRL::RuntimeClass<
   HRESULT STDMETHODCALLTYPE OnDefaultDeviceChanged(EDataFlow flow,ERole role,LPCWSTR id) override {
     if (flow == eRender && role == eMultimedia) {
       std::lock_guard<std::mutex> lock(mutex_);
+      const ULONGLONG now = GetTickCount64();
+      PruneRecentDefaultsLocked(now);
       const std::wstring next = id ? id : L"";
+      if (!next.empty()) EraseRecentDefaultLocked(next);
       if (!current_.empty() && current_ != next) {
         // A default change can arrive ahead of the loss notification. Check the
-        // old device on the window thread, keeping COM callbacks nonblocking.
+        // old device on the window thread and remember it briefly in case its
+        // state transition arrives after that check.
+        RecordRecentDefaultLocked(current_, now);
         previous_defaults_.push_back(std::move(current_));
-        PostMessage(window_, kAudioEndpointChanged, 0, 0);
+        if (window_) PostMessage(window_, kAudioEndpointChanged, 0, 0);
       }
       current_ = next;
     }
@@ -143,23 +163,183 @@ class EndpointNotifications : public Microsoft::WRL::RuntimeClass<
       previous_defaults.swap(previous_defaults_);
       if (std::exchange(disconnected_, false)) return true;
     }
+    std::vector<std::wstring> confirmed_disconnected;
     for (const auto& id : previous_defaults) {
       Microsoft::WRL::ComPtr<IMMDevice> device;
       const auto result = enumerator->GetDevice(id.c_str(), &device);
-      if (result == HRESULT_FROM_WIN32(ERROR_NOT_FOUND)) return true;
+      if (result == HRESULT_FROM_WIN32(ERROR_NOT_FOUND)) {
+        confirmed_disconnected.push_back(id);
+        continue;
+      }
       DWORD state = 0;
       if (SUCCEEDED(result) && SUCCEEDED(device->GetState(&state)) &&
-          state != DEVICE_STATE_ACTIVE) return true;
+          state != DEVICE_STATE_ACTIVE) {
+        confirmed_disconnected.push_back(id);
+      }
     }
-    return false;
+    if (confirmed_disconnected.empty()) return false;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      for (const auto& id : confirmed_disconnected) {
+        EraseRecentDefaultLocked(id);
+      }
+    }
+    return true;
   }
 
  private:
+  static constexpr ULONGLONG kRecentDefaultWindowMs = 5000;
+  static constexpr size_t kMaxRecentDefaults = 8;
+
+  struct RecentDefault {
+    std::wstring id;
+    ULONGLONG expires_at_ms;
+  };
+
+  void PruneRecentDefaultsLocked(ULONGLONG now) {
+    recent_defaults_.erase(
+        std::remove_if(recent_defaults_.begin(), recent_defaults_.end(),
+                       [now](const RecentDefault& entry) {
+                         return now >= entry.expires_at_ms;
+                       }),
+        recent_defaults_.end());
+  }
+
+  bool EraseRecentDefaultLocked(const std::wstring& id) {
+    const auto it = std::find_if(
+        recent_defaults_.begin(), recent_defaults_.end(),
+        [&id](const RecentDefault& entry) { return entry.id == id; });
+    if (it == recent_defaults_.end()) return false;
+    recent_defaults_.erase(it);
+    return true;
+  }
+
+  void RecordRecentDefaultLocked(const std::wstring& id, ULONGLONG now) {
+    const ULONGLONG expires_at = now + kRecentDefaultWindowMs;
+    for (auto& entry : recent_defaults_) {
+      if (entry.id == id) {
+        entry.expires_at_ms = expires_at;
+        return;
+      }
+    }
+    if (recent_defaults_.size() >= kMaxRecentDefaults) {
+      recent_defaults_.erase(recent_defaults_.begin());
+    }
+    recent_defaults_.push_back(RecentDefault{id, expires_at});
+  }
+
   HWND window_;
   std::wstring current_;
   std::mutex mutex_;
   std::vector<std::wstring> previous_defaults_;
+  std::vector<RecentDefault> recent_defaults_;
   bool disconnected_ = false;
+};
+
+struct MediaControls::EndpointState {
+  std::mutex mutex;
+  HWND window = nullptr;
+  bool shutting_down = false;
+  CO_MTA_USAGE_COOKIE mta_cookie = nullptr;
+  Microsoft::WRL::ComPtr<IAgileReference> agile_endpoints;
+  Microsoft::WRL::ComPtr<EndpointNotifications> listener;
+
+  ~EndpointState() {
+    // Release COM interfaces before releasing our hold on the process MTA.
+    agile_endpoints.Reset();
+    listener.Reset();
+    if (mta_cookie) {
+      CoDecrementMTAUsage(mta_cookie);
+      mta_cookie = nullptr;
+    }
+  }
+
+  static void CALLBACK InitWorker(PTP_CALLBACK_INSTANCE instance, void* context) {
+    CallbackMayRunLong(instance);
+    const std::unique_ptr<std::shared_ptr<EndpointState>> owner(
+        static_cast<std::shared_ptr<EndpointState>*>(context));
+    (*owner)->InitializeInBackground();
+  }
+
+  void InitializeInBackground() {
+    HWND target = nullptr;
+    {
+      std::lock_guard<std::mutex> lock(mutex);
+      if (shutting_down) return;
+      target = window;
+    }
+    const HRESULT com_hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    if (FAILED(com_hr) && com_hr != RPC_E_CHANGED_MODE) return;
+    const bool should_uninit = SUCCEEDED(com_hr);
+
+    CO_MTA_USAGE_COOKIE cookie = nullptr;
+    Microsoft::WRL::ComPtr<IMMDeviceEnumerator> endpoints;
+    Microsoft::WRL::ComPtr<IAgileReference> agile;
+    Microsoft::WRL::ComPtr<EndpointNotifications> listener_local;
+    bool registered = false;
+
+    try {
+      winrt::check_hresult(CoIncrementMTAUsage(&cookie));
+      winrt::check_hresult(CoCreateInstance(
+          __uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+          IID_PPV_ARGS(&endpoints)));
+      Microsoft::WRL::ComPtr<IMMDevice> device;
+      std::wstring id;
+      if (SUCCEEDED(endpoints->GetDefaultAudioEndpoint(eRender, eMultimedia, &device))) {
+        LPWSTR text = nullptr;
+        if (SUCCEEDED(device->GetId(&text))) {
+          id = text;
+          CoTaskMemFree(text);
+        }
+      }
+      listener_local = Microsoft::WRL::Make<EndpointNotifications>(target, id);
+      winrt::check_hresult(
+          endpoints->RegisterEndpointNotificationCallback(listener_local.Get()));
+      registered = true;
+      winrt::check_hresult(RoGetAgileReference(
+          AGILEREFERENCE_DEFAULT, __uuidof(IMMDeviceEnumerator),
+          endpoints.Get(), &agile));
+    } catch (const winrt::hresult_error& e) {
+      if (registered && endpoints && listener_local) {
+        endpoints->UnregisterEndpointNotificationCallback(listener_local.Get());
+      }
+      agile.Reset();
+      endpoints.Reset();
+      listener_local.Reset();
+      if (cookie) CoDecrementMTAUsage(cookie);
+      const auto message =
+          "DoujinAudio: audio endpoint notifications unavailable: " +
+          winrt::to_string(e.message()) + "\n";
+      OutputDebugStringA(message.c_str());
+      std::cerr << message;
+      if (should_uninit) CoUninitialize();
+      return;
+    }
+
+    bool cancel_registration = false;
+    {
+      std::lock_guard<std::mutex> lock(mutex);
+      if (shutting_down) {
+        cancel_registration = true;
+      } else {
+        mta_cookie = cookie;
+        agile_endpoints = std::move(agile);
+        listener = std::move(listener_local);
+      }
+    }
+
+    if (cancel_registration) {
+      listener_local->InvalidateWindow();
+      endpoints->UnregisterEndpointNotificationCallback(listener_local.Get());
+      agile.Reset();
+      endpoints.Reset();
+      listener_local.Reset();
+      if (cookie) CoDecrementMTAUsage(cookie);
+    } else {
+      endpoints.Reset();
+    }
+    if (should_uninit) CoUninitialize();
+  }
 };
 
 namespace {
@@ -200,23 +380,14 @@ void MediaControls::Initialize() {
     OutputDebugStringA(message.c_str());
     std::cerr << message;
   }
-  try {
-    winrt::check_hresult(CoCreateInstance(__uuidof(MMDeviceEnumerator),nullptr,CLSCTX_ALL,IID_PPV_ARGS(&endpoints_)));
-    Microsoft::WRL::ComPtr<IMMDevice> device;
-    std::wstring id;
-    if (SUCCEEDED(endpoints_->GetDefaultAudioEndpoint(eRender,eMultimedia,&device))) {
-      LPWSTR text = nullptr;
-      if (SUCCEEDED(device->GetId(&text))) { id = text; CoTaskMemFree(text); }
-    }
-    auto listener = Microsoft::WRL::Make<EndpointNotifications>(window_,id);
-    winrt::check_hresult(endpoints_->RegisterEndpointNotificationCallback(listener.Get()));
-    endpoint_listener_ = std::move(listener);
-  } catch (const winrt::hresult_error& e) {
-    endpoints_.Reset();
-    endpoint_listener_.Reset();
-    const auto message = "DoujinAudio: audio endpoint notifications unavailable: " + winrt::to_string(e.message()) + "\n";
-    OutputDebugStringA(message.c_str());
-    std::cerr << message;
+  // CoreAudio endpoint discovery is not HWND-affine; run it off the UI thread.
+  endpoint_state_ = std::make_shared<EndpointState>();
+  endpoint_state_->window = window_;
+  auto owner = std::make_unique<std::shared_ptr<EndpointState>>(endpoint_state_);
+  if (TrySubmitThreadpoolCallback(EndpointState::InitWorker, owner.get(), nullptr)) {
+    owner.release();
+  } else {
+    endpoint_state_->InitializeInBackground();
   }
   EnsureHotkeysRegistered();
   if (pending_update_) {
@@ -229,7 +400,26 @@ MediaControls::~MediaControls() {
   for (int i = 0; i < 4; ++i) {
     if (hotkeys_[i]) UnregisterHotKey(window_, kControlId + i);
   }
-  if (endpoints_ && endpoint_listener_) endpoints_->UnregisterEndpointNotificationCallback(endpoint_listener_.Get());
+  if (endpoint_state_) {
+    Microsoft::WRL::ComPtr<IAgileReference> agile;
+    Microsoft::WRL::ComPtr<EndpointNotifications> listener;
+    {
+      std::lock_guard<std::mutex> lock(endpoint_state_->mutex);
+      endpoint_state_->shutting_down = true;
+      agile = std::move(endpoint_state_->agile_endpoints);
+      listener = std::move(endpoint_state_->listener);
+    }
+    if (listener) listener->InvalidateWindow();
+    if (agile && listener) {
+      Microsoft::WRL::ComPtr<IMMDeviceEnumerator> endpoints;
+      if (SUCCEEDED(agile->Resolve(IID_PPV_ARGS(&endpoints))) && endpoints) {
+        endpoints->UnregisterEndpointNotificationCallback(listener.Get());
+      }
+    }
+    agile.Reset();
+    listener.Reset();
+    endpoint_state_.reset();
+  }
   if (controls_) {
     try {
       controls_.ButtonPressed(button_token_);
@@ -277,8 +467,19 @@ flutter::EncodableMap MediaControls::HotkeyStatus() {
 std::optional<std::string> MediaControls::HandleMessage(UINT message, WPARAM wp,
                                                         LPARAM lp) {
   if (message == kAudioEndpointChanged) {
-    if (endpoint_listener_ && endpoints_ && endpoint_listener_->TakeDisconnect(endpoints_.Get())) {
-      return "deviceDisconnected";
+    Microsoft::WRL::ComPtr<IAgileReference> agile;
+    Microsoft::WRL::ComPtr<EndpointNotifications> listener;
+    if (endpoint_state_) {
+      std::lock_guard<std::mutex> lock(endpoint_state_->mutex);
+      agile = endpoint_state_->agile_endpoints;
+      listener = endpoint_state_->listener;
+    }
+    if (agile && listener) {
+      Microsoft::WRL::ComPtr<IMMDeviceEnumerator> endpoints;
+      if (SUCCEEDED(agile->Resolve(IID_PPV_ARGS(&endpoints))) && endpoints &&
+          listener->TakeDisconnect(endpoints.Get())) {
+        return "deviceDisconnected";
+      }
     }
     return std::string();
   }
@@ -416,7 +617,21 @@ void MediaControls::SupplyThumbnail(int max_width, int max_height) {
 
 void MediaControls::Update(const flutter::EncodableMap& payload) {
   if (!initialized_) {
+    flutter::EncodableValue preserved_cover;
+    bool has_preserved_cover = false;
+    if (pending_update_ && !Find(payload, "taskbarCover")) {
+      const auto it =
+          pending_update_->find(flutter::EncodableValue("taskbarCover"));
+      if (it != pending_update_->end()) {
+        preserved_cover = std::move(it->second);
+        has_preserved_cover = true;
+      }
+    }
     pending_update_ = payload;
+    if (has_preserved_cover) {
+      pending_update_->emplace(flutter::EncodableValue("taskbarCover"),
+                               std::move(preserved_cover));
+    }
     return;
   }
   auto raw = Find(payload,"items");
@@ -468,9 +683,16 @@ void MediaControls::Update(const flutter::EncodableMap& payload) {
     const auto art = Text(*selected,"artPath");
     if (metadata_ready_ && title_ == title && subtitle_ == subtitle && art_path_ == art) return;
     auto updater = controls_.DisplayUpdater();
-    updater.Type(MediaPlaybackType::Music);
-    if (!metadata_ready_ || title_ != title) updater.MusicProperties().Title(winrt::to_hstring(title));
-    if (!metadata_ready_ || subtitle_ != subtitle) updater.MusicProperties().Artist(winrt::to_hstring(subtitle));
+    if (!metadata_ready_) {
+      updater.Type(MediaPlaybackType::Music);
+    }
+    const bool title_changed = !metadata_ready_ || title_ != title;
+    const bool subtitle_changed = !metadata_ready_ || subtitle_ != subtitle;
+    if (title_changed || subtitle_changed) {
+      auto music = updater.MusicProperties();
+      if (title_changed) music.Title(winrt::to_hstring(title));
+      if (subtitle_changed) music.Artist(winrt::to_hstring(subtitle));
+    }
     if (!metadata_ready_ || art_path_ != art) {
       if (!art.empty()) {
         try {

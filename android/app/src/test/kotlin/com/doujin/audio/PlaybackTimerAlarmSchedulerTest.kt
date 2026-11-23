@@ -84,6 +84,7 @@ class PlaybackTimerAlarmSchedulerTest {
             assertEquals(listOf("A"), NativePlaybackStateStore.loadTimerRuntimeState(context)!!.pausedSessionIds)
 
             execution.onTrackEnded("A", state.generation)
+            assertTrue(PlaybackTimerAlarmScheduler.awaitPendingForTest())
             assertNotNull(NativePlaybackStateStore.loadTimerRuntimeState(context)!!.autoResumeAtMs)
             PlaybackTimerAlarmScheduler.onManualPlaybackStopped(context, "A")
             assertNull(NativePlaybackStateStore.loadTimerRuntimeState(context))
@@ -193,6 +194,73 @@ class PlaybackTimerAlarmSchedulerTest {
             assertNotNull(updated.autoResumeAtMs)
             assertFalse(updated.stopAfterCurrentTrack)
             assertEquals(listOf("A"), NativePlaybackStateStore.loadPausedSessionIds(context))
+        } finally {
+            val persistence = ReflectionHelpers.callInstanceMethod<NativePlaybackStatePersistenceCoordinator>(
+                service,
+                "getStatePersistence"
+            )
+            persistence.shutdown()
+            assertTrue(persistence.awaitTermination())
+        }
+    }
+
+    @Test
+    fun `timer pause preserves paused session ids and auto resume schedule instead of triggering manual stop`() {
+        val service = Robolectric.buildService(NativePlaybackService::class.java).get()
+        val sessions = ReflectionHelpers.callInstanceMethod<com.doujin.audio.player.session.NativePlaybackSessionManager>(
+            service,
+            "getSessionManager"
+        )
+        val recovery = ReflectionHelpers.callInstanceMethod<com.doujin.audio.player.recovery.NativePlaybackRecoveryController>(
+            service,
+            "getPlaybackRecovery"
+        )
+        val session = sessions.getOrCreate("A")
+        val track = com.doujin.audio.player.session.NativeMediaItemDescriptor(
+            path = "/track.mp3",
+            uri = "file:///track.mp3",
+            title = "Track",
+            subtitle = null,
+            artUri = null
+        )
+        session.configure(
+            descriptor = track,
+            queue = listOf(track),
+            queueStartIndex = 0,
+            startPositionMs = 0L,
+            volume = 1f,
+            speed = 1f,
+            repeatOne = false,
+            repeatAll = false,
+            shuffleModeEnabled = false,
+            autoPlay = false,
+            deferPlayerCreation = true
+        )
+        recovery.markIntended("A")
+
+        val resumeAtMs = System.currentTimeMillis() + 300_000L
+        val state = timerState().copy(
+            pausedSessionIds = listOf("A"),
+            autoResumeAtMs = resumeAtMs
+        )
+        NativePlaybackStateStore.saveTimerRuntimeState(context, state)
+        NativePlaybackStateStore.storePausedSessionIds(context, listOf("A"))
+        NativePlaybackStateStore.storeTimerCandidateSessionIds(context, listOf("A"))
+        PlaybackTimerAlarmScheduler.rescheduleFromStoredState(context)
+
+        try {
+            val result = service.pausePlayingSessionsForTimer(state.generation, stopAfterCurrentTrack = false)
+            assertEquals(listOf("A"), result.sessionIds)
+            assertFalse(result.waitingForTrackEnd)
+            assertTrue(PlaybackTimerAlarmScheduler.awaitPendingForTest())
+
+            val storedAfter = checkNotNull(NativePlaybackStateStore.loadTimerRuntimeState(context))
+            assertEquals(listOf("A"), storedAfter.pausedSessionIds)
+            assertEquals(resumeAtMs, storedAfter.autoResumeAtMs)
+            assertEquals(listOf("A"), NativePlaybackStateStore.loadPausedSessionIds(context))
+            assertEquals(listOf("A"), NativePlaybackStateStore.loadTimerCandidateSessionIds(context))
+            val alarmManager = context.getSystemService(AlarmManager::class.java)
+            assertTrue(shadowOf(alarmManager).scheduledAlarms.isNotEmpty())
         } finally {
             val persistence = ReflectionHelpers.callInstanceMethod<NativePlaybackStatePersistenceCoordinator>(
                 service,

@@ -171,7 +171,9 @@ class _ScrollActivityGateState extends State<ScrollActivityGate> {
     if (value) {
       UiInteractionCoordinator.instance.beginInteraction(_interactionSource);
     } else {
-      UiInteractionCoordinator.instance.endInteraction(_interactionSource);
+      // _scheduleIdle already waited widget.idleDelay; avoid stacking a second
+      // coordinator idleDelay tail on top of it.
+      UiInteractionCoordinator.instance.cancelInteraction(_interactionSource);
     }
     _publishScrolling();
   }

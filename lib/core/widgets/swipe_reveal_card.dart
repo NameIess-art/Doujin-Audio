@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 
 import '../ui/ui_interaction_coordinator.dart';
 import 'app_feedback.dart';
@@ -109,30 +110,40 @@ class SwipeRevealCard extends StatefulWidget {
   State<SwipeRevealCard> createState() => _SwipeRevealCardState();
 }
 
-class _SwipeRevealCardState extends State<SwipeRevealCard> {
+class _SwipeRevealCardState extends State<SwipeRevealCard>
+    with SingleTickerProviderStateMixin {
   static const double _revealStartThreshold = 4;
   static const double _verticalRejectThreshold = 8;
   static const double _acceptSlopeRatio = 2.2;
   static const double _rejectSlopeRatio = 1.35;
   static const double _minOpenVelocity = 560;
   static const double _minOpenDistance = 44;
-  double _revealedWidth = 0;
+  static final SpringDescription _settleSpring =
+      SpringDescription.withDampingRatio(mass: 1.0, stiffness: 520.0);
+
+  AnimationController? _controller;
   double _dragStartRevealedWidth = 0;
   double _dragDx = 0;
   double _dragDy = 0;
   bool _dragAccepted = false;
   bool _dragRejected = false;
-  bool _snapClosed = false;
   bool _actionPaneActive = false;
+  bool _isOpen = false;
   bool _tickerModeEnabled = true;
   ValueListenable<TickerModeData>? _tickerModeNotifier;
   bool _revealedFromStart = false;
   bool _dragStartFromStart = false;
   bool _overscrollHapticFired = false;
-  double _displayedWidth = 0;
+  int _settleGeneration = 0;
   VoidCallback? _actionAfterClose;
   late final _contentKey = GlobalKey();
   final Object _interactionSource = Object();
+
+  AnimationController _ensureController() => _controller ??=
+      AnimationController(vsync: this, duration: kAppMotionStandard);
+
+  double get _currentProgress => _controller?.value ?? 0.0;
+  double get _currentWidth => _currentProgress * _activeActionWidth;
 
   void _beginMotion() {
     UiInteractionCoordinator.instance.beginInteraction(_interactionSource);
@@ -144,8 +155,10 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
 
   @override
   void dispose() {
+    _settleGeneration++;
     _tickerModeNotifier?.removeListener(_handleTickerModeChanged);
     UiInteractionCoordinator.instance.cancelInteraction(_interactionSource);
+    _controller?.dispose();
     super.dispose();
   }
 
@@ -169,7 +182,6 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
       : 72;
   double get _activeActionWidth =>
       _revealedFromStart ? _leadingActionWidth : _actionWidth;
-  bool get _isOpen => _revealedWidth > (_activeActionWidth * 0.5);
 
   @override
   void didChangeDependencies() {
@@ -193,10 +205,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     // A modal action can cover this route while retaining the revealed card.
     if (_tickerModeEnabled && !enabled) {
       final needsRebuild =
-          _revealedWidth != 0 ||
-          _displayedWidth != 0 ||
-          _actionPaneActive ||
-          _snapClosed;
+          _currentProgress != 0 || _actionPaneActive || _isOpen;
       _resetPaneState();
       if (needsRebuild) setState(() {});
     }
@@ -211,30 +220,119 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
       _resetPaneState();
     }
     if (oldWidget.key != widget.key &&
-        (_revealedWidth != 0 || _actionPaneActive)) {
+        (_currentProgress != 0 || _actionPaneActive)) {
       _resetPaneState();
     }
   }
 
   void _resetPaneState() {
+    _settleGeneration++;
     _actionAfterClose = null;
     UiInteractionCoordinator.instance.cancelInteraction(_interactionSource);
-    _displayedWidth = 0;
-    _revealedWidth = 0;
+    _controller?.stop();
+    if (_controller != null) _controller!.value = 0;
     _dragStartRevealedWidth = 0;
     _dragDx = 0;
     _dragDy = 0;
     _dragAccepted = false;
     _dragRejected = false;
-    _snapClosed = false;
     _actionPaneActive = false;
+    _isOpen = false;
     _revealedFromStart = false;
     _dragStartFromStart = false;
     _overscrollHapticFired = false;
   }
 
+  void _settleTo(
+    double target, {
+    double? velocity,
+    bool immediate = false,
+  }) {
+    final controller = _ensureController();
+    final generation = ++_settleGeneration;
+    final reducedMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    final nextOpen = target > 0.5;
+    if (nextOpen && !_actionPaneActive) {
+      setState(() {
+        _actionPaneActive = true;
+        _isOpen = nextOpen;
+      });
+    } else if (_isOpen != nextOpen) {
+      setState(() => _isOpen = nextOpen);
+    }
+
+    if (immediate || reducedMotion) {
+      controller.stop();
+      controller.value = target;
+      _completeSettle(target, immediate: immediate);
+      return;
+    }
+
+    final atTarget =
+        (controller.value - target).abs() < 1e-4 &&
+        (velocity == null || (target == 0 ? velocity <= 0 : velocity >= 0));
+    if (atTarget) {
+      controller.stop();
+      controller.value = target;
+      _completeSettle(target, immediate: false);
+      return;
+    }
+
+    final TickerFuture future;
+    if (velocity != null) {
+      future = controller.animateWith(
+        SpringSimulation(
+          _settleSpring,
+          controller.value,
+          target,
+          velocity,
+          tolerance: const Tolerance(velocity: 0.01),
+        ),
+      );
+    } else {
+      future = controller.animateTo(
+        target,
+        duration: kAppMotionStandard,
+        curve: kAppSpringCurve,
+      );
+    }
+    unawaited(
+      future.then<void>(
+        (_) {
+          if (!mounted || generation != _settleGeneration) return;
+          controller.value = target;
+          _completeSettle(target, immediate: false);
+        },
+        onError: (_) {},
+      ),
+    );
+  }
+
+  void _completeSettle(double target, {required bool immediate}) {
+    if (!mounted) return;
+    if (!_dragAccepted) {
+      if (immediate) {
+        UiInteractionCoordinator.instance.cancelInteraction(_interactionSource);
+      } else {
+        _finishMotion();
+      }
+    }
+    if (target == 0 && !_dragAccepted) {
+      if (_actionPaneActive || _isOpen || _revealedFromStart) {
+        setState(() {
+          _actionPaneActive = false;
+          _isOpen = false;
+          _revealedFromStart = false;
+        });
+      }
+      if (!immediate && _actionAfterClose != null) {
+        _runClosedAction();
+      }
+    }
+  }
+
   void _closePane({bool immediate = false}) {
-    if (_revealedWidth == 0) {
+    if (_currentProgress == 0 && !_actionPaneActive && !_isOpen) {
       if (immediate) {
         UiInteractionCoordinator.instance.cancelInteraction(_interactionSource);
       }
@@ -245,10 +343,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     } else {
       _beginMotion();
     }
-    setState(() {
-      _snapClosed = immediate;
-      _revealedWidth = 0;
-    });
+    _settleTo(0.0, immediate: immediate);
   }
 
   void _runActionAfterPaneClose(VoidCallback? action) {
@@ -256,7 +351,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     _actionAfterClose = action;
     if (!widget.animateLeadingActionClose ||
         action != widget.onLeadingAction ||
-        _displayedWidth == 0) {
+        _currentProgress == 0) {
       _closePane(immediate: true);
       _runClosedAction();
     } else {
@@ -330,13 +425,15 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     if (!widget.enabled || !_tickerModeEnabled || _actionAfterClose != null) {
       return;
     }
-    // The target may already be zero while the closing animation is visible.
-    _dragStartRevealedWidth = _displayedWidth;
+    _settleGeneration++;
+    _controller?.stop();
+    // The controller value always reflects the exact live painted position.
+    _dragStartRevealedWidth = _currentWidth;
     _dragStartFromStart = _revealedFromStart;
     _overscrollHapticFired = false;
     _dragDx = 0;
     _dragDy = 0;
-    _dragAccepted = _displayedWidth > 0;
+    _dragAccepted = _currentProgress > 0;
     _dragRejected = false;
     if (_dragAccepted) _beginMotion();
   }
@@ -374,9 +471,14 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
       _revealedFromStart = _dragDx > 0;
       _dragStartFromStart = _revealedFromStart;
       _dragAccepted = true;
+      _settleGeneration++;
+      _ensureController().stop();
       _beginMotion();
       AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
       widget.onWillReveal?.call();
+      if (!_actionPaneActive) {
+        setState(() => _actionPaneActive = true);
+      }
     }
 
     // Post-acceptance: if the gesture veers too vertical, revoke acceptance.
@@ -390,14 +492,16 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     }
 
     if (_dragStartRevealedWidth > 0 && verticalDistance > 18) {
-      _closePane();
+      _dragAccepted = false;
       _dragRejected = true;
+      _closePane();
       return;
     }
 
+    final actionWidth = _activeActionWidth;
     final nextWidth =
         (_dragStartRevealedWidth + (_dragStartFromStart ? _dragDx : -_dragDx))
-            .clamp(0.0, _activeActionWidth);
+            .clamp(0.0, actionWidth);
     if (!_overscrollHapticFired &&
         _dragStartRevealedWidth < _minOpenDistance &&
         nextWidth >= _minOpenDistance) {
@@ -406,51 +510,72 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     } else if (nextWidth < _minOpenDistance * 0.85) {
       _overscrollHapticFired = false;
     }
-    if (nextWidth == _revealedWidth) return;
-    setState(() {
-      _actionPaneActive = true;
-      _revealedWidth = nextWidth;
-    });
+    final nextProgress = actionWidth > 0
+        ? (nextWidth / actionWidth).clamp(0.0, 1.0)
+        : 0.0;
+    final controller = _ensureController();
+    if (controller.value != nextProgress) {
+      controller.value = nextProgress;
+    }
   }
 
   void _handleHorizontalDragEnd(DragEndDetails details) {
     if (_dragRejected || !_dragAccepted) {
       _dragAccepted = false;
       _dragRejected = false;
-      if (_dragStartRevealedWidth == 0 && _revealedWidth != 0) {
+      if (_dragStartRevealedWidth == 0 && _currentProgress != 0) {
         _closePane();
+      } else if (!(_controller?.isAnimating ?? false)) {
+        _finishMotion();
       }
-      if (_displayedWidth == _revealedWidth) _finishMotion();
       return;
     }
     final velocity = details.primaryVelocity ?? 0;
-    final distanceMet = _revealedWidth >= _minOpenDistance;
+    final currentWidth = _currentWidth;
+    final distanceMet = currentWidth >= _minOpenDistance;
     final velocityMet = _revealedFromStart
         ? velocity >= _minOpenVelocity
         : velocity <= -_minOpenVelocity;
     final closingVelocityMet = _revealedFromStart
         ? velocity <= -_minOpenVelocity
         : velocity >= _minOpenVelocity;
-    final fullyRevealed = _revealedWidth >= _activeActionWidth * 0.88;
+    final fullyRevealed = currentWidth >= _activeActionWidth * 0.88;
     final shouldOpen =
         !closingVelocityMet &&
         ((distanceMet && velocityMet) || fullyRevealed);
-    setState(() {
-      _revealedWidth = shouldOpen ? _activeActionWidth : 0;
-    });
     _dragAccepted = false;
     _dragRejected = false;
-    if (_displayedWidth == _revealedWidth) _finishMotion();
+    final signedVelocity = _revealedFromStart ? velocity : -velocity;
+    final normalizedVelocity = _activeActionWidth > 0
+        ? (signedVelocity / _activeActionWidth).clamp(-10.0, 10.0)
+        : 0.0;
+    _settleTo(shouldOpen ? 1.0 : 0.0, velocity: normalizedVelocity);
   }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    Widget buildClosedContent() {
-      final content = ColoredBox(
-        color: widget.closedColor ?? cs.surface,
-        child: widget.child,
-      );
+    Widget buildClosedContent(Widget child, {required bool clip}) {
+      final surfaceColor = widget.closedColor ?? cs.surface;
+      if (!clip) {
+        if (widget.shape.runtimeType == RoundedRectangleBorder) {
+          final roundedShape = widget.shape as RoundedRectangleBorder;
+          if (roundedShape.borderRadius == BorderRadius.zero) {
+            return ColoredBox(color: surfaceColor, child: child);
+          }
+          // Paint the rounded surface without creating a GPU ClipRRect layer
+          // while the card is at rest; clip only when actively swiping/revealed.
+          return DecoratedBox(
+            decoration: BoxDecoration(
+              color: surfaceColor,
+              borderRadius: roundedShape.borderRadius,
+            ),
+            child: child,
+          );
+        }
+        return ColoredBox(color: surfaceColor, child: child);
+      }
+      final content = ColoredBox(color: surfaceColor, child: child);
 
       if (widget.shape.runtimeType == RoundedRectangleBorder) {
         final roundedShape = widget.shape as RoundedRectangleBorder;
@@ -476,23 +601,27 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
           shape: widget.shape,
           enabled: widget.enabled,
           skipTraversal: true,
-          child: buildClosedContent(),
+          child: buildClosedContent(widget.child, clip: false),
         ),
       );
     }
-    // Preserve child animations when the swipe transform is removed on close.
-    final closedContent = KeyedSubtree(
-      key: _contentKey,
-      child: buildClosedContent(),
-    );
     if (!widget.swipeEnabled || !widget.enabled) {
-      return Padding(padding: widget.margin, child: closedContent);
+      return Padding(
+        padding: widget.margin,
+        child: buildClosedContent(widget.child, clip: false),
+      );
     }
     final actionWidth = _activeActionWidth;
-    final revealProgress = (_revealedWidth / actionWidth).clamp(0.0, 1.0);
+    final controller = _controller;
     // Lists own per-card repaint isolation. Adding it here duplicates the
     // same full-card layer for every visible library and playlist entry.
-    final paneActive = _actionPaneActive || _revealedWidth > 0;
+    final paneActive = _actionPaneActive || _currentProgress > 0;
+    // Preserve child animations when the swipe transform and clip layer are
+    // added on swipe start and removed on close.
+    final closedContent = buildClosedContent(
+      KeyedSubtree(key: _contentKey, child: widget.child),
+      clip: paneActive,
+    );
     return TapRegion(
       enabled: paneActive,
       onTapOutside: paneActive ? (_) => _closePane() : null,
@@ -506,23 +635,24 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
           onSecondaryTap: () {
             if (_actionAfterClose != null) return;
             _beginMotion();
-            setState(() {
-              final opening = !_isOpen;
-              if (_displayedWidth == 0) _revealedFromStart = false;
-              _actionPaneActive = opening || _actionPaneActive;
-              _revealedWidth = opening ? _activeActionWidth : 0;
-            });
+            final opening = !_isOpen;
+            if (_currentProgress == 0) _revealedFromStart = false;
+            _settleTo(opening ? 1.0 : 0.0);
           },
           onHorizontalDragCancel: () {
             // An action tap also cancels the competing drag recognizer.
-            if (_dragAccepted) _closePane();
+            final wasAccepted = _dragAccepted;
             _dragAccepted = false;
             _dragRejected = false;
-            if (_displayedWidth == _revealedWidth) _finishMotion();
+            if (wasAccepted) {
+              _closePane();
+            } else if (!(_controller?.isAnimating ?? false)) {
+              _finishMotion();
+            }
           },
           child: Stack(
             children: [
-              if (_actionPaneActive)
+              if (paneActive && controller != null)
                 Positioned.fill(
                   child: ClipRect(
                     clipper: _SwipeRevealPaneClipper(
@@ -536,7 +666,8 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                       fromStart: _revealedFromStart,
                       vertical: widget.verticalActions,
                       width: actionWidth,
-                      progress: revealProgress,
+                      progress: controller.value,
+                      progressAnimation: controller,
                       shape: widget.shape,
                       color: widget.color,
                       label: _buildActionLabel(),
@@ -546,54 +677,25 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                     ),
                   ),
                 ),
-              if (!_actionPaneActive && _revealedWidth == 0)
+              if (!paneActive || controller == null)
                 closedContent
               else
-                TweenAnimationBuilder<double>(
-                  tween: Tween<double>(begin: 0, end: _revealedWidth),
-                  duration:
-                      _snapClosed ||
-                          _dragAccepted ||
-                          MediaQuery.disableAnimationsOf(context)
-                      ? Duration.zero
-                      : kAppMotionStandard,
-                  curve: _dragAccepted ? Curves.linear : kAppSpringCurve,
-                  onEnd: () {
-                    if (!mounted) return;
-                    _displayedWidth = _revealedWidth;
-                    if (!_dragAccepted) _finishMotion();
-                    if (!_snapClosed &&
-                        (_revealedWidth != 0 || !_actionPaneActive)) {
-                      return;
-                    }
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (!mounted) return;
-                      setState(() {
-                        _snapClosed = false;
-                        if (_revealedWidth == 0) {
-                          _actionPaneActive = false;
-                          if (!_dragAccepted) _revealedFromStart = false;
-                        }
-                      });
-                      if (_revealedWidth == 0 && _actionAfterClose != null) {
-                        _runClosedAction();
-                      }
-                    });
-                  },
-                  builder: (context, value, child) {
-                    _displayedWidth = value.clamp(0.0, actionWidth);
-                    return IgnorePointer(
-                      ignoring: _isOpen,
-                      child: Transform.translate(
-                        offset: Offset(
-                          _revealedFromStart ? _displayedWidth : -_displayedWidth,
-                          0,
-                        ),
-                        child: child,
+                AnimatedBuilder(
+                  animation: controller,
+                  child: IgnorePointer(ignoring: _isOpen, child: closedContent),
+                  builder: (context, child) {
+                    final offsetWidth = (controller.value * actionWidth).clamp(
+                      0.0,
+                      actionWidth,
+                    );
+                    return Transform.translate(
+                      offset: Offset(
+                        _revealedFromStart ? offsetWidth : -offsetWidth,
+                        0,
                       ),
+                      child: child,
                     );
                   },
-                  child: closedContent,
                 ),
               if (_isOpen)
                 Positioned.fill(

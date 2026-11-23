@@ -60,6 +60,15 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
   late final CurvedAnimation _rowCurve;
   late final Listenable _animationListenable;
   late bool _raisedTextLayout;
+  late bool _expandedPlaybackLayout;
+
+  bool get _shouldLockExpandedPlaybackWidth =>
+      widget.isPlaybackExpanded ||
+      widget.isPlaybackRaised ||
+      _expandController.isAnimating ||
+      _rowController.isAnimating ||
+      _expandController.value > 0 ||
+      _rowController.value > 0;
 
   static const rowTravel = kActiveSessionCarouselDockHeight;
 
@@ -88,6 +97,8 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
       _cachedSessions = widget.overlaySessions;
     }
     _raisedTextLayout = hasPlayback && widget.isPlaybackRaised;
+    _expandedPlaybackLayout =
+        hasPlayback && (widget.isPlaybackExpanded || widget.isPlaybackRaised);
     _appearanceController = AnimationController(
       vsync: this,
       duration: _appearanceDuration,
@@ -112,9 +123,14 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
           _syncMotionInteraction();
           if (status.isCompleted || status.isDismissed) {
             final raised = status.isCompleted;
-            if (raised != _raisedTextLayout) {
+            final expandedLayout = _shouldLockExpandedPlaybackWidth;
+            if (raised != _raisedTextLayout ||
+                expandedLayout != _expandedPlaybackLayout) {
               // Keep the existing text layout while the clip is moving.
-              setState(() => _raisedTextLayout = raised);
+              setState(() {
+                _raisedTextLayout = raised;
+                _expandedPlaybackLayout = expandedLayout;
+              });
             }
           }
           widget.onReportPlaybackCoverRect();
@@ -146,6 +162,10 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
     });
     _expandController.addStatusListener((_) {
       _syncMotionInteraction();
+      final expandedLayout = _shouldLockExpandedPlaybackWidth;
+      if (mounted && expandedLayout != _expandedPlaybackLayout) {
+        setState(() => _expandedPlaybackLayout = expandedLayout);
+      }
       widget.onReportPlaybackCoverRect();
     });
   }
@@ -182,6 +202,8 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
       _expandController.value = hasPlayback && widget.isPlaybackExpanded
           ? 1
           : 0;
+      _expandedPlaybackLayout =
+          hasPlayback && (widget.isPlaybackExpanded || widget.isPlaybackRaised);
     }
     _syncMotionInteraction();
   }
@@ -249,6 +271,7 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
         }
       }
     }
+    _expandedPlaybackLayout = _shouldLockExpandedPlaybackWidth;
   }
 
   void _prepareAppearance() {
@@ -287,12 +310,13 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
         widget.onReportPlaybackCoverRect();
         final availableWidth = constraints.maxWidth;
         const compactWidth = kActiveSessionCarouselDockHeight;
-        final playbackChild = _buildPlaybackChild(
-          context,
-          _raisedTextLayout
-              ? availableWidth
-              : inlinePlaybackWidth(availableWidth, 1),
-        );
+        final lockedPlaybackWidth = _raisedTextLayout
+            ? availableWidth
+            : inlinePlaybackWidth(availableWidth, 1);
+        final playbackLayoutWidth = _expandedPlaybackLayout
+            ? lockedPlaybackWidth
+            : compactWidth;
+        final playbackChild = _buildPlaybackChild(context, lockedPlaybackWidth);
         final navigationChild = widget.buildBottomBar(
           context,
           isPlaybackExpanded:
@@ -337,7 +361,17 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
                             onLongPress: widget.onTogglePlaybackRow,
                             child: AnimatedBuilder(
                               animation: _rowCurve,
-                              child: playbackChild,
+                              // Lock carousel layout width so clip animation
+                              // does not relayout its internal LayoutBuilder
+                              // and PageView on every frame.
+                              child: OverflowBox(
+                                alignment: Alignment.centerLeft,
+                                minWidth: playbackLayoutWidth,
+                                maxWidth: playbackLayoutWidth,
+                                minHeight: compactWidth,
+                                maxHeight: compactWidth,
+                                child: playbackChild,
+                              ),
                               builder: (context, child) => ClipRRect(
                                 key: const ValueKey<String>(
                                   'mobile_dock_playback_viewport',

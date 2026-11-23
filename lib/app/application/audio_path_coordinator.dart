@@ -47,9 +47,29 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
       if (track != null) return track;
     }
     if (!includeLibraryFallback) return null;
+    final sameTarget = resolvedPath == trackPath;
+    if (PathMatcher.isContentUri(trackPath) ||
+        PathMatcher.isRemoteUri(trackPath) ||
+        (!sameTarget &&
+            (PathMatcher.isContentUri(resolvedPath) ||
+                PathMatcher.isRemoteUri(resolvedPath)))) {
+      final trackKey = PathMatcher.equivalenceKey(trackPath);
+      final resolvedKey = sameTarget
+          ? null
+          : PathMatcher.equivalenceKey(resolvedPath);
+      for (final track in _library.library) {
+        final candidateKey = PathMatcher.equivalenceKey(track.path);
+        if (candidateKey == trackKey ||
+            (resolvedKey != null && candidateKey == resolvedKey)) {
+          return track;
+        }
+      }
+      return null;
+    }
     for (final track in _library.library) {
-      if (PathMatcher.equalsNormalized(track.path, trackPath) ||
-          PathMatcher.equalsNormalized(track.path, resolvedPath)) {
+      if (PathMatcher.equivalenceEquals(track.path, trackPath) ||
+          (!sameTarget &&
+              PathMatcher.equivalenceEquals(track.path, resolvedPath))) {
         return track;
       }
     }
@@ -128,7 +148,7 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
     if (track.isRemoteAsmr || PathMatcher.isRemoteUri(track.path)) {
       return tracksInSameGroup(trackPath, limit: 2).length > 1;
     }
-    final root = workRootForTrack(trackPath);
+    final root = workRootForTrack(trackPath, knownTrack: track);
     if (root == null) return tracksInSameGroup(trackPath, limit: 2).length > 1;
     final cached = _cachedWork(root);
     if (cached != null) return cached.hasSiblings;
@@ -152,7 +172,7 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
     if (track.isRemoteAsmr || PathMatcher.isRemoteUri(track.path)) {
       return _tracksInGroup(trackPath, track, limit: limit);
     }
-    final root = workRootForTrack(trackPath);
+    final root = workRootForTrack(trackPath, knownTrack: track);
     if (root == null) return _tracksInGroup(trackPath, track, limit: limit);
     final cached = _cachedWork(root);
     if (cached?.tracks != null) {
@@ -367,7 +387,7 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
       return detail.workTitle.trim();
     }
 
-    final workRoot = workRootForTrack(track.path);
+    final workRoot = workRootForTrack(track.path, knownTrack: track);
     if (workRoot != null && workRoot.isNotEmpty) {
       final folderName = PathDisplay.folderName(workRoot);
       if (folderName.isNotEmpty) {
@@ -393,7 +413,7 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
       }
     }
 
-    final rootFolder = rootFolderName(track.path);
+    final rootFolder = rootFolderName(track.path, knownTrack: track);
     if (rootFolder.isNotEmpty) {
       if (track.groupTitle.trim().isNotEmpty &&
           track.groupTitle.trim().toLowerCase() ==

@@ -122,7 +122,21 @@ Future<void> main() async {
             shouldShowOnboarding: shouldShowOnboarding!,
             themeProvider: themeProvider,
             startupRestoreOutcome: startupRestoreOutcome,
-            onBootstrapSettled: allowFirstFrame,
+            onBootstrapSettled: () {
+              allowFirstFrame();
+              unawaited(
+                DataBackupService().cleanupAbandonedWorkDirectories().catchError((
+                  Object error,
+                  StackTrace stackTrace,
+                ) {
+                  AppLogService.warning(
+                    'abandoned_backup_cleanup_failed',
+                    error: error,
+                    stackTrace: stackTrace,
+                  );
+                }),
+              );
+            },
             windowsRuntime: windowsRuntime,
           ),
           onBootstrapSettled: () {

@@ -719,4 +719,127 @@ class NativePlaybackCommandSnapshotTest {
             NativePlaybackStateStore.clearSessions(service)
         }
     }
+
+    @Test
+    fun `paused focused audio stays warm during idle grace until expiry while non focused audio is evicted`() {
+        val service = Robolectric.buildService(NativePlaybackService::class.java).get()
+        val sessions = ReflectionHelpers.callInstanceMethod<NativePlaybackSessionManager>(
+            service, "getSessionManager"
+        )
+        val focused = sessions.getOrCreate("focused-audio")
+        val secondary = sessions.getOrCreate("other-audio")
+        val focusedTrack = NativeMediaItemDescriptor("/a.mp3", "file:///a.mp3", "A", null, null)
+        val otherTrack = NativeMediaItemDescriptor("/b.mp3", "file:///b.mp3", "B", null, null)
+        focused.configure(
+            descriptor = focusedTrack, queue = listOf(focusedTrack), queueStartIndex = 0,
+            startPositionMs = 2_000L, volume = 1f, speed = 1f,
+            repeatOne = false, repeatAll = false, shuffleModeEnabled = false, autoPlay = false
+        )
+        secondary.configure(
+            descriptor = otherTrack, queue = listOf(otherTrack), queueStartIndex = 0,
+            startPositionMs = 1_000L, volume = 1f, speed = 1f,
+            repeatOne = false, repeatAll = false, shuffleModeEnabled = false, autoPlay = false
+        )
+        val focusedPlayer = checkNotNull(focused.playerOrNull())
+        service.focusedSessionId = "focused-audio"
+        service.addStateListener("ui") { }
+        try {
+            assertEquals(true, service.pause("focused-audio")["ok"])
+            // Focused audio player stays warm while UI is attached; non-focused idle player is evicted.
+            assertSame(focused, sessions.get("focused-audio"))
+            assertSame(focusedPlayer, focused.playerOrNull())
+            assertNull(sessions.get("other-audio"))
+            assertNull(secondary.playerOrNull())
+
+            // When idle grace expires, warm paused audio is retired.
+            ReflectionHelpers.callInstanceMethod<Unit>(
+                service, "stopIdleServiceAfterRestore",
+                ReflectionHelpers.ClassParameter.from(Int::class.javaPrimitiveType!!, 0),
+                ReflectionHelpers.ClassParameter.from(String::class.java, "idle_no_playback"),
+                ReflectionHelpers.ClassParameter.from(Boolean::class.javaPrimitiveType!!, true)
+            )
+            assertNull(sessions.get("focused-audio"))
+            assertNull(focused.playerOrNull())
+        } finally {
+            service.removeStateListener("ui")
+            ReflectionHelpers.callInstanceMethod<NativeMediaSessionHost>(
+                service, "getMediaSessionHost"
+            ).release("test")
+            focused.release()
+            secondary.release()
+            shutdownPersistence(service)
+            NativePlaybackStateStore.clearSessions(service)
+        }
+    }
+
+    @Test
+    fun `prepareSession with reuseExistingQueue jumps in place and reports queue_resync_required on mismatch`() {
+        val service = Robolectric.buildService(NativePlaybackService::class.java).get()
+        val sessions = ReflectionHelpers.callInstanceMethod<NativePlaybackSessionManager>(
+            service, "getSessionManager"
+        )
+        val track0 = NativeMediaItemDescriptor("/t0.mp3", "file:///t0.mp3", "Track 0", null, null)
+        val track1 = NativeMediaItemDescriptor("/t1.mp3", "file:///t1.mp3", "Track 1", null, null)
+        val track2 = NativeMediaItemDescriptor("/t2.mp3", "file:///t2.mp3", "Track 2", null, null)
+        val session = sessions.getOrCreate("jump")
+        session.configure(
+            descriptor = track0, queue = listOf(track0, track1, track2), queueStartIndex = 0,
+            startPositionMs = 0L, volume = 1f, speed = 1f,
+            repeatOne = false, repeatAll = false, shuffleModeEnabled = false, autoPlay = false
+        )
+        val player = checkNotNull(session.playerOrNull())
+        var playlistChanges = 0
+        player.addListener(object : Player.Listener {
+            override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+                if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) playlistChanges++
+            }
+        })
+        try {
+            val jumpArgs = NativePrepareSessionArguments(
+                sessionId = "jump",
+                uri = track2.uri,
+                path = track2.path,
+                title = track2.title,
+                subtitle = null,
+                artUri = null,
+                startPositionMs = 3_500L,
+                autoPlay = false,
+                volume = 1.5f,
+                speed = 1.25f,
+                audioEffects = NativeAudioEffects(),
+                repeatOne = true,
+                queue = emptyList(),
+                queueStartIndex = 2,
+                repeatAll = false,
+                shuffle = false,
+                candidateUris = emptyList(),
+                deferPlayerCreation = false,
+                reuseExistingQueue = true,
+                explicitPath = track2.path
+            )
+            val jumpResponse = service.prepareSession(jumpArgs)
+            assertEquals(true, jumpResponse["ok"])
+            assertEquals(0, playlistChanges)
+            assertEquals(2, player.currentMediaItemIndex)
+            assertEquals(3_500L, player.currentPosition)
+            assertEquals(1.25f, player.playbackParameters.speed, 0f)
+            assertEquals(Player.REPEAT_MODE_ONE, player.repeatMode)
+            val snapshot = jumpResponse["value"] as Map<*, *>
+            assertEquals(2, snapshot["queueIndex"])
+            assertEquals(track2.path, snapshot["path"])
+
+            val mismatchResponse = service.prepareSession(
+                jumpArgs.copy(uri = "file:///different.mp3", explicitPath = "/different.mp3")
+            )
+            assertEquals(false, mismatchResponse["ok"])
+            assertEquals("queue_resync_required", mismatchResponse["errorCode"])
+        } finally {
+            ReflectionHelpers.callInstanceMethod<NativeMediaSessionHost>(
+                service, "getMediaSessionHost"
+            ).release("test")
+            session.release()
+            shutdownPersistence(service)
+            NativePlaybackStateStore.clearSessions(service)
+        }
+    }
 }

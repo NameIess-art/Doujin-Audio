@@ -44,6 +44,7 @@ class LibraryScanCoordinator extends ChangeNotifier {
     bool importAudioDetails = true,
     void Function(int generation)? onScanStarted,
   }) => _run(
+    catalog: catalog,
     operation: LibraryScanOperation.refresh,
     task: (generation) => _withBackupImport(
       catalog,
@@ -63,6 +64,7 @@ class LibraryScanCoordinator extends ChangeNotifier {
     required LibraryCatalog catalog,
     required LibraryScanLabels labels,
   }) => _run(
+    catalog: catalog,
     operation: LibraryScanOperation.importFolder,
     task: (generation) => _withBackupImport(
       catalog,
@@ -75,6 +77,7 @@ class LibraryScanCoordinator extends ChangeNotifier {
     required LibraryCatalog catalog,
     required LibraryScanLabels labels,
   }) => _run(
+    catalog: catalog,
     operation: LibraryScanOperation.importLibrary,
     task: (generation) => _withBackupImport(
       catalog,
@@ -87,6 +90,7 @@ class LibraryScanCoordinator extends ChangeNotifier {
     required LibraryCatalog catalog,
     required LibraryScanLabels labels,
   }) => _run(
+    catalog: catalog,
     operation: LibraryScanOperation.importFiles,
     task: (generation) => _withBackupImport(
       catalog,
@@ -169,6 +173,7 @@ class LibraryScanCoordinator extends ChangeNotifier {
   }
 
   Future<LibraryScanOutcome?> _run({
+    required LibraryCatalog catalog,
     required LibraryScanOperation operation,
     required Future<LibraryScanOutcome?> Function(int generation) task,
   }) async {
@@ -184,6 +189,8 @@ class LibraryScanCoordinator extends ChangeNotifier {
       LibraryScanState(phase: LibraryScanPhase.running, operation: operation),
     );
     try {
+      await catalog.scanIdle;
+      if (!_isCurrent(generation)) return null;
       final outcome = await task(generation);
       if (!_isCurrent(generation)) return null;
       if (outcome == null) {

@@ -7,6 +7,7 @@ internal object ChannelErrorCodes {
     const val INVALID_ARGUMENT = "invalid_argument"
     const val SERVICE_UNAVAILABLE = "service_unavailable"
     const val PLAYER_ERROR = "player_error"
+    const val QUEUE_RESYNC_REQUIRED = "queue_resync_required"
     const val PLATFORM_ERROR = "platform_error"
     const val UNEXPECTED = "unexpected"
 }

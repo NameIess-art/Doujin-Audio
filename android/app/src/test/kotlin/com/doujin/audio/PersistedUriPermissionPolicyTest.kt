@@ -196,6 +196,18 @@ class PersistedUriPermissionPolicyTest {
     }
 
     @Test
+    fun `tree grant preserves plus signs instead of converting them to spaces`() {
+        val treeWithLiteralPlus = "content://com.android.externalstorage.documents/tree/primary%3AASMR+Voice"
+        val docWithEncodedPlus =
+            "content://com.android.externalstorage.documents/document/primary%3AASMR%2BVoice%2Ftrack.mp3"
+        val docWithSpace =
+            "content://com.android.externalstorage.documents/document/primary%3AASMR%20Voice%2Ftrack.mp3"
+
+        assertTrue(persistedGrantCoversReference(treeWithLiteralPlus, docWithEncodedPlus))
+        assertFalse(persistedGrantCoversReference(treeWithLiteralPlus, docWithSpace))
+    }
+
+    @Test
     fun `storage root tree grant covers child document ids`() {
         val rootTree = "content://com.android.externalstorage.documents/tree/primary%3A"
 

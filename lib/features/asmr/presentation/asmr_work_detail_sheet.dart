@@ -90,10 +90,12 @@ class _AsmrWorkDetail implements RemoteWorkDetail {
       _controller(ref).initializeForVisiblePage();
 
   @override
-  Future<WorkDirectorySource> refreshDirectory(WidgetRef ref) async =>
-      AsmrWorkDirectoryInput(
-        await _controller(ref).ensureTrackTree(work, forceRefresh: true),
-      );
+  Future<WorkDirectorySource> refreshDirectory(
+    WidgetRef ref, {
+    bool forceRefresh = true,
+  }) async => AsmrWorkDirectoryInput(
+    await _controller(ref).ensureTrackTree(work, forceRefresh: forceRefresh),
+  );
 
   @override
   String directoryErrorLabel(AppLanguageProvider i18n, Object error) =>

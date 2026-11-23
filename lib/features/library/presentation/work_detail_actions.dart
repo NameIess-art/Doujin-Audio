@@ -4,6 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/widgets/app_buttons.dart';
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
+import '../../../app/theme/app_design_tokens.dart';
+import '../../../app/theme/app_styles.dart';
+import '../../../app/theme/theme_provider.dart';
 import '../../../core/widgets/app_feedback.dart';
 import 'library_providers.dart';
 
@@ -55,12 +58,11 @@ class WorkDetailActions extends StatelessWidget {
   }) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
+    final tokens = AppDesignTokens.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final onAccentColor = accentColor == cs.primary
         ? cs.onPrimary
-        : ThemeData.estimateBrightnessForColor(accentColor) == Brightness.dark
-        ? Colors.white
-        : Colors.black;
+        : appReadableOnColor(accentColor);
 
     final Color backgroundColor;
     final Color foregroundColor;
@@ -80,7 +82,7 @@ class WorkDetailActions extends StatelessWidget {
           : cs.surfaceContainerHigh.withValues(alpha: 0.65);
       foregroundColor = cs.onSurface;
       borderSide = BorderSide(
-        color: cs.outlineVariant.withValues(alpha: isDark ? 0.30 : 0.45),
+        color: appOverlayBorderColor(cs, tokens),
         width: 0.8,
       );
     }

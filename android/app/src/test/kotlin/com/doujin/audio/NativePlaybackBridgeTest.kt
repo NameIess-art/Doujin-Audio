@@ -186,6 +186,7 @@ class NativePlaybackBridgeTest {
         try {
             val liveResponse = service.clearAll()
             assertEquals(true, liveResponse["ok"])
+            assertTrue(PlaybackTimerAlarmScheduler.awaitPendingForTest())
             assertTrue(shadowOf(alarmManager).scheduledAlarms.isEmpty())
         } finally {
             val persistence = ReflectionHelpers.callInstanceMethod<NativePlaybackStatePersistenceCoordinator>(
@@ -366,6 +367,16 @@ class NativePlaybackBridgeTest {
             assertTrue(done.await(2, TimeUnit.SECONDS))
             assertNull(failure)
             shadowOf(Looper.getMainLooper()).idle()
+
+            ReflectionHelpers.setField(bridge, "commandService", service)
+            ReflectionHelpers.setField(bridge, "attachedService", service)
+            ReflectionHelpers.callInstanceMethod<Unit>(
+                bridge,
+                "handleControllerChangedOnMain",
+                ReflectionHelpers.ClassParameter.from(NativePlaybackService::class.java, null)
+            )
+            assertNull(ReflectionHelpers.getField<Any?>(bridge, "commandService"))
+            assertNull(ReflectionHelpers.getField<Any?>(bridge, "attachedService"))
         } finally {
             bridge.dispose()
             val persistence = ReflectionHelpers.callInstanceMethod<NativePlaybackStatePersistenceCoordinator>(
@@ -374,5 +385,56 @@ class NativePlaybackBridgeTest {
             persistence.shutdown()
             assertTrue(persistence.awaitTermination())
         }
+    }
+
+    @Test
+    fun `reuseExistingQueue without a live service fails with queue_resync_required without starting service`() {
+        val command = parsePlaybackCommand(
+            MethodCall(
+                NativePlaybackMethods.PREPARE_SESSION,
+                mapOf(
+                    "sessionId" to "s1",
+                    "uri" to "file:///track2.mp3",
+                    "path" to "/track2.mp3",
+                    "title" to "Track 2",
+                    "startPositionMs" to 0L,
+                    "volume" to 1.0,
+                    "speed" to 1.0,
+                    "audioEffects" to mapOf(
+                        "skipSilenceEnabled" to false,
+                        "noiseReductionEnabled" to false,
+                        "volumeNormalizationEnabled" to false,
+                        "eqEnabled" to false,
+                        "eqPresetId" to null,
+                        "eqBandLevels" to emptyList<Map<String, Number>>(),
+                        "channelSwapEnabled" to false,
+                        "panning" to 0.0,
+                        "frontBack" to 0.0
+                    ),
+                    "repeatOne" to false,
+                    "repeatAll" to false,
+                    "shuffle" to false,
+                    "autoPlay" to true,
+                    "deferPlayerCreation" to false,
+                    "queueStartIndex" to 3,
+                    "reuseExistingQueue" to true
+                )
+            )
+        )
+        assertFalse(command.canStartService)
+        assertNull(command.dispatchAsync)
+        val response = checkNotNull(command.dispatchInactive).invoke(context)
+        assertEquals(false, response["ok"])
+        assertEquals(ChannelErrorCodes.QUEUE_RESYNC_REQUIRED, response["errorCode"])
+    }
+
+    @Test
+    fun `dispatchStoredPlayback catches non SQLite exceptions and returns platform error`() {
+        val response = com.doujin.audio.player.common.dispatchStoredPlayback("snapshot") {
+            throw IllegalStateException("corrupt preferences")
+        }
+        assertEquals(false, response["ok"])
+        assertEquals(ChannelErrorCodes.PLATFORM_ERROR, response["errorCode"])
+        assertEquals(mapOf("method" to "snapshot"), response["details"])
     }
 }

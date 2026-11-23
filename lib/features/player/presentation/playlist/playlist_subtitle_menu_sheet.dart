@@ -64,6 +64,7 @@ class SubtitleMenuSheet extends ConsumerStatefulWidget {
 class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
   final GlobalKey _menuKey = GlobalKey();
   bool _importing = false;
+  bool _importingSubtitleFile = false;
   SubtitleModelSpec? _checkingModel;
   List<WorkTextFile>? _scriptFiles;
   List<({String sourcePath, String name})>? _subtitleFiles;
@@ -73,6 +74,8 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
   int _availableSubtitleCount = 0;
   int _subtitleCountRequestId = 0;
   String? _observedTrackPath;
+  Duration? _observedOffset;
+  (String, String?, String?)? _availableSubtitleCountKey;
 
   PlaybackSessionSnapshot get _liveSession {
     final asyncSession = ref.read(
@@ -99,6 +102,9 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
       ..addListener(_handleSubtitleServiceChanged);
     final trackPath = _currentTrackPath;
     _observedTrackPath = trackPath;
+    _observedOffset = trackPath.isEmpty
+        ? Duration.zero
+        : _subtitles.getOffset(trackPath);
     if (trackPath.isNotEmpty) {
       if (!_subtitles.hasResult(trackPath)) {
         unawaited(_subtitles.load(trackPath));
@@ -133,15 +139,36 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
     super.dispose();
   }
 
+  (String, String?, String?) _subtitleCountKeyFor(String trackPath) => (
+    trackPath,
+    trackPath.isEmpty ? null : _subtitles.customPathFor(trackPath),
+    trackPath.isEmpty ? null : _subtitles.trackSync(trackPath)?.sourcePath,
+  );
+
   void _handleSubtitleServiceChanged() {
     if (_subtitles.generationJob?.status == SubtitleGenerationStatus.running) {
       return;
     }
+    final trackPath = _currentTrackPath;
+    final nextOffset = trackPath.isEmpty
+        ? Duration.zero
+        : _subtitles.getOffset(trackPath);
+    final nextKey = _subtitleCountKeyFor(trackPath);
+    if (nextOffset != _observedOffset &&
+        nextKey == _availableSubtitleCountKey) {
+      _observedOffset = nextOffset;
+      return;
+    }
+    _observedOffset = nextOffset;
     _updateAvailableSubtitleCount();
   }
 
   void _updateAvailableSubtitleCount() {
     final trackPath = _currentTrackPath;
+    _availableSubtitleCountKey = _subtitleCountKeyFor(trackPath);
+    _observedOffset = trackPath.isEmpty
+        ? Duration.zero
+        : _subtitles.getOffset(trackPath);
     if (trackPath.isEmpty) {
       if (_availableSubtitleCount != 0) {
         setState(() => _availableSubtitleCount = 0);
@@ -270,7 +297,10 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
         subtitles.generationJob?.status == SubtitleGenerationStatus.running) {
       return;
     }
-    setState(() => _importing = true);
+    setState(() {
+      _importing = true;
+      _importingSubtitleFile = true;
+    });
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final trackPath = _currentTrackPath;
 
@@ -294,7 +324,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
           ? identifier
           : selected?.path;
       if (selectedPath == null || selectedPath.isEmpty) return;
-      final overwrite = await _confirmSubtitleOverwrite(subtitles);
+      final overwrite = await _confirmSubtitleOverwrite(subtitles, trackPath);
       if (overwrite == null) return;
       final track = await subtitles.importSubtitle(
         trackPath,
@@ -324,7 +354,12 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
         );
       }
     } finally {
-      if (mounted) setState(() => _importing = false);
+      if (mounted) {
+        setState(() {
+          _importing = false;
+          _importingSubtitleFile = false;
+        });
+      }
     }
   }
 
@@ -393,8 +428,12 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
     WorkTextFile selected,
   ) async {
     if (_importing || _scriptFiles == null) return;
-    setState(() => _scriptFiles = null);
+    setState(() {
+      _importing = true;
+      _scriptFiles = null;
+    });
     final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final trackPath = _currentTrackPath;
     try {
       final selectedPath = selected.path;
       if (path.extension(selected.name).toLowerCase() == '.txt' &&
@@ -403,12 +442,15 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
         await _pickTimedScript(
           subtitles,
           selectedPath,
+          trackPath: trackPath,
           fileName: selected.name,
         );
         return;
       }
       if (!mounted) return;
-      final trackPath = _currentTrackPath;
+      if (_importing) {
+        setState(() => _importing = false);
+      }
       if (subtitles.hasKnownSubtitle(trackPath)) {
         final confirmed = await showConfirmActionDialog(
           context: context,
@@ -455,43 +497,47 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
   Future<void> _pickTimedScript(
     PlaybackSubtitleService subtitles,
     String selectedPath, {
+    required String trackPath,
     required String fileName,
   }) async {
-    setState(() => _importing = true);
+    final overwrite = await _confirmSubtitleOverwrite(subtitles, trackPath);
+    if (overwrite == null) return;
+    if (mounted) setState(() => _importingSubtitleFile = true);
+    final Object? imported;
     try {
-      final overwrite = await _confirmSubtitleOverwrite(subtitles);
-      if (overwrite == null) return;
-      final imported = await subtitles.importSubtitle(
-        _currentTrackPath,
+      imported = await subtitles.importSubtitle(
+        trackPath,
         selectedPath,
         fileName: fileName,
         overwrite: overwrite,
       );
-      if (!mounted) return;
-      final i18n = ref.read(appLanguageProviderInstanceProvider);
-      if (imported != null) {
-        ref
-            .read(subtitleSettingsProvider.notifier)
-            .ensureSubtitlesEnabled(widget.session.id);
-      }
-      showAppSnackBar(
-        context,
-        i18n.tr(
-          imported == null ? 'subtitle_import_failed' : 'subtitle_imported',
-        ),
-        tone: imported == null
-            ? AppFeedbackTone.warning
-            : AppFeedbackTone.success,
-      );
     } finally {
-      if (mounted) setState(() => _importing = false);
+      if (mounted) setState(() => _importingSubtitleFile = false);
     }
+    if (!mounted) return;
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    if (imported != null) {
+      ref
+          .read(subtitleSettingsProvider.notifier)
+          .ensureSubtitlesEnabled(widget.session.id);
+      _updateAvailableSubtitleCount();
+    }
+    showAppSnackBar(
+      context,
+      i18n.tr(
+        imported == null ? 'subtitle_import_failed' : 'subtitle_imported',
+      ),
+      tone: imported == null
+          ? AppFeedbackTone.warning
+          : AppFeedbackTone.success,
+    );
   }
 
   Future<bool?> _confirmSubtitleOverwrite(
     PlaybackSubtitleService subtitles,
+    String trackPath,
   ) async {
-    final exists = await subtitles.hasLocalSubtitleFile(_currentTrackPath);
+    final exists = await subtitles.hasLocalSubtitleFile(trackPath);
     if (!mounted) return null;
     if (!exists) return false;
     final i18n = ref.read(appLanguageProviderInstanceProvider);
@@ -718,20 +764,28 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final subtitles = ref.watch(playbackSubtitleServiceProvider);
-    final subtitleSettings = ref.watch(subtitleSettingsProvider);
-    final asyncSession = ref.watch(
-      playbackSessionStateProvider(widget.session.id),
+    final (showSubtitles, globalSubtitles) = ref.watch(
+      subtitleSettingsProvider.select(
+        (state) => (
+          state.isShowEnabled(widget.session.id),
+          state.isGlobalEnabled(widget.session.id),
+        ),
+      ),
     );
-    final liveSession =
-        asyncSession.value ??
-        (asyncSession.hasError
-            ? widget.session
+    final selectedTrackPath = ref.watch(
+      playbackSessionStateProvider(
+        widget.session.id,
+      ).select((asyncSession) => asyncSession.value?.currentTrackPath),
+    );
+    final trackPath =
+        selectedTrackPath ??
+        (ref.read(playbackSessionStateProvider(widget.session.id)).hasError
+            ? widget.session.currentTrackPath
             : ref
                       .read(playbackFacadeProvider)
-                      .sessionSnapshotById(widget.session.id) ??
-                  widget.session);
-
-    final trackPath = liveSession.currentTrackPath;
+                      .sessionSnapshotById(widget.session.id)
+                      ?.currentTrackPath ??
+                  widget.session.currentTrackPath);
     if (_observedTrackPath != trackPath) {
       _observedTrackPath = trackPath;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -747,8 +801,6 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
         _updateAvailableSubtitleCount();
       });
     }
-    final showSubtitles = subtitleSettings.isShowEnabled(widget.session.id);
-    final globalSubtitles = subtitleSettings.isGlobalEnabled(widget.session.id);
 
     return ListenableBuilder(
       listenable: subtitles,
@@ -1141,7 +1193,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                         ListTile(
                           key: const ValueKey('subtitle_import_tile'),
                           enabled: importEnabled,
-                          leading: _importing
+                          leading: _importingSubtitleFile
                               ? SizedBox(
                                   width: 24,
                                   height: 24,

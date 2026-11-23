@@ -3156,6 +3156,50 @@ void _backgroundBucketTests() {
       );
     },
   );
+
+  test(
+    'seeking a completed session clears completed state so play preserves seek position',
+    () async {
+      final playback = PlaybackFacade.create(
+        databaseRepository: TestPersistenceRepository(),
+      )..configurePersistence(enabled: false);
+      addTearDown(playback.dispose);
+      bool? preparedForceStartAtZero;
+      playback.attachPlaybackCommands(
+        prepareSession:
+            (
+              session, {
+              required nextPath,
+              autoPlay = true,
+              forceStartAtZero = false,
+              showLoading = true,
+              targetQueueIndex,
+            }) async {
+              preparedForceStartAtZero = forceStartAtZero;
+              return true;
+            },
+        pauseSession: (_) async {},
+        startSession: (_, {required shouldStartTriggerCountdown}) async => true,
+        resolveAdvance: (_, {required forward}) => null,
+        hasAdjacent: (_, {required forward}) => false,
+      );
+      final session = _session('completed')
+        ..duration = const Duration(minutes: 2)
+        ..setOptimisticState(
+          playing: false,
+          processingState: ProcessingState.completed,
+        );
+      playback.registerSession(session);
+
+      await playback.seekSession(session.id, const Duration(seconds: 45));
+      expect(session.state.processingState, ProcessingState.idle);
+      expect(session.position, const Duration(seconds: 45));
+
+      await playback.toggleSessionPlayPause(session.id);
+      expect(preparedForceStartAtZero, isFalse);
+      expect(session.position, const Duration(seconds: 45));
+    },
+  );
 }
 
 PlaybackSession _session(String id) {

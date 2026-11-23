@@ -21,7 +21,9 @@ extension _TimerTabBody on _TimerTabState {
           now: DateTime.now(),
         );
     final timerWaitingTrigger = timerSlice.waitingTrigger;
-    final summaryMode = timerSlice.mode ?? _selectedMode;
+    final summaryMode = timerExpired
+        ? _selectedMode
+        : (timerSlice.mode ?? _selectedMode);
     final draftModeTitle = _modeTitle(i18n, summaryMode);
     final showCompactOnly = widget.compactOnly;
     final showCompactDetail =
@@ -181,8 +183,10 @@ extension _TimerTabBody on _TimerTabState {
             _hours = h;
             _minutes = m;
             _seconds = s;
-            _lastSyncedDraftKey = _draftKey(_selectedMode, _pickedDuration);
-            timer.setTimerDraft(_selectedMode, _pickedDuration);
+            final nextDuration = _pickedDuration;
+            if (nextDuration > Duration.zero) {
+              timer.setTimerDraft(_selectedMode, nextDuration);
+            }
           }),
         ),
         SizedBox(height: compactMode ? 8 : 14),
@@ -229,10 +233,6 @@ extension _TimerTabBody on _TimerTabState {
                           _hours = nextHours;
                           _minutes = nextMinutes;
                           _seconds = 0;
-                          _lastSyncedDraftKey = _draftKey(
-                            _selectedMode,
-                            presetDuration,
-                          );
                           timer.setTimerDraft(_selectedMode, presetDuration);
                         });
                       },
@@ -276,10 +276,11 @@ extension _TimerTabBody on _TimerTabState {
                 AppInteractionFeedbackType.selection,
               );
             }
-            timer.setTimerDraft(mode, _pickedDuration);
+            if (_pickedDuration > Duration.zero) {
+              timer.setTimerDraft(mode, _pickedDuration);
+            }
             _setLocalState(() {
               _selectedMode = mode;
-              _lastSyncedDraftKey = _draftKey(mode, _pickedDuration);
             });
           },
         ),

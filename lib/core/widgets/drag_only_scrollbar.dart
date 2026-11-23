@@ -36,13 +36,17 @@ class _DragOnlyScrollbarState extends RawScrollbarState<DragOnlyScrollbar> {
   @override
   void handleThumbPressStart(Offset localPosition) {
     super.handleThumbPressStart(localPosition);
-    setState(() => _states.add(WidgetState.dragged));
+    if (_states.add(WidgetState.dragged) && mounted) {
+      updateScrollbarPainter();
+    }
   }
 
   @override
   void handleThumbPressEnd(Offset localPosition, Velocity velocity) {
     super.handleThumbPressEnd(localPosition, velocity);
-    setState(() => _states.remove(WidgetState.dragged));
+    if (_states.remove(WidgetState.dragged) && mounted) {
+      updateScrollbarPainter();
+    }
   }
 
   @override
@@ -50,21 +54,20 @@ class _DragOnlyScrollbarState extends RawScrollbarState<DragOnlyScrollbar> {
     super.handleHover(event);
     final hovered = isPointerOverThumb(event.position, event.kind);
     if (hovered != _states.contains(WidgetState.hovered)) {
-      setState(() {
-        if (hovered) {
-          _states.add(WidgetState.hovered);
-        } else {
-          _states.remove(WidgetState.hovered);
-        }
-      });
+      if (hovered) {
+        _states.add(WidgetState.hovered);
+      } else {
+        _states.remove(WidgetState.hovered);
+      }
+      if (mounted) updateScrollbarPainter();
     }
   }
 
   @override
   void handleHoverExit(PointerExitEvent event) {
     super.handleHoverExit(event);
-    if (_states.remove(WidgetState.hovered)) {
-      setState(() {});
+    if (_states.remove(WidgetState.hovered) && mounted) {
+      updateScrollbarPainter();
     }
   }
 

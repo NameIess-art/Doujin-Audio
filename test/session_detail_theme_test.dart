@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
+import 'package:doujin_audio/app/theme/theme_provider.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/session_detail_theme.dart';
 import 'package:flutter/foundation.dart';
@@ -155,9 +156,15 @@ void main() {
   testWidgets('fallback precedence is queue then application theme', (
     tester,
   ) async {
+    final lightBase = _base(Brightness.light);
+    final readableOrange = appReadableAccentColor(
+      Colors.orange,
+      lightBase.colorScheme.surface,
+      minContrast: 3.5,
+    );
     for (final (queue, expected) in [
-      (null, _base(Brightness.light).colorScheme.primary),
-      (Colors.orange.toARGB32(), Color(Colors.orange.toARGB32())),
+      (null, lightBase.colorScheme.primary),
+      (Colors.orange.toARGB32(), readableOrange),
     ]) {
       await tester.pumpWidget(
         _subject(path: Future<String?>.value(), queueColor: queue),
@@ -271,7 +278,10 @@ void main() {
     await _waitForFade(tester);
     expect(_paletteAnimation(tester).status, AnimationStatus.forward);
     final destination = (await tester.runAsync(
-      () => ColorScheme.fromImageProvider(provider: FileImage(file)),
+      () => ColorScheme.fromImageProvider(
+        provider: FileImage(file),
+        dynamicSchemeVariant: DynamicSchemeVariant.fidelity,
+      ),
     ))!.primary;
     expect(_theme(tester).colorScheme.primary, original);
     await tester.pump(const Duration(milliseconds: 190));
@@ -651,8 +661,12 @@ void main() {
     failed.completeError(const FileSystemException('Artwork unavailable'));
     await tester.pumpAndSettle();
     expect(
-      _theme(tester).colorScheme.primary.toARGB32(),
-      Colors.orange.toARGB32(),
+      _theme(tester).colorScheme.primary,
+      appReadableAccentColor(
+        Colors.orange,
+        _base(Brightness.light).colorScheme.surface,
+        minContrast: 3.5,
+      ),
     );
     expect(tester.takeException(), isNull);
   });

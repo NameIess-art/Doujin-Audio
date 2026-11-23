@@ -4,8 +4,7 @@ import android.content.ContentResolver
 import android.content.Intent
 import android.net.Uri
 import android.os.SystemClock
-import java.net.URLDecoder
-import java.nio.charset.StandardCharsets
+import com.doujin.audio.metadata.decodePercentRfc3986
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
@@ -292,11 +291,7 @@ private fun parsedContentReference(raw: String): ParsedContentReference? {
     fun decodedSegmentAfter(marker: String): String? {
         val index = rawSegments.indexOf(marker)
         if (index < 0 || index + 1 >= rawSegments.size) return null
-        return try {
-            URLDecoder.decode(rawSegments[index + 1], StandardCharsets.UTF_8.name())
-        } catch (_: Exception) {
-            rawSegments[index + 1]
-        }
+        return decodePercentRfc3986(rawSegments[index + 1])
     }
     val treeId = decodedSegmentAfter("tree")
     val documentId = decodedSegmentAfter("document")

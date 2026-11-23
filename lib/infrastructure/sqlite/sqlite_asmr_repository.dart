@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show compute;
 import 'package:meta/meta.dart';
 
 import '../../core/media/music_track.dart';
@@ -7,6 +8,8 @@ import '../../core/persistence/app_database.dart';
 import '../../core/persistence/persistence_records.dart';
 import '../../features/asmr/domain/asmr_models.dart';
 import '../../features/asmr/domain/asmr_persistence_repository.dart';
+
+const _asmrWorkComputeThreshold = 32;
 
 class SqliteAsmrRepository implements AsmrPersistenceRepository {
   SqliteAsmrRepository({required AppDatabase database}) : _database = database;
@@ -31,16 +34,20 @@ class SqliteAsmrRepository implements AsmrPersistenceRepository {
   Future<void> saveSettings(Map<String, String> values) =>
       _database.saveAppSettings(values);
   @override
-  Future<List<AsmrWork>> loadWorkList(String listType) async =>
-      (await _database.loadAsmrWorkList(
-        listType,
-      )).map(_workFromRecord).toList(growable: false);
+  Future<List<AsmrWork>> loadWorkList(String listType) async {
+    final records = await _database.loadAsmrWorkList(listType);
+    if (records.length < _asmrWorkComputeThreshold) {
+      return _worksFromRecords(records);
+    }
+    return compute(_worksFromRecords, records);
+  }
   @override
-  Future<void> saveWorkList(String listType, List<AsmrWork> works) =>
-      _database.saveAsmrWorkList(
-        listType,
-        works.map(_workToRecord).toList(growable: false),
-      );
+  Future<void> saveWorkList(String listType, List<AsmrWork> works) async {
+    final records = works.length < _asmrWorkComputeThreshold
+        ? _worksToRecords(works)
+        : await compute(_worksToRecords, works);
+    await _database.saveAsmrWorkList(listType, records);
+  }
   @override
   Future<List<AsmrSyncOperation>> loadSyncOperations() async =>
       (await _database.loadAsmrSyncOperations())
@@ -66,21 +73,32 @@ class SqliteAsmrRepository implements AsmrPersistenceRepository {
     required List<AsmrWork> works,
     required bool favorite,
     required List<AsmrSyncOperation> operations,
-  }) => _database.saveAsmrFavoriteState(
-    works.map(_workToRecord).toList(growable: false),
-    favorite,
-    operations.map(_operationToRecord).toList(growable: false),
-  );
+  }) async {
+    final records = works.length < _asmrWorkComputeThreshold
+        ? _worksToRecords(works)
+        : await compute(_worksToRecords, works);
+    await _database.saveAsmrFavoriteState(
+      records,
+      favorite,
+      operations.map(_operationToRecord).toList(growable: false),
+    );
+  }
   @override
   Future<void> saveAccountSyncState({
     required List<AsmrWork> favoriteWorks,
     required List<AsmrWork> historyWorks,
     required List<AsmrSyncOperation> operations,
-  }) => _database.saveAsmrAccountSyncState(
-    favoriteWorks.map(_workToRecord).toList(growable: false),
-    historyWorks.map(_workToRecord).toList(growable: false),
-    operations.map(_operationToRecord).toList(growable: false),
-  );
+  }) async {
+    final (favoriteRecords, historyRecords) =
+        favoriteWorks.length + historyWorks.length < _asmrWorkComputeThreshold
+        ? (_worksToRecords(favoriteWorks), _worksToRecords(historyWorks))
+        : await compute(_workListsToRecords, (favoriteWorks, historyWorks));
+    await _database.saveAsmrAccountSyncState(
+      favoriteRecords,
+      historyRecords,
+      operations.map(_operationToRecord).toList(growable: false),
+    );
+  }
   @override
   Future<List<MusicTrack>> loadTracksForRecommendations() =>
       _database.loadTracksForRecommendations();
@@ -91,6 +109,16 @@ class SqliteAsmrRepository implements AsmrPersistenceRepository {
     return _database.clearAsmrTablesForTest();
   }
 }
+
+List<AsmrWork> _worksFromRecords(List<AsmrWorkRecord> records) =>
+    records.map(_workFromRecord).toList(growable: false);
+
+List<AsmrWorkRecord> _worksToRecords(List<AsmrWork> works) =>
+    works.map(_workToRecord).toList(growable: false);
+
+(List<AsmrWorkRecord>, List<AsmrWorkRecord>) _workListsToRecords(
+  (List<AsmrWork>, List<AsmrWork>) lists,
+) => (_worksToRecords(lists.$1), _worksToRecords(lists.$2));
 
 AsmrWorkRecord _workToRecord(AsmrWork work) => AsmrWorkRecord(
   id: work.id,

@@ -176,6 +176,31 @@ class _StorageUsageCard extends StatelessWidget {
     final current = snapshot;
     final isLoaded = current != null;
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primaryHsl = HSLColor.fromColor(cs.primary);
+    final warningHsl = HSLColor.fromColor(tokens.warning);
+    final isAchromaticTheme = primaryHsl.saturation < 0.14;
+    final warningClashesWithPrimary =
+        !isAchromaticTheme &&
+        _hueDistance(primaryHsl.hue, warningHsl.hue) < 38;
+    final cacheColor = warningClashesWithPrimary
+        ? tokens.textFileColor
+        : tokens.warning;
+    final otherCandidate = isAchromaticTheme
+        ? tokens.textFileColor
+        : cs.tertiary;
+    final otherColor =
+        _hueDistance(
+              HSLColor.fromColor(otherCandidate).hue,
+              HSLColor.fromColor(cacheColor).hue,
+            ) <
+            28
+        ? tokens.success
+        : otherCandidate;
+    final availableColor = isDark
+        ? cs.outlineVariant.withValues(alpha: 0.55)
+        : cs.outlineVariant.withValues(alpha: 0.72);
+
     final audioLibrarySegment = (
       bytes: current?.audioLibraryBytes ?? 0,
       color: cs.primary,
@@ -184,19 +209,19 @@ class _StorageUsageCard extends StatelessWidget {
     );
     final applicationCacheSegment = (
       bytes: current?.applicationCacheBytes ?? 0,
-      color: tokens.warning,
+      color: cacheColor,
       label: i18n.tr('storage_usage_app_cache'),
       key: 'app-cache',
     );
     final otherUsedSegment = (
       bytes: current?.otherUsedBytes ?? 0,
-      color: cs.tertiary,
+      color: otherColor,
       label: i18n.tr('storage_usage_other'),
       key: 'other',
     );
     final availableSegment = (
       bytes: current?.availableBytes ?? 0,
-      color: cs.outlineVariant,
+      color: availableColor,
       label: i18n.tr('storage_usage_available'),
       key: 'available',
     );
@@ -314,6 +339,11 @@ class _StorageUsageCard extends StatelessWidget {
 
   int _storageSegmentFlex(int bytes, int totalBytes) {
     return ((bytes / totalBytes) * 10000).round().clamp(1, 10000);
+  }
+
+  static double _hueDistance(double first, double second) {
+    final diff = (first - second).abs();
+    return diff > 180 ? 360 - diff : diff;
   }
 }
 

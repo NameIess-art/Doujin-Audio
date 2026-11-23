@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../app/theme/app_design_tokens.dart';
+import '../../app/theme/app_styles.dart';
 import 'app_buttons.dart';
 import 'app_dialog.dart';
 import 'windows_smooth_scroll_controller.dart';
@@ -127,9 +128,8 @@ class AppEditPanelSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final radius = BorderRadius.circular(
-      AppDesignTokens.of(context).radiusOverlay,
-    );
+    final tokens = AppDesignTokens.of(context);
+    final radius = BorderRadius.circular(tokens.radiusOverlay);
     return DecoratedBox(
       key: surfaceKey,
       decoration: BoxDecoration(
@@ -143,8 +143,8 @@ class AppEditPanelSurface extends StatelessWidget {
         ],
       ),
       child: Material(
-        color: colors.surfaceContainerLow,
-        borderRadius: radius,
+        color: appFloatingSurfaceColor(colors),
+        shape: RoundedRectangleBorder(borderRadius: radius),
         clipBehavior: Clip.antiAlias,
         child: child,
       ),

@@ -1,3 +1,5 @@
+import 'dart:ui' show lerpDouble;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import '../../core/ui/ui_interaction_coordinator.dart';
@@ -5,6 +7,7 @@ import '../../core/widgets/app_buttons.dart';
 import '../../core/widgets/app_transitions.dart';
 import '../../core/widgets/sliding_selection_indicator.dart';
 import '../localization/app_language_provider.dart';
+import '../theme/app_design_tokens.dart';
 import '../theme/app_styles.dart';
 import '../../features/player/application/playback_session_snapshot.dart';
 import '../../features/player/presentation/active_session_carousel.dart';
@@ -59,6 +62,8 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation>
     with TickerProviderStateMixin {
   static const double _landscapeCollapsedRailWidth = 64.0;
   static const double _landscapeExpandedRailWidth = 244.0;
+  static const double _portraitCollapsedWidth = 92.0;
+  static const double _portraitExpandedWidth = 292.0;
 
   final Object _motionInteraction = Object();
   final GlobalKey _menuToggleKey = GlobalKey();
@@ -70,6 +75,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation>
   late final AnimationController _widthController;
   late final CurvedAnimation _widthCurve;
   late final Animation<double> _landscapeWidthAnimation;
+  late final Animation<double> _portraitContainerWidthAnimation;
   late final Animation<double> _landscapeLabelOpacity;
   late final AnimationController _collapseController;
   late final CurvedAnimation _collapseCurve;
@@ -78,10 +84,18 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation>
   bool _tickerModeEnabled = true;
   bool _disableAnimations = false;
   bool? _landscapeLayout;
+  late bool _expandedDockLayout;
+  VoidCallback? _pendingReportPlaybackRect;
+
+  bool get _shouldLockExpandedDockWidth =>
+      !widget.isMenuCollapsed ||
+      _widthController.isAnimating ||
+      _widthController.value > 0;
 
   @override
   void initState() {
     super.initState();
+    _expandedDockLayout = !widget.isMenuCollapsed;
     _widthController = AnimationController(
       vsync: this,
       duration: kThemeAnimationDuration,
@@ -94,6 +108,10 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation>
     _landscapeWidthAnimation = Tween<double>(
       begin: _landscapeCollapsedRailWidth,
       end: _landscapeExpandedRailWidth,
+    ).animate(_widthCurve);
+    _portraitContainerWidthAnimation = Tween<double>(
+      begin: _portraitCollapsedWidth,
+      end: _portraitExpandedWidth,
     ).animate(_widthCurve);
     _landscapeLabelOpacity = _widthCurve.drive(
       CurveTween(curve: const Interval(0.0, 0.25)),
@@ -111,9 +129,15 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation>
       Tween<double>(begin: 1.0, end: 0.0),
     );
     _widthController.addStatusListener((status) {
-      if (_landscapeLayout == true &&
-          (status.isDismissed || status.isCompleted)) {
+      if (status.isDismissed || status.isCompleted) {
         _finishMotion();
+        _pendingReportPlaybackRect?.call();
+        final expandedLayout = _shouldLockExpandedDockWidth;
+        if (mounted &&
+            widget.overlaySessions.isNotEmpty &&
+            expandedLayout != _expandedDockLayout) {
+          setState(() => _expandedDockLayout = expandedLayout);
+        }
       }
     });
   }
@@ -137,7 +161,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation>
 
   void _syncWidthAnimation() {
     final target = widget.isMenuCollapsed ? 0.0 : 1.0;
-    if (_landscapeLayout != true || _disableAnimations) {
+    if (_disableAnimations) {
       if (_widthController.value != target || _widthController.isAnimating) {
         _widthController.value = target;
       }
@@ -169,6 +193,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation>
       _syncWidthAnimation();
       _syncCollapseAnimation();
     }
+    _expandedDockLayout = _shouldLockExpandedDockWidth;
     final remaining = widget.destinations.map((item) => item.type).toSet();
     for (final item in oldWidget.destinations) {
       if (!remaining.contains(item.type)) {
@@ -195,10 +220,12 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation>
     _syncMotionInteraction();
     _syncWidthAnimation();
     _syncCollapseAnimation();
+    _expandedDockLayout = _shouldLockExpandedDockWidth;
   }
 
   @override
   void dispose() {
+    _pendingReportPlaybackRect = null;
     UiInteractionCoordinator.instance.cancelInteraction(_motionInteraction);
     _widthCurve.dispose();
     _widthController.dispose();
@@ -238,13 +265,12 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation>
     final isLandscapeLayout =
         defaultTargetPlatform == TargetPlatform.windows ||
         MediaQuery.orientationOf(context) == Orientation.landscape;
-    final motionDuration = _disableAnimations
-        ? Duration.zero
-        : isLandscapeLayout
-        ? kThemeAnimationDuration
-        : kAppMotionStandard;
-    final double expandedWidth = isLandscapeLayout ? 260 : 292;
-    final double collapsedWidth = isLandscapeLayout ? 80 : 92;
+    final double expandedWidth = isLandscapeLayout
+        ? 260
+        : _portraitExpandedWidth;
+    final double collapsedWidth = isLandscapeLayout
+        ? 80
+        : _portraitCollapsedWidth;
     final double containerWidth = isMenuCollapsed
         ? collapsedWidth
         : expandedWidth;
@@ -269,39 +295,30 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation>
       cs.primary,
       brightness: cs.brightness,
     );
+    final sidebarDecoration = BoxDecoration(
+      color: sidebarColor,
+      borderRadius: isLandscapeLayout
+          ? BorderRadius.zero
+          : BorderRadius.circular(AppRadius.section),
+      border: isLandscapeLayout
+          ? (pureBlackSidebar
+                ? Border(
+                    right: BorderSide(
+                      color: cs.outlineVariant.withValues(alpha: 0.24),
+                    ),
+                  )
+                : null)
+          : Border.all(
+              color: appOverlayBorderColor(cs, AppDesignTokens.of(context)),
+            ),
+    );
+    if (overlaySessions.isEmpty) {
+      _pendingReportPlaybackRect = null;
+    }
 
-    final sidebar = AnimatedContainer(
-      key: ValueKey<bool>(isLandscapeLayout),
-      // Resizing the shell every frame also relayouts the adjacent page trees.
-      // Landscape motion is confined to the rail below instead.
-      duration: isLandscapeLayout ? Duration.zero : motionDuration,
-      onEnd: isLandscapeLayout ? null : _finishMotion,
-      curve: kAppSpringCurve,
-      width: containerWidth,
-      margin: isLandscapeLayout
-          ? EdgeInsets.zero
-          : const EdgeInsets.fromLTRB(AppSpacing.md, 18, AppSpacing.xs, 18),
-      padding: isLandscapeLayout
-          ? const EdgeInsets.fromLTRB(8, 4, 8, 8)
-          : const EdgeInsets.fromLTRB(10, AppSpacing.md, 10, 10),
-      decoration: BoxDecoration(
-        color: sidebarColor,
-        borderRadius: isLandscapeLayout
-            ? BorderRadius.zero
-            : BorderRadius.circular(AppRadius.section),
-        border: isLandscapeLayout
-            ? (pureBlackSidebar
-                  ? Border(
-                      right: BorderSide(
-                        color: cs.outlineVariant.withValues(alpha: 0.24),
-                      ),
-                    )
-                  : null)
-            : Border.all(color: cs.outlineVariant.withValues(alpha: 0.85)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+    final sidebarContent = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
           Expanded(
             child: Builder(
               builder: (context) {
@@ -340,6 +357,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation>
                                                   railMinWidth +
                                                   48,
                                               accentColor: cs.primary,
+                                              brightness: theme.brightness,
                                               scrollOffset: _railScroll,
                                               slots: [
                                                 for (final destination
@@ -709,7 +727,19 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation>
                   },
                 );
 
-                if (!isLandscapeLayout) return buildRail(null);
+                if (!isLandscapeLayout) {
+                  final portraitRailWidth = isMenuCollapsed
+                      ? railMinWidth
+                      : railMinExtendedWidth;
+                  return ClipRect(
+                    child: OverflowBox(
+                      alignment: Alignment.topLeft,
+                      minWidth: portraitRailWidth,
+                      maxWidth: portraitRailWidth,
+                      child: buildRail(null),
+                    ),
+                  );
+                }
                 return Align(
                   alignment: Alignment.topLeft,
                   child: ValueListenableBuilder<double>(
@@ -784,53 +814,84 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation>
                     );
                   }
 
+                  _pendingReportPlaybackRect = reportPlaybackRect;
                   reportPlaybackRect();
-                  return Padding(
-                    padding: EdgeInsets.only(left: dockLeadingInset),
-                    child: Align(
-                      alignment: isMenuCollapsed && !isLandscapeLayout
-                          ? Alignment.center
-                          : Alignment.centerLeft,
-                      child: AnimatedContainer(
-                        key: playbackGeometryKey,
-                        duration: isLandscapeLayout && isMenuCollapsed
-                            ? Duration.zero
-                            : motionDuration,
-                        curve: Curves.easeInOut,
-                        onEnd: reportPlaybackRect,
-                        width: isMenuCollapsed
-                            ? kActiveSessionCarouselDockHeight
-                            : constraints.maxWidth - dockLeadingInset,
-                        height: kActiveSessionCarouselDockHeight,
-                        child: RepaintBoundary(
-                          child: AppDockPanel(
-                            showTopHighlight: false,
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(
-                                kActiveSessionCarouselDockHeight / 2,
-                              ),
-                              child: ActiveSessionCarousel(
-                                sessions: overlaySessions,
-                                i18n: i18n,
-                                viewportFraction: 1,
-                                expandedDockWidth: expandedDockWidth,
-                                presentation:
-                                    ActiveSessionCarouselPresentation.embedded,
-                                onOpenSession: (sessionId, coverOrigin) {
-                                  Navigator.of(
-                                    context,
-                                    rootNavigator: true,
-                                  ).push(
-                                    buildSessionDetailRoute(
-                                      sessionId: sessionId,
-                                      coverOrigin: coverOrigin,
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
+                  final collapsedLeadingInset = isLandscapeLayout
+                      ? dockLeadingInset
+                      : (railMinWidth - kActiveSessionCarouselDockHeight) / 2;
+                  final dockLayoutWidth = _expandedDockLayout
+                      ? expandedDockWidth
+                      : kActiveSessionCarouselDockHeight;
+                  final dockPanel = RepaintBoundary(
+                    child: AppDockPanel(
+                      showTopHighlight: false,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(
+                          kActiveSessionCarouselDockHeight / 2,
+                        ),
+                        child: OverflowBox(
+                          alignment: Alignment.centerLeft,
+                          minWidth: dockLayoutWidth,
+                          maxWidth: dockLayoutWidth,
+                          minHeight: kActiveSessionCarouselDockHeight,
+                          maxHeight: kActiveSessionCarouselDockHeight,
+                          child: ActiveSessionCarousel(
+                            sessions: overlaySessions,
+                            i18n: i18n,
+                            viewportFraction: 1,
+                            expandedDockWidth: expandedDockWidth,
+                            retainDockPages: true,
+                            presentation:
+                                ActiveSessionCarouselPresentation.embedded,
+                            onOpenSession: (sessionId, coverOrigin) {
+                              Navigator.of(context, rootNavigator: true).push(
+                                buildSessionDetailRoute(
+                                  sessionId: sessionId,
+                                  coverOrigin: coverOrigin,
+                                ),
+                              );
+                            },
                           ),
                         ),
+                      ),
+                    ),
+                  );
+                  return SizedBox(
+                    height: kActiveSessionCarouselDockHeight,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: AnimatedBuilder(
+                        animation: _widthCurve,
+                        child: dockPanel,
+                        builder: (context, child) {
+                          final t = _widthCurve.value;
+                          final animatedDockWidth = lerpDouble(
+                            kActiveSessionCarouselDockHeight,
+                            expandedDockWidth,
+                            t,
+                          )!;
+                          final leadingInset = lerpDouble(
+                            collapsedLeadingInset,
+                            dockLeadingInset,
+                            t,
+                          )!;
+                          return Padding(
+                            padding: EdgeInsets.only(left: leadingInset),
+                            child: OverflowBox(
+                              alignment: Alignment.centerLeft,
+                              minWidth: animatedDockWidth,
+                              maxWidth: animatedDockWidth,
+                              minHeight: kActiveSessionCarouselDockHeight,
+                              maxHeight: kActiveSessionCarouselDockHeight,
+                              child: SizedBox(
+                                key: playbackGeometryKey,
+                                width: animatedDockWidth,
+                                height: kActiveSessionCarouselDockHeight,
+                                child: child,
+                              ),
+                            ),
+                          );
+                        },
                       ),
                     ),
                   );
@@ -838,8 +899,54 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation>
               ),
             ),
         ],
-      ),
     );
+    // Snap outer shell width in both landscape and wide portrait so adjacent
+    // content panes never relayout frame-by-frame during sidebar motion.
+    final Widget sidebar = isLandscapeLayout
+        ? AnimatedContainer(
+            key: const ValueKey<bool>(true),
+            duration: Duration.zero,
+            width: containerWidth,
+            padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+            decoration: sidebarDecoration,
+            child: sidebarContent,
+          )
+        : Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.md,
+              18,
+              AppSpacing.xs,
+              18,
+            ),
+            child: SizedBox(
+              width: containerWidth,
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: ValueListenableBuilder<double>(
+                  valueListenable: _portraitContainerWidthAnimation,
+                  child: sidebarContent,
+                  builder: (context, animatedWidth, child) => OverflowBox(
+                    alignment: Alignment.topLeft,
+                    minWidth: animatedWidth,
+                    maxWidth: animatedWidth,
+                    child: AnimatedContainer(
+                      key: const ValueKey<bool>(false),
+                      duration: Duration.zero,
+                      width: animatedWidth,
+                      padding: const EdgeInsets.fromLTRB(
+                        10,
+                        AppSpacing.md,
+                        10,
+                        10,
+                      ),
+                      decoration: sidebarDecoration,
+                      child: child,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
     return Listener(behavior: HitTestBehavior.opaque, child: sidebar);
   }
 

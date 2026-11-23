@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../../core/widgets/app_buttons.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -41,8 +42,13 @@ import 'main_tab_state_mixin.dart';
 import 'my_tag_management_page.dart';
 
 class MyPage extends ConsumerStatefulWidget {
-  const MyPage({super.key, required this.tabIndex});
+  const MyPage({
+    super.key,
+    required this.tabIndex,
+    this.activeTabIndexListenable,
+  });
   final int tabIndex;
+  final ValueListenable<int>? activeTabIndexListenable;
 
   @override
   ConsumerState<MyPage> createState() => _MyPageState();
@@ -52,34 +58,75 @@ class _MyPageState extends ConsumerState<MyPage>
     with MainTabStateMixin<MyPage> {
   final _scroll = WindowsSmoothScrollController();
   MyInterestType _interestType = MyInterestType.tags;
+  bool _isActive = true;
+  AsyncValue<ListeningActivityView>? _cachedActivity;
   late final _refreshCommitKey =
       'my_activity_refresh_${identityHashCode(this)}';
+  bool get _isTabActive =>
+      widget.activeTabIndexListenable == null ||
+      widget.activeTabIndexListenable!.value == widget.tabIndex;
   @override
   int get tabIndex => widget.tabIndex;
   @override
   bool get handlesScrollToTop =>
-      TickerMode.getValuesNotifier(context).value.enabled;
+      _isActive && TickerMode.getValuesNotifier(context).value.enabled;
   @override
   ScrollController get mainScrollController => _scroll;
 
   @override
   void initState() {
     super.initState();
+    _isActive = _isTabActive;
+    widget.activeTabIndexListenable?.addListener(_handleActiveTabChanged);
     final controller = ref.read(mainScreenControllerProvider);
     initTabState(controller.scrollToTopTab, controller.stopScrollTab);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      UiInteractionCoordinator.instance.scheduleCommit(
-        key: _refreshCommitKey,
-        canRun: () =>
-            mounted && TickerMode.getValuesNotifier(context).value.enabled,
-        commit: () => unawaited(_refreshActivity()),
-      );
+      _scheduleActivityRefresh();
     });
   }
 
   @override
+  void didUpdateWidget(covariant MyPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.activeTabIndexListenable != widget.activeTabIndexListenable) {
+      oldWidget.activeTabIndexListenable?.removeListener(
+        _handleActiveTabChanged,
+      );
+      widget.activeTabIndexListenable?.addListener(_handleActiveTabChanged);
+    }
+    if (oldWidget.activeTabIndexListenable != widget.activeTabIndexListenable ||
+        oldWidget.tabIndex != widget.tabIndex) {
+      _handleActiveTabChanged();
+    }
+  }
+
+  void _scheduleActivityRefresh() {
+    UiInteractionCoordinator.instance.scheduleCommit(
+      key: _refreshCommitKey,
+      canRun: () =>
+          mounted &&
+          _isActive &&
+          TickerMode.getValuesNotifier(context).value.enabled,
+      commit: () => unawaited(_refreshActivity()),
+    );
+  }
+
+  void _handleActiveTabChanged() {
+    final nextActive = _isTabActive;
+    if (nextActive == _isActive) return;
+    if (nextActive) {
+      _cachedActivity = ref.read(listeningActivityProvider);
+    }
+    setState(() => _isActive = nextActive);
+    if (nextActive) {
+      _scheduleActivityRefresh();
+    }
+  }
+
+  @override
   void dispose() {
+    widget.activeTabIndexListenable?.removeListener(_handleActiveTabChanged);
     disposeTabState();
     UiInteractionCoordinator.instance.cancelCommit(_refreshCommitKey);
     _scroll.dispose();
@@ -230,11 +277,14 @@ class _MyPageState extends ConsumerState<MyPage>
   Widget build(BuildContext context) {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final activityReady = ref.watch(
-      listeningActivityProvider.select(
-        (state) => state.hasValue || state.hasError,
-      ),
-    );
+    final activityReady = _isActive
+        ? ref.watch(
+            listeningActivityProvider.select(
+              (state) => state.hasValue || state.hasError,
+            ),
+          )
+        : (_cachedActivity?.hasValue == true ||
+              _cachedActivity?.hasError == true);
     final controller = ref.watch(asmrLibraryControllerProvider);
     final top = AppPageHeaderMetrics.contentTopInset(context);
     final theme = Theme.of(context);
@@ -567,7 +617,18 @@ class _MyPageState extends ConsumerState<MyPage>
     );
     Widget listeningChart({bool skeleton = false}) => Consumer(
       builder: (context, ref, _) {
-        final activity = skeleton ? null : ref.watch(listeningActivityProvider);
+        final chartState = skeleton
+            ? null
+            : (_isActive
+                  ? ref.watch(
+                      listeningActivityProvider.select(_selectListeningChart),
+                    )
+                  : _selectListeningChart(
+                      _cachedActivity ?? ref.read(listeningActivityProvider),
+                    ));
+        if (!skeleton && _isActive) {
+          _cachedActivity = ref.read(listeningActivityProvider);
+        }
         final style =
             ref.watch(
               settingsStateProvider.select(
@@ -592,19 +653,19 @@ class _MyPageState extends ConsumerState<MyPage>
             builder: buildSection,
           );
         }
-        return activity!.when(
-          data: (view) => ListeningTimeChart(
-            days: view.days,
-            i18n: i18n,
-            style: style,
-            onStyleChanged: _setChartStyle,
-            builder: buildSection,
-          ),
-          loading: () => const SizedBox.shrink(),
-          error: (error, stack) => section(
+        if (chartState!.hasError) {
+          return section(
             i18n.tr('my_listening_time'),
             sectionError(onRetry: _refreshActivity),
-          ),
+          );
+        }
+        if (!chartState.hasValue) return const SizedBox.shrink();
+        return ListeningTimeChart(
+          days: chartState.days!,
+          i18n: i18n,
+          style: style,
+          onStyleChanged: _setChartStyle,
+          builder: buildSection,
         );
       },
     );
@@ -661,29 +722,43 @@ class _MyPageState extends ConsumerState<MyPage>
                     section(
                       i18n.tr('my_history'),
                       Consumer(
-                        builder: (context, ref, _) => ref
-                            .watch(listeningActivityProvider)
-                            .when(
-                              skipError: true,
-                              data: (view) => view.history.isEmpty
-                                  ? Text(
-                                      i18n.tr('my_no_history'),
-                                      style: theme.textTheme.bodyMedium
-                                          ?.copyWith(
-                                            color: theme
-                                                .colorScheme
-                                                .onSurfaceVariant,
-                                          ),
-                                    )
-                                  : _HistoryList(
-                                      view: view,
-                                      onOpen: _openHistory,
-                                      onRemove: _removeHistory,
+                        builder: (context, ref, _) {
+                          final historyState = _isActive
+                              ? ref.watch(
+                                  listeningActivityProvider.select(
+                                    _selectListeningHistory,
+                                  ),
+                                )
+                              : _selectListeningHistory(
+                                  _cachedActivity ??
+                                      ref.read(listeningActivityProvider),
+                                );
+                          if (_isActive) {
+                            _cachedActivity = ref.read(
+                              listeningActivityProvider,
+                            );
+                          }
+                          if (historyState.hasValue) {
+                            final history = historyState.history!;
+                            return history.isEmpty
+                                ? Text(
+                                    i18n.tr('my_no_history'),
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
                                     ),
-                              loading: () => const SizedBox.shrink(),
-                              error: (error, stack) =>
-                                  sectionError(onRetry: _refreshActivity),
-                            ),
+                                  )
+                                : _HistoryList(
+                                    history: history,
+                                    hasMoreHistory: historyState.hasMoreHistory,
+                                    onOpen: _openHistory,
+                                    onRemove: _removeHistory,
+                                  );
+                          }
+                          if (historyState.hasError) {
+                            return sectionError(onRetry: _refreshActivity);
+                          }
+                          return const SizedBox.shrink();
+                        },
                       ),
                     ),
                   ], controller: _scroll),
@@ -727,14 +802,46 @@ class _RetainedMySectionState extends State<_RetainedMySection>
   }
 }
 
+typedef _ListeningChartSlice = ({
+  List<ListeningDay>? days,
+  bool hasValue,
+  bool hasError,
+});
+
+typedef _ListeningHistorySlice = ({
+  List<ListeningHistoryEntry>? history,
+  bool hasMoreHistory,
+  bool hasValue,
+  bool hasError,
+});
+
+_ListeningChartSlice _selectListeningChart(
+  AsyncValue<ListeningActivityView> state,
+) => (
+  days: state.value?.days,
+  hasValue: state.hasValue,
+  hasError: state.hasError,
+);
+
+_ListeningHistorySlice _selectListeningHistory(
+  AsyncValue<ListeningActivityView> state,
+) => (
+  history: state.value?.history,
+  hasMoreHistory: state.value?.hasMoreHistory ?? false,
+  hasValue: state.hasValue,
+  hasError: state.hasError,
+);
+
 class _HistoryList extends ConsumerStatefulWidget {
   const _HistoryList({
-    required this.view,
+    required this.history,
+    required this.hasMoreHistory,
     required this.onOpen,
     required this.onRemove,
   });
 
-  final ListeningActivityView view;
+  final List<ListeningHistoryEntry> history;
+  final bool hasMoreHistory;
   final Future<void> Function(MusicTrack track) onOpen;
   final Future<void> Function(String workKey) onRemove;
 
@@ -749,7 +856,7 @@ class _HistoryListState extends ConsumerState<_HistoryList> {
   int? _pendingPage;
   bool _choosingPage = false;
 
-  int get _lastLoadedPage => (widget.view.history.length - 1) ~/ _pageSize;
+  int get _lastLoadedPage => (widget.history.length - 1) ~/ _pageSize;
 
   @override
   void didUpdateWidget(covariant _HistoryList oldWidget) {
@@ -757,7 +864,7 @@ class _HistoryListState extends ConsumerState<_HistoryList> {
     _page = _page.clamp(0, _lastLoadedPage);
     final pending = _pendingPage;
     if (pending != null &&
-        (pending <= _lastLoadedPage || !widget.view.hasMoreHistory)) {
+        (pending <= _lastLoadedPage || !widget.hasMoreHistory)) {
       _page = pending.clamp(0, _lastLoadedPage);
       _pendingPage = null;
       _revealFirstRow();
@@ -816,9 +923,9 @@ class _HistoryListState extends ConsumerState<_HistoryList> {
     final service = ref.read(listeningActivityServiceProvider);
     setState(() => _choosingPage = true);
     try {
-      final count = widget.view.hasMoreHistory
+      final count = widget.hasMoreHistory
           ? await service?.countHistory()
-          : widget.view.history.length;
+          : widget.history.length;
       if (!mounted || count == null || count <= _pageSize) return;
       final lastPage = (count - 1) ~/ _pageSize + 1;
       final form = GlobalKey<FormState>();
@@ -887,7 +994,7 @@ class _HistoryListState extends ConsumerState<_HistoryList> {
     final localizations = MaterialLocalizations.of(context);
     final loading = _pendingPage != null;
     final canChangePage = !loading && !_choosingPage;
-    final hasNext = _page < _lastLoadedPage || widget.view.hasMoreHistory;
+    final hasNext = _page < _lastLoadedPage || widget.hasMoreHistory;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -896,7 +1003,7 @@ class _HistoryListState extends ConsumerState<_HistoryList> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             for (final entry
-                in widget.view.history.skip(_page * _pageSize).take(_pageSize))
+                in widget.history.skip(_page * _pageSize).take(_pageSize))
               _HistoryWorkRow(
                 key: ValueKey(entry.workKey),
                 entry: entry,

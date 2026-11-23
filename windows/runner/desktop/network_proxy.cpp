@@ -5,7 +5,7 @@
 #include <shlwapi.h>
 #include <winrt/base.h>
 #include <algorithm>
-#include <condition_variable>
+#include <array>
 #include <cstdint>
 #include <cwctype>
 #include <deque>
@@ -198,7 +198,10 @@ struct ProxyConfigFingerprint {
 
 struct NetworkProxy::State {
   static constexpr int kMaxWorkers = 4;
-  static constexpr ULONGLONG kWpadNegativeCooldownMs = 20000;
+  static constexpr std::array<ULONGLONG, 3> kWpadNegativeCooldownsMs = {
+      30000, 60000, 300000};
+
+  enum class ResolveOutcome { kCompleted, kParked };
 
   struct Request {
     std::unique_ptr<Result> result;
@@ -208,15 +211,12 @@ struct NetworkProxy::State {
     bool completed = false;
   };
   std::mutex mutex;
-  std::mutex wpad_mutex;
-  std::condition_variable wpad_cv;
-  bool wpad_shutting_down = false;
   bool wpad_probe_in_flight = false;
   bool wpad_failed_cached = false;
-  bool wpad_last_probe_succeeded = false;
-  uint64_t wpad_probe_generation = 0;
   ULONGLONG wpad_failed_until_ms = 0;
+  size_t wpad_consecutive_failures = 0;
   ProxyConfigFingerprint wpad_config;
+  std::deque<std::shared_ptr<Request>> wpad_waiting;
   std::once_flag session_once;
   // WinHTTP caches PAC discovery per session. Reuse it across media requests.
   std::unique_ptr<void, decltype(&WinHttpCloseHandle)> session{nullptr, WinHttpCloseHandle};
@@ -226,8 +226,33 @@ struct NetworkProxy::State {
   std::deque<std::shared_ptr<Request>> queued;
   std::vector<std::shared_ptr<Request>> pending;
 
-  std::string Resolve(const std::wstring& url, const std::wstring& host,
-                      const std::wstring& scheme, INTERNET_PORT port) {
+  void EnsureWorkersLocked(const std::shared_ptr<State>& self) {
+    if (!window || queued.empty()) return;
+    const int desired =
+        std::min<int>(kMaxWorkers, static_cast<int>(queued.size()));
+    while (workers < desired) {
+      auto owner = std::make_unique<std::shared_ptr<State>>(self);
+      if (!TrySubmitThreadpoolCallback(RunWorker, owner.get(), nullptr)) break;
+      owner.release();
+      ++workers;
+    }
+  }
+
+  void DrainWpadWaitingLocked(const std::shared_ptr<State>& self) {
+    if (!window) {
+      wpad_waiting.clear();
+      return;
+    }
+    while (!wpad_waiting.empty()) {
+      queued.push_back(std::move(wpad_waiting.front()));
+      wpad_waiting.pop_front();
+    }
+    EnsureWorkersLocked(self);
+  }
+
+  ResolveOutcome ResolveRequest(const std::shared_ptr<State>& self,
+                                const std::shared_ptr<Request>& request,
+                                std::string& out_value) {
     WINHTTP_CURRENT_USER_IE_PROXY_CONFIG config{};
     if (!WinHttpGetIEProxyConfigForCurrentUser(&config)) winrt::throw_last_error();
     const std::unique_ptr<void, decltype(&GlobalFree)> pac(config.lpszAutoConfigUrl, GlobalFree);
@@ -247,43 +272,34 @@ struct NetworkProxy::State {
 
     struct WpadLeaderGuard {
       State& state;
+      const std::shared_ptr<State>& self;
       bool active = false;
       ~WpadLeaderGuard() {
         if (!active) return;
-        {
-          std::lock_guard<std::mutex> lock(state.wpad_mutex);
-          state.wpad_probe_in_flight = false;
-          state.wpad_last_probe_succeeded = false;
-          ++state.wpad_probe_generation;
-        }
-        state.wpad_cv.notify_all();
+        std::lock_guard<std::mutex> lock(state.mutex);
+        state.wpad_probe_in_flight = false;
+        state.DrainWpadWaitingLocked(self);
       }
-    } wpad_guard{*this, false};
+    } wpad_guard{*this, self, false};
 
     {
-      std::unique_lock<std::mutex> lock(wpad_mutex);
+      std::lock_guard<std::mutex> lock(mutex);
+      if (!window) return ResolveOutcome::kParked;
       if (fingerprint != wpad_config) {
         // Invalidate cached negative WPAD state immediately on proxy config change.
         wpad_config = fingerprint;
         wpad_failed_cached = false;
         wpad_failed_until_ms = 0;
+        wpad_consecutive_failures = 0;
       }
       if (wpad_only) {
         const ULONGLONG now = GetTickCount64();
         if (wpad_failed_cached && now < wpad_failed_until_ms) {
           run_autoproxy = false;
         } else if (wpad_probe_in_flight) {
-          // Single-flight: coalesce concurrent WPAD probes behind the active leader.
-          const uint64_t generation = wpad_probe_generation;
-          wpad_cv.wait(lock, [&] { return !wpad_probe_in_flight || wpad_shutting_down; });
-          if (wpad_shutting_down) {
-            run_autoproxy = false;
-          } else if (fingerprint == wpad_config && wpad_failed_cached &&
-                     GetTickCount64() < wpad_failed_until_ms) {
-            run_autoproxy = false;
-          } else if (wpad_probe_generation != generation && !wpad_last_probe_succeeded) {
-            run_autoproxy = false;
-          }
+          // Single-flight: park the request without holding a threadpool worker.
+          wpad_waiting.push_back(request);
+          return ResolveOutcome::kParked;
         } else {
           wpad_probe_in_flight = true;
           is_wpad_leader = true;
@@ -305,26 +321,34 @@ struct NetworkProxy::State {
       }
       options.fAutoLogonIfChallenged = FALSE;
       WINHTTP_PROXY_INFO resolved{};
-      const BOOL ok = WinHttpGetProxyForUrl(session.get(), url.c_str(), &options, &resolved);
+      const BOOL ok = WinHttpGetProxyForUrl(session.get(), request->url.c_str(), &options, &resolved);
       const DWORD last_error = ok ? ERROR_SUCCESS : GetLastError();
 
       if (is_wpad_leader) {
         {
-          std::lock_guard<std::mutex> lock(wpad_mutex);
+          std::lock_guard<std::mutex> lock(mutex);
           wpad_probe_in_flight = false;
-          wpad_last_probe_succeeded = (ok != FALSE);
-          ++wpad_probe_generation;
-          if (ok) {
-            wpad_failed_cached = false;
-            wpad_failed_until_ms = 0;
-          } else if (last_error == ERROR_WINHTTP_AUTODETECTION_FAILED &&
-                     fingerprint == wpad_config) {
-            wpad_failed_cached = true;
-            wpad_failed_until_ms = GetTickCount64() + kWpadNegativeCooldownMs;
+          if (fingerprint == wpad_config) {
+            if (ok) {
+              wpad_failed_cached = false;
+              wpad_failed_until_ms = 0;
+              wpad_consecutive_failures = 0;
+            } else {
+              // Negative-cache all WPAD failures (timeouts, DNS, script errors,
+              // autodetect failures) with exponential backoff until config changes.
+              const size_t index = std::min(
+                  wpad_consecutive_failures, kWpadNegativeCooldownsMs.size() - 1);
+              const ULONGLONG cooldown = kWpadNegativeCooldownsMs[index];
+              if (wpad_consecutive_failures < kWpadNegativeCooldownsMs.size()) {
+                ++wpad_consecutive_failures;
+              }
+              wpad_failed_cached = true;
+              wpad_failed_until_ms = GetTickCount64() + cooldown;
+            }
           }
+          DrainWpadWaitingLocked(self);
         }
         wpad_guard.active = false;
-        wpad_cv.notify_all();
       }
 
       if (ok) {
@@ -332,8 +356,12 @@ struct NetworkProxy::State {
         const std::unique_ptr<void, decltype(&GlobalFree)> resolved_bypass(resolved.lpszProxyBypass, GlobalFree);
         if (resolved.dwAccessType == WINHTTP_ACCESS_TYPE_NO_PROXY ||
             !resolved.lpszProxy || (resolved.lpszProxyBypass &&
-                Bypasses(resolved.lpszProxyBypass, host, scheme, port))) return "DIRECT";
-        return ProxyList(resolved.lpszProxy, scheme);
+                Bypasses(resolved.lpszProxyBypass, request->host, request->scheme, request->port))) {
+          out_value = "DIRECT";
+        } else {
+          out_value = ProxyList(resolved.lpszProxy, request->scheme);
+        }
+        return ResolveOutcome::kCompleted;
       }
       // Windows falls back to the user's manual proxy when PAC discovery fails.
       // An explicit PAC error without a manual proxy must remain observable.
@@ -342,18 +370,22 @@ struct NetworkProxy::State {
       }
     }
     if (!config.lpszProxy || (config.lpszProxyBypass &&
-        Bypasses(config.lpszProxyBypass, host, scheme, port))) return "DIRECT";
-    return ProxyList(config.lpszProxy, scheme);
+        Bypasses(config.lpszProxyBypass, request->host, request->scheme, request->port))) {
+      out_value = "DIRECT";
+    } else {
+      out_value = ProxyList(config.lpszProxy, request->scheme);
+    }
+    return ResolveOutcome::kCompleted;
   }
 
   static void CALLBACK RunWorker(PTP_CALLBACK_INSTANCE instance, void* context) {
     CallbackMayRunLong(instance);
     const std::unique_ptr<std::shared_ptr<State>> owner(
         static_cast<std::shared_ptr<State>*>(context));
-    (*owner)->ResolveQueuedRequests();
+    (*owner)->ResolveQueuedRequests(*owner);
   }
 
-  void ResolveQueuedRequests() {
+  void ResolveQueuedRequests(const std::shared_ptr<State>& self) {
     for (;;) {
       std::shared_ptr<Request> request;
       {
@@ -366,6 +398,7 @@ struct NetworkProxy::State {
         queued.pop_front();
       }
       std::string value, error;
+      ResolveOutcome outcome = ResolveOutcome::kCompleted;
       try {
         std::call_once(session_once, [&] {
           auto handle = WinHttpOpen(L"DoujinAudio", WINHTTP_ACCESS_TYPE_NO_PROXY,
@@ -374,10 +407,11 @@ struct NetworkProxy::State {
           session.reset(handle);
           WinHttpSetTimeouts(handle, 3500, 3500, 3500, 3500);
         });
-        value = Resolve(request->url, request->host, request->scheme, request->port);
+        outcome = ResolveRequest(self, request, value);
       }
       catch (const winrt::hresult_error& e) { error = winrt::to_string(e.message()); }
       catch (const std::exception& e) { error = e.what(); }
+      if (outcome == ResolveOutcome::kParked) continue;
       {
         std::lock_guard<std::mutex> lock(mutex);
         if (!window) continue;
@@ -439,7 +473,16 @@ NetworkProxy::NetworkProxy(HWND window, flutter::BinaryMessenger* messenger)
       host = Lower(std::wstring(parts.lpszHostName, parts.dwHostNameLength));
       scheme = Lower(std::wstring(parts.lpszScheme, parts.dwSchemeLength));
       port = parts.nPort;
-    } catch (const std::exception&) { Failure(*result, "invalid_argument", "A valid HTTP(S) url is required"); return; }
+    } catch (const std::invalid_argument&) {
+      Failure(*result, "invalid_argument", "A valid HTTP(S) url is required");
+      return;
+    } catch (const winrt::hresult_error& e) {
+      Failure(*result, "platform_error", winrt::to_string(e.message()));
+      return;
+    } catch (const std::exception& e) {
+      Failure(*result, "platform_error", e.what());
+      return;
+    }
     const auto request = std::make_shared<State::Request>();
     request->result = std::move(result);
     request->url = std::move(url);
@@ -472,13 +515,9 @@ NetworkProxy::~NetworkProxy() {
     std::lock_guard<std::mutex> lock(state_->mutex);
     state_->window = nullptr;
     state_->queued.clear();
+    state_->wpad_waiting.clear();
     pending.swap(state_->pending);
   }
-  {
-    std::lock_guard<std::mutex> lock(state_->wpad_mutex);
-    state_->wpad_shutting_down = true;
-  }
-  state_->wpad_cv.notify_all();
   // PAC/WPAD can block in Windows; do not stall engine teardown waiting for it.
   for (const auto& request : pending) {
     Failure(*request->result, "platform_error", "Window closed before proxy resolution completed");

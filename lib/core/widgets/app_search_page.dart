@@ -121,7 +121,26 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
   late final AnimationController _resultsController;
   late final Animation<double> _resultsOpacity;
   late final Animation<double> _suggestionsOpacity;
+  double? _slideFraction;
+  Animation<Offset>? _suggestionsSlide;
+  Animation<Offset>? _resultsSlide;
   Widget? _retainedResultsBody;
+
+  void _ensureSlideAnimations(double height) {
+    final fraction = height > 0 ? 6.0 / height : 0.0;
+    if (_slideFraction == fraction &&
+        _suggestionsSlide != null &&
+        _resultsSlide != null) {
+      return;
+    }
+    _slideFraction = fraction;
+    _suggestionsSlide = _resultsOpacity.drive(
+      Tween<Offset>(begin: Offset.zero, end: Offset(0, -fraction)),
+    );
+    _resultsSlide = _resultsOpacity.drive(
+      Tween<Offset>(begin: Offset(0, fraction), end: Offset.zero),
+    );
+  }
 
   bool get _skipResultsAnimation =>
       MediaQuery.disableAnimationsOf(context) ||
@@ -290,67 +309,62 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
         },
         child: AppPageContentTransition(
           backgroundColor: cs.surface,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (showSuggestions)
-                KeyedSubtree(
-                  key: const ValueKey<String>('app_search_suggestions_slot'),
-                  child: TickerMode(
-                    enabled: !hasResults,
-                    child: IgnorePointer(
-                      ignoring: hasResults,
-                      child: ExcludeFocus(
-                        excluding: hasResults,
-                        child: ExcludeSemantics(
-                          excluding: hasResults,
-                          child: FadeTransition(
-                            opacity: _suggestionsOpacity,
-                            child: AnimatedBuilder(
-                              animation: _resultsOpacity,
-                              child: widget.body,
-                              builder: (context, child) => Transform.translate(
-                                offset: Offset(0, -6 * _resultsOpacity.value),
-                                child: child,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              if (resultsBody != null)
-                KeyedSubtree(
-                  key: const ValueKey<String>('app_search_results_slot'),
-                  child: TickerMode(
-                    enabled: hasResults,
-                    child: IgnorePointer(
-                      ignoring: !hasResults,
-                      child: ExcludeFocus(
-                        excluding: !hasResults,
-                        child: ExcludeSemantics(
-                          excluding: !hasResults,
-                          child: FadeTransition(
-                            opacity: _resultsOpacity,
-                            child: AnimatedBuilder(
-                              animation: _suggestionsOpacity,
-                              child: resultsBody,
-                              builder: (context, child) => Transform.translate(
-                                offset: Offset(
-                                  0,
-                                  6 * _suggestionsOpacity.value,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              _ensureSlideAnimations(constraints.maxHeight);
+              final isAnimating = _resultsController.isAnimating;
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (showSuggestions)
+                    KeyedSubtree(
+                      key: const ValueKey<String>('app_search_suggestions_slot'),
+                      child: TickerMode(
+                        enabled: !hasResults || isAnimating,
+                        child: IgnorePointer(
+                          ignoring: hasResults,
+                          child: ExcludeFocus(
+                            excluding: hasResults,
+                            child: ExcludeSemantics(
+                              excluding: hasResults,
+                              child: FadeTransition(
+                                opacity: _suggestionsOpacity,
+                                child: SlideTransition(
+                                  position: _suggestionsSlide!,
+                                  child: widget.body,
                                 ),
-                                child: child,
                               ),
                             ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                ),
-            ],
+                  if (resultsBody != null)
+                    KeyedSubtree(
+                      key: const ValueKey<String>('app_search_results_slot'),
+                      child: TickerMode(
+                        enabled: hasResults || isAnimating,
+                        child: IgnorePointer(
+                          ignoring: !hasResults,
+                          child: ExcludeFocus(
+                            excluding: !hasResults,
+                            child: ExcludeSemantics(
+                              excluding: !hasResults,
+                              child: FadeTransition(
+                                opacity: _resultsOpacity,
+                                child: SlideTransition(
+                                  position: _resultsSlide!,
+                                  child: resultsBody,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
           ),
         ),
       ),
@@ -747,15 +761,17 @@ class _SearchFloatingCapsule extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final background = isDark ? cs.surfaceBright : cs.surfaceContainerHigh;
-    final glassEnabled = AppDesignTokens.of(context).barGlassEnabled;
+    final tokens = AppDesignTokens.of(context);
+    final background = cs.brightness == Brightness.dark
+        ? cs.surfaceBright
+        : cs.surfaceContainerHigh;
+    final glassEnabled = tokens.barGlassEnabled;
     final borderRadius = BorderRadius.circular(radius);
     final capsuleSurface = DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: borderRadius,
         border: Border.all(
-          color: cs.outlineVariant.withValues(alpha: isDark ? 0.24 : 0.42),
+          color: appOverlayBorderColor(cs, tokens, elevated: true),
         ),
       ),
       child: child,

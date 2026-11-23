@@ -234,7 +234,7 @@ final class LibraryMutationCoordinator {
       if (_service.isLibraryPathExcluded(libraryPath, normalizedFolderPath)) {
         return null;
       }
-      excludeLibraryFolder(libraryPath, normalizedFolderPath);
+      await excludeLibraryFolder(libraryPath, normalizedFolderPath);
       return LibraryRemovalKind.libraryFolderRecoverable;
     }
 
@@ -253,7 +253,7 @@ final class LibraryMutationCoordinator {
       )) {
         return null;
       }
-      excludeLibraryFolder(watchedFolderPath, normalizedFolderPath);
+      await excludeLibraryFolder(watchedFolderPath, normalizedFolderPath);
       return LibraryRemovalKind.standaloneFolderPermanent;
     }
 
@@ -373,7 +373,10 @@ final class LibraryMutationCoordinator {
     _syncStateSlice();
   }
 
-  void excludeLibraryFolder(String libraryPath, String folderPath) {
+  Future<void> excludeLibraryFolder(
+    String libraryPath,
+    String folderPath,
+  ) async {
     final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
     final normalizedFolderPath = _service.canonicalLibraryFolderPath(
       normalizedLibraryPath,
@@ -383,30 +386,26 @@ final class LibraryMutationCoordinator {
       normalizedLibraryPath,
       normalizedFolderPath,
       true,
-      onPersist: () {
-        if (_persistenceCoordinator.enabled) {
-          unawaited(_persistenceCoordinator.saveExclusions());
-        }
-      },
     );
     if (!mutation.changed) return;
-    if (mutation.affectedEntryPaths.isNotEmpty &&
-        _persistenceCoordinator.enabled) {
-      unawaited(
+    final persistenceEnabled = _persistenceCoordinator.enabled;
+    final writes = <Future<void>>[
+      if (persistenceEnabled) _persistenceCoordinator.saveExclusions(),
+      if (persistenceEnabled && mutation.affectedEntryPaths.isNotEmpty)
         databaseRepository.setLibraryEntriesState(
           normalizedLibraryPath,
           mutation.affectedEntryPaths,
           LibraryEntryState.excluded,
         ),
-      );
-    }
+    ];
     _syncStateSlice();
-    unawaited(
+    await Future.wait([
+      ...writes,
       _removeExcludedFolderFromActiveLibrary(
         normalizedLibraryPath,
         normalizedFolderPath,
       ),
-    );
+    ]);
   }
 
   Future<void> excludeLibraryTrack(String libraryPath, String trackPath) async {
@@ -440,7 +439,7 @@ final class LibraryMutationCoordinator {
     bool excluded,
   ) {
     if (excluded) {
-      excludeLibraryFolder(libraryPath, folderPath);
+      unawaited(excludeLibraryFolder(libraryPath, folderPath));
       return;
     }
     final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
@@ -752,7 +751,12 @@ final class LibraryMutationCoordinator {
     required bool isDirectory,
   }) async {
     final rootPath = PathMatcher.normalize(libraryRootPath);
-    final oldPath = PathMatcher.normalize(entryPath);
+    final rawOldPath = PathMatcher.normalize(entryPath);
+    final oldPath = !isDirectory && isMedia
+        ? PathMatcher.normalize(
+            _service.trackByPath(rawOldPath)?.path ?? rawOldPath,
+          )
+        : rawOldPath;
     if (PathMatcher.equalsNormalized(rootPath, oldPath) ||
         !PathMatcher.isWithinOrEqual(oldPath, rootPath)) {
       throw const AudioDetailRenameException('invalidTarget');
@@ -833,19 +837,24 @@ final class LibraryMutationCoordinator {
     if (!isDirectory) {
       final existingTrack = _service.libraryByPath[destination];
       if (existingTrack != null &&
-          PathMatcher.normalize(existingTrack.path) != source) {
+          !PathMatcher.equalsNormalized(existingTrack.path, source)) {
         throw const AudioDetailRenameException('nameConflict');
       }
       for (final entries in _service.libraryEntriesByLibrary.values) {
         final existingEntry = entries[destination];
         if (existingEntry != null &&
-            PathMatcher.normalize(existingEntry.path) != source) {
+            !PathMatcher.equalsNormalized(existingEntry.path, source)) {
           throw const AudioDetailRenameException('nameConflict');
         }
       }
-      if (_persistenceCoordinator.enabled &&
-          await databaseRepository.loadTrackDetail(destination) != null) {
-        throw const AudioDetailRenameException('nameConflict');
+      if (_persistenceCoordinator.enabled) {
+        final persistedTrack = await databaseRepository.loadTrackDetail(
+          destination,
+        );
+        if (persistedTrack != null &&
+            !PathMatcher.equalsNormalized(persistedTrack.path, source)) {
+          throw const AudioDetailRenameException('nameConflict');
+        }
       }
       return;
     }
@@ -972,16 +981,30 @@ final class LibraryMutationCoordinator {
     String newTrackPath,
     String displayName,
   ) async {
+    String? storedEntryPath;
+    for (final entries in _service.libraryEntriesByLibrary.values) {
+      final entry = entries[oldTrackPath];
+      if (entry != null) {
+        storedEntryPath = entry.path;
+        break;
+      }
+    }
     await databaseRepository.retargetTimeSegmentLabels(
-      oldTrackKey: PathMatcher.normalize(oldTrackPath),
+      oldTrackKey: PathMatcher.normalize(
+        _service.trackByPath(oldTrackPath)?.path ??
+            storedEntryPath ??
+            oldTrackPath,
+      ),
       newTrackKey: PathMatcher.normalize(newTrackPath),
     );
     final retainedTrack =
         _persistenceCoordinator.enabled &&
             _service.trackByPath(oldTrackPath) == null
-        ? await databaseRepository.loadTrackDetail(oldTrackPath)
+        ? await databaseRepository.loadTrackDetail(
+            storedEntryPath ?? oldTrackPath,
+          )
         : null;
-    final updatedTrack = _service.retargetSingleTrack(
+    final retargetResult = _service.retargetSingleTrack(
       oldTrackPath,
       newTrackPath,
       displayName,
@@ -991,27 +1014,18 @@ final class LibraryMutationCoordinator {
     snapshotCacheService.markStructureChanged();
     _syncStateSlice();
     if (_persistenceCoordinator.enabled) {
-      if (updatedTrack != null) {
+      if (retargetResult.updatedTrack != null) {
         await databaseRepository.replaceTrackPaths({
-          oldTrackPath: updatedTrack,
+          retargetResult.originalTrackPath ?? oldTrackPath:
+              retargetResult.updatedTrack!,
         });
-      } else {
-        final entries = <LibraryEntry>[];
-        final removedPaths = <String, List<String>>{};
-        for (final root in _service.libraryEntriesByLibrary.keys) {
-          final entry = _service.libraryEntryForPath(root, newTrackPath);
-          if (entry == null) continue;
-          entries.add(entry);
-          removedPaths[root] = [oldTrackPath];
-        }
-        if (entries.isNotEmpty) {
-          await databaseRepository.commitLibraryBatch(
-            tracks: const [],
-            entries: entries,
-            catalogSettings: const {},
-            removedEntryPaths: removedPaths,
-          );
-        }
+      } else if (retargetResult.retargetedEntries.isNotEmpty) {
+        await databaseRepository.commitLibraryBatch(
+          tracks: const [],
+          entries: retargetResult.retargetedEntries,
+          catalogSettings: const {},
+          removedEntryPaths: retargetResult.removedEntryPathsByLibrary,
+        );
       }
       await _persistenceCoordinator.saveExclusions();
     }

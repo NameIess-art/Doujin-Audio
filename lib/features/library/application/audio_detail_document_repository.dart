@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
@@ -258,22 +259,56 @@ final class AudioDetailDocumentRepository {
   }) async {
     final location = locationFor(detail.target);
     final codec = _codec;
-    Map<String, Object?>? preparedFields;
+    Map<String, Object?>? cachedLabelFields;
+    Map<String, Object?>? precomputedCoverFields;
+    final useInlineCoverPreparation = IOOverrides.current != null;
+
+    Future<Map<String, Object?>> resolveLabelFields() async {
+      if (cachedLabelFields != null) return cachedLabelFields!;
+      final labels = timeSegmentLabels ?? await loadTimeSegmentLabels?.call();
+      return cachedLabelFields = labels == null
+          ? const <String, Object?>{}
+          : codec.timeSegmentFields(detail.target, labels);
+    }
+
+    Future<Map<String, Object?>?> resolvePrecomputedCoverFields() async {
+      if (!useInlineCoverPreparation) return null;
+      return precomputedCoverFields ??= await _coverStore.documentFields(
+        detail,
+      );
+    }
+
     for (var attempt = 0; attempt < 2; attempt++) {
       final current = await _store.read(location);
       beforeCommit?.call();
       final snapshot = current.snapshot;
-      // Complete duration documents need no cover preparation or label query.
-      // Still validate the source so corrupt documents remain retryable.
+      // Patch existing duration entries directly in one isolate without cover
+      // preparation or label queries.
       if (onlyMissingDuration && snapshot != null) {
         try {
-          final patch = await Isolate.run(
-            () => codec.mergeMissingDuration(snapshot.bytes, detail),
+          final probe = await _runMergeMissingDurationExisting(
+            codec,
+            snapshot.bytes,
+            detail,
           );
-          if (patch == null) {
-            return const JsonDocumentWriteResult(
-              status: JsonDocumentWriteStatus.preserved,
+          if (!probe.missingEntry) {
+            final patchedBytes = probe.bytes;
+            if (patchedBytes == null) {
+              return const JsonDocumentWriteResult(
+                status: JsonDocumentWriteStatus.preserved,
+              );
+            }
+            beforeCommit?.call();
+            final replaced = await _store.write(
+              location: location,
+              bytes: patchedBytes,
+              mode: JsonDocumentWriteMode.replaceIfRevision,
+              expectedRevision: snapshot.revision,
             );
+            if (replaced.status != JsonDocumentWriteStatus.conflict) {
+              return replaced;
+            }
+            continue;
           }
         } on FormatException catch (error) {
           return JsonDocumentWriteResult(
@@ -282,17 +317,14 @@ final class AudioDetailDocumentRepository {
           );
         }
       }
-      if (preparedFields == null) {
-        final labels = timeSegmentLabels ?? await loadTimeSegmentLabels?.call();
-        preparedFields = <String, Object?>{
-          ...await _coverStore.documentFields(detail),
-          if (labels != null) ...codec.timeSegmentFields(detail.target, labels),
-        };
-      }
-      final coverFields = preparedFields;
       if (current.status == JsonDocumentReadStatus.missing) {
-        final bytes = await Isolate.run(
-          () => codec.encodeNew(detail, additionalFields: coverFields),
+        final labelFields = await resolveLabelFields();
+        final coverFields = await resolvePrecomputedCoverFields();
+        final bytes = await _runEncodeNewWithCover(
+          codec,
+          detail,
+          labelFields,
+          coverFields,
         );
         beforeCommit?.call();
         final created = await _store.write(
@@ -312,26 +344,30 @@ final class AudioDetailDocumentRepository {
 
       Uint8List? bytes;
       try {
-        bytes = await Isolate.run(
-          () => onlyMissingDuration
-              ? codec.mergeMissingDuration(
-                  snapshot.bytes,
-                  detail,
-                  additionalFields: coverFields,
-                )
-              : onlyTimeSegments
-              ? codec.mergeTimeSegments(
-                  snapshot.bytes,
-                  detail,
-                  codec.timeSegmentFields(detail.target, timeSegmentLabels!),
-                )
-              : codec.merge(
-                  snapshot.bytes,
-                  detail,
-                  previousTarget: previousTarget,
-                  additionalFields: coverFields,
-                ),
-        );
+        if (onlyTimeSegments) {
+          final segmentFields = codec.timeSegmentFields(
+            detail.target,
+            timeSegmentLabels!,
+          );
+          bytes = await _runMergeTimeSegments(
+            codec,
+            snapshot.bytes,
+            detail,
+            segmentFields,
+          );
+        } else {
+          final labelFields = await resolveLabelFields();
+          final coverFields = await resolvePrecomputedCoverFields();
+          bytes = await _runMergeWithCover(
+            codec,
+            snapshot.bytes,
+            detail,
+            labelFields,
+            coverFields,
+            previousTarget: previousTarget,
+            onlyMissingDuration: onlyMissingDuration,
+          );
+        }
       } on FormatException catch (error) {
         return JsonDocumentWriteResult(
           status: JsonDocumentWriteStatus.conflict,
@@ -357,6 +393,64 @@ final class AudioDetailDocumentRepository {
       error: 'concurrent_document_update',
     );
   }
+
+  static Future<({bool missingEntry, Uint8List? bytes})>
+  _runMergeMissingDurationExisting(
+    AudioDetailJsonCodec codec,
+    Uint8List snapshotBytes,
+    AudioDetail detail,
+  ) => Isolate.run(
+    () => codec.mergeMissingDurationExisting(snapshotBytes, detail),
+  );
+
+  static Future<Uint8List> _runEncodeNewWithCover(
+    AudioDetailJsonCodec codec,
+    AudioDetail detail,
+    Map<String, Object?> labelFields,
+    Map<String, Object?>? coverFields,
+  ) => Isolate.run(() {
+    final fields = <String, Object?>{
+      ...(coverFields ?? AudioDetailCoverStore.buildDocumentFieldsSync(detail)),
+      ...labelFields,
+    };
+    return codec.encodeNew(detail, additionalFields: fields);
+  });
+
+  static Future<Uint8List> _runMergeTimeSegments(
+    AudioDetailJsonCodec codec,
+    Uint8List snapshotBytes,
+    AudioDetail detail,
+    Map<String, Object?> segmentFields,
+  ) => Isolate.run(
+    () => codec.mergeTimeSegments(snapshotBytes, detail, segmentFields),
+  );
+
+  static Future<Uint8List?> _runMergeWithCover(
+    AudioDetailJsonCodec codec,
+    Uint8List snapshotBytes,
+    AudioDetail detail,
+    Map<String, Object?> labelFields,
+    Map<String, Object?>? coverFields, {
+    AudioDetailTarget? previousTarget,
+    required bool onlyMissingDuration,
+  }) => Isolate.run(() {
+    final fields = <String, Object?>{
+      ...(coverFields ?? AudioDetailCoverStore.buildDocumentFieldsSync(detail)),
+      ...labelFields,
+    };
+    return onlyMissingDuration
+        ? codec.mergeMissingDuration(
+            snapshotBytes,
+            detail,
+            additionalFields: fields,
+          )
+        : codec.merge(
+            snapshotBytes,
+            detail,
+            previousTarget: previousTarget,
+            additionalFields: fields,
+          );
+  });
 
   JsonDocumentLocation locationFor(AudioDetailTarget target) {
     return target.isLibraryRootFolder

@@ -1,9 +1,14 @@
 package com.doujin.audio.player.session
 
 import android.content.Context
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
 /** The subset of [StoredNativePlaybackSession] that changes on every tick. */
@@ -116,6 +121,27 @@ object NativePlaybackStateStore {
     private val stagedSessions = mutableMapOf<String, StoredNativePlaybackSession>()
     private val persistedRevisions = mutableMapOf<String, Long>()
     private var recoveryDatabase: NativePlaybackRecoveryDatabase? = null
+    private val persistenceExecutor: ExecutorService by lazy {
+        Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "NativePlaybackStateStore").apply { isDaemon = true }
+        }
+    }
+
+    internal fun executeOnPersistenceExecutor(task: () -> Unit) {
+        persistenceExecutor.execute {
+            try {
+                task()
+            } catch (error: Exception) {
+                Log.e("PlaybackRecovery", "Unable to persist playback state", error)
+            }
+        }
+    }
+
+    internal fun awaitPendingPersistenceForTest(timeoutMs: Long = 10_000L): Boolean {
+        val latch = CountDownLatch(1)
+        persistenceExecutor.execute { latch.countDown() }
+        return latch.await(timeoutMs, TimeUnit.MILLISECONDS)
+    }
 
     // Accessed under the store monitor. Separate Android data directories also
     // isolate recovery databases used by tests and profile installations.
@@ -204,6 +230,38 @@ object NativePlaybackStateStore {
         synchronized(stagedLock) {
             accepted.forEach { session ->
                 // A later transport state can share the definition revision.
+                if (stagedSessions[session.sessionId] == session) {
+                    stagedSessions.remove(session.sessionId)
+                }
+            }
+        }
+    }
+
+    @Synchronized
+    internal fun upsertSessionMetadata(
+        context: Context,
+        sessions: List<StoredNativePlaybackSession>,
+        expectedRevisions: Map<String, Long>? = null
+    ) {
+        val accepted = sessions.mapNotNull { session ->
+            val revision = sessionRevision(session.sessionId)
+            session.copy(definitionRevision = revision).takeIf {
+                expectedRevisions == null || expectedRevisions[session.sessionId] == revision
+            }
+        }
+        val persistent = accepted.filterNot { it.isTemporary }
+        if (persistent.isNotEmpty()) {
+            database(context).updateMetadata(persistent)
+            persistent.forEach {
+                temporarySessions.remove(it.sessionId)
+                persistedRevisions[it.sessionId] = it.definitionRevision
+            }
+        }
+        accepted.filter { it.isTemporary }.forEach {
+            if (sessionRevision(it.sessionId) == it.definitionRevision) saveTemporarySession(it)
+        }
+        synchronized(stagedLock) {
+            accepted.forEach { session ->
                 if (stagedSessions[session.sessionId] == session) {
                     stagedSessions.remove(session.sessionId)
                 }

@@ -269,14 +269,14 @@ internal class SubtitleOperations(private val context: Context, private val stor
                     },
                     name = { it.name }, sameDocument = { first, second -> sameDocument(first.uri.toString(), second.uri.toString()) },
                     create = {
-                        DocumentsContract.createDocument(context.contentResolver, folder, "text/plain", name)?.let { uri ->
+                        DocumentsContract.createDocument(context.contentResolver, folder, "application/octet-stream", name)?.let { uri ->
                             val projection = arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
                             val actualName = runCatching {
                                 context.contentResolver.query(uri, projection, null, null, null)?.use {
                                     if (it.moveToFirst()) it.getString(it.getColumnIndexOrThrow(projection[0])) else null
                                 }
                             }.getOrNull()
-                            DirectoryDocument(uri, actualName.orEmpty(), "text/plain")
+                            DirectoryDocument(uri, actualName.orEmpty(), "application/octet-stream")
                         }
                     },
                     write = { document ->
@@ -297,7 +297,7 @@ internal class SubtitleOperations(private val context: Context, private val stor
             return existing.uri.toString()
         }
         if (sourcePath != null && matching.isNotEmpty() && !overwrite) throw SubtitleExistsException()
-        val saved = storage.writeFileBytesToDocumentFolder(folder, existing?.name ?: name, bytes, "text/plain") {
+        val saved = storage.writeFileBytesToDocumentFolder(folder, existing?.name ?: name, bytes, "application/octet-stream") {
             sourcePath == null || sameDocument(sourcePath, it) || deleteSource(sourcePath)
         }
             ?: throw IOException("Cannot save subtitle")

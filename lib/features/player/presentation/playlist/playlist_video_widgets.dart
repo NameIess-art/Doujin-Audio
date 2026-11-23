@@ -120,6 +120,8 @@ class _SessionVideoFullscreenPageState
   Timer? _controlsTimer;
   Timer? _feedbackTimer;
   bool _controlsVisible = true;
+  bool _tickerModeEnabled = true;
+  bool _subtitleEnabled = false;
   bool _exitScheduled = false;
   bool _exitRunning = false;
   bool _allowPop = false;
@@ -180,6 +182,20 @@ class _SessionVideoFullscreenPageState
     if (_pastRestartThreshold.value != past) {
       _pastRestartThreshold.value = past;
     }
+  }
+
+  void _syncPositionGateTickerMode() {
+    _positionGate?.tickerModeEnabled =
+        _tickerModeEnabled && (_controlsVisible || _subtitleEnabled);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final nextTickerMode = TickerMode.valuesOf(context).enabled;
+    if (_tickerModeEnabled == nextTickerMode) return;
+    _tickerModeEnabled = nextTickerMode;
+    _syncPositionGateTickerMode();
   }
 
   @override
@@ -273,9 +289,9 @@ class _SessionVideoFullscreenPageState
       _hiddenAtPointerPosition = null;
     }
     setState(() => _controlsVisible = visible);
-    // The gate retains the latest position for gestures without rebuilding
-    // hidden controls, then publishes it immediately when controls return.
-    _positionGate?.tickerModeEnabled = visible;
+    // Keep the shared gate active while subtitles are enabled, and pause
+    // notifications whenever both controls and subtitles are inactive.
+    _syncPositionGateTickerMode();
   }
 
   void _showControls() {
@@ -722,7 +738,9 @@ class _SessionVideoFullscreenPageState
 
   void _endControlInteraction() {
     _sliderInteracting = false;
-    _scheduleControlsHide();
+    if (mounted) {
+      _scheduleControlsHide();
+    }
   }
 
   EdgeInsets _controlBarPadding(BuildContext context) {
@@ -807,15 +825,16 @@ class _SessionVideoFullscreenPageState
       _exitAfterBuild();
       return const ColoredBox(color: Colors.black);
     }
+    _subtitleEnabled = subtitleEnabled;
     if (_positionGate == null) {
       _positionGate = PlaybackPositionUiGate(
         session: activeSession,
         deferDuringInteraction: false,
       )..addListener(_handlePositionGateChanged);
-      _positionGate!.tickerModeEnabled = _controlsVisible;
     } else {
       _positionGate!.updateSession(activeSession);
     }
+    _syncPositionGateTickerMode();
     final library = ref.read(libraryFacadeProvider);
     final coverCache = library.coverArtworkCacheService;
     final coverScope =
@@ -972,15 +991,25 @@ class _SessionVideoFullscreenPageState
                               ),
                             ),
                             if (subtitleEnabled)
-                              Positioned(
+                              AnimatedPositioned(
                                 left: 24,
                                 right: 24,
                                 bottom: _controlsVisible
                                     ? controlBarHeight + 12
-                                    : 24 + MediaQuery.viewPaddingOf(context).bottom,
+                                    : 24 +
+                                          MediaQuery.viewPaddingOf(
+                                            context,
+                                          ).bottom,
+                                duration: MediaQuery.disableAnimationsOf(
+                                  context,
+                                )
+                                    ? Duration.zero
+                                    : kAppFadeDuration,
+                                curve: kAppFadeCurve,
                                 child: IgnorePointer(
                                   child: _FullscreenVideoSubtitleOverlay(
                                     session: activeSession,
+                                    positionGate: _positionGate!,
                                   ),
                                 ),
                               ),
@@ -1090,12 +1119,13 @@ class _SessionVideoFullscreenPageState
                   ? Duration.zero
                   : kAppFadeDuration,
               child: feedback == null
-                  ? const SizedBox.shrink()
+                  ? const SizedBox.shrink(
+                      key: ValueKey<String>('fullscreen_video_feedback_empty'),
+                    )
                   : Material(
-                      key: ValueKey<(IconData, String)>((
-                        feedback.icon,
-                        feedback.text,
-                      )),
+                      key: const ValueKey<String>(
+                        'fullscreen_video_feedback_card',
+                      ),
                       color: Colors.black.withValues(alpha: 0.68),
                       borderRadius: BorderRadius.circular(18),
                       child: Padding(
@@ -1258,6 +1288,7 @@ class _SessionVideoFullscreenPageState
                                   MediaQuery.orientationOf(context) ==
                                   Orientation.landscape,
                               onSeekStart: _beginControlInteraction,
+                              onSeekCancel: _endControlInteraction,
                               onManualSeek: (_) => _endControlInteraction(),
                             ),
                           ),
@@ -1434,17 +1465,13 @@ class _SessionVideoFullscreenPageState
                                         playbackSecondaryControlsWidth -
                                         playbackSecondaryControlButtonWidth,
                                   ),
-                                  child: PlaybackSecondaryControlSurface(
-                                    blurEnabled: false,
-                                    child: SessionVolumeControls(
-                                      session: session,
-                                      playback: _playback,
-                                      volumePreview: _volumePreview,
-                                      onInteractionStart:
-                                          _beginControlInteraction,
-                                      onInteractionEnd: _endControlInteraction,
-                                      onOperationFailure: _showOperationFailure,
-                                    ),
+                                  child: SessionVolumeControls(
+                                    session: session,
+                                    playback: _playback,
+                                    volumePreview: _volumePreview,
+                                    onInteractionStart: _beginControlInteraction,
+                                    onInteractionEnd: _endControlInteraction,
+                                    onOperationFailure: _showOperationFailure,
                                   ),
                                 ),
                               ),
@@ -1470,9 +1497,13 @@ class _SessionVideoFullscreenPageState
 }
 
 class _FullscreenVideoSubtitleOverlay extends ConsumerStatefulWidget {
-  const _FullscreenVideoSubtitleOverlay({required this.session});
+  const _FullscreenVideoSubtitleOverlay({
+    required this.session,
+    required this.positionGate,
+  });
 
   final PlaybackSessionSnapshot session;
+  final PlaybackPositionUiGate positionGate;
 
   @override
   ConsumerState<_FullscreenVideoSubtitleOverlay> createState() =>
@@ -1481,21 +1512,18 @@ class _FullscreenVideoSubtitleOverlay extends ConsumerStatefulWidget {
 
 class _FullscreenVideoSubtitleOverlayState
     extends ConsumerState<_FullscreenVideoSubtitleOverlay> {
-  late final PlaybackPositionUiGate _positionGate;
   late final PlaybackSubtitleService _subtitleService;
   SubtitleTrack? _subtitleTrack;
   String? _loadedPath;
+  SubtitleCue? _lastCue;
+  String? _lastCueText;
   String? _activeText;
   int _loadGeneration = 0;
 
   @override
   void initState() {
     super.initState();
-    _positionGate = PlaybackPositionUiGate(
-      session: widget.session,
-      includeBufferedPosition: false,
-      deferDuringInteraction: false,
-    )..addListener(_handlePositionTick);
+    widget.positionGate.addListener(_handlePositionTick);
     _subtitleService = ref.read(playbackSubtitleServiceProvider)
       ..addListener(_handleSubtitleServiceChanged);
     _loadSubtitles();
@@ -1504,8 +1532,9 @@ class _FullscreenVideoSubtitleOverlayState
   @override
   void didUpdateWidget(covariant _FullscreenVideoSubtitleOverlay oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.session != widget.session) {
-      _positionGate.updateSession(widget.session);
+    if (oldWidget.positionGate != widget.positionGate) {
+      oldWidget.positionGate.removeListener(_handlePositionTick);
+      widget.positionGate.addListener(_handlePositionTick);
     }
     if (oldWidget.session.id != widget.session.id ||
         _loadedPath != widget.session.currentTrackPath) {
@@ -1517,9 +1546,7 @@ class _FullscreenVideoSubtitleOverlayState
   void dispose() {
     _loadGeneration++;
     _subtitleService.removeListener(_handleSubtitleServiceChanged);
-    _positionGate
-      ..removeListener(_handlePositionTick)
-      ..dispose();
+    widget.positionGate.removeListener(_handlePositionTick);
     super.dispose();
   }
 
@@ -1528,6 +1555,8 @@ class _FullscreenVideoSubtitleOverlayState
     final trackPath = widget.session.currentTrackPath;
     _loadedPath = trackPath;
     if (trackPath.isEmpty) {
+      _lastCue = null;
+      _lastCueText = null;
       if (_subtitleTrack != null || _activeText != null) {
         setState(() {
           _subtitleTrack = null;
@@ -1565,7 +1594,7 @@ class _FullscreenVideoSubtitleOverlayState
 
   void _applyTrack(String trackPath, SubtitleTrack? track) {
     if (!mounted || _loadedPath != trackPath) return;
-    final nextText = _cueTextAt(track, _positionGate.value.position);
+    final nextText = _cueTextAt(track, widget.positionGate.value.position);
     if (identical(_subtitleTrack, track) && _activeText == nextText) return;
     setState(() {
       _subtitleTrack = track;
@@ -1574,14 +1603,21 @@ class _FullscreenVideoSubtitleOverlayState
   }
 
   void _handlePositionTick() {
-    final nextText = _cueTextAt(_subtitleTrack, _positionGate.value.position);
+    final nextText = _cueTextAt(
+      _subtitleTrack,
+      widget.positionGate.value.position,
+    );
     if (_activeText == nextText) return;
     setState(() => _activeText = nextText);
   }
 
   String? _cueTextAt(SubtitleTrack? track, Duration position) {
-    final raw = track?.cueAt(position)?.text.trim();
-    return (raw == null || raw.isEmpty) ? null : raw;
+    final cue = track?.cueAt(position);
+    if (identical(cue, _lastCue)) return _lastCueText;
+    _lastCue = cue;
+    final raw = cue?.text.trim();
+    _lastCueText = (raw == null || raw.isEmpty) ? null : raw;
+    return _lastCueText;
   }
 
   @override

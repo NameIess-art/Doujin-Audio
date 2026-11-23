@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 import 'app_buttons.dart';
 import '../../app/theme/app_styles.dart';
@@ -502,15 +503,16 @@ Widget _libraryLikeSecondaryInfo(
   Widget? trailingActions,
 }) {
   final theme = Theme.of(context);
-  final color = theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6);
-  final style = theme.platform == TargetPlatform.windows
+  final isWindows = theme.platform == TargetPlatform.windows;
+  final color = theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.80);
+  final style = isWindows
       ? theme.textTheme.bodySmall!.copyWith(
           fontSize: 11,
           fontWeight: FontWeight.w400,
           color: color,
         )
       : TextStyle(fontSize: 11, fontWeight: FontWeight.w400, color: color);
-  return SizedBox(
+  final row = SizedBox(
     height: _libraryLikeInfoLineHeight,
     child: Align(
       alignment: Alignment.bottomRight,
@@ -550,6 +552,70 @@ Widget _libraryLikeSecondaryInfo(
       ),
     ),
   );
+  if (isWindows || trailingActions == null) return row;
+  // Expand the vertical touch target for compact mobile bottom-right actions
+  // without altering the 18px line layout.
+  return _ExpandedVerticalHitBox(topOverflow: 10, bottomOverflow: 6, child: row);
+}
+
+class _ExpandedVerticalHitBox extends SingleChildRenderObjectWidget {
+  const _ExpandedVerticalHitBox({
+    required this.topOverflow,
+    required this.bottomOverflow,
+    required super.child,
+  });
+
+  final double topOverflow;
+  final double bottomOverflow;
+
+  @override
+  _RenderExpandedVerticalHitBox createRenderObject(BuildContext context) =>
+      _RenderExpandedVerticalHitBox(
+        topOverflow: topOverflow,
+        bottomOverflow: bottomOverflow,
+      );
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderExpandedVerticalHitBox renderObject,
+  ) {
+    renderObject
+      ..topOverflow = topOverflow
+      ..bottomOverflow = bottomOverflow;
+  }
+}
+
+class _RenderExpandedVerticalHitBox extends RenderProxyBox {
+  _RenderExpandedVerticalHitBox({
+    required this.topOverflow,
+    required this.bottomOverflow,
+  });
+
+  double topOverflow;
+  double bottomOverflow;
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    if (position.dx < 0 || position.dx >= size.width) return false;
+    if (position.dy < -topOverflow ||
+        position.dy >= size.height + bottomOverflow) {
+      return false;
+    }
+    final target = child;
+    if (target == null || size.height <= 0) return false;
+    final maxY = math.max(0.0, size.height - 0.5);
+    final clampedY = position.dy.clamp(0.0, maxY);
+    if (clampedY == position.dy) {
+      return target.hitTest(result, position: position);
+    }
+    return result.addWithRawTransform(
+      transform: Matrix4.translationValues(0, clampedY - position.dy, 0),
+      position: position,
+      hitTest: (result, transformed) =>
+          target.hitTest(result, position: transformed),
+    );
+  }
 }
 
 class LibraryLikeCardActions extends StatelessWidget {
@@ -589,11 +655,13 @@ class _LibraryLikeCardAction extends StatefulWidget {
 
 class _LibraryLikeCardActionState extends State<_LibraryLikeCardAction>
     with TickerProviderStateMixin {
-  late final _motion = _ActionMotion(this, _updateIcon);
+  late final _motion = _ActionMotion(this, _onMotionChanged);
 
   bool get _enabled => widget.onTap != null;
 
-  void _updateIcon() => setState(() {});
+  void _onMotionChanged() {
+    if (mounted) setState(() {});
+  }
 
   Color _baseColor(ColorScheme colors) => _enabled
       ? colors.onSurfaceVariant
@@ -613,10 +681,10 @@ class _LibraryLikeCardActionState extends State<_LibraryLikeCardAction>
       enabled: _enabled,
       baseColor: baseColor,
     );
-    _motion.opacity = feedback.opacity;
     _motion.animateTo(
       feedback.scale,
       feedback.color ?? baseColor,
+      feedback.opacity,
       feedback.duration,
       isWindows: theme.platform == TargetPlatform.windows,
     );
@@ -644,19 +712,18 @@ class _LibraryLikeCardActionState extends State<_LibraryLikeCardAction>
     if (_motion.hovered == value) return;
     _motion.hovered = value;
     _syncMotion();
-    _updateIcon();
   }
 
   void _setPressed(bool value) {
     if (_motion.pressed == value) return;
     _motion.pressed = value;
     _syncMotion();
-    _updateIcon();
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isWindows = theme.platform == TargetPlatform.windows;
     final color = _motion.resolveColor(_baseColor(theme.colorScheme));
     final glyph = Icon(
       widget.icon,
@@ -684,12 +751,12 @@ class _LibraryLikeCardActionState extends State<_LibraryLikeCardAction>
           onHighlightChanged: _enabled ? _setPressed : null,
           containedInkWell: true,
           customBorder: const CircleBorder(),
-          radius: 12,
+          radius: isWindows ? 12 : 18,
           child: SizedBox(
-            width: 22,
+            width: isWindows ? 22 : 34,
             height: _libraryLikeInfoLineHeight,
             child: Center(
-              child: theme.platform == TargetPlatform.windows
+              child: isWindows
                   ? glyph
                   : Transform.scale(
                       scale: _motion.scale,
@@ -705,10 +772,10 @@ class _LibraryLikeCardActionState extends State<_LibraryLikeCardAction>
 }
 
 class _ActionMotion {
-  _ActionMotion(this._vsync, this._updateIcon);
+  _ActionMotion(this._vsync, this._onChanged);
 
   final TickerProvider _vsync;
-  final VoidCallback _updateIcon;
+  final VoidCallback _onChanged;
   AnimationController? _scaleAnimation;
   AnimationController? _colorAnimation;
   bool hovered = false;
@@ -728,17 +795,23 @@ class _ActionMotion {
 
   void _setValueSilently(AnimationController? controller, double value) {
     if (controller == null) return;
-    controller.removeListener(_updateIcon);
+    controller.removeListener(_onChanged);
     controller.value = value;
-    controller.addListener(_updateIcon);
+    controller.addListener(_onChanged);
   }
 
   void animateTo(
     double targetScale,
     Color targetColor,
+    double targetOpacity,
     Duration duration, {
     required bool isWindows,
   }) {
+    var changedImmediately = false;
+    if (opacity != targetOpacity) {
+      opacity = targetOpacity;
+      changedImmediately = true;
+    }
     final curve = isWindows ? Curves.easeOutQuad : Curves.easeOutCubic;
     if (!isWindows &&
         (_targetScale != targetScale || _scaleAnimation?.isAnimating == true)) {
@@ -746,31 +819,38 @@ class _ActionMotion {
       _targetScale = targetScale;
       if (duration == Duration.zero) {
         _setValueSilently(_scaleAnimation, targetScale);
+        changedImmediately = true;
       } else {
         final controller = _scaleAnimation ??= AnimationController.unbounded(
           vsync: _vsync,
           value: from,
-        )..addListener(_updateIcon);
+        )..addListener(_onChanged);
         unawaited(
           controller.animateTo(targetScale, duration: duration, curve: curve),
         );
       }
     }
     if (_targetColor == null || duration == Duration.zero) {
+      if (_targetColor != targetColor || _fromColor != targetColor) {
+        changedImmediately = true;
+      }
       _fromColor = targetColor;
       _targetColor = targetColor;
       _setValueSilently(_colorAnimation, 1);
+      if (changedImmediately) _onChanged();
       return;
     }
     if (_targetColor == targetColor &&
         (isWindows || _colorAnimation?.isAnimating != true)) {
+      if (changedImmediately) _onChanged();
       return;
     }
     _fromColor = resolveColor(targetColor);
     _targetColor = targetColor;
     final controller = _colorAnimation ??= AnimationController(vsync: _vsync)
-      ..addListener(_updateIcon);
+      ..addListener(_onChanged);
     _setValueSilently(controller, 0);
+    if (changedImmediately) _onChanged();
     unawaited(controller.animateTo(1, duration: duration, curve: curve));
   }
 

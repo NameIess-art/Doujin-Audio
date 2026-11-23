@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:collection';
 
 import '../../../core/app_language.dart';
+import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/dlsite_metadata.dart';
 import '../../../core/media/music_track.dart';
@@ -186,6 +187,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   LibraryState get state => _service.slice.state;
   Stream<LibraryState> get states => _service.slice.stream;
   // Cancellation stops mutations before the scan has released its lease.
+  @override
   Future<void> get scanIdle => _scanCompletion?.future ?? Future<void>.value();
 
   Future<void> waitForScanAvailability() async {
@@ -274,11 +276,13 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
     cancelScan();
     await scanIdle;
     await _startupMaintenanceCoordinator.cancelAndWait();
+    await _catalogWrites.flushPendingBatches();
     await _persistenceCoordinator.prepareForReset();
     await detailCacheService.suspendAndWait();
   }
 
   Future<void> flushPendingPersistence() async {
+    await _catalogWrites.flushPendingBatches();
     await _persistenceCoordinator.flush();
     await detailCacheService.waitForPendingOperations();
   }
@@ -648,6 +652,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
         foldersToRemove.add(folder);
       }
     }
+    final completion = _pathMutationCompletion = Completer<void>();
     _catalogWrites.beginLibraryBatch(snapshotAllEntries: false);
     _catalogWrites.rememberBatchEntriesForLibrary(root);
     for (final folder in foldersToRemove) {
@@ -661,7 +666,27 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
       ...snapshot.audioFilePaths,
       ...retainedFolders,
     });
-    unawaited(_catalogWrites.endLibraryBatch());
+    unawaited(
+      _catalogWrites.endLibraryBatch().then<void>(
+        (_) {
+          if (identical(_pathMutationCompletion, completion)) {
+            _pathMutationCompletion = null;
+          }
+          completion.complete();
+        },
+        onError: (Object error, StackTrace stackTrace) {
+          AppLogService.error(
+            'library_disk_snapshot_reconcile_failed',
+            error: error,
+            stackTrace: stackTrace,
+          );
+          if (identical(_pathMutationCompletion, completion)) {
+            _pathMutationCompletion = null;
+          }
+          completion.complete();
+        },
+      ),
+    );
     _syncStateSlice();
     return retainedFolders;
   }
@@ -824,8 +849,9 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   Future<LibraryRemovalKind?> removeFolder(String folderPath) =>
       _withScanPaused(() => _mutationCoordinator.removeFolder(folderPath));
 
-  void excludeLibraryFolder(String libraryPath, String folderPath) =>
-      _mutationCoordinator.excludeLibraryFolder(libraryPath, folderPath);
+  void excludeLibraryFolder(String libraryPath, String folderPath) => unawaited(
+    _mutationCoordinator.excludeLibraryFolder(libraryPath, folderPath),
+  );
 
   void excludeLibraryTrack(String libraryPath, String trackPath) => unawaited(
     _mutationCoordinator.excludeLibraryTrack(libraryPath, trackPath),
@@ -1099,6 +1125,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   void trimMemory() {
     _coverArtworkCacheService?.trimMemory();
     detailCacheService.trimMemory();
+    snapshotCacheService.trimMemory();
   }
 
   void syncPresentationState({bool? isInitialized}) {

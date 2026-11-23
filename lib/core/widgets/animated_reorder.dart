@@ -122,7 +122,25 @@ class _RenderReorderViewport extends RenderProxyBox {
     return i < previous.length || j < next.length;
   }
 
+  void _settleImmediately() {
+    _pending = false;
+    _positions.clear();
+    for (final item in _items) {
+      if (item.delta == Offset.zero) continue;
+      item.delta = Offset.zero;
+      item.markNeedsPaint();
+      item.markNeedsSemanticsUpdate();
+    }
+    controller.value = 1;
+  }
+
   void update(List<Object> order, bool enabled) {
+    if (identical(_order, order)) {
+      if (!enabled && (controller.value != 1 || _pending)) {
+        _settleImmediately();
+      }
+      return;
+    }
     if (!listEquals(_order, order)) {
       // Expanding a tree or adding/removing entries owns its own size motion.
       // Only changes to the relative order of surviving entries are reorders.
@@ -139,7 +157,7 @@ class _RenderReorderViewport extends RenderProxyBox {
           }
         }
       }
-      _order = List.of(order);
+      _order = order;
       if (_pending) {
         markNeedsPaint();
         for (final item in _items) {
@@ -147,19 +165,13 @@ class _RenderReorderViewport extends RenderProxyBox {
         }
         controller.forward(from: 0);
       }
+    } else {
+      _order = order;
     }
     // A tab transition mutes this list even when no reorder is running.
     // Keep the retained rows paintable without invalidating every row.
     if (!enabled && (controller.value != 1 || _pending)) {
-      _pending = false;
-      _positions.clear();
-      for (final item in _items) {
-        if (item.delta == Offset.zero) continue;
-        item.delta = Offset.zero;
-        item.markNeedsPaint();
-        item.markNeedsSemanticsUpdate();
-      }
-      controller.value = 1;
+      _settleImmediately();
     }
   }
 

@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 
@@ -36,13 +38,16 @@ class JapaneseAsmrApiService {
   Future<AsmrSearchSuggestions> fetchSearchSuggestions({
     AsmrRequestCancellationToken? cancellationToken,
   }) async {
-    final body = await _get(
+    final bytes = await _get(
       'search-suggestions',
       const {},
       cancellationToken,
       endpointPath: 'api/search-suggestions',
     );
-    final result = await compute(_decodeSearchSuggestions, body);
+    final result = await compute(
+      _decodeSearchSuggestions,
+      TransferableTypedData.fromList(<Uint8List>[bytes]),
+    );
     cancellationToken?.throwIfCancelled();
     return result;
   }
@@ -53,14 +58,14 @@ class JapaneseAsmrApiService {
     int pageSize = 40,
     AsmrRequestCancellationToken? cancellationToken,
   }) async {
-    final body = await _get('search', {
+    final bytes = await _get('search', {
       'q': keyword.trim(),
       'limit': '$pageSize',
       'offset': '${(page - 1) * pageSize}',
       'sort': 'release',
     }, cancellationToken);
     final result = await compute(_decodeJapaneseWorkPage, (
-      body: body,
+      data: TransferableTypedData.fromList(<Uint8List>[bytes]),
       page: page,
       pageSize: pageSize,
     ));
@@ -77,16 +82,16 @@ class JapaneseAsmrApiService {
     if (code.isEmpty) {
       throw const FormatException('Japanese ASMR work is missing its code.');
     }
-    final body = await _get('tracks', {'rj': code}, cancellationToken);
+    final bytes = await _get('tracks', {'rj': code}, cancellationToken);
     final result = await compute(_decodeJapaneseTrackTree, (
-      body: body,
+      data: TransferableTypedData.fromList(<Uint8List>[bytes]),
       work: work,
     ));
     cancellationToken?.throwIfCancelled();
     return result;
   }
 
-  Future<String> _get(
+  Future<Uint8List> _get(
     String operation,
     Map<String, String> query,
     AsmrRequestCancellationToken? cancellationToken, {
@@ -98,7 +103,7 @@ class JapaneseAsmrApiService {
         .resolve(endpointPath ?? 'api/jp-asmr/$operation')
         .replace(queryParameters: query);
     HttpClientRequest? request;
-    StreamSubscription<String>? subscription;
+    StreamSubscription<List<int>>? subscription;
     var retired = false;
     var responseConsumed = false;
     final removeListener = cancellationToken?.addListener(() {
@@ -132,23 +137,24 @@ class JapaneseAsmrApiService {
           uri: uri,
         );
       }
-      final completed = Completer<String>();
-      final text = StringBuffer();
-      subscription = response
-          .transform(utf8.decoder)
-          .listen(
-            text.write,
-            onDone: () => completed.complete(text.toString()),
-            onError: (Object error, StackTrace stack) =>
-                completed.completeError(error, stack),
-            cancelOnError: true,
-          );
-      final body =
+      final completed = Completer<Uint8List>();
+      final builder = BytesBuilder(copy: false);
+      subscription = response.listen(
+        builder.add,
+        onDone: () {
+          if (!completed.isCompleted) completed.complete(builder.takeBytes());
+        },
+        onError: (Object error, StackTrace stack) {
+          if (!completed.isCompleted) completed.completeError(error, stack);
+        },
+        cancelOnError: true,
+      );
+      final bytes =
           await (cancellationToken?.waitFor(completed.future) ??
                   completed.future)
               .timeout(_timeout);
       responseConsumed = true;
-      return body;
+      return bytes;
     } finally {
       retired = true;
       removeListener?.call();
@@ -160,8 +166,8 @@ class JapaneseAsmrApiService {
   }
 }
 
-AsmrSearchSuggestions _decodeSearchSuggestions(String body) {
-  final json = jsonDecode(body);
+AsmrSearchSuggestions _decodeSearchSuggestions(TransferableTypedData data) {
+  final json = jsonDecode(utf8.decode(data.materialize().asUint8List()));
   if (json is! Map<String, dynamic>) {
     throw const FormatException('Invalid Eara search suggestions response.');
   }
@@ -169,9 +175,9 @@ AsmrSearchSuggestions _decodeSearchSuggestions(String body) {
 }
 
 AsmrWorkPage _decodeJapaneseWorkPage(
-  ({String body, int page, int pageSize}) input,
+  ({TransferableTypedData data, int page, int pageSize}) input,
 ) {
-  final json = jsonDecode(input.body);
+  final json = jsonDecode(utf8.decode(input.data.materialize().asUint8List()));
   if (json is! Map<String, dynamic>) {
     throw const FormatException('Invalid Japanese ASMR search response.');
   }
@@ -232,9 +238,9 @@ AsmrWork japaneseAsmrWorkFromJson(Map<String, dynamic> json) {
 }
 
 List<AsmrTrackFile> _decodeJapaneseTrackTree(
-  ({String body, AsmrWork work}) input,
+  ({TransferableTypedData data, AsmrWork work}) input,
 ) {
-  final json = jsonDecode(input.body);
+  final json = jsonDecode(utf8.decode(input.data.materialize().asUint8List()));
   if (json is! Map<String, dynamic>) {
     throw const FormatException('Invalid Japanese ASMR track response.');
   }
@@ -273,7 +279,9 @@ List<AsmrTrackFile> _decodeJapaneseTrackTree(
       ],
     };
   }
-  return japaneseAsmrContentRoots(
-    roots.map((node) => AsmrTrackFile.fromJson(mapNode(node))),
-  ).toList(growable: false);
+  return sortAsmrTrackTreeNaturally(
+    japaneseAsmrContentRoots(
+      roots.map((node) => AsmrTrackFile.fromJson(mapNode(node))),
+    ),
+  );
 }

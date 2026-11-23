@@ -88,15 +88,18 @@ internal class FileCacheVideoFrameResolver(
         try {
             retriever = MediaMetadataRetriever()
             if (trackPath.startsWith("content://")) {
-                try {
-                    retriever.setDataSource(context, Uri.parse(trackPath))
-                } catch (e: Exception) {
-                    val filePath = resolveFilePath(trackPath)
-                    if (filePath != null) {
+                val filePath = resolveFilePath(trackPath)?.takeIf { path ->
+                    val file = File(path)
+                    file.isFile && file.canRead()
+                }
+                if (filePath != null) {
+                    try {
                         retriever.setDataSource(filePath)
-                    } else {
-                        throw e
+                    } catch (_: Exception) {
+                        retriever.setDataSource(context, Uri.parse(trackPath))
                     }
+                } else {
+                    retriever.setDataSource(context, Uri.parse(trackPath))
                 }
             } else {
                 retriever.setDataSource(trackPath)
@@ -172,39 +175,47 @@ internal class FileCacheVideoFrameResolver(
         durationMs: Long,
         frameSize: VideoFrameSize
     ): Bitmap? {
+        var fallbackFrame: Bitmap? = null
         if (durationMs > 3000L) {
-            val timestampsUs = listOf(
+            val timestampsUs = longArrayOf(
                 durationMs * 300L,
                 durationMs * 500L,
                 durationMs * 700L,
                 durationMs * 150L
             )
-            // Prefer keyframe seeks first to avoid decoding full GOPs on long videos.
-            for (option in intArrayOf(
-                MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
-                MediaMetadataRetriever.OPTION_CLOSEST
-            )) {
-                for (timestampUs in timestampsUs) {
-                    val frame = frameAtTime(retriever, timestampUs, option, frameSize) ?: continue
-                    if (!isBlankBitmap(frame)) {
-                        return frame
-                    }
+            // Use keyframe seeks only to avoid decoding full GOPs on long videos.
+            for (timestampUs in timestampsUs) {
+                val frame = frameAtTime(
+                    retriever,
+                    timestampUs,
+                    MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                    frameSize
+                ) ?: continue
+                if (!isBlankBitmap(frame)) {
+                    fallbackFrame?.recycle()
+                    return frame
+                }
+                if (fallbackFrame == null) {
+                    fallbackFrame = frame
+                } else {
                     frame.recycle()
                 }
             }
         }
 
-        return frameAtTime(
-            retriever,
-            1_000_000L,
-            MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
-            frameSize
-        ) ?: frameAtTime(
-            retriever,
-            0L,
-            MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
-            frameSize
-        )
+        return fallbackFrame
+            ?: frameAtTime(
+                retriever,
+                1_000_000L,
+                MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                frameSize
+            )
+            ?: frameAtTime(
+                retriever,
+                0L,
+                MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                frameSize
+            )
     }
 
     private fun frameAtTime(

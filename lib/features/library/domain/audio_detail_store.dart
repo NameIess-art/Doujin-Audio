@@ -23,3 +23,19 @@ abstract interface class AudioDetailStore {
 
   Future<void> deleteMany(Iterable<AudioDetailTarget> targets);
 }
+
+/// Optional fast-path projection queries supported by SQLite-backed stores.
+abstract interface class AudioDetailFastQueryStore implements AudioDetailStore {
+  /// Returns a map from `AudioLibraryDetailKey.forTarget(target)` to persisted
+  /// duration (or `null` when the row exists with no duration). Targets with no
+  /// row in storage are omitted.
+  Future<Map<String, Duration?>> loadDurations(
+    Iterable<AudioDetailTarget> targets,
+  );
+
+  /// Loads search-relevant detail projections without hydrating cover or
+  /// timestamp columns.
+  Future<List<AudioDetail>> loadSearchDetails(
+    Iterable<AudioDetailTarget> targets,
+  );
+}

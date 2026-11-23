@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 import '../../app/theme/app_design_tokens.dart';
 import 'scroll_activity_gate.dart';
@@ -101,25 +102,115 @@ class _ShimmerLoaderState extends State<ShimmerLoader>
     );
 
     return RepaintBoundary(
-      child: AnimatedBuilder(
+      child: _ShimmerMask(
         animation: _controller,
-        builder: (context, child) {
-          return ShaderMask(
-            blendMode: BlendMode.srcATop,
-            shaderCallback: (bounds) {
-              // Clear both corners at the loop boundary for any aspect ratio.
-              const travel = 0.5 + _highlightHalfWidth;
-              final offset = (_controller.value * 2 - 1) * travel;
-              return gradient.createShader(
-                bounds.shift(Offset(bounds.width, bounds.height) * offset),
-              );
-            },
-            child: child,
-          );
-        },
+        gradient: gradient,
+        travel: 0.5 + _highlightHalfWidth,
         child: widget.child,
       ),
     );
+  }
+}
+
+class _ShimmerMask extends ShaderMask {
+  const _ShimmerMask({
+    required this.animation,
+    required this.gradient,
+    required this.travel,
+    required super.child,
+  }) : super(shaderCallback: _unusedShaderCallback, blendMode: BlendMode.srcATop);
+
+  static Shader _unusedShaderCallback(Rect bounds) =>
+      const LinearGradient(colors: [Colors.transparent, Colors.transparent])
+          .createShader(bounds);
+
+  final Animation<double> animation;
+  final LinearGradient gradient;
+  final double travel;
+
+  @override
+  RenderShaderMask createRenderObject(BuildContext context) =>
+      _RenderShimmerMask(animation, gradient, travel);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    covariant _RenderShimmerMask renderObject,
+  ) {
+    renderObject.update(animation, gradient, travel);
+  }
+}
+
+class _RenderShimmerMask extends RenderShaderMask {
+  _RenderShimmerMask(this._animation, this._gradient, this._travel)
+    : super(
+        shaderCallback: _ShimmerMask._unusedShaderCallback,
+        blendMode: BlendMode.srcATop,
+      );
+
+  Animation<double> _animation;
+  LinearGradient _gradient;
+  double _travel;
+
+  void update(
+    Animation<double> animation,
+    LinearGradient gradient,
+    double travel,
+  ) {
+    if (!identical(_animation, animation)) {
+      if (attached) _animation.removeListener(markNeedsPaint);
+      _animation = animation;
+      if (attached) _animation.addListener(markNeedsPaint);
+      markNeedsPaint();
+    }
+    if (_gradient != gradient || _travel != travel) {
+      _gradient = gradient;
+      _travel = travel;
+      markNeedsPaint();
+    }
+  }
+
+  @override
+  void attach(PipelineOwner owner) {
+    super.attach(owner);
+    _animation.addListener(markNeedsPaint);
+  }
+
+  @override
+  void detach() {
+    _animation.removeListener(markNeedsPaint);
+    super.detach();
+  }
+
+  @override
+  bool get alwaysNeedsCompositing => child != null;
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    final content = child;
+    if (content == null) {
+      layer = null;
+      return;
+    }
+    // Clear both corners at the loop boundary for any aspect ratio.
+    final shift = (_animation.value * 2 - 1) * _travel;
+    final bounds = Offset.zero & size;
+    final shader = _gradient.createShader(
+      bounds.shift(Offset(bounds.width, bounds.height) * shift),
+    );
+    layer ??= ShaderMaskLayer();
+    layer!
+      ..shader = shader
+      ..maskRect = offset & size
+      ..blendMode = BlendMode.srcATop;
+    context.pushLayer(layer!, defaultPaint, offset);
+  }
+
+  void defaultPaint(PaintingContext context, Offset offset) {
+    final content = child;
+    if (content != null) {
+      context.paintChild(content, offset);
+    }
   }
 }
 

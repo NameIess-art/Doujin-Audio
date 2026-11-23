@@ -449,6 +449,103 @@ void main() {
   );
 
   test(
+    'Windows image discovery includes gif and prioritizes preferred cover names',
+    () async {
+      final root = await Directory.systemTemp.createTemp('作品 优先封面 ');
+      addTearDown(() => root.delete(recursive: true));
+      final separator = Platform.pathSeparator;
+      final nested = await Directory('${root.path}${separator}a_sub').create();
+      final alpha = await File(
+        '${root.path}${separator}aaa_scene.png',
+      ).writeAsString('alpha');
+      final poster = await File(
+        '${root.path}${separator}01_poster_art.jpg',
+      ).writeAsString('poster');
+      final folder = await File(
+        '${root.path}${separator}folder.webp',
+      ).writeAsString('folder');
+      final cover = await File(
+        '${root.path}${separator}cover.GIF',
+      ).writeAsString('cover-gif');
+      final nestedCover = await File(
+        '${nested.path}${separator}cover.png',
+      ).writeAsString('nested-cover');
+      final windows = FileCachePlatformGateway(
+        isAndroid: () => false,
+        isWindows: () => true,
+      );
+
+      final preferred = await windows.discoverRootImages(
+        path: root.path,
+        rootFolder: root.path,
+        preferredOnly: true,
+      );
+      expect(preferred.single.sourcePath, cover.path);
+      expect(preferred.single.fileSizeBytes, 'cover-gif'.length);
+
+      final all = await windows.discoverRootImages(
+        path: root.path,
+        rootFolder: root.path,
+      );
+      expect(all.map((image) => image.sourcePath), [
+        nestedCover.path,
+        cover.path,
+        folder.path,
+        poster.path,
+        alpha.path,
+      ]);
+
+      final preferredWithOverrides = await IOOverrides.runZoned(
+        () => windows.discoverRootImages(
+          path: root.path,
+          rootFolder: root.path,
+          preferredOnly: true,
+        ),
+      );
+      expect(preferredWithOverrides.single.sourcePath, cover.path);
+    },
+  );
+
+  test(
+    'local saveTrackSubtitle succeeds when post-commit backup cleanup fails',
+    () async {
+      final folder = await Directory.systemTemp.createTemp('subtitle_save_');
+      addTearDown(() => folder.delete(recursive: true));
+      final sep = Platform.pathSeparator;
+      final track = await File('${folder.path}${sep}track.mp3').create();
+      final existing = await File(
+        '${folder.path}${sep}track.srt',
+      ).writeAsString('old');
+      final source = await File(
+        '${folder.path}${sep}incoming.vtt',
+      ).writeAsString('new');
+      final windows = FileCachePlatformGateway(
+        isAndroid: () => false,
+        isWindows: () => true,
+      );
+      var failedBackupDelete = false;
+
+      final savedPath = await IOOverrides.runWithIOOverrides(
+        () => windows.saveTrackSubtitle(
+          trackPath: track.path,
+          extension: '.srt',
+          sourcePath: source.path,
+          overwrite: true,
+          bytes: Uint8List.fromList('updated'.codeUnits),
+        ),
+        _FailingSubtitleBackupDeleteIO(
+          onFailure: () => failedBackupDelete = true,
+        ),
+      );
+
+      expect(failedBackupDelete, isTrue);
+      expect(savedPath, existing.path);
+      expect(await existing.readAsString(), 'updated');
+      expect(await source.exists(), isFalse);
+    },
+  );
+
+  test(
     'Windows discovery keeps file-system overrides and allows retries',
     () async {
       final folder = await Directory.systemTemp.createTemp('作品 枚举 ');
@@ -1399,6 +1496,60 @@ class _FailingDiscoveryDirectory extends Fake implements Directory {
     bool recursive = false,
     bool followLinks = true,
   }) => Stream<FileSystemEntity>.error(failure);
+}
+
+final class _FailingSubtitleBackupDeleteIO extends IOOverrides {
+  _FailingSubtitleBackupDeleteIO({required this.onFailure});
+
+  final void Function() onFailure;
+
+  @override
+  File createFile(String path) =>
+      _FailingSubtitleBackupDeleteFile(super.createFile(path), onFailure);
+}
+
+final class _FailingSubtitleBackupDeleteFile implements File {
+  _FailingSubtitleBackupDeleteFile(this._delegate, this._onFailure);
+
+  final File _delegate;
+  final void Function() _onFailure;
+
+  @override
+  String get path => _delegate.path;
+
+  @override
+  Directory get parent => _delegate.parent;
+
+  @override
+  Future<bool> exists() => _delegate.exists();
+
+  @override
+  Future<File> writeAsBytes(
+    List<int> bytes, {
+    FileMode mode = FileMode.write,
+    bool flush = false,
+  }) => _delegate.writeAsBytes(bytes, mode: mode, flush: flush);
+
+  @override
+  Future<File> rename(String newPath) async =>
+      _FailingSubtitleBackupDeleteFile(
+        await _delegate.rename(newPath),
+        _onFailure,
+      );
+
+  @override
+  Future<FileSystemEntity> delete({bool recursive = false}) {
+    if (_delegate.path.endsWith('.bak')) {
+      _onFailure();
+      return Future<FileSystemEntity>.error(
+        FileSystemException('Locked subtitle backup', _delegate.path),
+      );
+    }
+    return _delegate.delete(recursive: recursive);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 Future<void> _waitForMethodCall(

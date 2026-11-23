@@ -112,4 +112,48 @@ void main() {
     expect(service.state.hasPending, isFalse);
     expect(service.state.isHidden(key), isFalse);
   });
+
+  test(
+    'undoPending queued behind commitPending does not undo newly staged removals',
+    () async {
+      final service = UndoableRemovalService();
+      addTearDown(service.dispose);
+      final releaseCommit = Completer<void>();
+      final calls = <String>[];
+      const firstKey = UndoableRemovalKey('test', 'first');
+      const secondKey = UndoableRemovalKey('test', 'second');
+
+      await service.stage(
+        UndoableRemovalAction(
+          key: firstKey,
+          commit: () async {
+            calls.add('commit:first');
+            await releaseCommit.future;
+          },
+          undo: () => calls.add('undo:first'),
+        ),
+      );
+      final committing = service.commitPending();
+      await Future<void>.delayed(Duration.zero);
+
+      final undoing = service.undoPending();
+      final stagedSecond = await service.stage(
+        UndoableRemovalAction(
+          key: secondKey,
+          commit: () => calls.add('commit:second'),
+          undo: () => calls.add('undo:second'),
+        ),
+      );
+      expect(stagedSecond, isTrue);
+      expect(service.state.isHidden(secondKey), isTrue);
+
+      releaseCommit.complete();
+      expect(await committing, 0);
+      expect(await undoing, 0);
+
+      expect(calls, <String>['commit:first']);
+      expect(service.state.pendingCount, 1);
+      expect(service.state.isHidden(secondKey), isTrue);
+    },
+  );
 }

@@ -23,6 +23,7 @@ import '../../features/player/application/subtitle_overlay_controller.dart';
 import '../../core/ui/permission_action_controller.dart';
 import '../../core/ui/ui_interaction_coordinator.dart';
 import '../../core/ui/ui_operation_service.dart';
+import '../theme/app_design_tokens.dart';
 import '../theme/app_styles.dart';
 import '../../features/player/presentation/playlist_tab.dart';
 import '../../features/settings/presentation/app_update_flow.dart';
@@ -254,6 +255,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
   bool _isDataReady = false;
   Timer? _metricsRecoveryTimer;
+  Timer? _metricsWarmupTimer;
   Size? _lastRecoveredViewSize;
   FlutterView? _observedView;
   bool _appInForeground = true;
@@ -627,6 +629,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     _sleepModeAutoEntryTimer?.cancel();
     _sleepModeAutoEntryTimer = null;
     _metricsRecoveryTimer?.cancel();
+    _metricsWarmupTimer?.cancel();
     unawaited(_subtitleOverlay.detachRuntime());
     _permissionActionController.dispose();
     _pageDragPosition.dispose();
@@ -640,6 +643,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   void didChangeMetrics() {
     if (_isKeyboardVisible) {
       _metricsRecoveryTimer?.cancel();
+      _metricsWarmupTimer?.cancel();
       return;
     }
     _metricsRecoveryTimer?.cancel();
@@ -648,6 +652,14 @@ class _MainScreenState extends ConsumerState<MainScreen>
       _recoverAfterMetricsChange,
     );
   }
+
+  (bool isTiny, bool isLarge, bool isNarrowSplit) _windowsBreakpoints(
+    Size size,
+  ) => (
+    size.width < 300 || size.height < 300,
+    size.width >= _desktopBreakpoint,
+    size.width < 1120,
+  );
 
   Size _currentLogicalViewSize() {
     final view = _observedView;
@@ -706,20 +718,39 @@ class _MainScreenState extends ConsumerState<MainScreen>
       return;
     }
 
+    final previousSize = _lastRecoveredViewSize;
     if (!_hasRecoverableViewMetricChange()) {
       return;
     }
 
-    // Refresh the responsive chrome after the platform view settles. The
-    // persistent page stack keeps each tab's State mounted during this rebuild.
-    setState(() {});
+    final isWindows = defaultTargetPlatform == TargetPlatform.windows;
+    final shouldRebuildShell =
+        !isWindows ||
+        previousSize == null ||
+        _windowsBreakpoints(previousSize) !=
+            _windowsBreakpoints(_lastRecoveredViewSize!);
+    if (shouldRebuildShell) {
+      // Refresh the responsive chrome after the platform view settles. The
+      // persistent page stack keeps each tab's State mounted during this rebuild.
+      setState(() {});
+    }
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      ref
-          .read(audioUiWarmupCoordinatorProvider)
-          .schedule(isPlaybackPage: _isPlaybackPage, immediate: true);
-    });
+    _metricsWarmupTimer?.cancel();
+    if (isWindows) {
+      _metricsWarmupTimer = Timer(const Duration(milliseconds: 180), () {
+        if (!mounted || !_appInForeground) return;
+        ref
+            .read(audioUiWarmupCoordinatorProvider)
+            .schedule(isPlaybackPage: _isPlaybackPage, immediate: true);
+      });
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref
+            .read(audioUiWarmupCoordinatorProvider)
+            .schedule(isPlaybackPage: _isPlaybackPage, immediate: true);
+      });
+    }
   }
 
   SubtitleOverlayRuntimeStyle _globalSubtitleStyle() {
@@ -905,7 +936,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
           activeTabIndexListenable: _activePageIndex,
         ),
       ),
-      MainDestinationType.my => MyPage(tabIndex: index),
+      MainDestinationType.my => MyPage(
+        tabIndex: index,
+        activeTabIndexListenable: _activePageIndex,
+      ),
       MainDestinationType.settings => SettingsTab(tabIndex: index),
     };
   }
@@ -986,15 +1020,18 @@ class _MainScreenState extends ConsumerState<MainScreen>
           );
     final layoutSize = _layoutViewSize();
     final width = layoutSize.width;
-    final padding = MediaQuery.paddingOf(context);
-    final viewPadding = MediaQuery.viewPaddingOf(context);
-    final orientation = MediaQuery.orientationOf(context);
-    final rawTop = padding.top;
     final isWindows = defaultTargetPlatform == TargetPlatform.windows;
+    final padding = isWindows ? EdgeInsets.zero : MediaQuery.paddingOf(context);
+    final viewPadding = isWindows
+        ? EdgeInsets.zero
+        : MediaQuery.viewPaddingOf(context);
+    final orientation = isWindows
+        ? Orientation.landscape
+        : MediaQuery.orientationOf(context);
+    final rawTop = padding.top;
+    final isLargeScreen = width >= _desktopBreakpoint;
     final isDesktop =
-        isWindows ||
-        orientation == Orientation.landscape ||
-        width >= _desktopBreakpoint;
+        isWindows || orientation == Orientation.landscape || isLargeScreen;
     final isLandscape = isWindows || orientation == Orientation.landscape;
     const sectionCorner = Radius.circular(AppRadius.section);
     final contentRadius = !isLandscape
@@ -1003,7 +1040,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
         ? const BorderRadius.only(topLeft: sectionCorner)
         : const BorderRadius.all(sectionCorner);
     final navigationLayout = (isDesktop, isLandscape);
-    var navigationLayoutChanged = _previousNavigationLayout != navigationLayout;
     _previousNavigationLayout = navigationLayout;
     final detailNavigation = WorkDetailNavigationScope.maybeOf(context);
     final isTinyWindow = width < 300 || layoutSize.height < 300;
@@ -1047,8 +1083,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
                   ? (menuCollapsed ? 80.0 : 260.0)
                   : (menuCollapsed ? 92.0 : 292.0))
             : 0.0;
-        final snapSidebarWidth = navigationLayoutChanged;
-        navigationLayoutChanged = false;
         final bodyChild = Stack(
           fit: StackFit.expand,
           children: [
@@ -1094,6 +1128,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
                                               context,
                                               isDesktop: isDesktop,
                                               isLandscapeLayout: isLandscape,
+                                              isLargeScreen: isLargeScreen,
                                               hasOverlaySessions:
                                                   hasOverlaySessions,
                                               tinyMode: isTinyWindow,
@@ -1167,28 +1202,15 @@ class _MainScreenState extends ConsumerState<MainScreen>
           child: Scaffold(
             resizeToAvoidBottomInset: false,
             backgroundColor: Theme.of(context).colorScheme.surface,
-            // Only the detail pane needs the animated sidebar width. Retain
-            // navigation, dock, Scaffold, and MediaQuery across animation frames.
-            body: TweenAnimationBuilder<double>(
-              tween: Tween<double>(begin: sidebarWidth, end: sidebarWidth),
-              // A newly mounted sidebar already has its final width on rotation.
-              duration:
-                  isLandscape ||
-                      snapSidebarWidth ||
-                      MediaQuery.disableAnimationsOf(context)
-                  ? Duration.zero
-                  : kThemeAnimationDuration,
-              curve: Curves.easeInOut,
-              builder: (context, animatedSidebarWidth, child) => WorkDetailPane(
-                isLandscape: isLandscape,
-                sidebarWidth: animatedSidebarWidth,
-                geometry: widget.playbackDockGeometry,
-                child: child!,
-              ),
+            body: WorkDetailPane(
+              isLandscape: isLandscape,
+              sidebarWidth: sidebarWidth,
+              geometry: widget.playbackDockGeometry,
               child: bodyChild,
             ),
           ),
         );
+        if (isWindows) return shell;
         // Forward live IME metrics without rebuilding the main shell.
         return Builder(
           builder: (context) => MediaQuery(

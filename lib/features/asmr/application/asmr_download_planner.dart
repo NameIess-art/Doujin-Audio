@@ -267,15 +267,24 @@ class AsmrDownloadPlanner {
     if (Platform.isWindows) {
       return windowsLocalRelativePath(normalized);
     }
+    return posixLocalRelativePath(normalized);
+  }
+
+  /// Sanitizes FAT/FUSE-illegal characters and bounds UTF-8 segment lengths
+  /// for non-Windows local filesystem paths (e.g., Android external storage).
+  String posixLocalRelativePath(String relativePath) {
+    final normalized = validatedDownloadRelativePath(relativePath);
     return normalized
         .split('/')
-        .map(
-          (segment) => truncateAsmrDownloadPathSegment(
-            segment,
+        .map((segment) {
+          final safe = _sanitizeLocalSegment(segment);
+          return truncateAsmrDownloadPathSegment(
+            safe,
             maxCodeUnits: kMaxAsmrDownloadSegmentUtf8Bytes,
             maxUtf8Bytes: kMaxAsmrDownloadSegmentUtf8Bytes,
-          ),
-        )
+            hashInput: segment,
+          );
+        })
         .join('/');
   }
 
@@ -286,12 +295,7 @@ class AsmrDownloadPlanner {
     final mapped = <String>[];
     var usedLength = 0;
     for (final segment in normalized.split('/')) {
-      var safe = PathDisplay.safeFileName(
-        segment,
-        replacement: '_',
-        collapseWhitespace: false,
-        fallback: '_',
-      );
+      var safe = _sanitizeLocalSegment(segment);
       if (RegExp(
         r'^(CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?:\.|$)',
         caseSensitive: false,
@@ -313,6 +317,14 @@ class AsmrDownloadPlanner {
     }
     return mapped.join('/');
   }
+
+  static String _sanitizeLocalSegment(String segment) =>
+      PathDisplay.safeFileName(
+        segment,
+        replacement: '_',
+        collapseWhitespace: false,
+        fallback: '_',
+      );
 
   static const List<String> _coverExtensions = [
     '.jpg',

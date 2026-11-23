@@ -184,9 +184,15 @@ class LibraryOrganizer {
     Iterable<String> watchedRoots, {
     List<String> watchedLibraries = const <String>[],
     bool rootsAlreadySorted = false,
+    PathRootIndex? watchedRootsIndex,
+    PathRootIndex? watchedLibrariesIndex,
   }) {
-    if (rootsAlreadySorted) {
-      return _rootPathForTrack(track, watchedRoots, watchedLibraries);
+    if (watchedRootsIndex != null || watchedLibrariesIndex != null) {
+      return _rootPathForTrackWithIndex(
+        track,
+        watchedRootsIndex ?? PathRootIndex(watchedRoots),
+        watchedLibrariesIndex ?? PathRootIndex(watchedLibraries),
+      );
     }
     if (track.isSingle) return track.path;
     String? longestContainingRoot(Iterable<String> roots) {
@@ -195,6 +201,7 @@ class LibraryOrganizer {
         if (best != null && root.length <= best.length) continue;
         if (PathMatcher.isWithinOrEqual(track.groupKey, root) ||
             PathMatcher.isWithinOrEqual(track.path, root)) {
+          if (rootsAlreadySorted) return root;
           best = root;
         }
       }
@@ -208,25 +215,39 @@ class LibraryOrganizer {
     return longestContainingRoot(watchedRoots) ?? track.groupKey;
   }
 
-  String _rootPathForTrack(
+  String? _longerPath(String? first, String? second) {
+    if (first == null) return second;
+    if (second == null) return first;
+    return second.length > first.length ? second : first;
+  }
+
+  String _rootPathForTrackWithIndex(
     MusicTrack track,
-    Iterable<String> sortedRoots, [
-    List<String> sortedLibraries = const <String>[],
-  ]) {
+    PathRootIndex watchedRootsIndex,
+    PathRootIndex watchedLibrariesIndex,
+  ) {
     if (track.isSingle) {
       return track.path;
     }
-    for (final libraryRoot in sortedLibraries) {
-      if (PathMatcher.isWithinOrEqual(track.groupKey, libraryRoot) ||
-          PathMatcher.isWithinOrEqual(track.path, libraryRoot)) {
+    if (!watchedLibrariesIndex.isEmpty) {
+      final groupLibrary = track.groupKey.isEmpty
+          ? null
+          : watchedLibrariesIndex.mostSpecificContaining(track.groupKey);
+      final pathLibrary = watchedLibrariesIndex.mostSpecificContaining(
+        track.path,
+      );
+      final libraryRoot = _longerPath(groupLibrary, pathLibrary);
+      if (libraryRoot != null) {
         return workScopeFolderPath(libraryRoot, track.groupKey) ?? libraryRoot;
       }
     }
-    for (final root in sortedRoots) {
-      if (PathMatcher.isWithinOrEqual(track.groupKey, root) ||
-          PathMatcher.isWithinOrEqual(track.path, root)) {
-        return root;
-      }
+    if (!watchedRootsIndex.isEmpty) {
+      final groupRoot = track.groupKey.isEmpty
+          ? null
+          : watchedRootsIndex.mostSpecificContaining(track.groupKey);
+      final pathRoot = watchedRootsIndex.mostSpecificContaining(track.path);
+      final root = _longerPath(groupRoot, pathRoot);
+      if (root != null) return root;
     }
     return track.groupKey;
   }
@@ -239,8 +260,28 @@ class LibraryOrganizer {
     List<String> watchedLibraries = const <String>[],
     bool rootsAlreadySorted = false,
     Map<String, String>? watchedFolderByPath,
+    PathRootIndex? watchedFoldersIndex,
+    PathRootIndex? watchedLibrariesIndex,
   }) {
     final normalizedFolder = PathMatcher.normalize(folderPath);
+    if (watchedLibrariesIndex != null || watchedFoldersIndex != null) {
+      final libraryRoot = watchedLibrariesIndex?.mostSpecificContaining(
+        normalizedFolder,
+      );
+      if (libraryRoot != null) {
+        return workScopeFolderPath(libraryRoot, normalizedFolder) ??
+            PathMatcher.normalize(libraryRoot);
+      }
+      final exactFolder = watchedFolderByPath?[normalizedFolder];
+      if (exactFolder != null) return exactFolder;
+      final watchedFolder = watchedFoldersIndex?.mostSpecificContaining(
+        normalizedFolder,
+      );
+      if (watchedFolder != null) {
+        return PathMatcher.normalize(watchedFolder);
+      }
+      return normalizedFolder;
+    }
     String? longestContainingRoot(Iterable<String> roots) {
       String? best;
       for (final root in roots) {
@@ -290,14 +331,16 @@ class LibraryOrganizer {
     List<String> watchedFolders, {
     List<String> watchedLibraries = const <String>[],
   }) {
-    final watchedRoots = watchedFolders.toList(growable: false)
-      ..sort((a, b) => b.length.compareTo(a.length));
-    final sortedLibraries = watchedLibraries.toList(growable: false)
-      ..sort((a, b) => b.length.compareTo(a.length));
+    final watchedRootsIndex = PathRootIndex(watchedFolders);
+    final watchedLibrariesIndex = PathRootIndex(watchedLibraries);
     final ids = <String>[];
     final seen = <String>{};
     for (final track in tracks) {
-      final nodeId = _rootPathForTrack(track, watchedRoots, sortedLibraries);
+      final nodeId = _rootPathForTrackWithIndex(
+        track,
+        watchedRootsIndex,
+        watchedLibrariesIndex,
+      );
       if (seen.add(nodeId)) {
         ids.add(nodeId);
       }
@@ -317,10 +360,8 @@ class LibraryOrganizer {
     List<String> watchedLibraries = const <String>[],
     bool tracksAlreadySorted = false,
   }) {
-    final watchedRoots = watchedFolders.toList(growable: false)
-      ..sort((a, b) => b.length.compareTo(a.length));
-    final sortedLibraries = watchedLibraries.toList(growable: false)
-      ..sort((a, b) => b.length.compareTo(a.length));
+    final watchedRootsIndex = PathRootIndex(watchedFolders);
+    final watchedLibrariesIndex = PathRootIndex(watchedLibraries);
     final groups = <String, _LibraryCardGroup>{};
     final singleFiles = <TrackNode>[];
 
@@ -329,7 +370,11 @@ class LibraryOrganizer {
         singleFiles.add(TrackNode(track));
         continue;
       }
-      final rootPath = _rootPathForTrack(track, watchedRoots, sortedLibraries);
+      final rootPath = _rootPathForTrackWithIndex(
+        track,
+        watchedRootsIndex,
+        watchedLibrariesIndex,
+      );
       final group = groups.putIfAbsent(
         rootPath,
         () => _LibraryCardGroup(
@@ -416,10 +461,8 @@ class LibraryOrganizer {
     final rootNodes = <String, FolderNode>{};
     final folderIndexByPath = <String, Map<String, FolderNode>>{};
     final singleFiles = <TrackNode>[];
-    final watchedRoots = watchedFolders.toList(growable: false)
-      ..sort((a, b) => b.length.compareTo(a.length));
-    final sortedLibraries = watchedLibraries.toList(growable: false)
-      ..sort((a, b) => b.length.compareTo(a.length));
+    final watchedRootsIndex = PathRootIndex(watchedFolders);
+    final watchedLibrariesIndex = PathRootIndex(watchedLibraries);
 
     for (final track in tracks) {
       if (track.isSingle) {
@@ -430,10 +473,10 @@ class LibraryOrganizer {
       final dirPath = PathMatcher.isContentUri(track.path)
           ? track.groupKey
           : PathMatcher.parentPath(track.path) ?? path.dirname(track.path);
-      final matchedRoot = _rootPathForTrack(
+      final matchedRoot = _rootPathForTrackWithIndex(
         track,
-        watchedRoots,
-        sortedLibraries,
+        watchedRootsIndex,
+        watchedLibrariesIndex,
       );
 
       if (!rootNodes.containsKey(matchedRoot)) {

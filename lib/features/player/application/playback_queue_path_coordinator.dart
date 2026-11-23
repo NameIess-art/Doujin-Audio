@@ -928,9 +928,16 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
       loopMode: loopMode,
       customQueueTracks: List<MusicTrack>.unmodifiable(tracks),
     );
+    session.currentQueueIndex = clampedStartIndex;
     final shouldAutoPlay = autoPlay ?? false;
     if (shouldAutoPlay) {
-      unawaited(_enqueueSessionPreparation(session, nextPath: startTrack.path));
+      unawaited(
+        _enqueueSessionPreparation(
+          session,
+          nextPath: startTrack.path,
+          targetQueueIndex: clampedStartIndex,
+        ),
+      );
     }
     publishSessionActivated(session.id);
     return true;
@@ -939,6 +946,7 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
   Future<void> _enqueueSessionPreparation(
     PlaybackSession session, {
     required String nextPath,
+    int? targetQueueIndex,
   }) {
     session.invalidatePreparation();
     final generation = session.loadGeneration;
@@ -947,7 +955,11 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
           session.loadGeneration != generation) {
         return;
       }
-      await _commandPort?.prepareSession(session, nextPath: nextPath);
+      await _commandPort?.prepareSession(
+        session,
+        nextPath: nextPath,
+        targetQueueIndex: targetQueueIndex,
+      );
     });
   }
 }

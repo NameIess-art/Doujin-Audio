@@ -26,8 +26,8 @@ abstract final class PlaylistBatchActions {
     );
     final sessionIds = selectedSessionIds.toList(growable: false);
     for (final id in sessionIds) {
-      final cardState = ref.read(playlistSessionCardStateProvider(id));
-      if (cardState != null && !cardState.isPlaying) {
+      final snapshot = playback.sessionSnapshotById(id);
+      if (snapshot != null && !snapshot.playbackRequested) {
         await playback.toggleSessionPlayPause(id);
       }
     }
@@ -44,8 +44,8 @@ abstract final class PlaylistBatchActions {
     );
     final sessionIds = selectedSessionIds.toList(growable: false);
     for (final id in sessionIds) {
-      final cardState = ref.read(playlistSessionCardStateProvider(id));
-      if (cardState != null && cardState.isPlaying) {
+      final snapshot = playback.sessionSnapshotById(id);
+      if (snapshot != null && snapshot.playbackRequested) {
         await playback.toggleSessionPlayPause(id);
       }
     }

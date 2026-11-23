@@ -75,13 +75,13 @@ void main() {
         // Single tap toggles chrome fade.
         final viewerFinder = find.byType(InteractiveViewer);
         bool isHeaderHidden() => tester
-            .widgetList<Opacity>(
+            .widgetList<FadeTransition>(
               find.ancestor(
                 of: find.byKey(const ValueKey<String>('work_image_header')),
-                matching: find.byType(Opacity),
+                matching: find.byType(FadeTransition),
               ),
             )
-            .any((widget) => widget.opacity == 0.0);
+            .any((widget) => widget.opacity.value == 0.0);
         expect(isHeaderHidden(), isFalse);
         await tester.tap(viewport);
         await tester.pump(const Duration(milliseconds: 350));
@@ -571,48 +571,40 @@ void main() {
         );
         await tester.pumpAndSettle();
 
+        final initialLeft = tester.getTopLeft(find.text('Track swipe')).dx;
         final gesture = await tester.startGesture(
           tester.getCenter(find.text('Track swipe')),
         );
         await gesture.moveBy(const Offset(-28, 0));
         await tester.pump();
 
-        final dragTween = tester.widget<TweenAnimationBuilder<double>>(
-          find.byType(TweenAnimationBuilder<double>),
-        );
-        expect(dragTween.duration, Duration.zero);
-        expect(dragTween.curve, Curves.linear);
+        expect(find.byType(SwipeRevealActionPane), findsOneWidget);
+        final afterFirstDragLeft =
+            tester.getTopLeft(find.text('Track swipe')).dx;
+        expect(afterFirstDragLeft, lessThan(initialLeft));
 
         await gesture.moveBy(const Offset(-52, 0));
         await tester.pump(const Duration(milliseconds: 60));
 
-        final paneScale = tester.widget<AnimatedScale>(
+        final afterSecondDragLeft =
+            tester.getTopLeft(find.text('Track swipe')).dx;
+        expect(afterSecondDragLeft, lessThan(afterFirstDragLeft));
+        expect(
           find.descendant(
             of: find.byType(SwipeRevealActionPane),
-            matching: find.byType(AnimatedScale),
+            matching: find.byType(FadeTransition),
           ),
+          findsWidgets,
         );
-        expect(paneScale.duration, Duration.zero);
-        expect(paneScale.curve, kAppSpringBackCurve);
 
         await gesture.up();
         await tester.pump();
-
-        final releasedPaneScale = tester.widget<AnimatedScale>(
-          find.descendant(
-            of: find.byType(SwipeRevealActionPane),
-            matching: find.byType(AnimatedScale),
-          ),
-        );
-        expect(releasedPaneScale.duration, kAppMotionStandard);
-
-        final releaseTween = tester.widget<TweenAnimationBuilder<double>>(
-          find.byType(TweenAnimationBuilder<double>),
-        );
-        expect(releaseTween.duration, kAppMotionStandard);
-        expect(releaseTween.curve, kAppSpringCurve);
-
+        await tester.pump(const Duration(milliseconds: 80));
         await tester.pumpAndSettle();
+        expect(
+          tester.getTopLeft(find.text('Track swipe')).dx,
+          lessThan(initialLeft),
+        );
       },
     );
 

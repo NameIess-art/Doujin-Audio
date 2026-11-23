@@ -252,6 +252,79 @@ void main() {
     expect(coverPath, isNotNull);
     expect(await File(coverPath!).readAsBytes(), imageBytes);
   });
+
+  test(
+    'reads ID3v2 APIC picture with UTF-16LE non-empty description without stray null byte',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'embedded_cover_utf16_apic_test_',
+      );
+      addTearDown(() async {
+        if (await directory.exists()) await directory.delete(recursive: true);
+      });
+      final mp3File = File('${directory.path}/track_utf16.mp3');
+      final imageBytes = Uint8List.fromList(<int>[
+        0xff,
+        0xd8,
+        0xff,
+        0xe0,
+        0x00,
+        0x10,
+        0xff,
+        0xd9,
+      ]);
+      // Encoding 1 (UTF-16 with BOM), description "A" in UTF-16LE: FF FE 41 00 + terminator 00 00.
+      final utf16LeDescription = <int>[0xff, 0xfe, 0x41, 0x00, 0x00, 0x00];
+      await mp3File.writeAsBytes(
+        _mp3WithId3Apic(
+          encoding: 1,
+          descriptionBytes: utf16LeDescription,
+          pictureBytes: imageBytes,
+        ),
+        flush: true,
+      );
+
+      final coverPath = await EmbeddedCoverArtworkService.resolveForPath(
+        mp3File.path,
+      );
+
+      expect(coverPath, isNotNull);
+      expect(await File(coverPath!).readAsBytes(), imageBytes);
+    },
+  );
+}
+
+Uint8List _mp3WithId3Apic({
+  required int encoding,
+  required List<int> descriptionBytes,
+  required Uint8List pictureBytes,
+}) {
+  final apicPayload = BytesBuilder()
+    ..addByte(encoding)
+    ..add(ascii.encode('image/jpeg'))
+    ..addByte(0)
+    ..addByte(3)
+    ..add(descriptionBytes)
+    ..add(pictureBytes);
+  final payloadBytes = apicPayload.toBytes();
+  final apicFrame = BytesBuilder()
+    ..add(ascii.encode('APIC'))
+    ..add((ByteData(4)..setUint32(0, payloadBytes.length)).buffer.asUint8List())
+    ..add(<int>[0, 0])
+    ..add(payloadBytes);
+  final tagPayload = apicFrame.toBytes();
+  final tagLen = tagPayload.length;
+  final id3 = BytesBuilder()
+    ..add(ascii.encode('ID3'))
+    ..add(<int>[3, 0, 0])
+    ..add(<int>[
+      (tagLen >> 21) & 0x7f,
+      (tagLen >> 14) & 0x7f,
+      (tagLen >> 7) & 0x7f,
+      tagLen & 0x7f,
+    ])
+    ..add(tagPayload);
+  return id3.toBytes();
 }
 
 Uint8List _flacWithPicture(Uint8List pictureBytes) {

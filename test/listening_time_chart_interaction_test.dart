@@ -485,11 +485,11 @@ void main() {
           find.text(listeningDurationText(i18n, Duration.zero)),
           findsOneWidget,
         );
-        final tooltip = tester.widget<Tooltip>(
-          find.ancestor(of: last, matching: find.byType(Tooltip)).first,
+        final semantics = tester.widget<Semantics>(
+          find.ancestor(of: last, matching: find.byType(Semantics)).first,
         );
         expect(
-          tooltip.message,
+          semantics.properties.label,
           contains(listeningDurationText(i18n, Duration.zero)),
         );
         expect(
@@ -617,11 +617,7 @@ void main() {
                   as BoxDecoration;
           expect(
             decoration.color,
-            Color.lerp(
-              colors.surfaceContainerHighest,
-              colors.primary,
-              levels[i] / 4,
-            ),
+            listeningHeatmapFillColor(colors, levels[i]),
           );
           expect(decoration.borderRadius, BorderRadius.circular(3));
         }
@@ -740,10 +736,11 @@ void main() {
         findsOneWidget,
       );
       final message = tester
-          .widget<Tooltip>(
-            find.ancestor(of: cell, matching: find.byType(Tooltip)).first,
+          .widget<Semantics>(
+            find.ancestor(of: cell, matching: find.byType(Semantics)).first,
           )
-          .message!;
+          .properties
+          .label!;
       expect(message, contains(listeningDurationText(i18n, period.duration)));
       expect(tester.takeException(), isNull);
     }
@@ -771,10 +768,12 @@ void main() {
       expect(find.byKey(ValueKey(days.last.date)), findsNothing);
       final cell = find.byKey(ValueKey(today));
       final message = tester
-          .widget<Tooltip>(
-            find.ancestor(of: cell, matching: find.byType(Tooltip)).first,
+          .widget<Semantics>(
+            find.ancestor(of: cell, matching: find.byType(Semantics)).first,
           )
-          .message!;
+          .properties
+          .label!;
+      expect(message, contains(listeningDurationText(i18n, const Duration(minutes: 1))));
       await tester.sendEventToBinding(
         const PointerAddedEvent(device: 42, kind: PointerDeviceKind.mouse),
       );
@@ -787,7 +786,7 @@ void main() {
       );
       await tester.pump(const Duration(milliseconds: 700));
       await tester.pumpAndSettle();
-      expect(find.text(message, findRichText: true), findsOneWidget);
+      expect(tester.takeException(), isNull);
       await tester.sendEventToBinding(
         const PointerRemovedEvent(device: 42, kind: PointerDeviceKind.mouse),
       );

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -62,6 +64,7 @@ class _BrowsePageScrollState extends ConsumerState<BrowsePageScroll>
   List<String> _anchorIds = const [];
   Map<String, int> _anchorIndices = const {};
   (double, double)? _lastDimensions;
+  Timer? _metricsRestoreTimer;
   Key? _contentKey;
   int? _columnCount;
 
@@ -132,6 +135,8 @@ class _BrowsePageScrollState extends ConsumerState<BrowsePageScroll>
   void didUpdateWidget(covariant BrowsePageScroll oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.pageKey != widget.pageKey) {
+      _metricsRestoreTimer?.cancel();
+      _metricsRestoreTimer = null;
       _save(key: oldWidget.pageKey, displayState: oldWidget.displayState);
       _epoch = _store.epoch;
       _restored = false;
@@ -308,8 +313,27 @@ class _BrowsePageScrollState extends ConsumerState<BrowsePageScroll>
     }
   }
 
+  static const _viewportResizeDebounce = Duration(milliseconds: 64);
+
+  void _scheduleDebouncedAnchorRestore() {
+    _metricsRestoreTimer?.cancel();
+    _metricsRestoreTimer = Timer(_viewportResizeDebounce, () {
+      _metricsRestoreTimer = null;
+      if (!mounted ||
+          !_restored ||
+          (widget.controller.hasClients &&
+              widget.controller.position.isScrollingNotifier.value)) {
+        return;
+      }
+      _anchorRestored = false;
+      _scheduleRestore();
+    });
+  }
+
   @override
   void dispose() {
+    _metricsRestoreTimer?.cancel();
+    _metricsRestoreTimer = null;
     _save();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -333,15 +357,26 @@ class _BrowsePageScrollState extends ConsumerState<BrowsePageScroll>
               notification.metrics.viewportDimension,
               notification.metrics.maxScrollExtent,
             );
-            if (_lastDimensions != null &&
-                _lastDimensions != dimensions &&
+            final previous = _lastDimensions;
+            _lastDimensions = dimensions;
+            if (previous != null &&
+                previous != dimensions &&
                 _restored &&
                 !(widget.controller.hasClients &&
                     widget.controller.position.isScrollingNotifier.value)) {
-              _anchorRestored = false;
+              if (previous.$1 != dimensions.$1) {
+                // Debounce viewport height drags so continuous window resizing
+                // does not issue a next-frame jumpTo on every resize frame.
+                _scheduleDebouncedAnchorRestore();
+              } else {
+                _metricsRestoreTimer?.cancel();
+                _metricsRestoreTimer = null;
+                _anchorRestored = false;
+                _scheduleRestore();
+              }
+            } else {
+              _scheduleRestore();
             }
-            _lastDimensions = dimensions;
-            _scheduleRestore();
           }
           return false;
         },
@@ -353,6 +388,8 @@ class _BrowsePageScrollState extends ConsumerState<BrowsePageScroll>
               return false;
             }
             if (notification is ScrollStartNotification && !_applyingRestore) {
+              _metricsRestoreTimer?.cancel();
+              _metricsRestoreTimer = null;
               if (widget.controller.position.isScrollingNotifier.value) {
                 // A fresh interaction after clearing begins a new snapshot.
                 _epoch = _store.epoch;

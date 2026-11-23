@@ -70,6 +70,28 @@ class CoverArtworkSafDiscoveryTest {
         assertEquals(listOf("root", "work", "work/sub"), provider.directories)
     }
 
+    @Test
+    fun `different tracks in the same work share one cached cover file and reuse folder listing cache`() {
+        val (artwork, provider) = setup()
+        val first = artwork.resolve("content://covers.test/document/track1", "$root::work", null)
+        val second = artwork.resolve("content://covers.test/document/track2", "$root::work", null)
+
+        assertEquals(first, second)
+        assertEquals(listOf("work/cover.jpg"), provider.opened)
+        // Second resolve hits the SAF folder cache without re-listing the work directory.
+        assertEquals(1, provider.directories.count { it == "work" })
+    }
+
+    @Test
+    fun `given root has non-cover exact preferred name when resolving then subdirectories are skipped`() {
+        val (artwork, provider) = setup(
+            extraFiles = listOf("alt/folder.jpg", "alt/sub/extra.jpg")
+        )
+        val resolved = artwork.resolve("content://covers.test/document/voice", "$root::alt", null)
+        assertEquals("alt/folder.jpg", File(requireNotNull(resolved)).readText())
+        assertFalse(provider.directories.contains("alt/sub"))
+    }
+
     private fun setup(extraFiles: List<String> = emptyList()): Pair<CoverArtworkOperations, ImagesProvider> {
         val context = RuntimeEnvironment.getApplication()
         val provider = ImagesProvider(temporary.newFolder(), extraFiles)
@@ -88,6 +110,9 @@ class CoverArtworkSafDiscoveryTest {
             (0 until 40).map { "work/image$it.jpg" } + extraFiles).associateWith { id ->
             File(folder, id.replace('/', '_')).apply { writeText(if (id == "work/cover.jpg") "cover bytes" else id) }
         }
+        private val topDirectories = files.keys
+            .map { it.substringBefore('/') }
+            .distinct()
         private val subdirectories = files.keys
             .map { it.substringBeforeLast('/') }
             .filter { it.contains('/') }
@@ -109,7 +134,7 @@ class CoverArtworkSafDiscoveryTest {
             val id = DocumentsContract.getDocumentId(uri)
             val children = uri.lastPathSegment == "children"
             if (children) directories += id else documents += id
-            val ids = if (!children) listOf(id) else if (id == "root") listOf("work", "other")
+            val ids = if (!children) listOf(id) else if (id == "root") topDirectories
                 else subdirectories.filter { it.substringBeforeLast('/') == id } +
                     files.keys.filter { it.substringBeforeLast('/') == id }
             val columns = projection ?: arrayOf("document_id", "_display_name", "mime_type", "_size", "last_modified", "flags")

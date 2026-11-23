@@ -924,6 +924,54 @@ void main() {
       expect(requests, 2);
     },
   );
+
+  test(
+    'aborts a late-resolving HttpClientRequest after postUrl times out',
+    () async {
+      service.dispose();
+      final pendingPost = Completer<HttpClientRequest>();
+      final fakeClient = _DelayedPostHttpClient(pendingPost.future);
+      service = createService(
+        clientFactory: () => fakeClient,
+        requestTimeout: const Duration(milliseconds: 20),
+      );
+
+      final result = await translate(['delayed title']);
+      expect(result.failure, TextTranslationFailure.unavailable);
+      expect(result.translations, isEmpty);
+
+      final lateRequest = _TrackingHttpClientRequest();
+      pendingPost.complete(lateRequest);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(lateRequest.aborted, isTrue);
+    },
+  );
+}
+
+final class _DelayedPostHttpClient extends Fake implements HttpClient {
+  _DelayedPostHttpClient(this._postFuture);
+
+  final Future<HttpClientRequest> _postFuture;
+
+  @override
+  Duration? connectionTimeout;
+
+  @override
+  Future<HttpClientRequest> postUrl(Uri url) => _postFuture;
+
+  @override
+  void close({bool force = false}) {}
+}
+
+final class _TrackingHttpClientRequest extends Fake
+    implements HttpClientRequest {
+  bool aborted = false;
+
+  @override
+  void abort([Object? exception, StackTrace? stackTrace]) {
+    aborted = true;
+  }
 }
 
 class _Documents implements JsonDocumentStore {

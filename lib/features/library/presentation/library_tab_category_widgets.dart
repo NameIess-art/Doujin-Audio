@@ -704,6 +704,7 @@ class AudioLibraryCategoryEntryCard extends ConsumerWidget {
           shadowColor: Colors.transparent,
           surfaceTintColor: Colors.transparent,
           child: AppEntryInkWell(
+            customBorder: cardShape,
             canRequestFocus: isSelectionMode,
             onLongPress: onLongPress,
             onTap: isSelectionMode

@@ -52,7 +52,7 @@ class SessionDetailLayout extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final titleOverArtwork = !isLandscape && !segmentPanelExpanded && !isVideo;
+    final titleOverArtwork = !segmentPanelExpanded && (!isLandscape || isVideo);
     final heading = IgnorePointer(
       ignoring: !showCoverOverlays,
       child: AnimatedOpacity(
@@ -63,12 +63,9 @@ class SessionDetailLayout extends StatelessWidget {
             : kAppFadeDuration,
         curve: kAppFadeCurve,
         child: Container(
-          padding: EdgeInsets.fromLTRB(
-            isLandscape ? landscapeDetailTextInset : 16,
-            isLandscape ? 0 : 12,
-            isLandscape ? 4 : 16,
-            8,
-          ),
+          padding: isLandscape && !titleOverArtwork
+              ? const EdgeInsets.fromLTRB(landscapeDetailTextInset, 0, 4, 8)
+              : const EdgeInsets.fromLTRB(16, 12, 16, 8),
           decoration: titleOverArtwork
               ? const BoxDecoration(
                   gradient: LinearGradient(
@@ -116,6 +113,14 @@ class SessionDetailLayout extends StatelessWidget {
         ),
       ),
     );
+    final artworkWithHeading = Stack(
+      fit: StackFit.expand,
+      children: [
+        artwork,
+        if (titleOverArtwork)
+          Positioned(left: 0, right: 0, bottom: 0, child: heading),
+      ],
+    );
     if (isLandscape) {
       return Padding(
         padding: EdgeInsets.only(left: padding.left, right: padding.right),
@@ -141,9 +146,8 @@ class SessionDetailLayout extends StatelessWidget {
                   child: AspectRatio(
                     aspectRatio: 4 / 3,
                     child: CoverArtworkFrame(
-                      showShadow: !isVideo,
                       borderRadius: BorderRadius.circular(16),
-                      child: artwork,
+                      child: artworkWithHeading,
                     ),
                   ),
                 ),
@@ -188,7 +192,7 @@ class SessionDetailLayout extends StatelessWidget {
                 key: const ValueKey('session_detail_right_column'),
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  heading,
+                  if (!titleOverArtwork) heading,
                   Expanded(child: RepaintBoundary(child: subtitle)),
                   Align(alignment: Alignment.centerLeft, child: transport),
                 ],
@@ -201,12 +205,16 @@ class SessionDetailLayout extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final coverHorizontalMargin = !isVideo && !segmentPanelExpanded
-            ? 8.0
-            : 0.0;
-        final coverHeight = segmentPanelExpanded
+        final disableAnimations = MediaQuery.disableAnimationsOf(context);
+        const coverHorizontalInset = 8.0;
+        final coverHorizontalMargin = segmentPanelExpanded
             ? 0.0
-            : ((constraints.maxWidth - coverHorizontalMargin * 2) * 3 / 4);
+            : coverHorizontalInset;
+        final expandedCoverHeight = max(
+          0.0,
+          (constraints.maxWidth - coverHorizontalInset * 2) * 3 / 4,
+        );
+        final coverHeight = segmentPanelExpanded ? 0.0 : expandedCoverHeight;
 
         return Padding(
           padding: EdgeInsets.only(top: padding.top, bottom: padding.bottom),
@@ -214,7 +222,7 @@ class SessionDetailLayout extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               AnimatedContainer(
-                duration: MediaQuery.disableAnimationsOf(context)
+                duration: disableAnimations
                     ? Duration.zero
                     : kAppMotionStandard,
                 curve: segmentPanelExpanded
@@ -223,27 +231,33 @@ class SessionDetailLayout extends StatelessWidget {
                 margin: EdgeInsets.symmetric(horizontal: coverHorizontalMargin),
                 height: coverHeight,
                 width: double.infinity,
-                child: CoverArtworkFrame(
-                  showShadow: !isVideo && !segmentPanelExpanded,
-                  borderRadius: BorderRadius.circular(16),
-                  child: segmentPanelExpanded
-                      ? const SizedBox.shrink()
-                      : Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            artwork,
-                            if (!isVideo)
-                              Positioned(
-                                left: 0,
-                                right: 0,
-                                bottom: 0,
-                                child: heading,
-                              ),
-                          ],
+                child: IgnorePointer(
+                  ignoring: segmentPanelExpanded,
+                  child: ExcludeFocus(
+                    excluding: segmentPanelExpanded,
+                    child: ExcludeSemantics(
+                      excluding: segmentPanelExpanded,
+                      child: AnimatedOpacity(
+                        opacity: segmentPanelExpanded ? 0 : 1,
+                        duration: disableAnimations
+                            ? Duration.zero
+                            : kAppMotionStandard,
+                        curve: kAppFadeCurve,
+                        child: CoverArtworkFrame(
+                          borderRadius: BorderRadius.circular(16),
+                          child: OverflowBox(
+                            alignment: Alignment.topCenter,
+                            minHeight: expandedCoverHeight,
+                            maxHeight: expandedCoverHeight,
+                            child: artworkWithHeading,
+                          ),
                         ),
+                      ),
+                    ),
+                  ),
                 ),
               ),
-              if (segmentPanelExpanded || isVideo) heading,
+              if (!titleOverArtwork) heading,
               Expanded(child: RepaintBoundary(child: subtitle)),
               Padding(
                 padding: EdgeInsets.symmetric(horizontal: padding.left),

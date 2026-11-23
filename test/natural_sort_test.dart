@@ -200,4 +200,56 @@ void main() {
       '十一、附录',
     ]);
   });
+
+  test(
+    'compareNatural is antisymmetric and transitive across mixed digit representations',
+    () {
+      const samples = <String>[
+        '1',
+        '１',
+        '01',
+        '０１',
+        '一',
+        '壹',
+        '零一',
+        '1a',
+        '1b',
+        '１a',
+        '01a',
+        '一a',
+        '一b',
+        '壹a',
+        '2',
+        'a',
+        '十',
+        '十a',
+        '十b',
+        '零十',
+        '零十a',
+        '一〇',
+      ];
+
+      for (final a in samples) {
+        expect(compareNatural(a, a), 0, reason: 'reflexive: $a');
+        for (final b in samples) {
+          final ab = compareNatural(a, b);
+          final ba = compareNatural(b, a);
+          expect(ab.sign, -ba.sign, reason: 'antisymmetric: $a vs $b');
+          if (ab <= 0) {
+            for (final c in samples) {
+              final bc = compareNatural(b, c);
+              if (bc <= 0) {
+                final ac = compareNatural(a, c);
+                expect(
+                  ac,
+                  ab < 0 || bc < 0 ? lessThan(0) : 0,
+                  reason: 'transitive: $a <= $b <= $c',
+                );
+              }
+            }
+          }
+        }
+      }
+    },
+  );
 }

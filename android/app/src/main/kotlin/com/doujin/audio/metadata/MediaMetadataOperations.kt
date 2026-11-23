@@ -369,13 +369,17 @@ internal class MediaMetadataOperations(
         if (tagSize <= 0 || tagSize > 20 * 1024 * 1024) return null
 
         val bytesToRead = (maxChunkBytes - 10L).coerceAtMost(tagSize.toLong()).toInt()
-        val tagBuf = ByteBuffer.allocate(bytesToRead)
-        if (channel.read(tagBuf) <= 0) return null
-        tagBuf.flip()
-        val tagData = ByteArray(tagBuf.remaining())
-        tagBuf.get(tagData)
+        val tagData = ByteArray(bytesToRead)
+        val tagBuf = ByteBuffer.wrap(tagData)
+        var totalRead = 0
+        while (totalRead < bytesToRead) {
+            val read = channel.read(tagBuf)
+            if (read <= 0) break
+            totalRead += read
+        }
+        if (totalRead <= 0) return null
 
-        return parseId3TagPicture(tagData, majorVersion, extHeader)
+        return parseId3TagPicture(tagData, majorVersion, extHeader, tagLength = totalRead)
     }
 
     private companion object {
@@ -386,39 +390,41 @@ internal class MediaMetadataOperations(
 internal fun parseId3TagPicture(
     tagData: ByteArray,
     majorVersion: Int,
-    extHeader: Boolean
+    extHeader: Boolean,
+    tagLength: Int = tagData.size
 ): ByteArray? {
+    val limit = tagLength.coerceIn(0, tagData.size)
     var offset = 0
     if (extHeader) {
         if (majorVersion == 3) {
-            if (offset + 4 > tagData.size) return null
+            if (offset + 4 > limit) return null
             val extSize = ((tagData[offset].toInt() and 0xFF) shl 24) or
                 ((tagData[offset + 1].toInt() and 0xFF) shl 16) or
                 ((tagData[offset + 2].toInt() and 0xFF) shl 8) or
                 (tagData[offset + 3].toInt() and 0xFF)
-            if (extSize < 0 || extSize > tagData.size - (offset + 4)) return null
+            if (extSize < 0 || extSize > limit - (offset + 4)) return null
             offset += 4 + extSize
         } else if (majorVersion == 4) {
-            if (offset + 4 > tagData.size) return null
+            if (offset + 4 > limit) return null
             val extSize = ((tagData[offset].toInt() and 0x7F) shl 21) or
                 ((tagData[offset + 1].toInt() and 0x7F) shl 14) or
                 ((tagData[offset + 2].toInt() and 0x7F) shl 7) or
                 (tagData[offset + 3].toInt() and 0x7F)
-            if (extSize < 4 || extSize > tagData.size - offset) return null
+            if (extSize < 4 || extSize > limit - offset) return null
             offset += extSize
         }
     }
 
-    while (offset < tagData.size) {
+    while (offset < limit) {
         val idLength = if (majorVersion == 2) 3 else 4
-        if (offset + idLength > tagData.size) break
+        if (offset + idLength > limit) break
         val frameId = String(tagData, offset, idLength, Charsets.US_ASCII)
         offset += idLength
         if (frameId.any { it == '\u0000' }) break
 
         val frameSize = when (majorVersion) {
             2 -> {
-                if (offset + 3 > tagData.size) break
+                if (offset + 3 > limit) break
                 val s = ((tagData[offset].toInt() and 0xFF) shl 16) or
                     ((tagData[offset + 1].toInt() and 0xFF) shl 8) or
                     (tagData[offset + 2].toInt() and 0xFF)
@@ -426,7 +432,7 @@ internal fun parseId3TagPicture(
                 s
             }
             3 -> {
-                if (offset + 4 > tagData.size) break
+                if (offset + 4 > limit) break
                 val s = ((tagData[offset].toInt() and 0xFF) shl 24) or
                     ((tagData[offset + 1].toInt() and 0xFF) shl 16) or
                     ((tagData[offset + 2].toInt() and 0xFF) shl 8) or
@@ -435,7 +441,7 @@ internal fun parseId3TagPicture(
                 s
             }
             else -> {
-                if (offset + 4 > tagData.size) break
+                if (offset + 4 > limit) break
                 val s = ((tagData[offset].toInt() and 0x7F) shl 21) or
                     ((tagData[offset + 1].toInt() and 0x7F) shl 14) or
                     ((tagData[offset + 2].toInt() and 0x7F) shl 7) or
@@ -446,9 +452,9 @@ internal fun parseId3TagPicture(
         }
 
         val flagsLength = if (majorVersion == 2) 0 else 2
-        if (offset + flagsLength > tagData.size) break
+        if (offset + flagsLength > limit) break
         offset += flagsLength
-        if (frameSize <= 0 || frameSize > tagData.size - offset) break
+        if (frameSize <= 0 || frameSize > limit - offset) break
 
         val frameEnd = offset + frameSize
         if (frameId == "APIC" || frameId == "PIC") {

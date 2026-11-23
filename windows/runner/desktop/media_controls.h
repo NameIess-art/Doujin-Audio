@@ -2,15 +2,13 @@
 #include <windows.h>
 #include <flutter/encodable_value.h>
 #include <winrt/Windows.Media.h>
-#include <mmdeviceapi.h>
 #include <wrl/client.h>
 #include <shobjidl.h>
 #include <array>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
-
-class EndpointNotifications;
 
 class MediaControls {
  public:
@@ -48,8 +46,8 @@ class MediaControls {
   bool metadata_ready_ = false;
   std::string title_, subtitle_, art_path_;
   std::array<bool, 4> hotkeys_{};
+  struct EndpointState;
   winrt::Windows::Media::SystemMediaTransportControls controls_{nullptr};
   winrt::event_token button_token_{};
-  Microsoft::WRL::ComPtr<IMMDeviceEnumerator> endpoints_;
-  Microsoft::WRL::ComPtr<EndpointNotifications> endpoint_listener_;
+  std::shared_ptr<EndpointState> endpoint_state_;
 };

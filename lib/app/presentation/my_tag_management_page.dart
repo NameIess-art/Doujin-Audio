@@ -199,6 +199,7 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
   }
 
   Future<void> _confirm() async {
+    if (!mounted) return;
     final controller = ref.read(asmrLibraryControllerProvider);
     if (controller == null || _saving || _changes.isEmpty) return;
     setState(() => _saving = true);
@@ -239,7 +240,10 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
         tone: AppFeedbackTone.destructive,
         icon: Icons.error_outline_rounded,
         actionLabel: i18n.tr('retry'),
-        onAction: () => unawaited(_confirm()),
+        onAction: () {
+          if (!mounted) return;
+          unawaited(_confirm());
+        },
       );
     }
   }

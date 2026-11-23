@@ -1210,7 +1210,7 @@ class AppFeedbackSurface extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(resolvedBorderRadius),
         border: Border.all(
-          color: cs.outlineVariant.withValues(alpha: isDark ? 0.24 : 0.42),
+          color: appOverlayBorderColor(cs, tokens, elevated: true),
         ),
       ),
       child: Padding(

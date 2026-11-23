@@ -479,6 +479,21 @@ class NativePlaybackCommandPayloadsTest {
             validPreparePayload().toMutableMap().apply { put("uri", "javascript:alert(1)") }
         )
     }
+
+    @Test
+    fun `prepare parser allows omitted queue with non zero queueStartIndex when reuseExistingQueue is true`() {
+        val parsed = NativePlaybackCommandPayloads.parsePrepareSession(
+            validPreparePayload() + mapOf(
+                "reuseExistingQueue" to true,
+                "queueStartIndex" to 5,
+                "path" to "/music/track5.mp3"
+            )
+        )
+        assertTrue(parsed.reuseExistingQueue)
+        assertEquals(5, parsed.queueStartIndex)
+        assertTrue(parsed.queue.isEmpty())
+        assertEquals("/music/track5.mp3", parsed.explicitPath)
+    }
 }
 
 private fun validPreparePayload(): Map<String, Any?> = mapOf(

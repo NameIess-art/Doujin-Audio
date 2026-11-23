@@ -580,16 +580,25 @@ void main() {
       matching: find.byType(BackdropGroup),
     );
     final original = tester.widget<BackdropGroup>(row);
-    double opacity() => tester
-        .widget<Opacity>(
+    bool ignoring() => tester
+        .widget<IgnorePointer>(
           find
               .ancestor(
                 of: find.byKey(actionKey),
-                matching: find.byType(Opacity),
+                matching: find.byType(IgnorePointer),
               )
               .first,
         )
+        .ignoring;
+    double opacity() => tester
+        .widget<Opacity>(
+          find.ancestor(
+            of: find.byKey(actionKey),
+            matching: find.byType(Opacity),
+          ).first,
+        )
         .opacity;
+    expect(ignoring(), isFalse);
     expect(opacity(), 1);
     for (var offset = 8.0; offset <= 64; offset += 8) {
       controller.jumpTo(offset);
@@ -597,6 +606,7 @@ void main() {
       expect(tester.widget<BackdropGroup>(row), same(original));
     }
     expect(opacity(), lessThan(1));
+    expect(ignoring(), isTrue);
   });
 
   testWidgets(

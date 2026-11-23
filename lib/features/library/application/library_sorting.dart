@@ -111,12 +111,11 @@ List<int> buildLibrarySortedIndices(LibrarySortPayload request) {
   final ascending = request.ascending;
   final groupByLibrary = request.groupByLibrary;
   final items = List<LibrarySortItem>.of(request.items);
+  final rootIndex = groupByLibrary ? PathRootIndex(request.roots) : null;
   final libraryKeys = <int, String?>{
-    if (groupByLibrary)
+    if (rootIndex != null)
       for (final item in items)
-        item.index: request.roots
-            .where((root) => PathMatcher.isWithinOrEqual(item.path, root))
-            .firstOrNull,
+        item.index: rootIndex.mostSpecificContaining(item.path),
   };
   items.sort((left, right) {
     if (left.pinned != right.pinned) {

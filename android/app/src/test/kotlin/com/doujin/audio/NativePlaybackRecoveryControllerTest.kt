@@ -2,7 +2,6 @@ package com.doujin.audio
 
 import com.doujin.audio.player.recovery.*
 import com.doujin.audio.player.session.*
-import com.doujin.audio.player.service.isAudioOffloadErrorCode
 import com.doujin.audio.player.service.isPlayerRebuildRequiredForErrorCode
 import com.doujin.audio.player.service.isRecoverablePlaybackErrorCode
 import com.doujin.audio.player.service.shouldClearPlaybackIntentForPlayWhenReadyChange
@@ -22,6 +21,40 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 class NativePlaybackRecoveryControllerTest {
+    @Test
+    fun `screen off backs off health check to 60s when idle and tightens on screen on or buffering`() {
+        val environment = FakeRecoveryEnvironment()
+        val playing = HealthCheckPlayer("playing", environment).apply { playWhenReady = true }
+        val host = healthCheckHost(playing)
+        var screenInteractive = false
+        val controller = NativePlaybackRecoveryController(
+            host = host,
+            environment = environment,
+            healthCheckIntervalMs = 15_000L,
+            screenOffHealthCheckIntervalMs = 60_000L,
+            isScreenInteractive = { screenInteractive }
+        )
+
+        controller.markIntended("playing")
+        assertEquals(listOf(60_000L), environment.delays)
+
+        // Turning screen on reschedules immediately back to 15s.
+        screenInteractive = true
+        controller.onScreenInteractiveChanged()
+        assertEquals(listOf(15_000L), environment.delays)
+
+        // Turning screen off while buffering keeps 15s interval.
+        playing.playbackState = Player.STATE_BUFFERING
+        screenInteractive = false
+        controller.onScreenInteractiveChanged()
+        assertEquals(listOf(15_000L), environment.delays)
+
+        // Once ready again with screen off, backs off to 60s.
+        playing.playbackState = Player.STATE_READY
+        controller.onScreenInteractiveChanged()
+        assertEquals(listOf(60_000L), environment.delays)
+    }
+
     @Test
     fun `scheduled health check resumes only the unexpectedly paused session`() {
         val environment = FakeRecoveryEnvironment()
@@ -753,20 +786,18 @@ class NativePlaybackRecoveryControllerTest {
     }
 
     @Test
-    fun `recoverable error policy includes timeout decoder query and audio offload failures`() {
+    fun `recoverable error policy includes timeout decoder and audio track failures`() {
         assertTrue(isRecoverablePlaybackErrorCode(PlaybackException.ERROR_CODE_TIMEOUT))
         assertTrue(isRecoverablePlaybackErrorCode(PlaybackException.ERROR_CODE_REMOTE_ERROR))
         assertTrue(isRecoverablePlaybackErrorCode(PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW))
         assertTrue(isRecoverablePlaybackErrorCode(PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE))
         assertTrue(isRecoverablePlaybackErrorCode(PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED))
         assertTrue(isRecoverablePlaybackErrorCode(PlaybackException.ERROR_CODE_DECODING_FAILED))
-        assertTrue(isRecoverablePlaybackErrorCode(PlaybackException.ERROR_CODE_AUDIO_TRACK_OFFLOAD_INIT_FAILED))
-        assertTrue(isRecoverablePlaybackErrorCode(PlaybackException.ERROR_CODE_AUDIO_TRACK_OFFLOAD_WRITE_FAILED))
         assertTrue(isPlayerRebuildRequiredForErrorCode(PlaybackException.ERROR_CODE_DECODING_FAILED))
+        assertTrue(isRecoverablePlaybackErrorCode(PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED))
+        assertTrue(isRecoverablePlaybackErrorCode(PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED))
+        assertTrue(isPlayerRebuildRequiredForErrorCode(PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED))
         assertTrue(isPlayerRebuildRequiredForErrorCode(PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED))
-        assertTrue(isAudioOffloadErrorCode(PlaybackException.ERROR_CODE_AUDIO_TRACK_OFFLOAD_INIT_FAILED))
-        assertTrue(isAudioOffloadErrorCode(PlaybackException.ERROR_CODE_AUDIO_TRACK_OFFLOAD_WRITE_FAILED))
-        assertFalse(isAudioOffloadErrorCode(PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED))
     }
 
     @Test
@@ -943,7 +974,6 @@ private class HealthCheckPlayer(
             "getPlayerError" -> reportedError
             "getCurrentPosition" -> positionMs
             "getBufferedPosition" -> bufferedPositionMs
-            "isSleepingForOffload" -> false
             "getDuration" -> 60_000L
             "getCurrentMediaItemIndex" -> 2
             "setVolume" -> null

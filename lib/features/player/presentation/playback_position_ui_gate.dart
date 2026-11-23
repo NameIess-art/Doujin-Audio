@@ -18,11 +18,13 @@ class PlaybackPositionUiGate extends ChangeNotifier {
     this.minUpdateInterval = const Duration(milliseconds: 32),
     this.deferDuringInteraction = true,
     this.includeBufferedPosition = true,
+    this.alignToFrame = false,
   }) : _session = session,
        _interactionCoordinator =
            interactionCoordinator ?? UiInteractionCoordinator.instance,
        _value = session.progress {
     _publishedValue = _value;
+    _clock.start();
     _bindSession();
     _interactionCoordinator.addListener(_handleInteractionChanged);
   }
@@ -31,18 +33,21 @@ class PlaybackPositionUiGate extends ChangeNotifier {
   final Duration minUpdateInterval;
   final bool deferDuringInteraction;
   final bool includeBufferedPosition;
+  final bool alignToFrame;
+  final Stopwatch _clock = Stopwatch();
   PlaybackSessionSnapshot _session;
   PlaybackPositionUiSnapshot _value;
   late PlaybackPositionUiSnapshot _publishedValue;
   Object? _pendingPublish;
   StreamSubscription<PlaybackPositionSample>? _progressSub;
   Timer? _throttleTimer;
+  int? _frameFlushCallbackId;
   bool _disposed = false;
   bool _dirty = false;
   bool _tickerModeEnabled = true;
   bool _postFramePublishScheduled = false;
   bool _postFramePublishForce = false;
-  int _lastNotifyMs = 0;
+  int? _lastNotifyMs;
   int _sessionGeneration = 0;
 
   PlaybackPositionUiSnapshot get value => _value;
@@ -71,8 +76,7 @@ class PlaybackPositionUiGate extends ChangeNotifier {
     _session = session;
     if (streamsChanged) {
       _sessionGeneration++;
-      _throttleTimer?.cancel();
-      _throttleTimer = null;
+      _cancelScheduledFlush();
       _unbindSession();
       _value = session.progress;
       _dirty = false;
@@ -134,8 +138,7 @@ class PlaybackPositionUiGate extends ChangeNotifier {
     if (_disposed) return;
     if (force) {
       _pendingPublish = null;
-      _throttleTimer?.cancel();
-      _throttleTimer = null;
+      _cancelScheduledFlush();
     }
     if (_value == _publishedValue) {
       _dirty = false;
@@ -163,23 +166,49 @@ class PlaybackPositionUiGate extends ChangeNotifier {
       }
       return;
     }
-    final now = DateTime.now().millisecondsSinceEpoch;
+    final now = _clock.elapsedMilliseconds;
+    final lastNotify = _lastNotifyMs;
     if (!force &&
         minUpdateInterval > Duration.zero &&
-        now - _lastNotifyMs < minUpdateInterval.inMilliseconds) {
+        lastNotify != null &&
+        now - lastNotify < minUpdateInterval.inMilliseconds) {
       _dirty = true;
-      _scheduleThrottleFlush(
-        Duration(
-          milliseconds:
-              minUpdateInterval.inMilliseconds - (now - _lastNotifyMs),
-        ),
-      );
+      if (alignToFrame) {
+        _scheduleFrameFlush();
+      } else {
+        _scheduleThrottleFlush(
+          Duration(
+            milliseconds:
+                minUpdateInterval.inMilliseconds - (now - lastNotify),
+          ),
+        );
+      }
       return;
     }
     _dirty = false;
     _lastNotifyMs = now;
     _publishedValue = _value;
     notifyListeners();
+  }
+
+  void _cancelScheduledFlush() {
+    _throttleTimer?.cancel();
+    _throttleTimer = null;
+    final callbackId = _frameFlushCallbackId;
+    if (callbackId != null) {
+      _frameFlushCallbackId = null;
+      SchedulerBinding.instance.cancelFrameCallbackWithId(callbackId);
+    }
+  }
+
+  void _scheduleFrameFlush() {
+    if (_frameFlushCallbackId != null || _disposed) return;
+    _frameFlushCallbackId = SchedulerBinding.instance.scheduleFrameCallback((
+      _,
+    ) {
+      _frameFlushCallbackId = null;
+      if (!_disposed && _dirty) _publish(force: true);
+    });
   }
 
   void _scheduleThrottleFlush(Duration delay) {
@@ -201,8 +230,8 @@ class PlaybackPositionUiGate extends ChangeNotifier {
     _disposed = true;
     _pendingPublish = null;
     _sessionGeneration++;
-    _throttleTimer?.cancel();
-    _throttleTimer = null;
+    _cancelScheduledFlush();
+    _clock.stop();
     _interactionCoordinator.removeListener(_handleInteractionChanged);
     _unbindSession();
     super.dispose();

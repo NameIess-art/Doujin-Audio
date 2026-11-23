@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_task_store.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_internal_models.dart';
@@ -9,6 +11,7 @@ import 'package:doujin_audio/features/asmr/domain/asmr_download.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -640,6 +643,173 @@ void main() {
         store.isFileOutputPathDurable(_key(1), 'track.mp3', 'Work 1/track.mp3'),
         isTrue,
       );
+    },
+  );
+
+  test(
+    'dedicated JSON file migrates legacy SharedPreferences record and uses lightweight progress checkpoints',
+    () async {
+      final supportDir = await Directory.systemTemp.createTemp(
+        'asmr_download_store_file_',
+      );
+      addTearDown(() async {
+        if (await supportDir.exists()) {
+          await supportDir.delete(recursive: true);
+        }
+      });
+
+      final legacyPayload = encodePersistedDownloadTasks(<PersistedDownloadTask>[
+        PersistedDownloadTask(
+          task: _task(1).copyWith(downloadedBytes: 64),
+          createdOutputPaths: const {},
+          createdJsonDocuments: const {},
+        ),
+      ]);
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        AppPreferences.asmrDownloadTasksKey: legacyPayload,
+      });
+
+      final operations = <AsmrDownloadStoreOperation>[];
+      final manager = AsmrDownloadManager(
+        persistenceDirectoryProvider: () async => supportDir,
+        storeOperationObserver: operations.add,
+      );
+      addTearDown(manager.shutdown);
+      await manager.initialize();
+
+      // Legacy SharedPreferences key is migrated to dedicated JSON file and cleared.
+      final tasksFile = File(
+        path.join(supportDir.path, AsmrDownloadTaskStore.tasksFileName),
+      );
+      final progressFile = File(
+        path.join(supportDir.path, AsmrDownloadTaskStore.progressFileName),
+      );
+      expect(await tasksFile.exists(), isTrue);
+      expect(
+        await AppPreferences.getString(AppPreferences.asmrDownloadTasksKey),
+        isNull,
+      );
+      expect(manager.getTask(_key(1))?.downloadedBytes, 64);
+
+      // Flush initial post-init notification, then record pure progress chunks.
+      await manager.flushPersistence();
+      operations.clear();
+      final tasksContentBeforeProgress = await tasksFile.readAsString();
+
+      manager.debugRecordDownloadChunkForTesting(_key(1), 'track.mp3', 200, 264);
+      manager.debugFlushProgressNotificationsForTesting();
+      await manager.debugRunProgressCheckpointForTesting();
+
+      // Progress checkpoint writes lightweight progress sidecar without re-encoding tasks file.
+      expect(
+        operations.where(
+          (op) => op == AsmrDownloadStoreOperation.persistenceSnapshot,
+        ),
+        isEmpty,
+      );
+      expect(await progressFile.exists(), isTrue);
+      expect(await tasksFile.readAsString(), tasksContentBeforeProgress);
+
+      // Restarting merges the lightweight progress checkpoint offsets.
+      final restored = AsmrDownloadManager(
+        persistenceDirectoryProvider: () async => supportDir,
+      );
+      addTearDown(restored.shutdown);
+      await restored.initialize();
+      expect(restored.getTask(_key(1))?.downloadedBytes, 264);
+      expect(restored.getTask(_key(1))?.fileDownloadedBytes['track.mp3'], 264);
+    },
+  );
+
+  test(
+    'buttonViewState quantizes sub-step progress deltas to avoid redundant header repaints',
+    () async {
+      final store = AsmrDownloadTaskStore(
+        persistTasks: false,
+        persistenceSnapshot: (task) => PersistedDownloadTask(
+          task: task,
+          createdOutputPaths: const {},
+          createdJsonDocuments: const {},
+        ),
+      );
+      addTearDown(store.shutdown);
+      final emitted = <AsmrDownloadButtonViewState>[];
+      final sub = store.buttonViewStateStream.listen(emitted.add);
+      addTearDown(sub.cancel);
+
+      store[_key(1)] = _task(1).copyWith(
+        totalBytes: 100000,
+        fileTotalBytes: const {'track.mp3': 100000},
+      );
+      store.notifyTaskChanged(changedWorkIds: {_key(1)});
+      await Future<void>.delayed(Duration.zero);
+      emitted.clear();
+
+      // Small increments (< 0.25% each) stay in the same 0.5% bucket -> no extra emissions.
+      store.recordDownloadChunk(_key(1), 'track.mp3', 100, 100);
+      store.flushPendingProgressNotifications();
+      store.recordDownloadChunk(_key(1), 'track.mp3', 100, 200);
+      store.flushPendingProgressNotifications();
+      await Future<void>.delayed(Duration.zero);
+      expect(emitted, isEmpty);
+
+      // Crossing 0.5% emits once with quantized 0.005 progress.
+      store.recordDownloadChunk(_key(1), 'track.mp3', 300, 500);
+      store.flushPendingProgressNotifications();
+      await Future<void>.delayed(Duration.zero);
+      expect(emitted, hasLength(1));
+      expect(emitted.single.progress, 0.005);
+    },
+  );
+
+  test(
+    'H23 shutdown pauses only non-terminal tasks and preserves completed and failed states',
+    () async {
+      final writes = <String?>[];
+      final store = AsmrDownloadTaskStore(
+        persistTasks: true,
+        persistenceWriter: (payload) async => writes.add(payload),
+        persistenceSnapshot: (task) => PersistedDownloadTask(
+          task: task,
+          createdOutputPaths: const {},
+          createdJsonDocuments: const {},
+        ),
+      );
+      store[_key(1)] = _task(1).copyWith(
+        status: AsmrDownloadTaskStatus.idle,
+        message: 'queued',
+      );
+      store[_key(2)] = _task(2).copyWith(
+        status: AsmrDownloadTaskStatus.downloading,
+        message: 'downloading',
+      );
+      store[_key(3)] = _task(3).copyWith(
+        status: AsmrDownloadTaskStatus.completed,
+        message: 'completed',
+      );
+      store[_key(4)] = _task(4).copyWith(
+        status: AsmrDownloadTaskStatus.failed,
+        message: 'completed_with_failures',
+        error: 'http 500',
+      );
+
+      await store.shutdown(
+        pauseWorkIds: [_key(1), _key(2), _key(3), _key(4)],
+      );
+
+      expect(store[_key(1)]!.status, AsmrDownloadTaskStatus.paused);
+      expect(store[_key(2)]!.status, AsmrDownloadTaskStatus.paused);
+      expect(store[_key(3)]!.status, AsmrDownloadTaskStatus.completed);
+      expect(store[_key(4)]!.status, AsmrDownloadTaskStatus.failed);
+      expect(store[_key(4)]!.error, 'http 500');
+
+      final persisted = decodePersistedDownloadTasks(writes.last!).tasks;
+      final byId = {for (final item in persisted) item.task.work.workKey: item.task};
+      expect(byId.keys, {_key(1), _key(2), _key(4)});
+      expect(byId[_key(1)]!.status, AsmrDownloadTaskStatus.paused);
+      expect(byId[_key(2)]!.status, AsmrDownloadTaskStatus.paused);
+      expect(byId[_key(4)]!.status, AsmrDownloadTaskStatus.failed);
+      expect(byId[_key(4)]!.error, 'http 500');
     },
   );
 }

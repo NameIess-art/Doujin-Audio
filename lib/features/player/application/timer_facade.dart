@@ -161,6 +161,7 @@ final class TimerFacade {
         ? duration
         : const Duration(minutes: 30);
     _cancelTimerInternal();
+    _service.pausedByTimerSessionIds.clear();
     _service.timerMode = mode;
     _service.timerDuration = duration;
     _service.timerRemaining = duration;
@@ -168,6 +169,7 @@ final class TimerFacade {
     _service.timerActive = false;
     _service.timerWaitingForPlayback = mode == TimerMode.trigger;
     if (mode == TimerMode.trigger && _hasPlayingSession()) {
+      unawaited(saveSettings());
       startCountdown();
       return;
     }
@@ -849,7 +851,21 @@ final class TimerFacade {
           stackTrace: stackTrace,
         );
       }
-      if (!_isCurrentGeneration(generation)) return;
+      if (!_isCurrentGeneration(generation)) {
+        if (resumed) {
+          resumedSessionIds.add(session.id);
+        }
+        for (final sessionId in resumedSessionIds) {
+          final trackEndFade = _trackEndFades[sessionId];
+          _applySessionFadeMultiplier(
+            sessionId,
+            trackEndFade == null
+                ? _fadeMultiplier
+                : math.min(_fadeMultiplier, trackEndFade),
+          );
+        }
+        return;
+      }
       if (resumed) {
         resumedSessionIds.add(session.id);
         _service.pausedByTimerSessionIds.remove(session.id);

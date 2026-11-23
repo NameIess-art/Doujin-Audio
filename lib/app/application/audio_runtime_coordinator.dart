@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../../core/logging/app_log_service.dart';
 import '../../features/player/application/native_playback_bridge.dart';
 import 'app_runtime_lifecycle.dart';
 
@@ -48,6 +49,7 @@ final class AudioRuntimeCoordinator implements AppRuntimeLifecycle {
   Future<void>? _startFuture;
   Future<void>? _lifecycleFuture;
   bool? _lifecycleBackground;
+  bool? _pendingLifecycleBackground;
   bool _listenersStarted = false;
   bool _started = false;
   bool _disposed = false;
@@ -73,7 +75,21 @@ final class AudioRuntimeCoordinator implements AppRuntimeLifecycle {
       _progressSubscription = _progressUpdates.listen(_onProgress);
     }
     await _onStart();
-    if (!_disposed) _started = true;
+    if (_disposed) return;
+    _started = true;
+    final pendingBackground = _pendingLifecycleBackground;
+    _pendingLifecycleBackground = null;
+    if (pendingBackground != null) {
+      try {
+        await _queueLifecycle(background: pendingBackground);
+      } catch (error, stackTrace) {
+        AppLogService.warning(
+          'audio_runtime_deferred_lifecycle_failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+    }
   }
 
   @override
@@ -86,7 +102,11 @@ final class AudioRuntimeCoordinator implements AppRuntimeLifecycle {
   Future<void> resumeForeground() => _queueLifecycle(background: false);
 
   Future<void> _queueLifecycle({required bool background}) {
-    if (!_started || _disposed) return Future<void>.value();
+    if (_disposed) return Future<void>.value();
+    if (!_started) {
+      _pendingLifecycleBackground = background;
+      return Future<void>.value();
+    }
     final active = _lifecycleFuture;
     if (active != null && _lifecycleBackground == background) return active;
 
@@ -130,6 +150,7 @@ final class AudioRuntimeCoordinator implements AppRuntimeLifecycle {
   Future<void> _dispose() async {
     if (_disposed) return;
     _disposed = true;
+    _pendingLifecycleBackground = null;
     Object? firstError;
     StackTrace? firstStack;
     Future<void> attempt(AudioRuntimeAction action) async {

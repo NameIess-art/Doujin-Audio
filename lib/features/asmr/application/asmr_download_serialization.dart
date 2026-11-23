@@ -1,10 +1,497 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'dart:isolate';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
+
+import '../../../core/logging/app_log_service.dart';
+import '../../../core/persistence/app_preferences.dart';
 import '../domain/asmr_download.dart';
 import '../domain/asmr_models.dart';
 import 'asmr_download_models.dart';
 import 'asmr_download_internal_models.dart';
 import 'asmr_download_io.dart';
+
+const Duration _taskStructurePersistenceDebounce = Duration(milliseconds: 400);
+const Duration _taskProgressCheckpointInterval = Duration(seconds: 5);
+
+typedef AsmrDownloadProgressCheckpoint = ({
+  int downloadedBytes,
+  Map<String, int> fileDownloadedBytes,
+});
+
+typedef _ResumableFileMetadata = ({
+  Map<String, String> entityTags,
+  Map<String, String> outputPaths,
+});
+
+/// Composed persistence & durability coordinator for [AsmrDownloadTaskStore].
+/// Handles dedicated JSON file storage, atomic temp-file writes, one-time
+/// migration from [AppPreferences], and lightweight 5 s progress checkpoints.
+final class AsmrDownloadTaskPersistence {
+  AsmrDownloadTaskPersistence({
+    required bool persistTasks,
+    required bool persistenceReady,
+    required Iterable<AsmrDownloadTaskSnapshot> Function() currentTasks,
+    required PersistedDownloadTask Function(AsmrDownloadTaskSnapshot task)
+    persistenceSnapshot,
+    Future<void> Function(String? payload)? persistenceWriter,
+    Future<Directory> Function()? persistenceDirectoryProvider,
+    void Function()? onSnapshotCaptured,
+  }) : _persistTasks = persistTasks,
+       _persistenceReady = persistenceReady,
+       _currentTasks = currentTasks,
+       _persistenceSnapshot = persistenceSnapshot,
+       _persistenceWriter = persistenceWriter,
+       _persistenceDirectoryProvider = persistenceDirectoryProvider,
+       _onSnapshotCaptured = onSnapshotCaptured;
+
+  static const String tasksFileName = 'asmr_download_tasks.json';
+  static const String progressFileName = 'asmr_download_progress.json';
+
+  final bool _persistTasks;
+  final Iterable<AsmrDownloadTaskSnapshot> Function() _currentTasks;
+  final PersistedDownloadTask Function(AsmrDownloadTaskSnapshot task)
+  _persistenceSnapshot;
+  final Future<void> Function(String? payload)? _persistenceWriter;
+  final Future<Directory> Function()? _persistenceDirectoryProvider;
+  final void Function()? _onSnapshotCaptured;
+
+  Future<void> _persistenceTail = Future<void>.value();
+  Future<void>? _queuedPersistence;
+  Map<String, _ResumableFileMetadata> _committedFileMetadata = {};
+  Map<String, _ResumableFileMetadata>? _writingFileMetadata;
+  Timer? _deferredPersistenceTimer;
+  Timer? _progressCheckpointTimer;
+  bool _structuralDirty = false;
+  bool _progressDirty = false;
+  bool _hasWrittenFullFileSnapshot = false;
+  bool _directoryChecked = false;
+  Directory? _directory;
+  bool _persistenceReady;
+
+  Future<void> get pendingWrites => _persistenceTail;
+
+  void markReady({bool restoredFromFile = false}) {
+    _persistenceReady = true;
+    if (restoredFromFile) _hasWrittenFullFileSnapshot = true;
+  }
+
+  void restoreTaskMetadata(AsmrDownloadTaskSnapshot task) {
+    _committedFileMetadata[task.work.workKey] = _fileMetadata(task);
+  }
+
+  void removeTaskMetadata(String workId) {
+    _committedFileMetadata.remove(workId);
+    _writingFileMetadata?.remove(workId);
+  }
+
+  String? durableFileEntityTag(String workId, String relativePath) {
+    if (!_persistTasks) return null;
+    return _writingFileMetadata?[workId]?.entityTags[relativePath] ??
+        _committedFileMetadata[workId]?.entityTags[relativePath];
+  }
+
+  bool isFileEntityTagDurable(String workId, String relativePath, String? tag) {
+    if (!_persistTasks) return true;
+    final committed = _committedFileMetadata[workId];
+    final writing = _writingFileMetadata;
+    return committed != null &&
+        committed.entityTags[relativePath] == tag &&
+        (writing == null ||
+            (writing.containsKey(workId) &&
+                writing[workId]!.entityTags[relativePath] == tag));
+  }
+
+  bool isFileOutputPathDurable(
+    String workId,
+    String relativePath,
+    String outputPath,
+  ) {
+    if (!_persistTasks) return true;
+    final committed = _committedFileMetadata[workId];
+    final writing = _writingFileMetadata;
+    return committed != null &&
+        committed.outputPaths[relativePath] == outputPath &&
+        (writing == null ||
+            writing[workId]?.outputPaths[relativePath] == outputPath);
+  }
+
+  static _ResumableFileMetadata _fileMetadata(AsmrDownloadTaskSnapshot task) =>
+      (entityTags: task.fileEntityTags, outputPaths: task.actualOutputPaths);
+
+  Future<Directory?> _resolveDirectory() async {
+    if (_directoryChecked) return _directory;
+    final customProvider = _persistenceDirectoryProvider;
+    try {
+      _directory = await (customProvider ?? getApplicationSupportDirectory)();
+      _directoryChecked = true;
+      return _directory;
+    } on MissingPluginException {
+      _directoryChecked = true;
+      _directory = null;
+      return null;
+    } on FlutterError {
+      if (customProvider != null) rethrow;
+      _directoryChecked = true;
+      _directory = null;
+      return null;
+    }
+  }
+
+  Future<({List<PersistedDownloadTask> tasks, bool fromFile})>
+  restorePersistedTasks({
+    Future<String?> Function()? reader,
+    bool Function()? isDisposed,
+  }) async {
+    final String? raw;
+    String? progressPayload;
+    var migratedFromLegacy = false;
+    var fromFile = false;
+    if (reader != null) {
+      raw = await reader();
+    } else {
+      final dir = await _resolveDirectory();
+      if (dir != null) {
+        final tasksFile = File(path.join(dir.path, tasksFileName));
+        if (await tasksFile.exists()) {
+          raw = await tasksFile.readAsString();
+          fromFile = true;
+          final progressFile = File(path.join(dir.path, progressFileName));
+          if (await progressFile.exists()) {
+            try {
+              progressPayload = await progressFile.readAsString();
+            } catch (error, stackTrace) {
+              AppLogService.warning(
+                'asmr_download_progress_checkpoint_read_failed',
+                error: error,
+                stackTrace: stackTrace,
+              );
+            }
+          }
+        } else {
+          raw = await AppPreferences.getString(
+            AppPreferences.asmrDownloadTasksKey,
+            throwOnError: true,
+          );
+          migratedFromLegacy = raw != null && raw.isNotEmpty;
+        }
+      } else {
+        raw = await AppPreferences.getString(
+          AppPreferences.asmrDownloadTasksKey,
+          throwOnError: true,
+        );
+      }
+    }
+    if ((isDisposed?.call() ?? false) || raw == null || raw.isEmpty) {
+      return (tasks: const <PersistedDownloadTask>[], fromFile: fromFile);
+    }
+    final restored = await compute(decodePersistedDownloadTasks, raw);
+    if (isDisposed?.call() ?? false) {
+      return (tasks: const <PersistedDownloadTask>[], fromFile: fromFile);
+    }
+    if (restored.error != null) {
+      Error.throwWithStackTrace(restored.error!, restored.stackTrace!);
+    }
+    Map<String, AsmrDownloadProgressCheckpoint> progressOverlay = const {};
+    if (progressPayload != null && progressPayload.isNotEmpty) {
+      try {
+        progressOverlay = decodePersistedDownloadProgressCheckpoints(
+          progressPayload,
+        );
+      } catch (error, stackTrace) {
+        AppLogService.warning(
+          'asmr_download_progress_checkpoint_decode_failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+    }
+    if (migratedFromLegacy) {
+      final dir = await _resolveDirectory();
+      if (dir != null) {
+        await writeRawPersistedDownloadTasksFile(
+          filePath: path.join(dir.path, tasksFileName),
+          payload: raw,
+        );
+        _hasWrittenFullFileSnapshot = true;
+        fromFile = true;
+        await AppPreferences.remove(AppPreferences.asmrDownloadTasksKey);
+      }
+    }
+    final merged = restored.tasks
+        .map((snapshot) {
+          final overlay = progressOverlay[snapshot.task.work.workKey];
+          if (overlay == null) return snapshot;
+          return PersistedDownloadTask(
+            task: _applyProgressOverlay(snapshot.task, overlay),
+            createdOutputPaths: snapshot.createdOutputPaths,
+            createdJsonDocuments: snapshot.createdJsonDocuments,
+          );
+        })
+        .toList(growable: false);
+    return (tasks: merged, fromFile: fromFile);
+  }
+
+  static AsmrDownloadTaskSnapshot _applyProgressOverlay(
+    AsmrDownloadTaskSnapshot task,
+    AsmrDownloadProgressCheckpoint overlay,
+  ) {
+    final mergedFileBytes = Map<String, int>.from(task.fileDownloadedBytes);
+    for (final entry in overlay.fileDownloadedBytes.entries) {
+      final current = mergedFileBytes[entry.key] ?? 0;
+      if (entry.value > current) mergedFileBytes[entry.key] = entry.value;
+    }
+    var mergedBytes = overlay.downloadedBytes > task.downloadedBytes
+        ? overlay.downloadedBytes
+        : task.downloadedBytes;
+    if (task.totalBytes > 0 &&
+        !task.hasUnknownFileSizes &&
+        mergedBytes > task.totalBytes) {
+      mergedBytes = task.totalBytes;
+    }
+    return task.copyWith(
+      downloadedBytes: mergedBytes,
+      fileDownloadedBytes: mergedFileBytes,
+    );
+  }
+
+  void scheduleStructural() {
+    if (!_persistTasks) return;
+    _structuralDirty = true;
+    _progressDirty = true;
+    _progressCheckpointTimer?.cancel();
+    _progressCheckpointTimer = null;
+    _deferredPersistenceTimer ??= Timer(_taskStructurePersistenceDebounce, () {
+      _deferredPersistenceTimer = null;
+      persistNow();
+    });
+  }
+
+  void scheduleProgress() {
+    if (!_persistTasks) return;
+    _progressDirty = true;
+    if (_deferredPersistenceTimer != null) return;
+    _progressCheckpointTimer ??= Timer(_taskProgressCheckpointInterval, () {
+      _progressCheckpointTimer = null;
+      persistNow();
+    });
+  }
+
+  Future<void>? flushNow() {
+    cancelTimers();
+    _structuralDirty = true;
+    _progressDirty = true;
+    return persistNow();
+  }
+
+  Future<void> runStructuralForTesting() async {
+    _deferredPersistenceTimer?.cancel();
+    _deferredPersistenceTimer = null;
+    if (_progressDirty) _structuralDirty = true;
+    unawaited(persistNow());
+    await _persistenceTail;
+  }
+
+  Future<void> runProgressCheckpointForTesting() async {
+    _progressCheckpointTimer?.cancel();
+    _progressCheckpointTimer = null;
+    unawaited(persistNow());
+    await _persistenceTail;
+  }
+
+  void cancelTimers() {
+    _deferredPersistenceTimer?.cancel();
+    _deferredPersistenceTimer = null;
+    _progressCheckpointTimer?.cancel();
+    _progressCheckpointTimer = null;
+  }
+
+  Future<void>? persistNow() {
+    if (!_persistTasks ||
+        !_persistenceReady ||
+        (!_structuralDirty && !_progressDirty)) {
+      return null;
+    }
+    final queued = _queuedPersistence;
+    if (queued != null) return queued;
+    var attemptedFullWrite = false;
+    late final Future<void> write;
+    write = _persistenceTail.then((_) async {
+      _queuedPersistence = null;
+      final dir = _persistenceWriter == null ? await _resolveDirectory() : null;
+      final fullWrite =
+          _structuralDirty || dir == null || !_hasWrittenFullFileSnapshot;
+      attemptedFullWrite = fullWrite;
+      _structuralDirty = false;
+      _progressDirty = false;
+
+      if (dir != null && !fullWrite) {
+        final progress = <String, AsmrDownloadProgressCheckpoint>{
+          for (final task in _currentTasks())
+            if (task.status != AsmrDownloadTaskStatus.completed)
+              task.work.workKey: (
+                downloadedBytes: task.downloadedBytes,
+                fileDownloadedBytes: Map<String, int>.of(
+                  task.fileDownloadedBytes,
+                ),
+              ),
+        };
+        await writePersistedDownloadProgressFile(
+          progressFilePath: path.join(dir.path, progressFileName),
+          progress: progress,
+        );
+        return;
+      }
+
+      _onSnapshotCaptured?.call();
+      final tasks = _currentTasks()
+          .where((task) => task.status != AsmrDownloadTaskStatus.completed)
+          .map(_persistenceSnapshot)
+          .toList(growable: false);
+      final fileMetadata = {
+        for (final snapshot in tasks)
+          snapshot.task.work.workKey: _fileMetadata(snapshot.task),
+      };
+      _writingFileMetadata = fileMetadata;
+      try {
+        if (dir != null) {
+          await writePersistedDownloadTasksFile(
+            filePath: path.join(dir.path, tasksFileName),
+            progressFilePath: path.join(dir.path, progressFileName),
+            tasks: tasks,
+          );
+          _hasWrittenFullFileSnapshot = true;
+        } else {
+          final payload = tasks.isEmpty
+              ? null
+              : await compute(encodePersistedDownloadTasks, tasks);
+          await _writeLegacyOrInjected(payload);
+        }
+        _committedFileMetadata = fileMetadata;
+      } finally {
+        _writingFileMetadata = null;
+      }
+    });
+    _queuedPersistence = write;
+    _persistenceTail = write.then<void>(
+      (_) {},
+      onError: (Object error, StackTrace stackTrace) {
+        if (attemptedFullWrite) _structuralDirty = true;
+        _progressDirty = true;
+        AppLogService.warning(
+          'asmr_download_persist_failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      },
+    );
+    return write;
+  }
+
+  Future<void> _writeLegacyOrInjected(String? payload) async {
+    final writer = _persistenceWriter;
+    if (writer != null) {
+      await writer(payload);
+      return;
+    }
+    final saved = payload == null
+        ? await AppPreferences.remove(AppPreferences.asmrDownloadTasksKey)
+        : await AppPreferences.setString(
+            AppPreferences.asmrDownloadTasksKey,
+            payload,
+          );
+    if (!saved) throw StateError('asmr_download_persist_failed');
+  }
+}
+
+String encodePersistedDownloadProgressCheckpoints(
+  Map<String, AsmrDownloadProgressCheckpoint> progress,
+) => jsonEncode(<String, Object?>{
+  'version': 1,
+  'progress': <String, Object?>{
+    for (final entry in progress.entries)
+      entry.key: <String, Object?>{
+        'downloadedBytes': entry.value.downloadedBytes,
+        'fileDownloadedBytes': entry.value.fileDownloadedBytes,
+      },
+  },
+});
+
+Map<String, AsmrDownloadProgressCheckpoint>
+decodePersistedDownloadProgressCheckpoints(String payload) {
+  final decoded = jsonDecode(payload);
+  if (decoded is! Map || decoded['progress'] is! Map) {
+    throw const FormatException('Invalid download progress checkpoint record.');
+  }
+  final result = <String, AsmrDownloadProgressCheckpoint>{};
+  for (final entry in (decoded['progress'] as Map).entries) {
+    if (entry.key is! String || entry.value is! Map) continue;
+    final map = entry.value as Map;
+    result[entry.key as String] = (
+      downloadedBytes: _jsonInt(map['downloadedBytes']),
+      fileDownloadedBytes: _jsonIntMap(map['fileDownloadedBytes']),
+    );
+  }
+  return result;
+}
+
+Future<void> writePersistedDownloadTasksFile({
+  required String filePath,
+  required String progressFilePath,
+  required List<PersistedDownloadTask> tasks,
+}) => Isolate.run(() {
+  if (tasks.isEmpty) {
+    _deleteIfExistsSync(filePath);
+    _deleteIfExistsSync('$filePath.tmp');
+    _deleteIfExistsSync(progressFilePath);
+    _deleteIfExistsSync('$progressFilePath.tmp');
+    return;
+  }
+  final payload = encodePersistedDownloadTasks(tasks);
+  _writeFileAtomicallySync(filePath, payload);
+  _deleteIfExistsSync(progressFilePath);
+  _deleteIfExistsSync('$progressFilePath.tmp');
+});
+
+Future<void> writeRawPersistedDownloadTasksFile({
+  required String filePath,
+  required String payload,
+}) => Isolate.run(() {
+  _writeFileAtomicallySync(filePath, payload);
+});
+
+Future<void> writePersistedDownloadProgressFile({
+  required String progressFilePath,
+  required Map<String, AsmrDownloadProgressCheckpoint> progress,
+}) => Isolate.run(() {
+  if (progress.isEmpty) {
+    _deleteIfExistsSync(progressFilePath);
+    _deleteIfExistsSync('$progressFilePath.tmp');
+    return;
+  }
+  final payload = encodePersistedDownloadProgressCheckpoints(progress);
+  _writeFileAtomicallySync(progressFilePath, payload);
+});
+
+void _writeFileAtomicallySync(String filePath, String content) {
+  final target = File(filePath);
+  target.parent.createSync(recursive: true);
+  final temp = File('$filePath.tmp');
+  temp.writeAsStringSync(content, flush: true);
+  temp.renameSync(filePath);
+}
+
+void _deleteIfExistsSync(String filePath) {
+  final file = File(filePath);
+  if (file.existsSync()) {
+    file.deleteSync();
+  }
+}
 
 String encodePersistedDownloadTasks(List<PersistedDownloadTask> tasks) =>
     jsonEncode(<String, Object?>{
@@ -37,13 +524,17 @@ decodePersistedDownloadTasks(String payload) {
         taskJson.remove('fileEntityTags');
       }
       final restored = downloadTaskFromJson(taskJson);
+      final preserveFailed =
+          restored.task.status == AsmrDownloadTaskStatus.failed;
       tasks.add(
         PersistedDownloadTask(
           task: restored.task.copyWith(
-            status: AsmrDownloadTaskStatus.paused,
+            status: preserveFailed
+                ? AsmrDownloadTaskStatus.failed
+                : AsmrDownloadTaskStatus.paused,
             fileRetryAttempts: const {},
             manuallyRetryingFilePaths: const {},
-            message: 'paused',
+            message: preserveFailed ? restored.task.message : 'paused',
           ),
           createdOutputPaths: restored.createdOutputPaths,
           createdJsonDocuments: restored.createdJsonDocuments,
@@ -71,6 +562,7 @@ Map<String, Object?> downloadTaskToJson(
   'saveMetadata': task.saveMetadata,
   'saveCover': task.saveCover,
   'automaticFileRetryCount': task.automaticFileRetryCount,
+  'status': task.status.name,
   'totalFiles': task.totalFiles,
   'completedFiles': task.completedFiles,
   'skippedFiles': task.skippedFiles,
@@ -127,7 +619,15 @@ PersistedDownloadTask downloadTaskFromJson(Map<String, dynamic> json) {
         (json['automaticFileRetryCount'] as num?)?.toInt() ??
             kMaxAsmrDownloadRetryCount,
       ),
-      status: AsmrDownloadTaskStatus.paused,
+      status:
+          _enumByName(
+                AsmrDownloadTaskStatus.values,
+                json['status'],
+                AsmrDownloadTaskStatus.paused,
+              ) ==
+              AsmrDownloadTaskStatus.failed
+          ? AsmrDownloadTaskStatus.failed
+          : AsmrDownloadTaskStatus.paused,
       totalFiles: _jsonInt(json['totalFiles']),
       completedFiles: _jsonInt(json['completedFiles']),
       skippedFiles: _jsonInt(json['skippedFiles']),

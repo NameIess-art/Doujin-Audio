@@ -370,7 +370,9 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
     _entry = null;
     entry.remove();
     entry.dispose();
-    UiInteractionCoordinator.instance.endInteraction(_interactionSource);
+    // Matches showDockAwareMenu: release immediately when the menu is gone so
+    // selected actions are not delayed by an extra coordinator idleDelay tail.
+    UiInteractionCoordinator.instance.cancelInteraction(_interactionSource);
   }
 
   @override
@@ -426,6 +428,7 @@ class _UnifiedPopupOverlay<T> extends StatefulWidget {
 
 class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
   final _focusScope = FocusScopeNode();
+  final ValueNotifier<bool> _reversing = ValueNotifier<bool>(false);
   late CurvedAnimation _curved;
   CurvedAnimation? _scaleCurved;
   late Animation<double> _scale;
@@ -434,6 +437,7 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
   @override
   void initState() {
     super.initState();
+    _reversing.value = widget.animation.status == AnimationStatus.reverse;
     _bindAnimation();
     widget.animation.addStatusListener(_handleAnimationStatus);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -445,7 +449,10 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
   }
 
   void _handleAnimationStatus(AnimationStatus status) {
-    if (mounted) setState(() {});
+    final reversing = status == AnimationStatus.reverse;
+    if (_reversing.value != reversing) {
+      _reversing.value = reversing;
+    }
   }
 
   void _bindAnimation() {
@@ -484,6 +491,7 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
       _curved.dispose();
       _scaleCurved?.dispose();
       _bindAnimation();
+      _reversing.value = widget.animation.status == AnimationStatus.reverse;
       widget.animation.addStatusListener(_handleAnimationStatus);
     }
   }
@@ -491,6 +499,7 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
   @override
   void dispose() {
     widget.animation.removeStatusListener(_handleAnimationStatus);
+    _reversing.dispose();
     _curved.dispose();
     _scaleCurved?.dispose();
     _focusScope.dispose();
@@ -560,28 +569,27 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
                             layoutScale: widget.layoutScale,
                             child: FadeTransition(
                               opacity: _curved,
-                              child: ExcludeFocus(
-                                excluding:
-                                    widget.animation.status ==
-                                    AnimationStatus.reverse,
-                                child: ExcludeSemantics(
-                                  excluding:
-                                      widget.animation.status ==
-                                      AnimationStatus.reverse,
-                                  child: IgnorePointer(
-                                    ignoring:
-                                        widget.animation.status ==
-                                        AnimationStatus.reverse,
-                                    child: _UnifiedPopupMenuCard<T>(
-                                      entries: widget.entries,
-                                      fitContent: true,
-                                      suppressHover: !widget.hoverEnabled,
-                                      onSelected: widget.onSelected,
-                                      onTrailingSelected:
-                                          widget.onTrailingSelected,
-                                    ),
-                                  ),
+                              child: ValueListenableBuilder<bool>(
+                                valueListenable: _reversing,
+                                child: _UnifiedPopupMenuCard<T>(
+                                  entries: widget.entries,
+                                  fitContent: true,
+                                  suppressHover: !widget.hoverEnabled,
+                                  onSelected: widget.onSelected,
+                                  onTrailingSelected:
+                                      widget.onTrailingSelected,
                                 ),
+                                builder: (context, reversing, child) =>
+                                    ExcludeFocus(
+                                      excluding: reversing,
+                                      child: ExcludeSemantics(
+                                        excluding: reversing,
+                                        child: IgnorePointer(
+                                          ignoring: reversing,
+                                          child: child,
+                                        ),
+                                      ),
+                                    ),
                               ),
                             ),
                           ),
@@ -701,38 +709,27 @@ class _UnifiedPopupMenuCard<T> extends StatelessWidget {
         blurSigma: 10,
         backgroundColor: background,
         borderRadius: BorderRadius.circular(tokens.radiusSection),
-        child: DecoratedBox(
-          position: DecorationPosition.foreground,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(tokens.radiusSection),
-            border: Border.all(
-              color: cs.outlineVariant.withValues(
-                alpha: tokens.standardBorderAlpha,
-              ),
-            ),
+        child: ScrollConfiguration(
+          // Page overscroll effects would stretch the menu's hit bounds.
+          behavior: ScrollConfiguration.of(context).copyWith(
+            overscroll: false,
+            physics: const ClampingScrollPhysics(),
           ),
-          child: ScrollConfiguration(
-            // Page overscroll effects would stretch the menu's hit bounds.
-            behavior: ScrollConfiguration.of(context).copyWith(
-              overscroll: false,
-              physics: const ClampingScrollPhysics(),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final entry in entries)
+                  _UnifiedPopupMenuRow<T>(
+                    entry: entry,
+                    reserveIconSpace: reserveIconSpace,
+                    suppressHover: suppressHover,
+                    onSelected: onSelected,
+                    onTrailingSelected: onTrailingSelected,
+                  ),
+              ],
             ),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (final entry in entries)
-                    _UnifiedPopupMenuRow<T>(
-                      entry: entry,
-                      reserveIconSpace: reserveIconSpace,
-                      suppressHover: suppressHover,
-                      onSelected: onSelected,
-                      onTrailingSelected: onTrailingSelected,
-                    ),
-                ],
-              ),
-            ).withWindowsSmoothScroll(),
-          ),
+          ).withWindowsSmoothScroll(),
         ),
       ),
     );

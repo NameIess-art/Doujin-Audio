@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -32,7 +33,7 @@ Future<void> _runWindowCommand(
 
 /// Moves the window like the caption when its area is dragged. Place it behind
 /// interactive content so only otherwise unhandled space receives the input.
-class WindowsWindowDragArea extends StatelessWidget {
+class WindowsWindowDragArea extends StatefulWidget {
   const WindowsWindowDragArea({
     super.key,
     required this.child,
@@ -43,28 +44,94 @@ class WindowsWindowDragArea extends StatelessWidget {
   final Future<void> Function(WindowsWindowCommand)? runCommand;
 
   @override
+  State<WindowsWindowDragArea> createState() => _WindowsWindowDragAreaState();
+}
+
+class _WindowsWindowDragAreaState extends State<WindowsWindowDragArea> {
+  static const double _mouseDragSlop = 1.0;
+
+  int? _activePointer;
+  Offset _downPosition = Offset.zero;
+  bool _dragStarted = false;
+  Duration? _lastPrimaryDownTime;
+  Offset? _lastPrimaryDownPosition;
+
+  void _handlePointerDown(
+    PointerDownEvent event,
+    Future<void> Function(WindowsWindowCommand) commandRunner,
+  ) {
+    if (event.kind == PointerDeviceKind.mouse &&
+        event.buttons != kPrimaryMouseButton) {
+      return;
+    }
+    final previousTime = _lastPrimaryDownTime;
+    final previousPosition = _lastPrimaryDownPosition;
+    if (previousTime != null && previousPosition != null) {
+      final elapsed = event.timeStamp - previousTime;
+      final distance = (event.position - previousPosition).distance;
+      if (elapsed >= Duration.zero &&
+          elapsed <= kDoubleTapTimeout &&
+          distance <= kDoubleTapSlop) {
+        _lastPrimaryDownTime = null;
+        _lastPrimaryDownPosition = null;
+        _activePointer = null;
+        _dragStarted = false;
+        unawaited(
+          _runWindowCommand(commandRunner, WindowsWindowCommand.toggleMaximized),
+        );
+        return;
+      }
+    }
+    _activePointer = event.pointer;
+    _downPosition = event.position;
+    _dragStarted = false;
+    _lastPrimaryDownTime = event.timeStamp;
+    _lastPrimaryDownPosition = event.position;
+  }
+
+  void _handlePointerMove(
+    PointerMoveEvent event,
+    Future<void> Function(WindowsWindowCommand) commandRunner,
+  ) {
+    if (event.pointer != _activePointer || _dragStarted) return;
+    final slop = event.kind == PointerDeviceKind.touch
+        ? kTouchSlop
+        : _mouseDragSlop;
+    if ((event.position - _downPosition).distance < slop) return;
+    _dragStarted = true;
+    _lastPrimaryDownTime = null;
+    _lastPrimaryDownPosition = null;
+    unawaited(_runWindowCommand(commandRunner, WindowsWindowCommand.drag));
+  }
+
+  void _handlePointerEnd(int pointer) {
+    if (pointer != _activePointer) return;
+    _activePointer = null;
+    _dragStarted = false;
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final overrideCommand = runCommand;
+    final overrideCommand = widget.runCommand;
     if (overrideCommand != null) {
-      return _buildGesture(overrideCommand);
+      return _buildListener(overrideCommand);
     }
     return Consumer(
       builder: (context, ref, _) =>
-          _buildGesture(ref.watch(windowsWindowControlsProvider).runCommand),
+          _buildListener(ref.watch(windowsWindowControlsProvider).runCommand),
     );
   }
 
-  Widget _buildGesture(
+  Widget _buildListener(
     Future<void> Function(WindowsWindowCommand) commandRunner,
   ) {
-    return GestureDetector(
+    return Listener(
       behavior: HitTestBehavior.opaque,
-      onPanStart: (_) =>
-          unawaited(_runWindowCommand(commandRunner, WindowsWindowCommand.drag)),
-      onDoubleTap: () => unawaited(
-        _runWindowCommand(commandRunner, WindowsWindowCommand.toggleMaximized),
-      ),
-      child: child,
+      onPointerDown: (event) => _handlePointerDown(event, commandRunner),
+      onPointerMove: (event) => _handlePointerMove(event, commandRunner),
+      onPointerUp: (event) => _handlePointerEnd(event.pointer),
+      onPointerCancel: (event) => _handlePointerEnd(event.pointer),
+      child: widget.child,
     );
   }
 }

@@ -78,13 +78,15 @@ class AsmrDownloadTransferExecutor {
 
   Future<T> waitForExternal<T>(
     String workId,
-    Future<T> Function() operation,
-  ) async {
+    Future<T> Function() operation, {
+    void Function()? onCancel,
+  }) async {
     throwIfCancelled(workId);
     final token = _cancellationTokenFor(workId);
     final interrupted = Completer<T>();
     // Shared clients outlive this task; interrupt its wait without closing them.
     final removeListener = token.addListener(() {
+      onCancel?.call();
       if (!interrupted.isCompleted) {
         interrupted.completeError(const DownloadCancelled());
       }
@@ -174,6 +176,9 @@ class AsmrDownloadTransferExecutor {
           if (exists) {
             continue;
           }
+          _store.reconcileLiveFileProgress(workId, item.relativePath, 0);
+          progress.downloadedBytes =
+              _store.liveDownloadedBytes(workId) ?? progress.downloadedBytes;
           progress.completedFilePaths.remove(item.relativePath);
           progress.fileDownloadedBytes.remove(item.relativePath);
           if (progress.completed > 0) progress.completed--;
@@ -265,7 +270,7 @@ class AsmrDownloadTransferExecutor {
           failedFilePaths: progress.failedFilePaths,
           manuallyRetryingFilePaths: progress.manuallyRetryingFilePaths,
         );
-        _store.notifyProgressChanged(workId);
+        _store.notifyTaskChanged(changedWorkIds: <String>{workId});
       }
 
       late void Function() pumpTransfers;

@@ -22,17 +22,20 @@ class WindowsHorizontalWheelScroll extends StatefulWidget {
 
 class _WindowsHorizontalWheelScrollState
     extends State<WindowsHorizontalWheelScroll> {
-  final ScrollController _ownedController = WindowsSmoothScrollController();
+  ScrollController? _ownedController;
+
+  ScrollController get _controller =>
+      widget.controller ?? (_ownedController ??= WindowsSmoothScrollController());
 
   @override
   void dispose() {
-    _ownedController.dispose();
+    _ownedController?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final controller = widget.controller ?? _ownedController;
+    final controller = _controller;
     if (defaultTargetPlatform != TargetPlatform.windows) {
       return widget.builder(controller);
     }

@@ -577,6 +577,81 @@ void main() {
     one.searchError = const FormatException('ONE unavailable');
     expect(await find('RJ01741028'), same(japaneseOnly));
   });
+
+  test(
+    'secondary Japanese catalog cools down after consecutive timeouts and skips retries',
+    () async {
+      var now = DateTime(2026, 1, 1, 12);
+      final one = _OneApi({
+        1: [_work(1)],
+      });
+      final jp = _JapaneseApi({
+        1: [_work(2, japanese: true)],
+      })..beforeResponse = () => Completer<void>().future;
+      addTearDown(one.close);
+      addTearDown(jp.close);
+      final service = AsmrRemoteCatalogService(
+        apiService: one,
+        japaneseApiService: jp,
+        persistenceRepository: _EmptyRepository(),
+        now: () => now,
+        secondaryJapaneseTimeout: const Duration(milliseconds: 20),
+      );
+
+      final first =
+          await _page(service, 1, AsmrCatalogCursor()) as AsmrMergedWorkPage;
+      expect(first.works.map((w) => w.id), [1]);
+      expect(first.partialError?.sources, [AsmrCatalogSource.japaneseAsmr]);
+      expect(jp.calls, [1]);
+
+      final second =
+          await _page(service, 1, AsmrCatalogCursor()) as AsmrMergedWorkPage;
+      expect(second.partialError?.sources, [AsmrCatalogSource.japaneseAsmr]);
+      expect(jp.calls, [1, 1]);
+
+      // Third call within 60 s cooldown must skip Japanese API immediately.
+      jp.beforeResponse = null;
+      final cooled =
+          await _page(service, 1, AsmrCatalogCursor()) as AsmrMergedWorkPage;
+      expect(cooled.works.map((w) => w.id), [1]);
+      expect(cooled.partialError?.sources, [AsmrCatalogSource.japaneseAsmr]);
+      expect(jp.calls, [1, 1]);
+
+      // After 60 s cooldown expires, Japanese API is queried again.
+      now = now.add(const Duration(seconds: 61));
+      final recovered =
+          await _page(service, 1, AsmrCatalogCursor()) as AsmrMergedWorkPage;
+      expect(recovered.partialError, isNull);
+      expect(recovered.works, hasLength(2));
+      expect(jp.calls, [1, 1, 1]);
+    },
+  );
+
+  test(
+    'recommendation interest recall skips secondary Japanese fan-out',
+    () async {
+      final one = _OneApi({
+        1: [_work(1)],
+      });
+      final jp = _JapaneseApi({
+        1: [_work(2, japanese: true)],
+      });
+      final service = _catalog(one, jp);
+      service.tagWeights = () => {'sleep': 1.0, 'whisper': 0.8};
+      service.voiceActorWeights = () => {'va_a': 1.0};
+      service.circleWeights = () => {'circle_a': 1.0};
+      await service.loadRecommendations(
+        searchQuery: '',
+        language: AsmrContentLanguage.zh,
+        token: null,
+        favoriteWorks: const [],
+        historyWorks: const [],
+        refreshSeed: 1,
+      );
+      expect(jp.queries.every((q) => q.$1.isEmpty), isTrue);
+      expect(jp.calls, [1]);
+    },
+  );
 }
 
 AsmrRemoteCatalogService _catalog(_OneApi one, _JapaneseApi jp) {

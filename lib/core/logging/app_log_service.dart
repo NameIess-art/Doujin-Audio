@@ -78,7 +78,7 @@ abstract final class AppLogService {
 
       final logFile = File(path.join(logDir.path, _logFileName));
       _bytesSinceRotation = await _rotateIfNeeded(logFile);
-      final sink = logFile.openWrite(mode: FileMode.append);
+      final sink = _openSink(logFile);
       _sink = sink;
       _drainPendingWrites(sink);
       _write('INFO', 'logging_started directory=${logDir.path}');
@@ -209,8 +209,26 @@ abstract final class AppLogService {
     _writeLine(sink, line);
     if (_bytesSinceRotation > _maxLogBytes && !_rotationScheduled) {
       _rotationScheduled = true;
-      _rotationTask = _rotationTask.then((_) => _rotateRuntime());
+      _rotationTask = _rotationTask
+          .then((_) => _rotateRuntime())
+          .catchError((Object error, StackTrace stackTrace) {
+            _previousDebugPrint?.call(
+              'AppLogService rotation task failed: $error\n$stackTrace',
+            );
+          });
     }
+  }
+
+  static IOSink _openSink(File logFile) {
+    final sink = logFile.openWrite(mode: FileMode.append);
+    unawaited(
+      sink.done.catchError((Object error, StackTrace stackTrace) {
+        _previousDebugPrint?.call(
+          'AppLogService sink error: $error\n$stackTrace',
+        );
+      }),
+    );
+    return sink;
   }
 
   static void _writeLine(IOSink sink, String line) {
@@ -226,10 +244,15 @@ abstract final class AppLogService {
       final logFile = File(path.join(directory, _logFileName));
       final sink = _sink;
       _sink = null;
-      await sink?.flush();
-      await sink?.close();
+      if (sink != null) {
+        try {
+          await sink.flush();
+        } finally {
+          await sink.close();
+        }
+      }
       final existingBytes = await _rotateIfNeeded(logFile);
-      final nextSink = logFile.openWrite(mode: FileMode.append);
+      final nextSink = _openSink(logFile);
       _bytesSinceRotation = existingBytes;
       _sink = nextSink;
       _drainPendingWrites(nextSink);
@@ -238,9 +261,18 @@ abstract final class AppLogService {
         'AppLogService runtime rotation failed: $error\n$stackTrace',
       );
       if (_sink == null && _logDirectoryPath != null) {
-        final logFile = File(path.join(_logDirectoryPath!, _logFileName));
-        _bytesSinceRotation = 0;
-        _sink = logFile.openWrite(mode: FileMode.append);
+        try {
+          final logFile = File(path.join(_logDirectoryPath!, _logFileName));
+          final recoveredSink = _openSink(logFile);
+          _bytesSinceRotation = 0;
+          _sink = recoveredSink;
+          _drainPendingWrites(recoveredSink);
+        } catch (reopenError, reopenStackTrace) {
+          _previousDebugPrint?.call(
+            'AppLogService reopen after rotation failure failed: '
+            '$reopenError\n$reopenStackTrace',
+          );
+        }
       }
     } finally {
       _rotationScheduled = false;
@@ -344,13 +376,43 @@ abstract final class AppLogService {
     _write(level, details.toString());
   }
 
+  static Future<void> flush() async {
+    try {
+      await _initializing;
+      await _rotationTask;
+      final sink = _sink;
+      if (sink != null) {
+        await sink.flush();
+      }
+    } catch (error, stackTrace) {
+      _previousDebugPrint?.call(
+        'AppLogService.flush failed: $error\n$stackTrace',
+      );
+    }
+  }
+
   static Future<void> dispose() async {
     await _initializing;
     await _rotationTask;
     final sink = _sink;
     _sink = null;
-    await sink?.flush();
-    await sink?.close();
+    if (sink != null) {
+      try {
+        await sink.flush();
+      } catch (error, stackTrace) {
+        _previousDebugPrint?.call(
+          'AppLogService.dispose flush failed: $error\n$stackTrace',
+        );
+      } finally {
+        try {
+          await sink.close();
+        } catch (error, stackTrace) {
+          _previousDebugPrint?.call(
+            'AppLogService.dispose close failed: $error\n$stackTrace',
+          );
+        }
+      }
+    }
   }
 
   @visibleForTesting

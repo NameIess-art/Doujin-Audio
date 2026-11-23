@@ -91,10 +91,12 @@ class SubtitleSettingsNotifier extends Notifier<SubtitleSettingsState>
 
   late final Future<SubtitleSettingsState> Function() _loadState;
   int _loadRevision = 0;
+  int _persistenceGeneration = 0;
   bool _disposed = false;
   bool _editingAppearance = false;
   final Map<String, String?> _pendingAppearanceWrites = {};
-  Future<void> _appearancePersistence = Future<void>.value();
+  Future<void>? _appearancePersistence;
+  Future<void>? _listPersistence;
   SubtitleSettingsState? _standaloneState;
   final StreamController<SubtitleSettingsState> _streamController =
       StreamController<SubtitleSettingsState>.broadcast();
@@ -139,10 +141,10 @@ class SubtitleSettingsNotifier extends Notifier<SubtitleSettingsState>
     return initial;
   }
 
-  Future<void> _load() async {
-    final revision = _loadRevision;
+  Future<void> _load({int? revision}) async {
+    final targetRevision = revision ?? _loadRevision;
     final loaded = await _loadState();
-    if (_disposed || revision != _loadRevision) return;
+    if (_disposed || targetRevision != _loadRevision) return;
     state = loaded;
   }
 
@@ -220,10 +222,20 @@ class SubtitleSettingsNotifier extends Notifier<SubtitleSettingsState>
 
   @override
   Future<void> reloadPersistedState() {
+    _persistenceGeneration++;
     _pendingAppearanceWrites.clear();
     _editingAppearance = false;
-    _loadRevision++;
-    return _load();
+    final revision = ++_loadRevision;
+    final pendingAppearance = _appearancePersistence;
+    final pendingList = _listPersistence;
+    if (pendingAppearance == null && pendingList == null) {
+      return _load(revision: revision);
+    }
+    return () async {
+      await Future.wait<void>([?pendingAppearance, ?pendingList]);
+      if (_disposed || revision != _loadRevision) return;
+      await _load(revision: revision);
+    }();
   }
 
   void beginAppearanceEdit() => _editingAppearance = true;
@@ -233,33 +245,74 @@ class SubtitleSettingsNotifier extends Notifier<SubtitleSettingsState>
     return flushAppearancePersistence();
   }
 
+  Future<void> flushPendingWrites() async {
+    final appearance = flushAppearancePersistence();
+    final lists = _listPersistence;
+    await Future.wait<void>([appearance, ?lists]);
+  }
+
   Future<void> flushAppearancePersistence() {
-    if (_pendingAppearanceWrites.isEmpty) return _appearancePersistence;
+    if (_pendingAppearanceWrites.isEmpty) {
+      return _appearancePersistence ?? Future<void>.value();
+    }
+    final generation = _persistenceGeneration;
+    final previous = _appearancePersistence ?? Future<void>.value();
     // Keep failed values for retry, without overwriting newer live edits.
-    return _appearancePersistence = _appearancePersistence.then((_) async {
-      final pending = Map<String, String?>.of(_pendingAppearanceWrites);
-      var failed = false;
-      for (final entry in pending.entries) {
-        final value = entry.value;
-        final saved = value == null
-            ? await AppPreferences.remove(entry.key)
-            : await AppPreferences.setString(entry.key, value);
-        failed = failed || !saved;
-        if (saved &&
-            _pendingAppearanceWrites.containsKey(entry.key) &&
-            _pendingAppearanceWrites[entry.key] == value) {
-          _pendingAppearanceWrites.remove(entry.key);
-        }
-      }
-      if (!_disposed && state.appearanceSaveFailed != failed) {
-        state = state.copyWith(appearanceSaveFailed: failed);
-      }
-    });
+    late final Future<void> next;
+    next = previous
+        .then((_) async {
+          if (generation != _persistenceGeneration) return;
+          final pending = Map<String, String?>.of(_pendingAppearanceWrites);
+          var failed = false;
+          for (final entry in pending.entries) {
+            if (generation != _persistenceGeneration) return;
+            final value = entry.value;
+            final saved = value == null
+                ? await AppPreferences.remove(entry.key)
+                : await AppPreferences.setString(entry.key, value);
+            if (generation != _persistenceGeneration) return;
+            failed = failed || !saved;
+            if (saved &&
+                _pendingAppearanceWrites.containsKey(entry.key) &&
+                _pendingAppearanceWrites[entry.key] == value) {
+              _pendingAppearanceWrites.remove(entry.key);
+            }
+          }
+          if (!_disposed &&
+              generation == _persistenceGeneration &&
+              state.appearanceSaveFailed != failed) {
+            state = state.copyWith(appearanceSaveFailed: failed);
+          }
+        })
+        .whenComplete(() {
+          if (identical(_appearancePersistence, next)) {
+            _appearancePersistence = null;
+          }
+        });
+    return _appearancePersistence = next;
   }
 
   void _persistAppearance(String key, String? value) {
     _pendingAppearanceWrites[key] = value;
     if (!_editingAppearance) unawaited(flushAppearancePersistence());
+  }
+
+  void _persistStringList(String key, List<String> value) {
+    final generation = _persistenceGeneration;
+    final snapshot = List<String>.unmodifiable(value);
+    final previous = _listPersistence ?? Future<void>.value();
+    late final Future<void> next;
+    next = previous
+        .then((_) async {
+          if (generation != _persistenceGeneration) return;
+          await AppPreferences.setStringList(key, snapshot);
+        })
+        .whenComplete(() {
+          if (identical(_listPersistence, next)) {
+            _listPersistence = null;
+          }
+        });
+    _listPersistence = next;
   }
 
   void _invalidatePendingLoad() {
@@ -295,20 +348,20 @@ class SubtitleSettingsNotifier extends Notifier<SubtitleSettingsState>
     final strList = newShowMap.entries
         .map((e) => '${e.key}|${e.value}')
         .toList();
-    AppPreferences.setStringList('subtitle_show_map', strList);
+    _persistStringList('subtitle_show_map', strList);
 
     if (newGlobalMap != null) {
       final globalList = newGlobalMap.entries
           .map((e) => '${e.key}|${e.value}')
           .toList();
-      AppPreferences.setStringList('subtitle_global_map', globalList);
+      _persistStringList('subtitle_global_map', globalList);
     }
 
     if (next) {
       final posList = newPositions.entries
           .map((e) => '${e.key}|${e.value}')
           .toList();
-      AppPreferences.setStringList('subtitle_positions', posList);
+      _persistStringList('subtitle_positions', posList);
     }
   }
 
@@ -330,7 +383,7 @@ class SubtitleSettingsNotifier extends Notifier<SubtitleSettingsState>
     state = state.copyWith(globalSubtitlesMap: newMap);
 
     final strList = newMap.entries.map((e) => '${e.key}|${e.value}').toList();
-    AppPreferences.setStringList('subtitle_global_map', strList);
+    _persistStringList('subtitle_global_map', strList);
   }
 
   void resetForSession(String sessionId) {
@@ -347,12 +400,12 @@ class SubtitleSettingsNotifier extends Notifier<SubtitleSettingsState>
     final showList = newShowMap.entries
         .map((e) => '${e.key}|${e.value}')
         .toList();
-    AppPreferences.setStringList('subtitle_show_map', showList);
+    _persistStringList('subtitle_show_map', showList);
 
     final globalList = newGlobalMap.entries
         .map((e) => '${e.key}|${e.value}')
         .toList();
-    AppPreferences.setStringList('subtitle_global_map', globalList);
+    _persistStringList('subtitle_global_map', globalList);
   }
 
   void turnOffAllSubtitles(Iterable<String> activeSessionIds) {
@@ -369,13 +422,13 @@ class SubtitleSettingsNotifier extends Notifier<SubtitleSettingsState>
       showSubtitlesMap: showSubtitlesMap,
       globalSubtitlesMap: const <String, bool>{},
     );
-    AppPreferences.setStringList(
+    _persistStringList(
       'subtitle_show_map',
       showSubtitlesMap.entries
           .map((entry) => '${entry.key}|${entry.value}')
           .toList(),
     );
-    AppPreferences.setStringList('subtitle_global_map', const <String>[]);
+    _persistStringList('subtitle_global_map', const <String>[]);
   }
 
   void updatePosition(String sessionId, double y) {
@@ -385,7 +438,7 @@ class SubtitleSettingsNotifier extends Notifier<SubtitleSettingsState>
     state = state.copyWith(positions: newPos);
 
     final strList = newPos.entries.map((e) => '${e.key}|${e.value}').toList();
-    AppPreferences.setStringList('subtitle_positions', strList);
+    _persistStringList('subtitle_positions', strList);
   }
 
   void setFontFamily(String fontFamily) {

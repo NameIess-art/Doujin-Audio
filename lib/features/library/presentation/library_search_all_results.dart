@@ -9,7 +9,6 @@ import '../../../app/presentation/screen_view_models.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/media/search_query_utils.dart';
-import '../../../core/media/time_text_formatters.dart';
 import '../../player/presentation/playback_providers.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/widgets/app_buttons.dart';
@@ -43,7 +42,7 @@ class LibrarySearchAllResults extends ConsumerStatefulWidget {
     required this.onEnterSelectionMode,
     required this.onToggleSelection,
     required this.onTreeChanged,
-    this.onFiltersChanged,
+    this.searchIndex,
     this.onClearFilters,
     this.onEditSearch,
   });
@@ -61,7 +60,7 @@ class LibrarySearchAllResults extends ConsumerStatefulWidget {
   final ValueChanged<LibraryNode> onEnterSelectionMode;
   final ValueChanged<LibraryNode> onToggleSelection;
   final ValueChanged<List<LibraryNode>> onTreeChanged;
-  final ValueChanged<SearchFilters>? onFiltersChanged;
+  final LibrarySearchIndex? searchIndex;
   final VoidCallback? onClearFilters;
   final VoidCallback? onEditSearch;
 
@@ -76,12 +75,31 @@ class _LibrarySearchAllResultsState
     extends ConsumerState<LibrarySearchAllResults> {
   late final _searchCommitKey = 'library_search_page_${identityHashCode(this)}';
 
-  final _searchIndex = LibrarySearchIndex();
+  LibrarySearchIndex? _ownedSearchIndex;
+  LibrarySearchIndex get _searchIndex =>
+      widget.searchIndex ?? (_ownedSearchIndex ??= LibrarySearchIndex());
+  Listenable? _observedSubtitleService;
   FilteredLibraryTreeResult? _visibleSearchResult;
   _SearchKey? _visibleSearchKey;
   ({_SearchKey key, Object token})? _pendingSearch;
   Object? _visibleSearchError;
   _SearchKey? _visibleSearchErrorKey;
+
+  void _handleSubtitlesChanged() {
+    _searchIndex.invalidateSubtitleCache();
+    if (widget.filters.hasSubtitle != null && mounted) {
+      _visibleSearchKey = null;
+      _pendingSearch = null;
+      setState(() {});
+    }
+  }
+
+  void _observeSubtitleService(Listenable subtitles) {
+    if (identical(_observedSubtitleService, subtitles)) return;
+    _observedSubtitleService?.removeListener(_handleSubtitlesChanged);
+    _observedSubtitleService = subtitles;
+    subtitles.addListener(_handleSubtitlesChanged);
+  }
 
   _SearchKey get _searchKey => (
     widget.structureRevision,
@@ -146,7 +164,9 @@ class _LibrarySearchAllResultsState
   @override
   void dispose() {
     UiInteractionCoordinator.instance.cancelCommit(_searchCommitKey);
-    _searchIndex.dispose();
+    _observedSubtitleService?.removeListener(_handleSubtitlesChanged);
+    _observedSubtitleService = null;
+    _ownedSearchIndex?.dispose();
     super.dispose();
   }
 
@@ -194,6 +214,9 @@ class _LibrarySearchAllResultsState
       final subtitles = hasSubtitle == null
           ? null
           : ref.read(playbackSubtitleServiceProvider);
+      if (subtitles != null) {
+        _observeSubtitleService(subtitles);
+      }
       late final AudioLibraryCategorySnapshot effectiveCategorySnapshot;
       if (categorySnapshot != null) {
         effectiveCategorySnapshot = categorySnapshot;
@@ -212,24 +235,29 @@ class _LibrarySearchAllResultsState
           }),
       ], eagerError: true);
       if (!isCurrentRequest()) return null;
-      final result =
-          cached ??
-          (libraryTreeTrackCount(tree) > 200
-              ? await _searchIndex.searchInBackground(
-                  tree: tree,
-                  query: query,
-                  filters: filters,
-                  structureRevision: structureRevision,
-                  detailRevision: detailRevision,
-                  categorySnapshot: effectiveCategorySnapshot,
-                )
-              : _searchIndex.resolve(
-                  tree: tree,
-                  query: query,
-                  filters: filters,
-                  structureRevision: structureRevision,
-                  categorySnapshot: effectiveCategorySnapshot,
-                ));
+      var yielded = false;
+      final FilteredLibraryTreeResult result;
+      if (cached != null) {
+        result = cached;
+      } else if (libraryTreeTrackCount(tree) > 60) {
+        yielded = true;
+        result = await _searchIndex.searchInBackground(
+          tree: tree,
+          query: query,
+          filters: filters,
+          structureRevision: structureRevision,
+          detailRevision: detailRevision,
+          categorySnapshot: effectiveCategorySnapshot,
+        );
+      } else {
+        result = _searchIndex.resolve(
+          tree: tree,
+          query: query,
+          filters: filters,
+          structureRevision: structureRevision,
+          categorySnapshot: effectiveCategorySnapshot,
+        );
+      }
       if (!isCurrentRequest()) return null;
       if (cached == null) {
         _searchIndex.storeResult(
@@ -241,12 +269,22 @@ class _LibrarySearchAllResultsState
         );
       }
       if (subtitles != null && hasSubtitle != null) {
+        if (!yielded) {
+          await Future<void>.delayed(Duration.zero);
+          if (!isCurrentRequest()) return null;
+        }
         return result.filterSubtitles(
           snapshot: effectiveCategorySnapshot,
           hasSubtitle: hasSubtitle,
           isActive: isCurrentRequest,
           checkTrack: (path) =>
               subtitles.hasLocalSubtitleFile(path, includeImported: true),
+          workSubtitleCache: _searchIndex.workSubtitleCacheForRevision(
+            structureRevision,
+          ),
+          trackSubtitleCache: _searchIndex.trackSubtitleCacheForRevision(
+            structureRevision,
+          ),
         );
       }
       return result;
@@ -361,7 +399,6 @@ class _LibrarySearchAllResultsState
     final tree = result?.tree;
     if (tree != null) widget.onTreeChanged(tree);
     final hasActiveFilters = widget.filters != emptySearchFilters;
-    final listTopPadding = hasActiveFilters ? 4.0 : topPadding;
     final Widget content;
     if (tree == null && hasCurrentError) {
       content = AppErrorState(
@@ -379,7 +416,7 @@ class _LibrarySearchAllResultsState
           widget.onEditSearch != null;
       content = Center(
         child: Padding(
-          padding: EdgeInsets.only(top: hasActiveFilters ? 0 : topPadding),
+          padding: EdgeInsets.only(top: topPadding),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -487,7 +524,7 @@ class _LibrarySearchAllResultsState
               controller: widget.scrollController,
               padding: EdgeInsets.fromLTRB(
                 LibraryLikeCardMetrics.listHorizontalPadding,
-                listTopPadding,
+                topPadding,
                 LibraryLikeCardMetrics.listHorizontalPadding,
                 AppSearchPageScaffold.contentBottomInset(context),
               ),
@@ -534,27 +571,6 @@ class _LibrarySearchAllResultsState
         ),
       );
     }
-    final resolvedContent = hasActiveFilters
-        ? Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: EdgeInsets.fromLTRB(
-                  LibraryLikeCardMetrics.listHorizontalPadding,
-                  topPadding,
-                  LibraryLikeCardMetrics.listHorizontalPadding,
-                  4,
-                ),
-                child: _ActiveSearchFiltersSummary(
-                  filters: widget.filters,
-                  translate: i18n.tr,
-                  onFiltersChanged: widget.onFiltersChanged,
-                ),
-              ),
-              Expanded(child: content),
-            ],
-          )
-        : content;
     return NotificationListener<ScrollMetricsNotification>(
       onNotification: (_) {
         ref.read(libraryCoverUiControllerProvider).viewportChanged();
@@ -566,124 +582,8 @@ class _LibrarySearchAllResultsState
           bottomInset: 16,
           topInset: topPadding,
         ),
-        content: resolvedContent,
+        content: content,
       ),
-    );
-  }
-}
-
-class _ActiveSearchFiltersSummary extends StatelessWidget {
-  const _ActiveSearchFiltersSummary({
-    required this.filters,
-    required this.translate,
-    required this.onFiltersChanged,
-  });
-
-  final SearchFilters filters;
-  final String Function(String key, [Map<String, Object?> params]) translate;
-  final ValueChanged<SearchFilters>? onFiltersChanged;
-
-  SearchFilters _copyFilters({
-    (bool?,)? hasSubtitle,
-    (double?,)? minimumRating,
-    (Duration?,)? minimumDuration,
-    (Duration?,)? maximumDuration,
-    (DateTime?,)? firstReleaseDate,
-    (DateTime?,)? lastReleaseDate,
-  }) => (
-    hasSubtitle: hasSubtitle == null ? filters.hasSubtitle : hasSubtitle.$1,
-    minimumRating: minimumRating == null
-        ? filters.minimumRating
-        : minimumRating.$1,
-    minimumDuration: minimumDuration == null
-        ? filters.minimumDuration
-        : minimumDuration.$1,
-    maximumDuration: maximumDuration == null
-        ? filters.maximumDuration
-        : maximumDuration.$1,
-    firstReleaseDate: firstReleaseDate == null
-        ? filters.firstReleaseDate
-        : firstReleaseDate.$1,
-    lastReleaseDate: lastReleaseDate == null
-        ? filters.lastReleaseDate
-        : lastReleaseDate.$1,
-  );
-
-  @override
-  Widget build(BuildContext context) {
-    final chips = <Widget>[];
-    void addChip(String keyName, String label, VoidCallback? onDeleted) {
-      chips.add(
-        InputChip(
-          key: ValueKey<String>(keyName),
-          label: Text(label),
-          visualDensity: VisualDensity.compact,
-          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          onDeleted: onDeleted,
-        ),
-      );
-    }
-
-    if (filters.hasSubtitle case final hasSubtitle?) {
-      addChip(
-        'search_active_filter_subtitle',
-        translate(hasSubtitle ? 'search_has_subtitle' : 'search_has_no_subtitle'),
-        onFiltersChanged == null
-            ? null
-            : () => onFiltersChanged!(_copyFilters(hasSubtitle: (null,))),
-      );
-    }
-    if (filters.minimumRating case final rating?) {
-      addChip(
-        'search_active_filter_rating',
-        '${translate('search_minimum_rating')} ≥ ${rating.toStringAsFixed(1)}',
-        onFiltersChanged == null
-            ? null
-            : () => onFiltersChanged!(_copyFilters(minimumRating: (null,))),
-      );
-    }
-    if (filters.minimumDuration case final minDuration?) {
-      addChip(
-        'search_active_filter_min_duration',
-        '${translate('search_filter_minimum')} ${translate('minutes_duration', {'count': minDuration.inMinutes.toString()})}',
-        onFiltersChanged == null
-            ? null
-            : () => onFiltersChanged!(_copyFilters(minimumDuration: (null,))),
-      );
-    }
-    if (filters.maximumDuration case final maxDuration?) {
-      addChip(
-        'search_active_filter_max_duration',
-        '${translate('search_filter_maximum')} ${translate('minutes_duration', {'count': maxDuration.inMinutes.toString()})}',
-        onFiltersChanged == null
-            ? null
-            : () => onFiltersChanged!(_copyFilters(maximumDuration: (null,))),
-      );
-    }
-    if (filters.firstReleaseDate case final firstDate?) {
-      addChip(
-        'search_active_filter_first_release',
-        '${translate('search_filter_earliest')} ${formatDateYmd(firstDate)}',
-        onFiltersChanged == null
-            ? null
-            : () => onFiltersChanged!(_copyFilters(firstReleaseDate: (null,))),
-      );
-    }
-    if (filters.lastReleaseDate case final lastDate?) {
-      addChip(
-        'search_active_filter_last_release',
-        '${translate('search_filter_latest')} ${formatDateYmd(lastDate)}',
-        onFiltersChanged == null
-            ? null
-            : () => onFiltersChanged!(_copyFilters(lastReleaseDate: (null,))),
-      );
-    }
-    if (chips.isEmpty) return const SizedBox.shrink();
-    return Wrap(
-      key: const ValueKey<String>('library_search_active_filters'),
-      spacing: 6,
-      runSpacing: 6,
-      children: chips,
     );
   }
 }

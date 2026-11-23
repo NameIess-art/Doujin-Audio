@@ -43,6 +43,24 @@ final class LibraryCatalogWriteCoordinator {
   final _removedTrackPaths = LibraryService.createPathSet();
   final _removedEntryPaths = LibraryService.createPathIndex<Set<String>>();
   bool _batchExclusionsChanged = false;
+  Future<void>? _batchCommitTail;
+  int _batchResetGeneration = 0;
+
+  Future<void> flushPendingBatches() =>
+      _batchCommitTail ?? Future<void>.value();
+
+  Future<void> _enqueueBatchFinalize(Future<void> Function() action) {
+    final previous = _batchCommitTail;
+    final task = (previous ?? Future<void>.value()).then<void>((_) => action());
+    final tail = task.then<void>((_) {}, onError: (Object _, StackTrace _) {});
+    _batchCommitTail = tail;
+    unawaited(
+      tail.whenComplete(() {
+        if (identical(_batchCommitTail, tail)) _batchCommitTail = null;
+      }),
+    );
+    return task;
+  }
   void attachTrackRemovalHandler(void Function(List<String>) handler) {
     _trackRemovalHandler ??= handler;
   }
@@ -434,29 +452,55 @@ final class LibraryCatalogWriteCoordinator {
     return _service.library.length - beforeCount;
   }
 
-  Future<void> finishStagedLibraryRefresh({bool commit = true}) async {
+  Future<void> finishStagedLibraryRefresh({bool commit = true}) {
     if (commit) return endLibraryBatch();
     final before = _batchBefore;
-    if (before == null) return;
+    if (before == null) return Future<void>.value();
     _batchBefore = null;
     final changed = _service.libraryBatchChanged;
     final affected = changed ? _affectedTracks(before) : const <MusicTrack>[];
-    _rollbackRefreshWrites(before);
+    final rollback = _captureRefreshRollback();
+    final resetGeneration = _batchResetGeneration;
+    _rollbackRefreshWrites(before, rollback);
     _service.libraryBatchDepth = 0;
     _clearBatch();
-    if (changed) {
+    if (!changed) return Future<void>.value();
+    return _enqueueBatchFinalize(() async {
+      if (resetGeneration != _batchResetGeneration) return;
       await rebuildDerivedSnapshot();
+      if (resetGeneration != _batchResetGeneration) return;
       _coverArtwork()?.invalidateCatalogTracks(affected);
-    }
+    });
   }
 
-  void _rollbackRefreshWrites(_LibraryBatchSnapshot before) {
+  _StagedRefreshRollback _captureRefreshRollback() => _StagedRefreshRollback(
+    trackWrites: LibraryService.createPathIndex<MusicTrack>(
+      _refreshTrackWrites,
+    ),
+    entryWrites: LibraryService.createPathIndex<Map<String, LibraryEntry>>({
+      for (final entry in _refreshEntryWrites.entries)
+        entry.key: LibraryService.createPathIndex<LibraryEntry>(entry.value),
+    }),
+    removedTracks: LibraryService.createPathIndex<MusicTrack>(
+      _refreshRemovedTracks,
+    ),
+    removedEntries: LibraryService.createPathIndex<Map<String, LibraryEntry>>({
+      for (final entry in _refreshRemovedEntries.entries)
+        entry.key: LibraryService.createPathIndex<LibraryEntry>(entry.value),
+    }),
+    folderWrites: LibraryService.createPathIndex<bool>(_refreshFolderWrites),
+  );
+
+  void _rollbackRefreshWrites(
+    _LibraryBatchSnapshot before,
+    _StagedRefreshRollback rollback,
+  ) {
     final originalTracks = LibraryService.createPathIndex<MusicTrack>({
       for (final track in before.tracks) track.path: track,
     });
     final tracks = <MusicTrack>[];
     for (final current in _service.library) {
-      final scanned = _refreshTrackWrites[current.path];
+      final scanned = rollback.trackWrites[current.path];
       if (scanned == null) {
         tracks.add(current);
         continue;
@@ -468,7 +512,7 @@ final class LibraryCatalogWriteCoordinator {
       }
       tracks.add(_restoreRefreshTrack(current, scanned, original));
     }
-    for (final entry in _refreshRemovedTracks.entries) {
+    for (final entry in rollback.removedTracks.entries) {
       final original = originalTracks[entry.key];
       if (original == null || _service.libraryByPath.containsKey(entry.key)) {
         continue;
@@ -476,7 +520,7 @@ final class LibraryCatalogWriteCoordinator {
       tracks.add(
         _restoreRefreshTrack(
           entry.value,
-          _refreshTrackWrites[entry.key] ?? entry.value,
+          rollback.trackWrites[entry.key] ?? entry.value,
           original,
         ),
       );
@@ -484,7 +528,7 @@ final class LibraryCatalogWriteCoordinator {
     _service.library = tracks;
     _service.rebuildLibraryIndexes();
     _service.syncGroupOrderFromLibrary();
-    for (final root in _refreshEntryWrites.entries) {
+    for (final root in rollback.entryWrites.entries) {
       final currentEntries = _service.libraryEntriesByLibrary[root.key];
       if (currentEntries == null) continue;
       for (final entry in root.value.entries) {
@@ -501,7 +545,7 @@ final class LibraryCatalogWriteCoordinator {
         }
       }
     }
-    for (final root in _refreshRemovedEntries.entries) {
+    for (final root in rollback.removedEntries.entries) {
       final current = _service.libraryEntriesByLibrary[root.key];
       if (current == null) continue;
       for (final entry in root.value.entries) {
@@ -515,7 +559,7 @@ final class LibraryCatalogWriteCoordinator {
         }
       }
     }
-    for (final entry in _refreshFolderWrites.entries) {
+    for (final entry in rollback.folderWrites.entries) {
       final present = _service.watchedFolders.any(
         (folder) => PathMatcher.equalsNormalized(folder, entry.key),
       );
@@ -579,13 +623,16 @@ final class LibraryCatalogWriteCoordinator {
     remoteMetadata: current.remoteMetadata,
   );
 
-  Future<void> endLibraryBatch() async {
-    if (_service.libraryBatchDepth <= 0) return;
+  Future<void> endLibraryBatch() {
+    if (_service.libraryBatchDepth <= 0) return Future<void>.value();
     _service.libraryBatchDepth--;
-    if (_service.libraryBatchDepth > 0) return;
+    if (_service.libraryBatchDepth > 0) return Future<void>.value();
     final before = _batchBefore!;
     _batchBefore = null;
     final didChangeLibrary = _service.libraryBatchChanged;
+    final stagedRefresh = _stagedRefresh;
+    final saveExclusions = _batchExclusionsChanged;
+    final refreshRollback = stagedRefresh ? _captureRefreshRollback() : null;
     final entriesToPersist = _service.libraryBatchPersistEntriesByKey.values
         .map(
           (entry) =>
@@ -611,9 +658,12 @@ final class LibraryCatalogWriteCoordinator {
       ..._removedTrackPaths,
       ...removedEntries.values.expand((paths) => paths),
     });
+    final diff = didChangeLibrary || candidateRemovedTracks.isNotEmpty
+        ? _diffBatchTracks(before)
+        : null;
     final removedFromBefore = candidateRemovedTracks.isEmpty
         ? const <String>{}
-        : LibraryService.createPathSet(_diffBatchTracks(before).removedPaths);
+        : LibraryService.createPathSet(diff!.removedPaths);
     final removedTracks = <String>[
       for (final path in candidateRemovedTracks)
         if ((removedFromBefore.contains(path) ||
@@ -624,42 +674,53 @@ final class LibraryCatalogWriteCoordinator {
           path,
     ];
     if (didChangeLibrary) _service.syncGroupOrderFromLibrary();
-    try {
-      if (_persistenceCoordinator.enabled &&
-          (didChangeLibrary ||
-              entriesToPersist.isNotEmpty ||
-              removedTracks.isNotEmpty ||
-              removedEntries.isNotEmpty)) {
-        await _persistenceCoordinator.commitLibraryBatch(
-          tracks: tracksToPersist,
-          entries: entriesToPersist,
-          removedTrackPaths: removedTracks,
-          removedEntryPaths: removedEntries,
-        );
-      }
-    } catch (_) {
-      final affected = _affectedTracks(before);
-      if (_stagedRefresh) {
-        _rollbackRefreshWrites(before);
-      } else {
-        before.restore(_service);
-      }
-      _clearBatch();
-      await rebuildDerivedSnapshot();
-      _coverArtwork()?.invalidateCatalogTracks(affected);
-      rethrow;
-    }
-    final saveExclusions = _batchExclusionsChanged;
+    final shouldCommit =
+        _persistenceCoordinator.enabled &&
+        (didChangeLibrary ||
+            entriesToPersist.isNotEmpty ||
+            removedTracks.isNotEmpty ||
+            removedEntries.isNotEmpty);
+    final resetGeneration = _batchResetGeneration;
     _clearBatch();
-    if (saveExclusions) await _persistenceCoordinator.saveExclusions();
-    if (didChangeLibrary) {
-      final diff = _diffBatchTracks(before);
-      await rebuildDerivedSnapshot();
-      _coverArtwork()?.invalidateCatalogTracks(diff.affected);
-      if (diff.removedPaths.isNotEmpty) {
-        _trackRemovalHandler?.call(diff.removedPaths);
+    final commitFuture = shouldCommit
+        ? _persistenceCoordinator.commitLibraryBatch(
+            tracks: tracksToPersist,
+            entries: entriesToPersist,
+            removedTrackPaths: removedTracks,
+            removedEntryPaths: removedEntries,
+          )
+        : null;
+    commitFuture?.ignore();
+    return _enqueueBatchFinalize(() async {
+      try {
+        if (commitFuture != null) {
+          await commitFuture;
+        }
+      } catch (_) {
+        if (resetGeneration != _batchResetGeneration) rethrow;
+        final affected = diff?.affected ?? _affectedTracks(before);
+        if (stagedRefresh) {
+          _rollbackRefreshWrites(before, refreshRollback!);
+        } else {
+          before.restore(_service);
+        }
+        await rebuildDerivedSnapshot();
+        _coverArtwork()?.invalidateCatalogTracks(affected);
+        rethrow;
       }
-    }
+      if (resetGeneration != _batchResetGeneration) return;
+      if (saveExclusions) await _persistenceCoordinator.saveExclusions();
+      if (resetGeneration != _batchResetGeneration) return;
+      if (didChangeLibrary) {
+        final batchDiff = diff!;
+        await rebuildDerivedSnapshot();
+        if (resetGeneration != _batchResetGeneration) return;
+        _coverArtwork()?.invalidateCatalogTracks(batchDiff.affected);
+        if (batchDiff.removedPaths.isNotEmpty) {
+          _trackRemovalHandler?.call(batchDiff.removedPaths);
+        }
+      }
+    });
   }
 
   List<MusicTrack> _affectedTracks(_LibraryBatchSnapshot before) =>
@@ -738,6 +799,7 @@ final class LibraryCatalogWriteCoordinator {
   }
 
   void resetPersistedState() {
+    _batchResetGeneration++;
     _batchBefore = null;
     _service.libraryBatchDepth = 0;
     _clearBatch();
@@ -866,4 +928,20 @@ final class _LibraryBatchSnapshot {
       }
     }
   }
+}
+
+final class _StagedRefreshRollback {
+  const _StagedRefreshRollback({
+    required this.trackWrites,
+    required this.entryWrites,
+    required this.removedTracks,
+    required this.removedEntries,
+    required this.folderWrites,
+  });
+
+  final Map<String, MusicTrack> trackWrites;
+  final Map<String, Map<String, LibraryEntry>> entryWrites;
+  final Map<String, MusicTrack> removedTracks;
+  final Map<String, Map<String, LibraryEntry>> removedEntries;
+  final Map<String, bool> folderWrites;
 }

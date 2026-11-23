@@ -36,40 +36,41 @@ class SubtitleOverlayCoordinatorTest {
     }
 
     @Test
-    fun `stop before connection unbinds pending service stops it and ignores late binder`() {
+    fun `stop before connection unbinds pending service without starting it and ignores late binder`() {
         val context = OverlayContext()
         val coordinator = SubtitleOverlayCoordinator(context)
         assertTrue(coordinator.start())
         val oldConnection = context.bound.single()
-        assertEquals(1, context.starts)
+        assertEquals(0, context.starts)
 
         coordinator.stop()
         oldConnection.onServiceConnected(null, null)
 
         assertEquals(listOf(oldConnection), context.unbound)
-        assertEquals(1, context.stops)
+        assertEquals(0, context.stops)
         assertTrue(coordinator.start())
         oldConnection.onServiceConnected(null, null)
         oldConnection.onServiceDisconnected(null)
         coordinator.stop()
         assertEquals(context.bound, context.unbound)
-        assertEquals(2, context.stops)
+        assertEquals(0, context.starts)
     }
 
     @Test
-    fun `repeated start does not register another pending binding and dispose only unbinds`() {
+    fun `repeated start does not register another pending binding and dispose cleanly unbinds`() {
         val context = OverlayContext()
         val coordinator = SubtitleOverlayCoordinator(context)
         assertTrue(coordinator.start())
         assertTrue(coordinator.start())
         assertEquals(1, context.bound.size)
-        assertEquals(1, context.starts)
+        assertEquals(0, context.starts)
 
         coordinator.dispose()
         coordinator.dispose()
         context.bound.single().onServiceConnected(null, null)
 
         assertEquals(context.bound, context.unbound)
+        assertEquals(0, context.starts)
         assertEquals(0, context.stops)
     }
 
@@ -87,23 +88,23 @@ class SubtitleOverlayCoordinatorTest {
         assertEquals(2, context.bound.size)
         coordinator.stop()
         assertEquals(context.bound, context.unbound)
-        assertEquals(1, context.stops)
+        assertEquals(0, context.starts)
     }
 
     @Test
-    fun `failed registration reports false stops started service and can retry`() {
+    fun `failed binding reports false unbinds connection without startService and can retry`() {
         val context = OverlayContext().apply { bindResult = false }
         val coordinator = SubtitleOverlayCoordinator(context)
         assertFalse(coordinator.start())
-        assertEquals(1, context.starts)
-        assertEquals(1, context.stops)
-        assertTrue(context.unbound.isEmpty())
+        assertEquals(0, context.starts)
+        assertEquals(0, context.stops)
+        assertEquals(context.bound, context.unbound)
 
         context.bindResult = true
         assertTrue(coordinator.start())
         coordinator.stop()
-        assertEquals(listOf(context.bound.last()), context.unbound)
-        assertEquals(2, context.stops)
+        assertEquals(context.bound, context.unbound)
+        assertEquals(0, context.starts)
     }
 
     @Test

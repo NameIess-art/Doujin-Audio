@@ -622,6 +622,21 @@ class LibrarySnapshotCacheService {
     if (!defer) flushDetailChanges();
   }
 
+  void trimMemory() {
+    _cachedTree = const <LibraryNode>[];
+    _cachedTreeRevision = -1;
+    _cachedLeafFolderCount = 0;
+    _treeFuture = null;
+    _treeFutureRevision = -1;
+    _treeCommitCallbacks.clear();
+    _categorySnapshot = null;
+    _categoryRequest = null;
+    _pendingCategoryDetails.clear();
+    while (_folderTrees.length > 4) {
+      _folderTrees.remove(_folderTrees.keys.first);
+    }
+  }
+
   void dispose() {
     _disposed = true;
     clear();
@@ -707,12 +722,12 @@ class LibrarySnapshotCacheService {
           );
         }
       }
-      final results = await _detailCacheService.loadMany(
+      final results = await _detailCacheService.loadSearchDetails(
         requests
             .getRange(requestStart, requests.length)
             .map((request) => request.target),
       );
-      details.addAll(results.map((result) => result.detail));
+      details.addAll(results);
       if (end < tree.length) await Future<void>.delayed(Duration.zero);
     }
 

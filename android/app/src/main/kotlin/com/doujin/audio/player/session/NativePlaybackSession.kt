@@ -6,8 +6,6 @@ import com.doujin.audio.player.common.NATIVE_PLAYBACK_SPEED_MAX
 import com.doujin.audio.player.common.NATIVE_PLAYBACK_SPEED_MIN
 import com.doujin.audio.player.common.NativePrepareSessionArguments
 import com.doujin.audio.player.common.NativeRepeatOneArguments
-import com.doujin.audio.player.common.nativePlaybackAudioOffloadPreferences
-import com.doujin.audio.player.common.shouldEnableAudioOffload
 import com.doujin.audio.player.effects.*
 
 import android.os.SystemClock
@@ -150,7 +148,6 @@ internal class NativePlaybackSession(
         logWarn(message, this, error)
     }
     private var lastSyncedAudioSessionId: Int = C.AUDIO_SESSION_ID_UNSET
-    private var appliedAudioOffloadEnabled: Boolean? = null
     private var _player: ExoPlayer? = null
     var path: String? = null
     var uri: String? = null
@@ -321,9 +318,60 @@ internal class NativePlaybackSession(
         }
         audioEffects.release()
         lastSyncedAudioSessionId = C.AUDIO_SESSION_ID_UNSET
-        appliedAudioOffloadEnabled = null
         _player = null
         temporarySpeed = null
+    }
+
+    fun matchesReusableQueueItem(index: Int, uri: String, explicitPath: String?): Boolean {
+        val player = _player ?: return false
+        if (index !in queue.indices || index !in 0 until player.mediaItemCount) return false
+        val item = queue[index]
+        if (item.uri != uri) return false
+        if (explicitPath != null && item.path != explicitPath) return false
+        return true
+    }
+
+    fun jumpInExistingQueue(args: NativePrepareSessionArguments) {
+        val p = checkNotNull(_player) { "Cannot reuse queue without an active player." }
+        isTemporary = args.isTemporary
+        val requiresReprepare = audioEffects.apply(args.audioEffects)
+        val targetIndex = args.queueStartIndex.coerceIn(0, queue.lastIndex)
+        val target = queue[targetIndex]
+        val targetPositionMs = args.startPositionMs.coerceAtLeast(0L)
+        currentQueueIndex = targetIndex
+        path = target.path
+        uri = target.uri
+        title = target.title
+        subtitle = target.subtitle
+        artUri = target.artUri
+        lastPositionMs = targetPositionMs
+        lastBufferedPositionMs = targetPositionMs
+        lastDurationMs = null
+        volume = PlaybackVolumeMapper.normalize(args.volume)
+        speed = normalizeSpeed(args.speed)
+        repeatOne = args.repeatOne
+        repeatAll = args.repeatAll
+        shuffleModeEnabled = args.shuffle
+        lastPlayWhenReady = args.autoPlay
+
+        syncPauseAtTrackEnd()
+        applyVolumeToPlayer(p)
+        applySpeedToPlayer(p)
+        applyAudioEffectsToPlayer(p)
+        applyQueuePlaybackMode(p)
+        if (!args.autoPlay) {
+            p.playWhenReady = false
+        }
+        p.seekTo(targetIndex, targetPositionMs)
+        if (requiresReprepare) {
+            reprepareCurrentMediaItem()
+        } else if (p.playbackState == Player.STATE_IDLE ||
+            p.playbackState == Player.STATE_ENDED ||
+            p.playerError != null
+        ) {
+            p.prepare()
+        }
+        syncCurrentMediaItemFromPlayer()
     }
 
     fun configure(args: NativePrepareSessionArguments) {
@@ -492,39 +540,6 @@ internal class NativePlaybackSession(
         player.setWakeMode(queueStructure.wakeMode)
     }
 
-    fun applyAudioOffloadPolicy(
-        offloadAllowedForProcess: Boolean,
-        activePlaybackSessionCount: Int,
-        isVideo: Boolean
-    ) {
-        val player = _player ?: return
-        val descriptor = currentQueueDescriptor()
-        val hasClipping = descriptor != null &&
-            (descriptor.clipStartMs > 0L || descriptor.clipEndMs != null)
-        val hasEffects = skipSilenceEnabled ||
-            channelSwapEnabled ||
-            eqEnabled ||
-            noiseReductionEnabled ||
-            volumeNormalizationEnabled ||
-            kotlin.math.abs(panning) >= 0.001f ||
-            kotlin.math.abs(audioEffects.frontBack) >= 0.001f
-        val enable = shouldEnableAudioOffload(
-            offloadAllowedForProcess = offloadAllowedForProcess,
-            activePlaybackSessionCount = activePlaybackSessionCount,
-            isVideo = isVideo,
-            hasClipping = hasClipping,
-            effectiveSpeed = effectiveSpeed(),
-            volume = volume,
-            hasActiveAudioEffects = hasEffects
-        )
-        if (appliedAudioOffloadEnabled == enable) return
-        appliedAudioOffloadEnabled = enable
-        player.trackSelectionParameters = player.trackSelectionParameters
-            .buildUpon()
-            .setAudioOffloadPreferences(nativePlaybackAudioOffloadPreferences(enable))
-            .build()
-    }
-
     fun markTrackStopBoundary() {
         stoppedAtTrackBoundary = stoppedAtTrackBoundary ||
             stopAfterCurrentTrack || timerStopAfterCurrentTrack
@@ -678,6 +693,15 @@ internal class NativePlaybackSession(
             player.replaceMediaItems(0, activeIndex, beforeItems)
         }
 
+        val nextActiveItem = nextItems[queueStartIndex]
+        val currentActiveItem = player.currentMediaItem
+        if (currentActiveItem == null ||
+            currentActiveItem.mediaMetadata != nextActiveItem.mediaMetadata ||
+            currentActiveItem.localConfiguration?.tag != nextActiveItem.localConfiguration?.tag
+        ) {
+            player.replaceMediaItem(queueStartIndex, nextActiveItem)
+        }
+
         applyWakeModeToPlayer(player)
         applyQueuePlaybackMode(player)
     }
@@ -719,7 +743,8 @@ internal class NativePlaybackSession(
 
     fun reprepareCurrentMediaItem(
         preparedQueue: NativePlaybackQueue? = null,
-        rebuildPlayer: Boolean = false
+        rebuildPlayer: Boolean = false,
+        beforeReleasePlayer: (() -> Unit)? = null
     ) {
         val currentUri = uri ?: return
         val p = _player
@@ -736,6 +761,7 @@ internal class NativePlaybackSession(
         )
         val currentIndex = p?.currentMediaItemIndex ?: currentQueueIndexFor(descriptors)
         if (rebuildPlayer && p != null) {
+            beforeReleasePlayer?.invoke()
             releasePlayer()
         }
 
@@ -802,9 +828,7 @@ internal class NativePlaybackSession(
         return usageItemFields
     }
 
-    override fun snapshot(): Map<String, Any?> = snapshot(includeRetainedUris = false)
-
-    fun snapshot(includeRetainedUris: Boolean): Map<String, Any?> {
+    fun refreshProgressAnchor() {
         val p = _player
         if (p != null) {
             lastPositionMs = p.currentPosition.coerceAtLeast(0L)
@@ -825,6 +849,13 @@ internal class NativePlaybackSession(
             isPlaying = lastIsPlaying,
             playWhenReady = lastPlayWhenReady
         )
+    }
+
+    override fun snapshot(): Map<String, Any?> = snapshot(includeRetainedUris = false)
+
+    fun snapshot(includeRetainedUris: Boolean): Map<String, Any?> {
+        refreshProgressAnchor()
+        val p = _player
 
         val result = mutableMapOf<String, Any?>(
             "sessionId" to sessionId,

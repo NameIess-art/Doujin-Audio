@@ -125,14 +125,16 @@ class AppLanguageProvider
   }
 
   Future<void> setLanguagePreference(AppLanguagePreference preference) {
-    _preferenceRevision++;
+    final revision = ++_preferenceRevision;
     final previousWrite = _preferenceWrites;
     Future<void> persist() async {
       if (previousWrite != null) await previousWrite;
+      if (_disposed || revision != _preferenceRevision) return;
       final previousValue = await AppPreferences.getString(
         _prefsKey,
         throwOnError: true,
       );
+      if (_disposed || revision != _preferenceRevision) return;
       if (!await AppPreferences.setString(_prefsKey, preference.name)) {
         // SharedPreferences updates its memory cache even when disk rejects a write.
         if (previousValue == null) {
@@ -142,7 +144,7 @@ class AppLanguageProvider
         }
         throw StateError('Failed to save interface language');
       }
-      if (_disposed) return;
+      if (_disposed || revision != _preferenceRevision) return;
       final language = preference.explicitLanguage ?? _resolveSystemLanguage();
       if (_preference != preference || _language != language) {
         _preference = preference;
@@ -152,18 +154,31 @@ class AppLanguageProvider
     }
 
     final saved = persist();
-    _preferenceWrites = saved.then<void>(
-      (_) {},
-      onError: (Object _, StackTrace _) {},
-    );
+    late final Future<void> tracked;
+    tracked = saved
+        .then<void>((_) {}, onError: (Object _, StackTrace _) {})
+        .whenComplete(() {
+          if (identical(_preferenceWrites, tracked)) {
+            _preferenceWrites = null;
+          }
+        });
+    _preferenceWrites = tracked;
     return saved;
   }
 
   @override
   Future<void> reloadPersistedState() async {
-    _preferenceRevision++;
-    _loadFuture = _loadLanguage();
-    await _loadFuture;
+    final revision = ++_preferenceRevision;
+    final pendingWrite = _preferenceWrites;
+    final future = pendingWrite == null
+        ? _loadLanguage(revision: revision)
+        : () async {
+            await pendingWrite;
+            if (_disposed || revision != _preferenceRevision) return;
+            await _loadLanguage(revision: revision);
+          }();
+    _loadFuture = future;
+    await future;
   }
 
   static AppLanguagePreference _parsePreference(String? raw) =>
@@ -172,10 +187,10 @@ class AppLanguageProvider
         orElse: () => AppLanguagePreference.system,
       );
 
-  Future<void> _loadLanguage() async {
-    final revision = _preferenceRevision;
+  Future<void> _loadLanguage({int? revision}) async {
+    final targetRevision = revision ?? _preferenceRevision;
     final raw = await AppPreferences.getString(_prefsKey);
-    if (_disposed || revision != _preferenceRevision) return;
+    if (_disposed || targetRevision != _preferenceRevision) return;
     final preference = _parsePreference(raw);
     final language = preference.explicitLanguage ?? _resolveSystemLanguage();
     if (_preference == preference && _language == language) return;

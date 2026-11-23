@@ -927,6 +927,9 @@ class _RefreshCatalog implements LibraryCatalog {
   bool isScanning = false;
 
   @override
+  Future<void> get scanIdle => Future<void>.value();
+
+  @override
   int scanFoundCount = 0;
 
   @override
@@ -1261,6 +1264,9 @@ class _FailingBatchCatalog implements LibraryCatalog {
 
   @override
   bool isScanning = false;
+
+  @override
+  Future<void> get scanIdle => Future<void>.value();
 
   int finishCount = 0;
   int _generation = 0;

@@ -65,6 +65,11 @@ internal class NativeVideoOutputRegistry<P : Any>(
         return true
     }
 
+    fun refreshSession(sessionId: String): Boolean {
+        val entry = entries[sessionId] ?: return false
+        return refresh(sessionId, entry.ownerId)
+    }
+
     fun unregister(sessionId: String, ownerId: String) {
         val entry = entries[sessionId]?.takeIf { it.ownerId == ownerId } ?: return
         entries.remove(sessionId)

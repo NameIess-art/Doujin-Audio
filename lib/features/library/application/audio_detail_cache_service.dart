@@ -277,6 +277,98 @@ class AudioDetailCacheService {
     });
   }
 
+  Future<Map<String, Duration?>?> loadDurationsIfSupported(
+    Iterable<AudioDetailTarget> targets,
+  ) async {
+    if (_suspended) {
+      throw const AudioDetailOperationCancelled();
+    }
+    if (!_repository.supportsFastQueries) return null;
+    final values = targets.toList(growable: false);
+    if (values.isEmpty) return const <String, Duration?>{};
+    final result = <String, Duration?>{};
+    final toQuery = <AudioDetailTarget>[];
+    for (final target in values) {
+      final key = AudioLibraryDetailKey.forTarget(target);
+      final cached = _operationTails[key] == null ? _resolved[key] : null;
+      if (cached != null) {
+        if (!cached.detail.isEmpty || cached.detail.duration != null) {
+          result[key] = cached.detail.duration;
+        }
+        continue;
+      }
+      toQuery.add(target);
+    }
+    if (toQuery.isNotEmpty) {
+      final queried = await _repository.loadDurationsIfSupported(toQuery);
+      if (queried != null) {
+        result.addAll(queried);
+      }
+    }
+    return result;
+  }
+
+  /// Loads search-relevant detail projections. Uses the lightweight SQLite
+  /// projection query when supported without evicting `_resolved` LRU entries,
+  /// and falls back to `loadMany` otherwise.
+  Future<List<AudioDetail>> loadSearchDetails(
+    Iterable<AudioDetailTarget> targets, {
+    bool Function()? isActive,
+  }) async {
+    if (_suspended) {
+      throw const AudioDetailOperationCancelled();
+    }
+    if (!_repository.supportsFastQueries) {
+      final loaded = await loadMany(targets, isActive: isActive);
+      return <AudioDetail>[for (final entry in loaded) entry.detail];
+    }
+    final values = targets.toList(growable: false);
+    if (values.isEmpty) return const <AudioDetail>[];
+    if (isActive?.call() == false) {
+      throw const AudioDetailOperationCancelled();
+    }
+    final requestKeys = <String>[];
+    final byKey = <String, AudioDetail>{};
+    final inFlightTargets = <AudioDetailTarget>[];
+    final uncachedTargets = <AudioDetailTarget>[];
+    final seen = <String>{};
+    for (final target in values) {
+      final key = AudioLibraryDetailKey.forTarget(target);
+      requestKeys.add(key);
+      if (!seen.add(key)) continue;
+      if (_operationTails[key] != null) {
+        inFlightTargets.add(target);
+        continue;
+      }
+      final cached = _resolved[key];
+      if (cached != null) {
+        byKey[key] = cached.detail;
+        continue;
+      }
+      uncachedTargets.add(target);
+    }
+    if (inFlightTargets.isNotEmpty) {
+      final loaded = await loadMany(inFlightTargets, isActive: isActive);
+      for (var i = 0; i < inFlightTargets.length; i++) {
+        byKey[AudioLibraryDetailKey.forTarget(inFlightTargets[i])] =
+            loaded[i].detail;
+      }
+    }
+    if (uncachedTargets.isNotEmpty) {
+      if (isActive?.call() == false) {
+        throw const AudioDetailOperationCancelled();
+      }
+      final queried = await _repository.loadSearchDetails(uncachedTargets);
+      for (var i = 0; i < uncachedTargets.length; i++) {
+        byKey[AudioLibraryDetailKey.forTarget(uncachedTargets[i])] = queried[i];
+      }
+    }
+    return <AudioDetail>[
+      for (var i = 0; i < requestKeys.length; i++)
+        byKey[requestKeys[i]] ?? AudioDetail.empty(values[i]),
+    ];
+  }
+
   void _releaseLoadFuture(_AudioDetailReadRequest request) {
     if (identical(_loadFutures[request.key], request)) {
       _loadFutures.remove(request.key);

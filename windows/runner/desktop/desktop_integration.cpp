@@ -34,6 +34,7 @@ void Success(Result& result, const Value& value = Value()) {
 constexpr UINT kTray = WM_APP + 42;
 constexpr UINT kAsyncIoReply = WM_APP + 46;
 constexpr UINT kDeferredInit = WM_APP + 48;
+constexpr UINT kDeferredMediaInit = WM_APP + 49;
 const UINT kTaskbarCreated = RegisterWindowMessageW(L"TaskbarCreated");
 #ifdef _DEBUG
 constexpr auto kSettingsKey = L"Software\\DoujinAudio\\Debug";
@@ -284,13 +285,13 @@ struct DesktopIntegration::AsyncIoState {
           }
           case Op::kInstallUpdate: {
             std::error_code ec;
-            const bool regular_file = std::filesystem::is_regular_file(request->path, ec);
-            if (ec) {
+            const auto status = std::filesystem::status(request->path, ec);
+            if (ec && status.type() != std::filesystem::file_type::not_found) {
               error = ec.message();
               if (error.empty()) error = "Unable to inspect installer path";
               break;
             }
-            if (!regular_file) {
+            if (!std::filesystem::is_regular_file(status)) {
               error_code = "invalid_argument";
               error = "path";
               break;
@@ -348,9 +349,81 @@ struct DesktopIntegration::AsyncIoState {
   }
 };
 
+struct DesktopIntegration::TrayState {
+  std::mutex mutex;
+  HWND window = nullptr;
+  HICON icon = nullptr;
+  bool added = false;
+  bool removed = false;
+  bool pending = false;
+  bool worker_running = false;
+
+  static void CALLBACK AddWorker(PTP_CALLBACK_INSTANCE instance, void* context) {
+    CallbackMayRunLong(instance);
+    const std::unique_ptr<std::shared_ptr<TrayState>> owner(
+        static_cast<std::shared_ptr<TrayState>*>(context));
+    (*owner)->RunAdd();
+  }
+
+  void RunAdd() {
+    for (;;) {
+      HWND target = nullptr;
+      HICON icon_handle = nullptr;
+      {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (removed || !window || !pending) {
+          pending = false;
+          worker_running = false;
+          return;
+        }
+        pending = false;
+        target = window;
+        icon_handle = icon;
+      }
+      NOTIFYICONDATAW data{};
+      data.cbSize = sizeof(data);
+      data.hWnd = target;
+      data.uID = 1;
+      data.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+      data.uCallbackMessage = kTray;
+      data.hIcon = icon_handle;
+      wcscpy_s(data.szTip, L"Doujin Audio");
+      const BOOL ok = Shell_NotifyIconW(NIM_ADD, &data);
+
+      bool should_delete = false;
+      {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (ok) {
+          if (removed) {
+            should_delete = true;
+            added = false;
+          } else {
+            added = true;
+          }
+        }
+        if (removed || !pending) {
+          worker_running = false;
+          if (!should_delete) return;
+        }
+      }
+      if (should_delete) {
+        NOTIFYICONDATAW cleanup{};
+        cleanup.cbSize = sizeof(cleanup);
+        cleanup.hWnd = target;
+        cleanup.uID = 1;
+        Shell_NotifyIconW(NIM_DELETE, &cleanup);
+        return;
+      }
+    }
+  }
+};
+
 DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* messenger) : window_(window) {
   async_io_ = std::make_shared<AsyncIoState>();
   async_io_->window = window;
+  tray_state_ = std::make_shared<TrayState>();
+  tray_state_->window = window;
+  tray_state_->icon = LoadIcon(GetModuleHandle(nullptr), MAKEINTRESOURCE(IDI_APP_ICON));
   WINDOWPLACEMENT saved{sizeof(WINDOWPLACEMENT)};
   DWORD bytes = sizeof(saved);
   if (RegGetValueW(HKEY_CURRENT_USER,kSettingsKey,L"WindowPlacement",RRF_RT_REG_BINARY,nullptr,&saved,&bytes) == ERROR_SUCCESS && bytes == sizeof(saved)) {
@@ -391,7 +464,11 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
         for (const auto& action : pending) Action(action);
       } else if (call.method_name() == "exit") {
         result->Success();
-        if (!ending_session_) { quitting_ = true; PostMessage(window_,WM_CLOSE,0,0); }
+        if (!ending_session_) {
+          SavePlacement();
+          quitting_ = true;
+          PostMessage(window_,WM_CLOSE,0,0);
+        }
       } else if (call.method_name() == "setFullscreen") {
         SetFullscreen(RequiredBool(Arguments(call),"enabled")); result->Success();
       } else if (call.method_name() == "windowCommand") {
@@ -401,6 +478,7 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
         result->Success(Value(media_->HotkeyStatus()));
       } else { result->NotImplemented(); }
     } catch (const std::invalid_argument& e) { result->Error("invalid_argument",e.what()); }
+      catch (const winrt::hresult_error& e) { result->Error("desktop_error",winrt::to_string(e.message())); }
       catch (const std::exception& e) { result->Error("desktop_error",e.what()); }
   });
   auto add = [&](const char* name, auto handler) {
@@ -573,10 +651,7 @@ DesktopIntegration::~DesktopIntegration() {
     request->result.reset();
   }
   scheduled_tasks_.reset();
-  if (tray_added_) {
-    NOTIFYICONDATAW icon{}; icon.cbSize = sizeof(icon); icon.hWnd = window_; icon.uID = 1;
-    Shell_NotifyIconW(NIM_DELETE,&icon);
-  }
+  RemoveTray();
   SetThreadExecutionState(ES_CONTINUOUS);
 }
 void DesktopIntegration::OpenContainingFolder(const Map& args,
@@ -644,15 +719,59 @@ void DesktopIntegration::ReplyAsyncIo() {
 void DesktopIntegration::CompleteDeferredInit() {
   if (deferred_init_done_) return;
   deferred_init_done_ = true;
-  if (!tray_added_) AddTray();
+  AddTray();
+  if (!deferred_media_init_done_ &&
+      !PostMessage(window_, kDeferredMediaInit, 0, 0)) {
+    CompleteDeferredMediaInit();
+  }
+}
+void DesktopIntegration::CompleteDeferredMediaInit() {
+  if (deferred_media_init_done_ || quitting_ || ending_session_) return;
+  deferred_media_init_done_ = true;
   if (media_) media_->Initialize();
 }
 void DesktopIntegration::AddTray() {
-  NOTIFYICONDATAW icon{}; icon.cbSize = sizeof(icon); icon.hWnd = window_; icon.uID = 1;
-  icon.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP; icon.uCallbackMessage = kTray;
-  icon.hIcon = LoadIcon(GetModuleHandle(nullptr),MAKEINTRESOURCE(IDI_APP_ICON));
-  wcscpy_s(icon.szTip,L"Doujin Audio");
-  if (Shell_NotifyIconW(NIM_ADD,&icon)) tray_added_ = true;
+  if (quitting_ || ending_session_ || !tray_state_) return;
+  bool fallback_sync = false;
+  {
+    std::lock_guard<std::mutex> lock(tray_state_->mutex);
+    if (tray_state_->removed) return;
+    tray_state_->pending = true;
+    if (tray_state_->worker_running) return;
+    auto owner = std::make_unique<std::shared_ptr<TrayState>>(tray_state_);
+    if (TrySubmitThreadpoolCallback(TrayState::AddWorker, owner.get(), nullptr)) {
+      owner.release();
+      tray_state_->worker_running = true;
+      return;
+    }
+    fallback_sync = true;
+  }
+  if (fallback_sync) {
+    // Only reached if threadpool submission itself fails.
+    tray_state_->RunAdd();
+  }
+}
+void DesktopIntegration::RemoveTray() {
+  if (!tray_state_) return;
+  bool should_delete = false;
+  HWND target = nullptr;
+  {
+    std::lock_guard<std::mutex> lock(tray_state_->mutex);
+    tray_state_->removed = true;
+    tray_state_->pending = false;
+    target = tray_state_->window;
+    if (tray_state_->added) {
+      tray_state_->added = false;
+      should_delete = true;
+    }
+  }
+  if (should_delete && target) {
+    NOTIFYICONDATAW icon{};
+    icon.cbSize = sizeof(icon);
+    icon.hWnd = target;
+    icon.uID = 1;
+    Shell_NotifyIconW(NIM_DELETE, &icon);
+  }
 }
 void DesktopIntegration::Action(const std::string& action) {
   if (ending_session_) return;
@@ -718,14 +837,7 @@ void DesktopIntegration::EndSession() {
     EndMenu();
   }
   if (subtitles_) subtitles_->SavePlacement();
-  if (tray_added_) {
-    NOTIFYICONDATAW icon{};
-    icon.cbSize = sizeof(icon);
-    icon.hWnd = window_;
-    icon.uID = 1;
-    Shell_NotifyIconW(NIM_DELETE, &icon);
-    tray_added_ = false;
-  }
+  RemoveTray();
   SetThreadExecutionState(ES_CONTINUOUS);
   power_flags_ = ES_CONTINUOUS;
   const char* status = !completion->finished ? "DoujinAudio: endSession timed out after 4 seconds\n"
@@ -845,6 +957,22 @@ void DesktopIntegration::AttachContent(HWND content) {
                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
   UpdateHitTestMetrics();
 }
+void DesktopIntegration::UpdateHitTestBounds() {
+  if (!hit_test_metrics_valid_) {
+    UpdateHitTestMetrics();
+    return;
+  }
+  RECT client{};
+  if (!GetClientRect(window_, &client)) {
+    hit_test_metrics_valid_ = false;
+    last_hit_valid_ = false;
+    return;
+  }
+  MapWindowPoints(window_, nullptr, reinterpret_cast<POINT*>(&client), 2);
+  client_screen_rect_ = client;
+  window_zoomed_ = IsZoomed(window_) != FALSE;
+  last_hit_valid_ = false;
+}
 void DesktopIntegration::UpdateHitTestMetrics() {
   RECT client{};
   if (!GetClientRect(window_, &client)) {
@@ -916,7 +1044,7 @@ void DesktopIntegration::RefreshPower() {
   power_flags_ = flags;
 }
 void DesktopIntegration::SavePlacement() {
-  if (fullscreen_ || !IsWindowVisible(window_)) return;
+  if (fullscreen_ || !IsWindowVisible(window_) || IsIconic(window_)) return;
   WINDOWPLACEMENT placement{sizeof(WINDOWPLACEMENT)};
   if (!GetWindowPlacement(window_,&placement)) return;
   HKEY key;
@@ -929,13 +1057,23 @@ void DesktopIntegration::SavePlacement() {
 }
 void DesktopIntegration::SetFullscreen(bool enabled) {
   if (fullscreen_ == enabled) return;
-  fullscreen_ = enabled;
   const LONG_PTR visible = GetWindowLongPtr(window_, GWL_STYLE) & WS_VISIBLE;
   const UINT hidden_flags = visible ? 0 : (SWP_NOZORDER | SWP_NOACTIVATE);
   if (enabled) {
-    GetWindowPlacement(window_, &placement_);
     MONITORINFO monitor{sizeof(MONITORINFO)};
-    GetMonitorInfo(MonitorFromWindow(window_, MONITOR_DEFAULTTONEAREST), &monitor);
+    const HMONITOR target_monitor =
+        MonitorFromWindow(window_, MONITOR_DEFAULTTONEAREST);
+    if (!target_monitor || !GetMonitorInfo(target_monitor, &monitor) ||
+        monitor.rcMonitor.right <= monitor.rcMonitor.left ||
+        monitor.rcMonitor.bottom <= monitor.rcMonitor.top) {
+      return;
+    }
+    WINDOWPLACEMENT placement{sizeof(WINDOWPLACEMENT)};
+    if (!GetWindowPlacement(window_, &placement)) {
+      return;
+    }
+    placement_ = placement;
+    fullscreen_ = true;
     SetWindowLongPtr(window_, GWL_STYLE, WS_POPUP | visible);
     SetWindowPos(window_, visible ? HWND_TOP : nullptr,
       monitor.rcMonitor.left, monitor.rcMonitor.top,
@@ -943,6 +1081,7 @@ void DesktopIntegration::SetFullscreen(bool enabled) {
       monitor.rcMonitor.bottom - monitor.rcMonitor.top,
       SWP_FRAMECHANGED | hidden_flags);
   } else {
+    fullscreen_ = false;
     SetWindowLongPtr(window_, GWL_STYLE, WS_OVERLAPPEDWINDOW | visible);
     WINDOWPLACEMENT placement = placement_;
     if (!visible) placement.showCmd = SW_HIDE;
@@ -1000,11 +1139,13 @@ std::optional<LRESULT> DesktopIntegration::HandleMessage(UINT message, WPARAM wp
     if (hit != HTNOWHERE) return hit;
   }
   if (message == WM_SIZE) {
-    UpdateHitTestMetrics();
+    UpdateHitTestBounds();
     PublishWindowMaximized();
   }
-  if (message == WM_MOVE || message == WM_DPICHANGED ||
-      message == WM_DISPLAYCHANGE) {
+  if (message == WM_MOVE) {
+    UpdateHitTestBounds();
+  }
+  if (message == WM_DPICHANGED || message == WM_DISPLAYCHANGE) {
     UpdateHitTestMetrics();
   }
   if (message == WM_DWMCOLORIZATIONCOLORCHANGED) { UpdateTheme(); return 0; }
@@ -1017,6 +1158,7 @@ std::optional<LRESULT> DesktopIntegration::HandleMessage(UINT message, WPARAM wp
     }
   }
   if (message == kDeferredInit) { CompleteDeferredInit(); return 0; }
+  if (message == kDeferredMediaInit) { CompleteDeferredMediaInit(); return 0; }
   if (message == ScheduledTasks::kReply) { scheduled_tasks_->Reply(); return 0; }
   if (message == NetworkProxy::kReply) { network_proxy_->Reply(); return 0; }
   if (message == kAsyncIoReply) { ReplyAsyncIo(); return 0; }
@@ -1032,21 +1174,25 @@ std::optional<LRESULT> DesktopIntegration::HandleMessage(UINT message, WPARAM wp
     return kActivateAccepted;
   }
   if (message == WM_EXITSIZEMOVE) {
-    UpdateHitTestMetrics();
+    UpdateHitTestBounds();
     SavePlacement();
   }
   // A previously queued tray exit must not destroy the engine during the reply wait.
   if (message == WM_CLOSE && ending_session_) return 0;
-  if (message == WM_CLOSE && !quitting_) {
-    if (!ready_) {
-      quitting_ = true;
+  if (message == WM_CLOSE) {
+    if (!quitting_) {
+      if (!ready_) {
+        quitting_ = true;
+        SavePlacement();
+        return std::nullopt;
+      }
       SavePlacement();
-      return std::nullopt;
+      ShowWindow(window_, SW_HIDE);
+      Action("background");
+      return 0;
     }
     SavePlacement();
-    ShowWindow(window_, SW_HIDE);
-    Action("background");
-    return 0;
+    return std::nullopt;
   }
   if (message == WM_QUERYENDSESSION) return TRUE;
   if (message == WM_ENDSESSION) {

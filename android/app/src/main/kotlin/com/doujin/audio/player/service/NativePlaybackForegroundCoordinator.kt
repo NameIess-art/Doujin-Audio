@@ -51,6 +51,7 @@ internal class NativePlaybackForegroundCoordinator(
     private var signature: String? = null
     private var idleStopScheduled = false
     private var idleStopDelayMs = -1L
+    private var idleGraceStopScheduled = false
     private var watchdogScheduled = false
     private val pendingPlaybackStarts = linkedMapOf<String, Runnable>()
     val hasPendingPlaybackStarts: Boolean get() = pendingPlaybackStarts.isNotEmpty()
@@ -77,6 +78,17 @@ internal class NativePlaybackForegroundCoordinator(
         idleStopScheduled = false
         idleStopDelayMs = -1L
         if (!host.hasPlaybackToKeepAlive) host.onIdleStop()
+    }
+
+    private val idleGraceStopForeground = Runnable {
+        idleGraceStopScheduled = false
+        if (!host.hasPlaybackToKeepAlive && isStarted) {
+            stopWatchdog()
+            host.logInfo("stop_foreground reason=idle_grace wasStarted=true")
+            host.stopForeground(wasStarted = true)
+            isStarted = false
+            signature = null
+        }
     }
 
     private val watchdogRunnable = object : Runnable {
@@ -109,6 +121,16 @@ internal class NativePlaybackForegroundCoordinator(
             }
         } else {
             val targetDelayMs = if (host.hasActiveUiListeners) idleGracePeriodMs else 0L
+            if (targetDelayMs > 0L && isStarted && !idleGraceStopScheduled) {
+                // Defer to the next looper turn so an in-progress prepareSession/track-switch
+                // finishes before demoting foreground, while still clearing a stale paused
+                // notification immediately instead of waiting for the full idle grace period.
+                idleGraceStopScheduled = true
+                environment.postDelayed(idleGraceStopForeground, 0L)
+            } else if (targetDelayMs == 0L && idleGraceStopScheduled) {
+                environment.remove(idleGraceStopForeground)
+                idleGraceStopScheduled = false
+            }
             if (!idleStopScheduled || targetDelayMs < idleStopDelayMs) {
                 if (idleStopScheduled) environment.remove(idleStop)
                 // Let the current player callback finish before releasing its session,
@@ -166,6 +188,10 @@ internal class NativePlaybackForegroundCoordinator(
     }
 
     private fun cancelIdleStop() {
+        if (idleGraceStopScheduled) {
+            environment.remove(idleGraceStopForeground)
+            idleGraceStopScheduled = false
+        }
         if (!idleStopScheduled) return
         environment.remove(idleStop)
         idleStopScheduled = false

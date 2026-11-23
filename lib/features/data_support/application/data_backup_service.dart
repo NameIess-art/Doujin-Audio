@@ -268,8 +268,10 @@ class DataBackupService {
   }
 
   Future<StartupRestoreOutcome?> applyAtStartup() async {
-    await _workDirectoryRoot();
-    final restoreDirectory = await _restoreDirectory();
+    final support = await _supportDirectoryProvider();
+    final restoreDirectory = Directory(
+      path.join(support.path, 'backup_restore'),
+    );
     final pending = File(path.join(restoreDirectory.path, 'pending.dabackup'));
     if (!await pending.exists()) return null;
 
@@ -476,6 +478,19 @@ class DataBackupService {
   Future<Directory> _restoreDirectory() async {
     final support = await _supportDirectoryProvider();
     return Directory(path.join(support.path, 'backup_restore'));
+  }
+
+  /// Removes abandoned temporary work directories off the startup critical path.
+  Future<void> cleanupAbandonedWorkDirectories() async {
+    final support = await _supportDirectoryProvider();
+    if (!await support.exists()) return;
+    final root = Directory(
+      path.join(await support.resolveSymbolicLinks(), 'backup_work'),
+    );
+    await _workDirectoryCleanup.putIfAbsent(
+      PathMatcher.equivalenceKey(root.path),
+      () => _cleanupAbandonedWorkDirectories(root),
+    );
   }
 
   Future<Directory> _newWorkDirectory(String prefix) async {

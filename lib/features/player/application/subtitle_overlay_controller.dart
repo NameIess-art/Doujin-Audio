@@ -128,19 +128,29 @@ final class SubtitleOverlayController {
           await stopRuntime(immediate: true);
           return;
         }
+        // Apply style before showing the overlay so startup never flashes the
+        // platform default style.
+        await _applyRuntimeStyle();
+        if (!_isRuntimeRequestCurrent(generation, sessionId, trackPath)) {
+          _appliedRuntimeStyle = null;
+          if (!_runtimeEnabled) await stopRuntime(immediate: true);
+          return;
+        }
         final started = await startOverlay();
         if (!started ||
             !_isRuntimeRequestCurrent(generation, sessionId, trackPath)) {
+          _appliedRuntimeStyle = null;
           if (started) await stopOverlay(immediate: true);
           if (!_runtimeEnabled) await stopRuntime(immediate: true);
           return;
         }
         _runtimeRunning = true;
-      }
-      await _applyRuntimeStyle();
-      if (!_isRuntimeRequestCurrent(generation, sessionId, trackPath)) {
-        if (!_runtimeEnabled) await stopRuntime(immediate: true);
-        return;
+      } else {
+        await _applyRuntimeStyle();
+        if (!_isRuntimeRequestCurrent(generation, sessionId, trackPath)) {
+          if (!_runtimeEnabled) await stopRuntime(immediate: true);
+          return;
+        }
       }
       _bindRuntimeSession(session);
       _updateRuntimeSession(session);
@@ -168,7 +178,9 @@ final class SubtitleOverlayController {
     await subscription?.cancel();
     if (!_runtimeRunning && !immediate) return;
     _runtimeRunning = false;
-    await updateSubtitle('');
+    if (!immediate) {
+      await updateSubtitle('');
+    }
     await stopOverlay(immediate: immediate);
   }
 

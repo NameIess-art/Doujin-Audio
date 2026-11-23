@@ -2,16 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/state/app_runtime_providers.dart';
+import '../../../../app/theme/app_styles.dart';
+import '../../../../app/theme/theme_provider.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../../core/widgets/app_edit_panel.dart';
 import '../../../../core/widgets/app_entry_ink_well.dart';
 
 const List<Color> _queuePresetColors = [
-  Color(0xFF2E9C8B), // Default Mint Teal
-  Color(0xFF1E88E5), // Blue
-  Color(0xFF8E24AA), // Purple
-  Color(0xFFE53935), // Red
-  Color(0xFFFB8C00), // Orange
+  Color(0xFF0F9D8A), // Teal
+  Color(0xFF2563EB), // Blue
+  Color(0xFF7C3AED), // Purple
+  Color(0xFFE11D48), // Rose
+  Color(0xFFD97706), // Amber
 ];
 
 class PlaybackQueueColorPanel extends StatefulWidget {
@@ -79,6 +81,8 @@ class _PlaybackQueueColorPanelState extends State<PlaybackQueueColorPanel> {
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
+    final panelSurface = appFloatingSurfaceColor(cs);
+    final readableColor = appReadableAccentColor(color, panelSurface);
     final hexCode =
         '#${(color.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
 
@@ -98,7 +102,7 @@ class _PlaybackQueueColorPanelState extends State<PlaybackQueueColorPanel> {
                     icon: Icons.palette_outlined,
                     iconKey: const ValueKey('playback_queue_color_header_icon'),
                     title: i18n.tr('edit_queue_color'),
-                    accentColor: color,
+                    accentColor: readableColor,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -151,7 +155,7 @@ class _PlaybackQueueColorPanelState extends State<PlaybackQueueColorPanel> {
               _QueueColorSlider(
                 label: channel.$1,
                 value: channel.$2,
-                color: color,
+                color: readableColor,
                 onChangeStart: (_) => _isDragging = true,
                 onChanged: (next) {
                   final nextColorValue = _colorWithChannel(
@@ -246,11 +250,7 @@ class _PlaybackQueueColorPanelState extends State<PlaybackQueueColorPanel> {
               ? Icon(
                   Icons.check_rounded,
                   size: 18,
-                  color:
-                      ThemeData.estimateBrightnessForColor(presetColor) ==
-                          Brightness.dark
-                      ? Colors.white
-                      : Colors.black87,
+                  color: appReadableOnColor(presetColor),
                 )
               : null,
         ),

@@ -5,6 +5,7 @@ import '../../../app/localization/app_language_provider.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/app_entry_ink_well.dart';
+import '../../../core/widgets/scroll_activity_gate.dart';
 import '../../../core/widgets/unified_popup_menu.dart';
 import '../application/asmr_download_models.dart';
 
@@ -232,20 +233,32 @@ class AsmrDownloadTaskProgressSection extends StatelessWidget {
             if (trimmedError != null && trimmedError.isNotEmpty) trimmedError,
           ].join(' · ')
         : '';
+    final scrolling = progress == null
+        ? ScrollActivityGate.scrollingListenableOf(context)
+        : null;
+    final indicator = LinearProgressIndicator(
+      value: progress,
+      minHeight: 6,
+      borderRadius: BorderRadius.circular(4),
+      color: indicatorColor,
+      backgroundColor: indicatorColor.withValues(alpha: 0.2),
+    );
+    final Widget progressBar = scrolling == null
+        ? indicator
+        : ValueListenableBuilder<bool>(
+            valueListenable: scrolling,
+            child: indicator,
+            builder: (context, isScrolling, child) => TickerMode(
+              enabled: !isScrolling && TickerMode.valuesOf(context).enabled,
+              child: child!,
+            ),
+          );
     return RepaintBoundary(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: progress,
-              minHeight: 6,
-              color: indicatorColor,
-              backgroundColor: indicatorColor.withValues(alpha: 0.2),
-            ),
-          ),
+          progressBar,
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,

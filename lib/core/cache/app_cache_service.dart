@@ -380,8 +380,9 @@ class AppCacheService {
         await for (final child in directory.list(followLinks: false)) {
           deletedBytes += await _deleteEntity(child, canDelete: canDelete);
         }
-        if (!_containsProtectedPath(directory.path) &&
-            await directory.list().isEmpty) {
+        if (!_isProtected(directory.path) &&
+            !_containsProtectedPath(directory.path) &&
+            await directory.list(followLinks: false).isEmpty) {
           await directory.delete();
         }
         return deletedBytes;
@@ -417,14 +418,16 @@ class AppCacheService {
     }
     for (final dirPath in directories) {
       try {
-        if (_containsProtectedPath(dirPath)) continue;
+        if (_isProtected(dirPath) || _containsProtectedPath(dirPath)) continue;
         if (await FileSystemEntity.type(dirPath, followLinks: false) !=
             FileSystemEntityType.directory) {
           continue;
         }
         final directory = Directory(dirPath);
         final isEmpty = await directory.list(followLinks: false).isEmpty;
-        if (!_containsProtectedPath(dirPath) && isEmpty) {
+        if (!_isProtected(dirPath) &&
+            !_containsProtectedPath(dirPath) &&
+            isEmpty) {
           await directory.delete();
         }
       } on FileSystemException {

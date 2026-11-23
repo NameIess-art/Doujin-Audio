@@ -246,6 +246,51 @@ class NativePlaybackForegroundCoordinatorTest {
         assertEquals(1, host.idleStopRequests)
     }
 
+    @Test
+    fun `pausing while UI listens removes foreground notification on next tick while keeping idle grace`() {
+        val environment = FakeForegroundEnvironment()
+        val host = FakeForegroundHost(hasPlaybackToKeepAlive = true, hasActiveUiListeners = true)
+        val coordinator = NativePlaybackForegroundCoordinator(
+            host = host,
+            environment = environment,
+            watchdogIntervalMs = 4_000L,
+            idleGracePeriodMs = 15_000L
+        )
+        coordinator.sync()
+        assertTrue(coordinator.isStarted)
+        assertEquals(1, host.playbackStarts)
+
+        // Transient idle during a synchronous track switch cancels demotion without flicker.
+        host.hasPlaybackToKeepAlive = false
+        coordinator.sync()
+        assertTrue(coordinator.isStarted)
+        assertEquals(0, host.foregroundStops)
+        host.hasPlaybackToKeepAlive = true
+        coordinator.sync()
+        assertTrue(coordinator.isStarted)
+        assertEquals(0, host.foregroundStops)
+        assertEquals(listOf(4_000L), environment.delays())
+
+        // Real pause demotes foreground on the next looper turn (0ms) while deferring idleStop by 15s.
+        host.hasPlaybackToKeepAlive = false
+        coordinator.sync()
+        assertTrue(environment.delays().contains(0L))
+        assertTrue(environment.delays().contains(15_000L))
+        environment.runFirst(0L)
+
+        assertFalse(coordinator.isStarted)
+        assertEquals(1, host.foregroundStops)
+        assertEquals(listOf(15_000L), environment.delays())
+        assertEquals(0, host.idleStopRequests)
+
+        // Resuming within the grace window cancels idle stop and reposts the notification.
+        host.hasPlaybackToKeepAlive = true
+        coordinator.sync()
+        assertTrue(coordinator.isStarted)
+        assertEquals(2, host.playbackStarts)
+        assertEquals(listOf(4_000L), environment.delays())
+    }
+
     private fun coordinator(
         host: FakeForegroundHost,
         environment: FakeForegroundEnvironment

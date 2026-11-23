@@ -30,7 +30,10 @@ internal class PlaybackTimerCommandDelivery(
     private val beginCommandDelivery: () -> Unit,
     private val endCommandDelivery: () -> Unit,
     private val logInfo: (String) -> Unit,
-    private val logWarn: (String, Throwable) -> Unit
+    private val logWarn: (String, Throwable) -> Unit,
+    private val loadRuntimeStateAsync: ((StoredPlaybackTimerRuntimeState?) -> Unit) -> Unit = { callback ->
+        callback(loadRuntimeState())
+    }
 ) {
     private val maxServiceDeliveryAttempts = 40
     private val serviceDeliveryRetryDelayMs = 250L
@@ -41,19 +44,20 @@ internal class PlaybackTimerCommandDelivery(
         autoResumeAttempt: Int = 0,
         onComplete: (String) -> Unit
     ) {
-        val runtimeState = loadRuntimeState()
-        if (!isCurrent(action, generation, runtimeState)) {
-            logInfo("execute_skip_stale_or_unscheduled action=$action generation=$generation")
-            onComplete(PlaybackTimerAlarmProtocol.resultStale)
-            return
+        loadRuntimeStateAsync { runtimeState ->
+            if (!isCurrent(action, generation, runtimeState)) {
+                logInfo("execute_skip_stale_or_unscheduled action=$action generation=$generation")
+                onComplete(PlaybackTimerAlarmProtocol.resultStale)
+                return@loadRuntimeStateAsync
+            }
+            beginCommandDelivery()
+            val completion = PlaybackControlDeliveryCompletion(endCommandDelivery)
+            val complete: (String) -> Unit = { outcome ->
+                completion.finish { onComplete(outcome) }
+            }
+            logInfo("execute_now action=$action generation=$generation")
+            deliverToService(action, generation, autoResumeAttempt, 0, runtimeState, complete)
         }
-        beginCommandDelivery()
-        val completion = PlaybackControlDeliveryCompletion(endCommandDelivery)
-        val complete: (String) -> Unit = { outcome ->
-            completion.finish { onComplete(outcome) }
-        }
-        logInfo("execute_now action=$action generation=$generation")
-        deliverToService(action, generation, autoResumeAttempt, 0, complete)
     }
 
     private fun deliverToService(
@@ -61,9 +65,10 @@ internal class PlaybackTimerCommandDelivery(
         generation: Int?,
         autoResumeAttempt: Int,
         attempt: Int,
+        knownState: StoredPlaybackTimerRuntimeState?,
         complete: (String) -> Unit
     ) {
-        if (!isCurrent(action, generation, loadRuntimeState())) {
+        if (!isCurrent(action, generation, knownState)) {
             complete(PlaybackTimerAlarmProtocol.resultStale)
             return
         }
@@ -76,24 +81,29 @@ internal class PlaybackTimerCommandDelivery(
             }
             logInfo("deliver_to_service_retry action=$action attempt=$attempt")
             postDelayed(
-                { deliverToService(action, generation, autoResumeAttempt, attempt + 1, complete) },
+                {
+                    loadRuntimeStateAsync { latest ->
+                        deliverToService(action, generation, autoResumeAttempt, attempt + 1, latest, complete)
+                    }
+                },
                 serviceDeliveryRetryDelayMs
             )
             return
         }
-        val latestState = loadRuntimeState()
-        if (!isCurrent(action, generation, latestState)) {
-            complete(PlaybackTimerAlarmProtocol.resultStale)
-            return
-        }
-        try {
-            logInfo("deliver_to_service_execute action=$action")
-            // The service completes this only after any asynchronous restore and
-            // generation validation. A queued action has not executed yet.
-            executeAction(action, latestState, generation, autoResumeAttempt, complete)
-        } catch (error: Throwable) {
-            logWarn("deliver_to_service_failed action=$action", error)
-            complete(PlaybackTimerAlarmProtocol.resultFailed)
+        loadRuntimeStateAsync { latestState ->
+            if (!isCurrent(action, generation, latestState)) {
+                complete(PlaybackTimerAlarmProtocol.resultStale)
+                return@loadRuntimeStateAsync
+            }
+            try {
+                logInfo("deliver_to_service_execute action=$action")
+                // The service completes this only after any asynchronous restore and
+                // generation validation. A queued action has not executed yet.
+                executeAction(action, latestState, generation, autoResumeAttempt, complete)
+            } catch (error: Throwable) {
+                logWarn("deliver_to_service_failed action=$action", error)
+                complete(PlaybackTimerAlarmProtocol.resultFailed)
+            }
         }
     }
 

@@ -437,7 +437,9 @@ List<SubtitleCue> _parseWebVtt(String raw) {
       i++;
       continue;
     }
-    if (line.startsWith('NOTE')) {
+    if (line == 'NOTE' ||
+        line.startsWith('NOTE ') ||
+        line.startsWith('NOTE\t')) {
       while (i < lines.length && lines[i].trim().isNotEmpty) {
         i++;
       }

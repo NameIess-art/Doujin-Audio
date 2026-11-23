@@ -56,6 +56,7 @@ class SessionProgressBar extends StatelessWidget {
     this.timeSegmentLabels = const <TimeSegmentLabel>[],
     this.selectedSegmentId,
     this.onSeekStart,
+    this.onSeekCancel,
     this.onManualSeek,
   });
 
@@ -86,6 +87,7 @@ class SessionProgressBar extends StatelessWidget {
   final List<TimeSegmentLabel> timeSegmentLabels;
   final String? selectedSegmentId;
   final VoidCallback? onSeekStart;
+  final VoidCallback? onSeekCancel;
   final ValueChanged<Duration>? onManualSeek;
 
   @override
@@ -106,6 +108,7 @@ class SessionProgressBar extends StatelessWidget {
       timeSegmentLabels: timeSegmentLabels,
       selectedSegmentId: selectedSegmentId,
       onSeekStart: onSeekStart,
+      onSeekCancel: onSeekCancel,
       onManualSeek: onManualSeek,
       inlineTimecodes: inlineTimecodes,
     );
@@ -121,6 +124,7 @@ class _ProgressSliderAndTimecodes extends StatefulWidget {
     required this.timeSegmentLabels,
     required this.selectedSegmentId,
     required this.onSeekStart,
+    required this.onSeekCancel,
     required this.onManualSeek,
     required this.inlineTimecodes,
   });
@@ -132,6 +136,7 @@ class _ProgressSliderAndTimecodes extends StatefulWidget {
   final List<TimeSegmentLabel> timeSegmentLabels;
   final String? selectedSegmentId;
   final VoidCallback? onSeekStart;
+  final VoidCallback? onSeekCancel;
   final ValueChanged<Duration>? onManualSeek;
   final bool inlineTimecodes;
 
@@ -150,14 +155,18 @@ class _ProgressSliderAndTimecodesState
   double? _dragValueMs;
   double? _hoverValueMs;
   bool _tickerModeEnabled = true;
+  double _devicePixelRatio = 1.0;
   final _sliderKey = GlobalKey();
   final _frameKey = GlobalKey<_ProgressSliderFrameState>();
 
   @override
   void initState() {
     super.initState();
-    _positionGate = PlaybackPositionUiGate(session: widget.session)
-      ..addListener(_handlePositionTick);
+    _positionGate = PlaybackPositionUiGate(
+      session: widget.session,
+      minUpdateInterval: const Duration(milliseconds: 16),
+      alignToFrame: true,
+    )..addListener(_handlePositionTick);
     _sliderValue = ValueNotifier<_ProgressSliderValue>(
       _buildSliderValue(_positionGate.value),
     );
@@ -176,6 +185,7 @@ class _ProgressSliderAndTimecodesState
     _frameKey.currentState?.cancelDrag();
     if (wasDragging) {
       _positionGate.tickerModeEnabled = _tickerModeEnabled;
+      widget.onSeekCancel?.call();
     }
   }
 
@@ -202,6 +212,7 @@ class _ProgressSliderAndTimecodesState
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _devicePixelRatio = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0;
     final nextTickerMode = TickerMode.valuesOf(context).enabled;
     if (_tickerModeEnabled == nextTickerMode) return;
     _tickerModeEnabled = nextTickerMode;
@@ -212,6 +223,11 @@ class _ProgressSliderAndTimecodesState
 
   @override
   void dispose() {
+    if (_isDragging || _dragValueMs != null) {
+      _isDragging = false;
+      _dragValueMs = null;
+      widget.onSeekCancel?.call();
+    }
     _positionGate
       ..removeListener(_handlePositionTick)
       ..dispose();
@@ -249,13 +265,40 @@ class _ProgressSliderAndTimecodesState
 
   void _publishProgressValue({bool force = false}) {
     final nextSlider = _buildSliderValue(_positionGate.value);
-    if (force || _sliderValue.value != nextSlider) {
+    if (force || _shouldUpdateSliderValue(_sliderValue.value, nextSlider)) {
       _sliderValue.value = nextSlider;
     }
     _timecodeValue.value = _buildTimecodeValue(
       nextSlider,
       overridePositionMs: _isDragging ? null : _hoverValueMs,
     );
+  }
+
+  bool _shouldUpdateSliderValue(
+    _ProgressSliderValue current,
+    _ProgressSliderValue next,
+  ) {
+    if (_isDragging ||
+        current.maxMillis != next.maxMillis ||
+        current.bufferedValue != next.bufferedValue ||
+        current.duration != next.duration ||
+        current.hasKnownDuration != next.hasKnownDuration ||
+        current.canSeek != next.canSeek) {
+      return current != next;
+    }
+    if (current.sliderValue == next.sliderValue) return false;
+    if (next.sliderValue <= 0 || next.sliderValue >= next.maxMillis) {
+      return true;
+    }
+    final box = _sliderKey.currentContext?.findRenderObject() as RenderBox?;
+    final width = box?.hasSize == true ? box!.size.width : 0.0;
+    if (width <= 0 || next.maxMillis <= 0) return true;
+    final trackWidth = _progressTrackWidth(width);
+    final physicalPixelsDelta =
+        ((next.sliderValue - current.sliderValue).abs() / next.maxMillis) *
+        trackWidth *
+        _devicePixelRatio;
+    return physicalPixelsDelta >= 0.5;
   }
 
   _ProgressSliderValue _buildSliderValue(PlaybackPositionUiSnapshot snapshot) {
@@ -370,7 +413,7 @@ class _ProgressSliderAndTimecodesState
     _dragValueMs = null;
     _hoverValueMs = null;
     _clearTooltip();
-    _publishProgressValue();
+    _publishProgressValue(force: true);
     _positionGate.tickerModeEnabled = _tickerModeEnabled;
   }
 
@@ -483,7 +526,7 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
       OverlayPortalController();
   final LayerLink _layerLink = LayerLink();
   late final AnimationController _tooltipAnimation;
-  late final Animation<double> _tooltipOpacity;
+  late final CurvedAnimation _tooltipOpacity;
   _ProgressTooltipState? _lastTooltip;
   bool _tooltipVisible = false;
   bool _disableAnimations = false;
@@ -654,6 +697,7 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
   void dispose() {
     SessionProgressBar._mountedFrames.remove(this);
     widget.tooltipValue.removeListener(_handleTooltipChanged);
+    _tooltipOpacity.dispose();
     _tooltipAnimation.dispose();
     super.dispose();
   }

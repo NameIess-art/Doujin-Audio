@@ -993,7 +993,9 @@ void main() {
           expect(
             find.descendant(
               of: find.byType(LibrarySkeletonListView),
-              matching: find.byType(ShaderMask),
+              matching: find.byWidgetPredicate(
+                (widget) => widget is ShaderMask,
+              ),
             ),
             findsOneWidget,
           );

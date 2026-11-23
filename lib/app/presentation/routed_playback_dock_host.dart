@@ -14,8 +14,7 @@ import '../presentation/main_screen.dart';
 import '../../features/library/presentation/work_detail_page.dart';
 import '../../features/player/presentation/active_session_carousel.dart';
 import '../../features/player/presentation/playlist_tab.dart';
-import '../../core/widgets/library_like_cards.dart';
-import '../theme/app_styles.dart';
+import '../theme/app_styles.dart' show AppSpacing;
 
 typedef RoutedPlaybackDockAppBuilder =
     Widget Function(
@@ -231,18 +230,10 @@ class _RoutedPlaybackDockHostState
   }
 
   Widget _wrapNavigator(BuildContext context, Widget child) {
-    final size = MediaQuery.sizeOf(context);
-    final padding = MediaQuery.paddingOf(context);
     return ValueListenableBuilder<({bool isWorkDetailRoute, bool hasPopups})>(
       valueListenable: _navigatorWrapState,
       child: child,
       builder: (context, wrapState, navigatorChild) {
-        final supportsRoutedDock = size.width >= 300 && size.height >= 300;
-        final canReserveWorkDetailDockInset =
-            widget.enabled && wrapState.isWorkDetailRoute && supportsRoutedDock;
-        final dockBottom = padding.bottom > kMobileDockBottomMargin
-            ? padding.bottom
-            : kMobileDockBottomMargin;
         final stack = Stack(
           fit: StackFit.expand,
           children: [
@@ -261,16 +252,34 @@ class _RoutedPlaybackDockHostState
         return Consumer(
           child: stack,
           builder: (context, ref, stackChild) {
-            final hasOverlaySessions = canReserveWorkDetailDockInset
+            if (!widget.enabled || !wrapState.isWorkDetailRoute) {
+              return MobileOverlayInset(
+                bottomInset: 0.0,
+                menuOverlayKey: _menuOverlayKey,
+                menuDismiss: widget.menuDismiss,
+                child: stackChild!,
+              );
+            }
+            final size = MediaQuery.sizeOf(context);
+            final supportsRoutedDock = size.width >= 300 && size.height >= 300;
+            final hasOverlaySessions = supportsRoutedDock
                 ? ref.watch(
                     mainOverlayUiProvider.select(
                       (state) => state.overlaySessions.isNotEmpty,
                     ),
                   )
                 : false;
-            final routeDockInset = hasOverlaySessions
-                ? kActiveSessionCarouselDockHeight + dockBottom + 6
-                : 0.0;
+            final double routeDockInset;
+            if (hasOverlaySessions) {
+              final padding = MediaQuery.paddingOf(context);
+              final dockBottom = padding.bottom > kMobileDockBottomMargin
+                  ? padding.bottom
+                  : kMobileDockBottomMargin;
+              routeDockInset =
+                  kActiveSessionCarouselDockHeight + dockBottom + 6;
+            } else {
+              routeDockInset = 0.0;
+            }
             return MobileOverlayInset(
               bottomInset: routeDockInset,
               menuOverlayKey: _menuOverlayKey,
@@ -539,6 +548,8 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
   Timer? _hideTimer;
   late bool _visible = widget.active;
   bool _expanded = false;
+  bool _expansionScheduled = false;
+  bool _lastIsLandscapeDock = false;
   bool _raisedDockEntered = false;
   late bool _fixedDockShown = widget.active && widget.fixedDockVisible == true;
   (Size, Rect)? _returnGeometry;
@@ -547,7 +558,19 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
   void initState() {
     super.initState();
     widget.geometry.addListener(_handleGeometryChanged);
-    if (widget.active) _scheduleExpansion();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final size = MediaQuery.sizeOf(context);
+    _lastIsLandscapeDock =
+        defaultTargetPlatform == TargetPlatform.windows ||
+        MediaQuery.orientationOf(context) == Orientation.landscape ||
+        size.width >= 980;
+    if (widget.active && !_expanded) {
+      _scheduleExpansion();
+    }
   }
 
   void _handleGeometryChanged() {
@@ -587,9 +610,25 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
   }
 
   void _scheduleExpansion() {
-    if (widget.fixedDockVisible != null || widget.fadeWithWorkDetail) return;
+    if (_expansionScheduled ||
+        _expanded ||
+        !_lastIsLandscapeDock ||
+        !widget.geometry.mainDockCollapsed ||
+        widget.fixedDockVisible != null ||
+        widget.fadeWithWorkDetail) {
+      return;
+    }
+    _expansionScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && widget.active) setState(() => _expanded = true);
+      _expansionScheduled = false;
+      if (mounted &&
+          widget.active &&
+          !widget.departing &&
+          _lastIsLandscapeDock &&
+          widget.geometry.mainDockCollapsed &&
+          !_expanded) {
+        setState(() => _expanded = true);
+      }
     });
   }
 
@@ -624,9 +663,8 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
     if (!widget.active || !_visible || !supported || sessions.isEmpty) {
       return const SizedBox.shrink();
     }
-    final duration = MediaQuery.disableAnimationsOf(context)
-        ? Duration.zero
-        : _duration;
+    final disableAnimations = MediaQuery.disableAnimationsOf(context);
+    final duration = disableAnimations ? Duration.zero : _duration;
     final hasFixedEntrance = widget.fixedDockVisible != null;
     final fixedAtBottom =
         widget.fadeWithWorkDetail || (hasFixedEntrance && !widget.departing);
@@ -659,20 +697,14 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
 
     final isRaised = widget.geometry.mainDockRaised;
-    final dockBorderRadius = isRaised
-        ? const BorderRadius.only(
-            topLeft: Radius.circular(LibraryLikeCardMetrics.cardRadius),
-            bottomLeft: Radius.circular(LibraryLikeCardMetrics.cardRadius),
-            topRight: Radius.circular(kActiveSessionCarouselDockHeight / 2),
-            bottomRight: Radius.circular(kActiveSessionCarouselDockHeight / 2),
-          )
-        : BorderRadius.circular(kActiveSessionCarouselDockHeight / 2);
+    const dockBorderRadius = BorderRadius.all(
+      Radius.circular(kActiveSessionCarouselDockHeight / 2),
+    );
 
     Widget carousel({double? contentWidth}) => ActiveSessionCarousel(
       sessions: sessions,
       i18n: i18n,
       expandedDockWidth: contentWidth,
-      isPlaybackRaised: isRaised,
       viewportFraction: 1,
       presentation: ActiveSessionCarouselPresentation.embedded,
       isRoutedDock: true,
@@ -745,9 +777,7 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
                     behavior: HitTestBehavior.opaque,
                     child: ClipRRect(
                       key: const ValueKey<String>('routed_playback_dock'),
-                      borderRadius: BorderRadius.circular(
-                        kActiveSessionCarouselDockHeight / 2,
-                      ),
+                      borderRadius: dockBorderRadius,
                       child: !widget.geometry.mainDockCollapsed
                           ? RepaintBoundary(child: dockContent())
                           : OverflowBox(
@@ -796,9 +826,10 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
     final portraitContentWidth = widget.geometry.mainDockCollapsed
         ? null
         : width;
+    final needsFixedPortraitWidth = widget.geometry.mainDockCollapsed;
     final raisedBackdrop = isRaised && !widget.geometry.mainDockCollapsed
         ? FadeTransition(
-            opacity: MediaQuery.disableAnimationsOf(context)
+            opacity: disableAnimations
                 ? kAlwaysCompleteAnimation
                 : _MappedDoubleAnimation(
                     animation,
@@ -829,7 +860,7 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
         ),
         builder: (context, child) {
           final curve = isRaised ? Curves.easeInOutCubic : Curves.easeOutCubic;
-          final progress = MediaQuery.disableAnimationsOf(context)
+          final progress = disableAnimations
               ? 1.0
               : curve.transform(animation.value);
           if (!fixedAtBottom &&
@@ -857,15 +888,16 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
             bounds.bottom - inset,
           );
           Widget content = child!;
-          if (widget.geometry.mainDockCollapsed) {
-            // Reveal a stable carousel from the left of the compact card.
+          if (needsFixedPortraitWidth) {
+            // Reveal a stable carousel from the left without per-frame relayout.
             content = OverflowBox(
               alignment: Alignment.centerLeft,
               minWidth: target.width,
               maxWidth: target.width,
               child: content,
             );
-          } else if (raisedBackdrop != null) {
+          }
+          if (raisedBackdrop != null) {
             // The home panel is already behind the card as it lands.
             // Fade only the extra surface to keep the cover visible.
             content = Stack(

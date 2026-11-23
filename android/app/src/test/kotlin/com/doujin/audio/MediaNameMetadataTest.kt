@@ -17,6 +17,18 @@ class MediaNameMetadataTest {
     }
 
     @Test
+    fun `preserves literal plus signs and malformed percent sequences`() {
+        assertEquals(
+            "Track A+B Remix.mp3",
+            MediaNameMetadata.normalizeDisplayName("Track%20A+B%20Remix.mp3")
+        )
+        assertEquals(
+            "100% pure audio.mp3",
+            MediaNameMetadata.normalizeDisplayName("100% pure%20audio.mp3")
+        )
+    }
+
+    @Test
     fun `rejects blocked non media extensions`() {
         assertNull(MediaNameMetadata.mediaNameInfoOrNull("cover.jpg"))
     }

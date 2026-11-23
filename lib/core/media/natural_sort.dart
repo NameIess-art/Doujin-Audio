@@ -106,9 +106,21 @@ int compareNatural(String left, String right, {bool caseSensitive = false}) {
       continue;
     }
 
+    if (leftIsNumber != rightIsNumber) {
+      return leftIsNumber
+          ? 0x30.compareTo(rightCode)
+          : leftCode.compareTo(0x30);
+    }
+
     if (leftCode != rightCode) return leftCode.compareTo(rightCode);
     leftIndex++;
     rightIndex++;
+  }
+
+  final leftHasMore = leftIndex < normalizedLeft.length;
+  final rightHasMore = rightIndex < normalizedRight.length;
+  if (leftHasMore != rightHasMore) {
+    return leftHasMore ? 1 : -1;
   }
 
   final lengthResult = normalizedLeft.length.compareTo(normalizedRight.length);
@@ -241,12 +253,12 @@ int _compareNumbers(_NumberToken left, _NumberToken right) {
   final valueResult = valLeft.compareTo(valRight);
   if (valueResult != 0) return valueResult;
 
-  if (left.isArabic && right.isArabic) {
-    return left.rawRun.length.compareTo(right.rawRun.length);
+  if (left.isArabic != right.isArabic) {
+    return left.isArabic ? -1 : 1;
   }
 
-  if (left.rawRun != right.rawRun) {
-    return left.rawRun.compareTo(right.rawRun);
+  if (left.isArabic) {
+    return left.rawRun.length.compareTo(right.rawRun.length);
   }
 
   return 0;

@@ -33,11 +33,14 @@ class DesktopIntegration {
   using Channel = flutter::MethodChannel<flutter::EncodableValue>;
   void Action(const std::string& action);
   void CompleteDeferredInit();
+  void CompleteDeferredMediaInit();
   void AddTray();
+  void RemoveTray();
   void ShowTrayMenu();
   void SetFullscreen(bool enabled);
   void RunWindowCommand(const std::string& command);
   void PublishWindowMaximized();
+  void UpdateHitTestBounds();
   void UpdateHitTestMetrics();
   LRESULT TopResizeHit(POINT screen) const;
   static LRESULT CALLBACK ContentProc(HWND content, UINT message, WPARAM wparam,
@@ -48,6 +51,7 @@ class DesktopIntegration {
   void UpdateTheme();
   bool UsesDarkTheme() const;
   struct AsyncIoState;
+  struct TrayState;
   void OpenContainingFolder(const flutter::EncodableMap& args,
       std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>& result);
   void GetStorageUsage(
@@ -58,13 +62,14 @@ class DesktopIntegration {
       std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>& result);
   void ReplyAsyncIo();
   std::shared_ptr<AsyncIoState> async_io_;
+  std::shared_ptr<TrayState> tray_state_;
   HWND window_;
   HWND content_ = nullptr;
   std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
   bool ready_ = false;
   bool first_frame_ready_ = false;
   bool deferred_init_done_ = false;
-  bool tray_added_ = false;
+  bool deferred_media_init_done_ = false;
   bool initial_shown_ = false;
   bool pending_activate_ = false;
   bool pending_activate_show_ = false;

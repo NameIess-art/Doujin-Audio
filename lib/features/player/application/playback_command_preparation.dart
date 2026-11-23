@@ -172,8 +172,11 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
             session.playbackCommandGeneration != stopGeneration) {
           return false;
         }
-        // Advance past the stop snapshot's command ID so its queued microtask
-        // event cannot overwrite the newly selected paused track.
+      }
+      if (hadNativeWork && (trackChanged || forceStartAtZero)) {
+        // Advance past the pause/stop snapshot's command ID so a late event
+        // from the previous track or position cannot overwrite the newly
+        // selected paused state.
         final nextCommandId = _playbackFacade.nextTransportCommandId();
         session.beginTransportCommand(commandId: nextCommandId, playing: false);
         session.confirmPaused();
@@ -484,6 +487,22 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
     _notifyPlaybackChanged(session.id);
   }
 
+  bool _canReuseExistingNativeQueue(
+    PlaybackSession session, {
+    required String targetResolvedPath,
+  }) {
+    if (session.loadedPath == null ||
+        session.state.processingState == ProcessingState.idle ||
+        session.playbackError != null ||
+        session.hasDetachedQueueTrack ||
+        session.syncedNativeQueueBaseKey == null) {
+      return false;
+    }
+    final scopeKey = _playbackQueueScopeKey(session, targetResolvedPath);
+    final baseKey = Object.hash(scopeKey, _libraryFacade.contentRevision);
+    return session.syncedNativeQueueBaseKey == baseKey;
+  }
+
   Future<_NativePreparationResult> _prepareNativeTrackWithRetry(
     PlaybackSession session,
     _PlaybackPreparationTarget target, {
@@ -493,6 +512,10 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
   }) async {
     const maxAttempts = 2;
     String? lastError;
+    var tryReuseQueue = _canReuseExistingNativeQueue(
+      session,
+      targetResolvedPath: target.resolvedPath,
+    );
     for (var attempt = 0; attempt < maxAttempts; attempt++) {
       if (attempt > 0) {
         AppLogService.warning(
@@ -506,6 +529,60 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
           );
         }
       }
+      final queueStartIndex = _nativePlaybackQueueStartIndexFor(
+        session,
+        currentPath: target.resolvedPath,
+        targetQueueIndex: targetQueueIndex,
+      );
+      final repeatAll =
+          (_nativePlaybackRepository.handlesQueueCompletion ||
+              !_hasDetachedPlaybackQueueCurrent(session)) &&
+          session.loopMode != SessionLoopMode.single &&
+          !session.loopMode.isOneShot;
+      if (tryReuseQueue && queueStartIndex != null) {
+        final reuseResult = await _nativePlaybackRepository.prepareSession(
+          sessionId: session.id,
+          isTemporary: session.isTemporary,
+          uri: target.uri,
+          title: target.title,
+          path: target.resolvedPath,
+          subtitle: target.track?.groupTitle,
+          artUri: target.artUri,
+          startPosition: target.startPosition,
+          volume: session.volume,
+          speed: session.speed,
+          audioEffects: NativeAudioEffects(
+            state: session.audioEffects,
+            channelSwapEnabled: session.channelSwapEnabled,
+          ),
+          repeatOne: session.loopMode == SessionLoopMode.single,
+          autoPlay: autoPlay,
+          queueStartIndex: queueStartIndex,
+          repeatAll: repeatAll,
+          shuffle: session.loopMode.isShuffle,
+          candidateUris: target.candidateUris,
+          reuseExistingQueue: true,
+        );
+        if (!_isSessionLoadCurrent(session, generation)) {
+          return const _NativePreparationResult.failure(
+            'Playback preparation was superseded.',
+          );
+        }
+        if (reuseResult.isOk) {
+          return _NativePreparationResult.success(reuseResult.valueOrNull);
+        }
+        session.syncedNativeQueueBaseKey = null;
+        tryReuseQueue = false;
+        if (reuseResult.errorCodeOrNull !=
+            nativePlaybackQueueResyncRequiredCode) {
+          lastError = reuseResult.errorOrNull;
+          AppLogService.warning(
+            'PlaybackCommandCoordinator.prepareAndPlay: attempt ${attempt + 1} failed: '
+            '${reuseResult.errorOrNull ?? "unknown error"}.',
+          );
+          continue;
+        }
+      }
       final nativeQueue = await _nativePlaybackQueueFor(
         session,
         currentPath: target.resolvedPath,
@@ -515,6 +592,11 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
           'Playback preparation was superseded.',
         );
       }
+      final fullQueueStartIndex = _nativePlaybackQueueStartIndexFor(
+        session,
+        currentPath: target.resolvedPath,
+        targetQueueIndex: targetQueueIndex,
+      );
       final result = await _nativePlaybackRepository.prepareSession(
         sessionId: session.id,
         isTemporary: session.isTemporary,
@@ -533,16 +615,8 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
         repeatOne: session.loopMode == SessionLoopMode.single,
         autoPlay: autoPlay,
         queue: nativeQueue,
-        queueStartIndex: _nativePlaybackQueueStartIndexFor(
-          session,
-          currentPath: target.resolvedPath,
-          targetQueueIndex: targetQueueIndex,
-        ),
-        repeatAll:
-            (_nativePlaybackRepository.handlesQueueCompletion ||
-                !_hasDetachedPlaybackQueueCurrent(session)) &&
-            session.loopMode != SessionLoopMode.single &&
-            !session.loopMode.isOneShot,
+        queueStartIndex: fullQueueStartIndex,
+        repeatAll: repeatAll,
         shuffle: session.loopMode.isShuffle,
         candidateUris: target.candidateUris,
       );
@@ -552,6 +626,10 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
         );
       }
       if (result.isOk) {
+        session.syncedNativeQueueBaseKey = Object.hash(
+          session.nativePlaybackQueueScopeCacheKey,
+          _libraryFacade.contentRevision,
+        );
         _playbackFacade.updateNativeSessionRetainedContentUris(
           session.id,
           <Object?>[
@@ -566,6 +644,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
         );
         return _NativePreparationResult.success(result.valueOrNull);
       }
+      session.syncedNativeQueueBaseKey = null;
       lastError = result.errorOrNull;
       AppLogService.warning(
         'PlaybackCommandCoordinator.prepareAndPlay: attempt ${attempt + 1} failed: '
@@ -706,20 +785,17 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
   }) async {
     final logicalCurrentPath =
         _playbackFacade.originalPathForRetargeted(currentPath) ?? currentPath;
-    var scope = _playbackQueueScopeFor(
-      session,
-      currentPath: logicalCurrentPath,
-      repositionCurrentIndex: false,
-    );
-    var paths = scope.paths;
-    final hasRetargetedPaths = _playbackFacade.hasRetargetedPaths;
 
     int computeBaseKey() => Object.hash(
       session.nativePlaybackQueueScopeCacheKey,
       _libraryFacade.contentRevision,
     );
 
-    bool cachedQueueCoversMatch(List<Map<String, Object?>> cachedQueue) {
+    bool cachedQueueCoversMatch(
+      PlaybackQueueScope scope,
+      List<String> paths,
+      List<Map<String, Object?>> cachedQueue,
+    ) {
       if (cachedQueue.length != paths.length) return false;
       final customTracks =
           session.isPlaybackQueue && !session.hasDetachedQueueTrack
@@ -752,121 +828,152 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
       return true;
     }
 
-    if (!hasRetargetedPaths) {
-      final baseKey = computeBaseKey();
-      final cacheKey = Object.hash(baseKey, _libraryFacade.coverGeneration);
-      final cached = session.nativePlaybackQueueCache;
-      if (session.nativePlaybackQueueCacheKey == cacheKey) {
-        if (cached != null) {
-          if (_isRegisteredSession(session)) {
-            _syncActivePlaybackCacheLease(session);
-          }
-          return cached;
-        }
-        final pending = session.nativePlaybackQueueFuture;
-        if (pending != null) return pending;
-      } else if (cached != null &&
-          session.nativePlaybackQueueBaseKey == baseKey &&
-          cachedQueueCoversMatch(cached)) {
-        session.nativePlaybackQueueCacheKey = cacheKey;
-        if (_isRegisteredSession(session)) {
-          _syncActivePlaybackCacheLease(session);
-        }
-        return cached;
-      }
-    }
+    while (true) {
+      if (!_isRegisteredSession(session)) return const [];
+      var scope = _playbackQueueScopeFor(
+        session,
+        currentPath: logicalCurrentPath,
+        repositionCurrentIndex: false,
+      );
+      var paths = scope.paths;
+      if (paths.isEmpty) return const [];
+      final hasRetargetedPaths = _playbackFacade.hasRetargetedPaths;
 
-    final lease = AppCacheService.protectPaths(
-      paths.where((value) => !value.contains('://')),
-    );
-    try {
-      if (hasRetargetedPaths) {
-        final retargetRevisionBefore = _playbackFacade.retargetRevision;
-        await _playbackFacade.validatePlaybackCachePaths(paths);
-        if (_playbackFacade.retargetRevision != retargetRevisionBefore) {
-          scope = _playbackQueueScopeFor(
-            session,
-            currentPath: logicalCurrentPath,
-            repositionCurrentIndex: false,
-          );
-          paths = scope.paths;
-        }
-      }
-      final baseKey = computeBaseKey();
-      final cacheKey = Object.hash(baseKey, _libraryFacade.coverGeneration);
-      final cached = session.nativePlaybackQueueCache;
-      if (session.nativePlaybackQueueCacheKey == cacheKey) {
-        if (cached != null) {
-          if (_isRegisteredSession(session)) {
-            _syncActivePlaybackCacheLease(session);
-          }
-          return cached;
-        }
-        final pending = session.nativePlaybackQueueFuture;
-        if (pending != null) return pending;
-      } else if (cached != null &&
-          session.nativePlaybackQueueBaseKey == baseKey &&
-          cachedQueueCoversMatch(cached)) {
-        session.nativePlaybackQueueCacheKey = cacheKey;
-        if (_isRegisteredSession(session)) {
-          _syncActivePlaybackCacheLease(session);
-        }
-        return cached;
-      }
-      session.nativePlaybackQueueBaseKey = baseKey;
-      session.nativePlaybackQueueCacheKey = cacheKey;
-      session.nativePlaybackQueueCache = null;
-      Future<List<Map<String, Object?>>> buildQueue() async {
-        final descriptors = <_NativeQueueTrack>[];
-        final slice = Stopwatch()..start();
-        final customTracks =
-            session.isPlaybackQueue && !session.hasDetachedQueueTrack
-            ? session.playbackQueue!.expandedTracks
-            : session.customQueueTracks;
-        final playDetachedOnce =
-            _nativePlaybackRepository.handlesQueueCompletion &&
-            session.hasDetachedQueueTrack &&
-            scope.queueIndices.firstOrNull == 0;
-        for (final (index, trackPath) in paths.indexed) {
-          final track = scope.isCustomQueue && customTracks != null
-              ? customTracks[scope.queueIndices[index]]
-              : _sessionTrackForPath(session, trackPath);
-          descriptors.add((
-            path: trackPath,
-            track: track,
-            coverPath: resolvedPlaybackCoverPathForTrack(track),
-            playOnceBeforeQueue: playDetachedOnce && index == 0,
-          ));
-          if (slice.elapsedMicroseconds >= 2000) {
-            await Future<void>.delayed(Duration.zero);
-            if (!_isRegisteredSession(session) ||
-                session.nativePlaybackQueueCacheKey != cacheKey) {
-              return const [];
+      if (!hasRetargetedPaths) {
+        final baseKey = computeBaseKey();
+        final cacheKey = Object.hash(baseKey, _libraryFacade.coverGeneration);
+        final cached = session.nativePlaybackQueueCache;
+        if (session.nativePlaybackQueueCacheKey == cacheKey) {
+          if (cached != null) {
+            if (_isRegisteredSession(session)) {
+              _syncActivePlaybackCacheLease(session);
             }
-            slice.reset();
+            return cached;
           }
+          final pending = session.nativePlaybackQueueFuture;
+          if (pending != null) {
+            final result = await pending;
+            if (result != null) return result;
+            continue;
+          }
+        } else if (cached != null &&
+            session.nativePlaybackQueueBaseKey == baseKey &&
+            cachedQueueCoversMatch(scope, paths, cached)) {
+          session.nativePlaybackQueueCacheKey = cacheKey;
+          if (_isRegisteredSession(session)) {
+            _syncActivePlaybackCacheLease(session);
+          }
+          return cached;
         }
-        return compute(_buildNativePlaybackQueue, descriptors);
       }
 
-      final pending = buildQueue();
-      session.nativePlaybackQueueFuture = pending;
+      final lease = AppCacheService.protectPaths(
+        paths.where((value) => !value.contains('://')),
+      );
+      var retryWithLatest = false;
       try {
-        final queue = await pending;
-        if (_isRegisteredSession(session) &&
-            session.nativePlaybackQueueCacheKey == cacheKey &&
-            identical(session.nativePlaybackQueueFuture, pending)) {
-          session.nativePlaybackQueueCache = queue;
-          _syncActivePlaybackCacheLease(session);
+        if (hasRetargetedPaths) {
+          final retargetRevisionBefore = _playbackFacade.retargetRevision;
+          await _playbackFacade.validatePlaybackCachePaths(paths);
+          if (!_isRegisteredSession(session)) return const [];
+          if (_playbackFacade.retargetRevision != retargetRevisionBefore) {
+            scope = _playbackQueueScopeFor(
+              session,
+              currentPath: logicalCurrentPath,
+              repositionCurrentIndex: false,
+            );
+            paths = scope.paths;
+            if (paths.isEmpty) return const [];
+          }
         }
-        return queue;
+        final baseKey = computeBaseKey();
+        final cacheKey = Object.hash(baseKey, _libraryFacade.coverGeneration);
+        final cached = session.nativePlaybackQueueCache;
+        if (session.nativePlaybackQueueCacheKey == cacheKey) {
+          if (cached != null) {
+            if (_isRegisteredSession(session)) {
+              _syncActivePlaybackCacheLease(session);
+            }
+            return cached;
+          }
+          final pending = session.nativePlaybackQueueFuture;
+          if (pending != null) {
+            final result = await pending;
+            if (result != null) return result;
+            retryWithLatest = true;
+          }
+        } else if (cached != null &&
+            session.nativePlaybackQueueBaseKey == baseKey &&
+            cachedQueueCoversMatch(scope, paths, cached)) {
+          session.nativePlaybackQueueCacheKey = cacheKey;
+          if (_isRegisteredSession(session)) {
+            _syncActivePlaybackCacheLease(session);
+          }
+          return cached;
+        }
+        if (retryWithLatest) continue;
+
+        session.nativePlaybackQueueBaseKey = baseKey;
+        session.nativePlaybackQueueCacheKey = cacheKey;
+        session.nativePlaybackQueueCache = null;
+        Future<List<Map<String, Object?>>?> buildQueue() async {
+          final descriptors = <_NativeQueueTrack>[];
+          final slice = Stopwatch()..start();
+          final customTracks =
+              session.isPlaybackQueue && !session.hasDetachedQueueTrack
+              ? session.playbackQueue!.expandedTracks
+              : session.customQueueTracks;
+          final playDetachedOnce =
+              _nativePlaybackRepository.handlesQueueCompletion &&
+              session.hasDetachedQueueTrack &&
+              scope.queueIndices.firstOrNull == 0;
+          for (final (index, trackPath) in paths.indexed) {
+            final track = scope.isCustomQueue && customTracks != null
+                ? customTracks[scope.queueIndices[index]]
+                : _sessionTrackForPath(session, trackPath);
+            descriptors.add((
+              path: trackPath,
+              track: track,
+              coverPath: resolvedPlaybackCoverPathForTrack(track),
+              playOnceBeforeQueue: playDetachedOnce && index == 0,
+            ));
+            if (slice.elapsedMicroseconds >= 2000) {
+              await Future<void>.delayed(Duration.zero);
+              if (!_isRegisteredSession(session)) {
+                return const [];
+              }
+              if (session.nativePlaybackQueueCacheKey != cacheKey) {
+                return null;
+              }
+              slice.reset();
+            }
+          }
+          return compute(_buildNativePlaybackQueue, descriptors);
+        }
+
+        final pending = buildQueue();
+        session.nativePlaybackQueueFuture = pending;
+        try {
+          final queue = await pending;
+          if (queue == null) {
+            retryWithLatest = true;
+          } else {
+            if (_isRegisteredSession(session) &&
+                session.nativePlaybackQueueCacheKey == cacheKey &&
+                identical(session.nativePlaybackQueueFuture, pending)) {
+              session.nativePlaybackQueueCache = queue;
+              _syncActivePlaybackCacheLease(session);
+            }
+            return queue;
+          }
+        } finally {
+          if (identical(session.nativePlaybackQueueFuture, pending)) {
+            session.nativePlaybackQueueFuture = null;
+          }
+        }
       } finally {
-        if (identical(session.nativePlaybackQueueFuture, pending)) {
-          session.nativePlaybackQueueFuture = null;
-        }
+        lease.release();
       }
-    } finally {
-      lease.release();
     }
   }
 

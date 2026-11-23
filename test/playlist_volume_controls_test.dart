@@ -84,7 +84,7 @@ void main() {
                   subtitleEnabled: false,
                   subtitleGlobalEnabled: false,
                   onShowTrackSwitcher: () {},
-                  onToggleSegments: () {},
+                  onOpenFeatures: () {},
                 ),
               ),
             ),
@@ -358,7 +358,7 @@ void main() {
             subtitleEnabled: false,
             subtitleGlobalEnabled: false,
             onShowTrackSwitcher: () {},
-            onToggleSegments: () {},
+            onOpenFeatures: () {},
           ),
         ),
       );

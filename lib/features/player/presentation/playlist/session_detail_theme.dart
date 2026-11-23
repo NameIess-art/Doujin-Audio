@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../../../app/theme/app_design_tokens.dart';
+import '../../../../app/theme/app_styles.dart';
 import '../../../../app/theme/theme_provider.dart';
 import '../../../../core/widgets/app_buttons.dart';
 import '../../../../core/cache/app_cache_service.dart';
@@ -43,6 +44,7 @@ Future<ColorScheme> _loadCoverScheme(_CoverSchemeKey key) {
       final scheme = await ColorScheme.fromImageProvider(
         provider: provider,
         brightness: key.brightness,
+        dynamicSchemeVariant: DynamicSchemeVariant.fidelity,
         contrastLevel: key.contrast,
       );
       _coverSchemes[key] = scheme;
@@ -269,7 +271,9 @@ class _SessionDetailThemeState extends State<SessionDetailTheme>
   @override
   Widget build(BuildContext context) {
     final base = Theme.of(context);
-    final pureBlack = AppDesignTokens.of(context).pureBlack;
+    final tokens = AppDesignTokens.of(context);
+    final pureBlack = tokens.pureBlack;
+    final highContrast = tokens.highContrast || (_appearance?.$2 ?? 0) > 0;
     final queueColor = widget.queueColorValue;
     final inputs = (base, _scheme, queueColor);
     final snap = _snap || MediaQuery.disableAnimationsOf(context);
@@ -279,9 +283,12 @@ class _SessionDetailThemeState extends State<SessionDetailTheme>
       // equality, so recreating them would animate unchanged colors again.
       final effectiveCoverScheme = _scheme == null
           ? null
-          : (pureBlack && base.brightness == Brightness.dark
-                ? applyPureBlackSurface(_scheme!)
-                : _scheme!);
+          : applyAppSurfaceRamp(
+              _scheme!,
+              seedColor: _scheme!.primary,
+              pureBlack: pureBlack && base.brightness == Brightness.dark,
+              highContrast: highContrast,
+            );
       final target = effectiveCoverScheme != null
           ? _applyDetailColorScheme(base, effectiveCoverScheme)
           : queueColor != null
@@ -307,6 +314,7 @@ class _SessionDetailThemeState extends State<SessionDetailTheme>
 }
 
 ThemeData _applyDetailColorScheme(ThemeData base, ColorScheme scheme) {
+  final floatingSurface = appFloatingSurfaceColor(scheme);
   InputBorder? inputBorder(InputBorder? border, Color color) =>
       border?.copyWith(borderSide: border.borderSide.copyWith(color: color));
   ShapeBorder? surfaceBorder(ShapeBorder? shape) => shape is OutlinedBorder
@@ -335,13 +343,13 @@ ThemeData _applyDetailColorScheme(ThemeData base, ColorScheme scheme) {
       shape: surfaceBorder(base.cardTheme.shape),
     ),
     bottomSheetTheme: base.bottomSheetTheme.copyWith(
-      backgroundColor: scheme.surfaceContainerHigh,
-      modalBackgroundColor: scheme.surfaceContainerHigh,
+      backgroundColor: floatingSurface,
+      modalBackgroundColor: floatingSurface,
       dragHandleColor: scheme.onSurfaceVariant.withValues(alpha: 0.42),
       shape: surfaceBorder(base.bottomSheetTheme.shape),
     ),
     dialogTheme: base.dialogTheme.copyWith(
-      backgroundColor: scheme.surfaceContainerHigh,
+      backgroundColor: floatingSurface,
       shape: surfaceBorder(base.dialogTheme.shape),
       titleTextStyle: base.textTheme.headlineSmall?.copyWith(
         color: scheme.onSurface,
@@ -351,11 +359,11 @@ ThemeData _applyDetailColorScheme(ThemeData base, ColorScheme scheme) {
       ),
     ),
     popupMenuTheme: base.popupMenuTheme.copyWith(
-      color: scheme.surfaceContainerHigh,
+      color: floatingSurface,
       shape: surfaceBorder(base.popupMenuTheme.shape),
     ),
     snackBarTheme: base.snackBarTheme.copyWith(
-      backgroundColor: scheme.surfaceContainerHigh,
+      backgroundColor: floatingSurface,
       contentTextStyle: base.snackBarTheme.contentTextStyle?.copyWith(
         color: scheme.onSurface,
       ),
@@ -519,23 +527,6 @@ BoxDecoration sessionDetailPlayButtonDecoration(
   );
 }
 
-Color _ensureReadableQueueAccent(Color queueColor, Color surface) {
-  if (appColorContrastRatio(queueColor, surface) >= 2.0) return queueColor;
-  final isDarkSurface =
-      ThemeData.estimateBrightnessForColor(surface) == Brightness.dark;
-  final hsl = HSLColor.fromColor(queueColor);
-  for (var step = 1; step <= 16; step++) {
-    final targetLightness = isDarkSurface
-        ? (hsl.lightness + step * 0.05).clamp(0.0, 0.88)
-        : (hsl.lightness - step * 0.05).clamp(0.16, 1.0);
-    final candidate = hsl.withLightness(targetLightness).toColor();
-    if (appColorContrastRatio(candidate, surface) >= 3.5) {
-      return candidate;
-    }
-  }
-  return isDarkSurface ? const Color(0xFFD0D4DC) : const Color(0xFF3A3F4B);
-}
-
 ThemeData createPlaybackQueueSessionDetailTheme(
   ThemeData base,
   Color queueColor,
@@ -545,20 +536,14 @@ ThemeData createPlaybackQueueSessionDetailTheme(
     brightness: base.brightness,
     dynamicSchemeVariant: DynamicSchemeVariant.fidelity,
   );
-  final accent = _ensureReadableQueueAccent(
+  final accent = appReadableAccentColor(
     queueColor,
     base.colorScheme.surface,
+    targetContrast: 3.5,
   );
   Color onAccent = generated.onPrimary;
   if (appColorContrastRatio(onAccent, accent) < 4.5) {
-    const darkInk = Color(0xFF1B1B1F);
-    final bestDark =
-        appColorContrastRatio(darkInk, accent) >= 4.5 ? darkInk : Colors.black;
-    onAccent =
-        appColorContrastRatio(bestDark, accent) >=
-            appColorContrastRatio(Colors.white, accent)
-        ? bestDark
-        : Colors.white;
+    onAccent = appReadableOnColor(accent);
   }
   final scheme = base.colorScheme.copyWith(
     primary: accent,

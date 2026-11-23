@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/theme/app_design_tokens.dart';
+import '../../../../app/theme/app_styles.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../../core/widgets/app_buttons.dart';
 import '../../../../core/widgets/app_edit_panel.dart';
@@ -17,7 +18,6 @@ import '../../../../core/widgets/app_glass_surface.dart';
 import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/windows_horizontal_wheel_scroll.dart';
 import '../../application/playback_facade.dart';
-import '../../application/playback_session.dart' show PlaybackPositionSample;
 import '../../application/playback_session_snapshot.dart';
 import 'playlist_loop_widgets.dart';
 import 'playlist_shared_helpers.dart';
@@ -39,7 +39,7 @@ class TransportPlaybackControlPanel extends StatelessWidget {
     required this.subtitleEnabled,
     required this.subtitleGlobalEnabled,
     required this.onShowTrackSwitcher,
-    required this.onToggleSegments,
+    required this.onOpenFeatures,
     this.onToggleSubtitle,
     this.onToggleGlobalSubtitle,
     this.onShowSubtitleMenu,
@@ -56,7 +56,7 @@ class TransportPlaybackControlPanel extends StatelessWidget {
   final bool subtitleEnabled;
   final bool subtitleGlobalEnabled;
   final VoidCallback onShowTrackSwitcher;
-  final VoidCallback onToggleSegments;
+  final VoidCallback onOpenFeatures;
   final VoidCallback? onToggleSubtitle;
   final VoidCallback? onToggleGlobalSubtitle;
   final VoidCallback? onShowSubtitleMenu;
@@ -74,35 +74,41 @@ class TransportPlaybackControlPanel extends StatelessWidget {
             playback: playback,
             isLandscape: isLandscape,
           ),
-        if (isLandscape || !segmentPanelExpanded)
-          AnimatedSwitcher(
-            duration: MediaQuery.disableAnimationsOf(context)
-                ? Duration.zero
-                : kAppFadeDuration,
-            reverseDuration: MediaQuery.disableAnimationsOf(context)
-                ? Duration.zero
-                : kAppFadeDuration,
-            switchInCurve: kAppFadeCurve,
-            switchOutCurve: kAppFadeCurve,
-            child: KeyedSubtree(
-              key: ValueKey('secondary_${session.id}'),
-              child: _PlaybackSecondaryControls(
-                session: session,
-                playback: playback,
-                hasSiblings: hasSiblings,
-                segmentPanelExpanded: segmentPanelExpanded,
-                hasSubtitle: hasSubtitle,
-                subtitleEnabled: subtitleEnabled,
-                subtitleGlobalEnabled: subtitleGlobalEnabled,
-                onShowTrackSwitcher: onShowTrackSwitcher,
-                onToggleSegments: onToggleSegments,
-                onToggleSubtitle: onToggleSubtitle,
-                onToggleGlobalSubtitle: onToggleGlobalSubtitle,
-                onShowSubtitleMenu: onShowSubtitleMenu,
-                onShowWorkDetail: onShowWorkDetail,
-              ),
-            ),
-          ),
+        AnimatedSwitcher(
+          duration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : kAppFadeDuration,
+          reverseDuration: Duration.zero,
+          switchInCurve: kAppFadeCurve,
+          transitionBuilder: (child, animation) => isLandscape
+              ? FadeTransition(opacity: animation, child: child)
+              : SizeTransition(
+                  sizeFactor: animation,
+                  axisAlignment: -1.0,
+                  child: FadeTransition(opacity: animation, child: child),
+                ),
+          child: (isLandscape || !segmentPanelExpanded)
+              ? KeyedSubtree(
+                  key: ValueKey('secondary_${session.id}'),
+                  child: _PlaybackSecondaryControls(
+                    session: session,
+                    playback: playback,
+                    hasSiblings: hasSiblings,
+                    hasSubtitle: hasSubtitle,
+                    subtitleEnabled: subtitleEnabled,
+                    subtitleGlobalEnabled: subtitleGlobalEnabled,
+                    onShowTrackSwitcher: onShowTrackSwitcher,
+                    onOpenFeatures: onOpenFeatures,
+                    onToggleSubtitle: onToggleSubtitle,
+                    onToggleGlobalSubtitle: onToggleGlobalSubtitle,
+                    onShowSubtitleMenu: onShowSubtitleMenu,
+                    onShowWorkDetail: onShowWorkDetail,
+                  ),
+                )
+              : const SizedBox.shrink(
+                  key: ValueKey<String>('secondary_hidden'),
+                ),
+        ),
       ],
     );
   }
@@ -444,12 +450,11 @@ class _PlaybackSecondaryControls extends ConsumerStatefulWidget {
     required this.session,
     required this.playback,
     required this.hasSiblings,
-    required this.segmentPanelExpanded,
     required this.hasSubtitle,
     required this.subtitleEnabled,
     required this.subtitleGlobalEnabled,
     required this.onShowTrackSwitcher,
-    required this.onToggleSegments,
+    required this.onOpenFeatures,
     this.onToggleSubtitle,
     this.onToggleGlobalSubtitle,
     this.onShowSubtitleMenu,
@@ -459,12 +464,11 @@ class _PlaybackSecondaryControls extends ConsumerStatefulWidget {
   final PlaybackSessionSnapshot session;
   final PlaybackFacade playback;
   final bool hasSiblings;
-  final bool segmentPanelExpanded;
   final bool hasSubtitle;
   final bool subtitleEnabled;
   final bool subtitleGlobalEnabled;
   final VoidCallback onShowTrackSwitcher;
-  final VoidCallback onToggleSegments;
+  final VoidCallback onOpenFeatures;
   final VoidCallback? onToggleSubtitle;
   final VoidCallback? onToggleGlobalSubtitle;
   final VoidCallback? onShowSubtitleMenu;
@@ -536,8 +540,7 @@ class _PlaybackSecondaryControlsState
         _SecondaryControlButton(
           icon: Icons.tune_rounded,
           tooltip: i18n.tr('audio_features'),
-          active: widget.segmentPanelExpanded,
-          onPressed: widget.onToggleSegments,
+          onPressed: widget.onOpenFeatures,
         ),
         _SecondaryControlButton(
           icon: Icons.queue_music_rounded,
@@ -607,23 +610,19 @@ class _PlaybackSecondaryControlsState
 }
 
 class PlaybackSecondaryControlSurface extends StatelessWidget {
-  const PlaybackSecondaryControlSurface({
-    super.key,
-    required this.child,
-    this.blurEnabled = true,
-  });
+  const PlaybackSecondaryControlSurface({super.key, required this.child});
 
   final Widget child;
-  final bool blurEnabled;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final isDark = theme.brightness == Brightness.dark;
-    final background = isDark ? cs.surfaceBright : cs.surfaceContainerHigh;
-    final glassEnabled =
-        blurEnabled && AppDesignTokens.of(context).barGlassEnabled;
+    final tokens = AppDesignTokens.of(context);
+    final background = theme.brightness == Brightness.dark
+        ? cs.surfaceBright
+        : cs.surfaceContainerHigh;
+    final glassEnabled = tokens.barGlassEnabled;
     const capsuleHeight = 46.0;
     const borderRadius = BorderRadius.all(Radius.circular(capsuleHeight / 2));
     return SizedBox(
@@ -632,16 +631,14 @@ class PlaybackSecondaryControlSurface extends StatelessWidget {
         enabled: glassEnabled,
         backgroundColor: glassEnabled
             ? background.withValues(alpha: background.a * 0.9)
-            : blurEnabled
-            ? background
-            : background.withValues(alpha: isDark ? 0.88 : 0.92),
+            : background,
         borderRadius: borderRadius,
         child: DecoratedBox(
           decoration: BoxDecoration(
             borderRadius: borderRadius,
             border: Border.all(
-              color: cs.outlineVariant.withValues(alpha: isDark ? 0.35 : 0.55),
-              width: 0.5,
+              color: appOverlayBorderColor(cs, tokens, elevated: true),
+              width: 0.75,
             ),
           ),
           child: child,
@@ -1159,7 +1156,7 @@ class _PreviousTrackButton extends StatefulWidget {
 }
 
 class _PreviousTrackButtonState extends State<_PreviousTrackButton> {
-  StreamSubscription<PlaybackPositionSample>? _positionSub;
+  StreamSubscription<bool>? _positionSub;
   bool _pastRestartThreshold = false;
 
   bool get _needsThresholdWatch => widget.enabled && !widget.hasPrevious;
@@ -1176,7 +1173,8 @@ class _PreviousTrackButtonState extends State<_PreviousTrackButton> {
     super.didUpdateWidget(oldWidget);
     final nextThreshold = widget.session.position.inSeconds > 3;
     if (widget.session.id != oldWidget.session.id ||
-        widget.session.progressStream != oldWidget.session.progressStream ||
+        widget.session.currentTrackPath != oldWidget.session.currentTrackPath ||
+        widget.session.positionStream != oldWidget.session.positionStream ||
         _needsThresholdWatch != (oldWidget.enabled && !oldWidget.hasPrevious)) {
       _pastRestartThreshold = nextThreshold;
       _syncSubscription();
@@ -1189,12 +1187,14 @@ class _PreviousTrackButtonState extends State<_PreviousTrackButton> {
     unawaited(_positionSub?.cancel());
     _positionSub = null;
     if (!_needsThresholdWatch) return;
-    _positionSub = widget.session.progressStream.listen((sample) {
-      final past = sample.position.inSeconds > 3;
-      if (past != _pastRestartThreshold && mounted) {
-        setState(() => _pastRestartThreshold = past);
-      }
-    });
+    _positionSub = widget.session.positionStream
+        .map((position) => position.inSeconds > 3)
+        .distinct()
+        .listen((past) {
+          if (past != _pastRestartThreshold && mounted) {
+            setState(() => _pastRestartThreshold = past);
+          }
+        });
   }
 
   @override

@@ -1827,4 +1827,169 @@ void main() {
       expect(find.text(language.tr('subtitle_translate_hint')), findsNothing);
     },
   );
+
+  testWidgets(
+    'subtitle import and timed script selection keep captured trackPath and mark importing',
+    (tester) async {
+      const folderPath = '/work/folder';
+      const trackA = '$folderPath/track_a.mp3';
+      const trackB = '$folderPath/track_b.mp3';
+      const scriptPath = '$folderPath/timed_script.txt';
+      final service = _CapturedTrackSubtitleService();
+      final library = _workLibrary(folderPath, trackA);
+      final workTexts = _WorkTexts(const [
+        WorkTextFile(
+          name: 'timed_script.txt',
+          path: scriptPath,
+          relativePath: 'timed_script.txt',
+        ),
+      ]);
+      final language = AppLanguageProvider();
+      final pickerCompleter = Completer<FilePickerResult?>();
+      final previousPicker = FilePickerPlatform.instance;
+      FilePickerPlatform.instance = _AsyncSubtitleFilePicker(
+        pickerCompleter.future,
+      );
+      addTearDown(() => FilePickerPlatform.instance = previousPicker);
+
+      final currentTrack = ValueNotifier<String>(trackA);
+      addTearDown(currentTrack.dispose);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(language),
+            playbackSubtitleServiceProvider.overrideWithValue(service),
+            libraryFacadeProvider.overrideWithValue(library),
+            workTextServiceProvider.overrideWithValue(workTexts),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: ValueListenableBuilder<String>(
+                valueListenable: currentTrack,
+                builder: (_, path, _) => SubtitleMenuSheet(
+                  session: _createSnapshot(trackPath: path),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 1) Start _pickSubtitleFile on trackA, then switch session to trackB while picker is open.
+      await tester.tap(find.byKey(const ValueKey('subtitle_import_tile')));
+      await tester.pump();
+      currentTrack.value = trackB;
+      await tester.pump();
+      pickerCompleter.complete(
+        FilePickerResult([
+          PlatformFile(
+            name: 'imported.srt',
+            path: '$folderPath/imported.srt',
+            size: 16,
+          ),
+        ]),
+      );
+      await tester.pumpAndSettle();
+
+      expect(service.overwriteCheckedPaths, [trackA]);
+      expect(service.importedTrackPaths, [trackA]);
+
+      // 2) Reset back to trackA, open script list, pick timed script, and switch to trackB
+      //    while isTimedSubtitleFile is pending.
+      currentTrack.value = trackA;
+      await tester.pumpAndSettle();
+      service.overwriteCheckedPaths.clear();
+      service.importedTrackPaths.clear();
+      service.timedCheckGate = Completer<bool>();
+
+      await tester.tap(find.byKey(const ValueKey('subtitle_script_tile')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('timed_script.txt'));
+      await tester.pump();
+
+      // _selectScriptFile sets _importing = true while awaiting isTimedSubtitleFile,
+      // so the import tile is disabled during the async check.
+      expect(
+        tester
+            .widget<ListTile>(
+              find.byKey(const ValueKey('subtitle_import_tile')),
+            )
+            .onTap,
+        isNull,
+      );
+
+      currentTrack.value = trackB;
+      await tester.pump();
+      service.timedCheckGate!.complete(true);
+      await tester.pumpAndSettle();
+
+      expect(service.overwriteCheckedPaths, [trackA]);
+      expect(service.importedTrackPaths, [trackA]);
+    },
+  );
+}
+
+final class _AsyncSubtitleFilePicker extends FilePickerPlatform {
+  _AsyncSubtitleFilePicker(this.resultFuture);
+
+  final Future<FilePickerResult?> resultFuture;
+
+  @override
+  Future<FilePickerResult?> pickFiles({
+    String? dialogTitle,
+    String? initialDirectory,
+    FileType type = FileType.any,
+    List<String>? allowedExtensions,
+    void Function(FilePickerStatus)? onFileLoading,
+    int compressionQuality = 0,
+    bool allowMultiple = false,
+    bool withData = false,
+    bool withReadStream = false,
+    bool lockParentWindow = false,
+    bool readSequential = false,
+    bool cancelUploadOnWindowBlur = true,
+  }) => resultFuture;
+}
+
+class _CapturedTrackSubtitleService extends PlaybackSubtitleService {
+  _CapturedTrackSubtitleService() : super(trackResolver: (_) => null);
+
+  final List<String> overwriteCheckedPaths = <String>[];
+  final List<String> importedTrackPaths = <String>[];
+  Completer<bool>? timedCheckGate;
+
+  @override
+  Future<bool> isTimedSubtitleFile(String filePath) =>
+      timedCheckGate?.future ?? Future<bool>.value(false);
+
+  @override
+  Future<bool> hasLocalSubtitleFile(
+    String trackPath, {
+    bool includeImported = true,
+  }) async {
+    overwriteCheckedPaths.add(trackPath);
+    return false;
+  }
+
+  @override
+  Future<SubtitleTrack?> importSubtitle(
+    String trackPath,
+    String subtitlePath, {
+    String? fileName,
+    bool overwrite = false,
+  }) async {
+    importedTrackPaths.add(trackPath);
+    return SubtitleTrack(
+      sourcePath: subtitlePath,
+      cues: const [
+        SubtitleCue(
+          start: Duration.zero,
+          end: Duration(seconds: 2),
+          text: 'Imported',
+        ),
+      ],
+    );
+  }
 }

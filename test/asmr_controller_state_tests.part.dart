@@ -1977,7 +1977,7 @@ void registerAsmrControllerStateTests({
   });
 
   test(
-    'returning to a content language preserves its previously loaded pages',
+    'switching content language evicts stale-scope pages and reloads on return',
     () async {
       await resetPrefs();
       final api = _BrowseChangingApi();
@@ -1992,6 +1992,7 @@ void registerAsmrControllerStateTests({
       final original = controller
           .categoryViewState(AsmrCategoryType.release)
           .works;
+      expect(original.map((work) => work.id), [1, 2, 3, 4]);
       api.shift = 10;
       await controller.setContentLanguage(AsmrContentLanguage.en);
       expect(
@@ -2003,10 +2004,11 @@ void registerAsmrControllerStateTests({
       );
       api.shift = 0;
       await controller.setContentLanguage(AsmrContentLanguage.zh);
-      expect(
-        controller.categoryViewState(AsmrCategoryType.release).works,
-        same(original),
-      );
+      final reloaded = controller
+          .categoryViewState(AsmrCategoryType.release)
+          .works;
+      expect(reloaded, isNot(same(original)));
+      expect(reloaded.map((work) => work.id), [1, 2]);
     },
   );
 
@@ -2872,7 +2874,10 @@ void registerAsmrControllerStateTests({
         final replacementReleased = Completer<void>();
         var fetches = 0;
         final api = _FakeAsmrApiService(
-          trackTree: [_trackFile('Track 2.mp3', 'Track 2.mp3')],
+          trackTree: [
+            _trackFile('Track 2.mp3', 'Track 2.mp3'),
+            _trackFile('Track 1.mp3', 'Track 1.mp3'),
+          ],
           beforeFetchTrackTree: (_) async {
             if (++fetches == 2) {
               replacementStarted.complete();
@@ -2902,7 +2907,7 @@ void registerAsmrControllerStateTests({
         expect(controller.trackTreeFor('code:RJ000072'), isNull);
         replacementReleased.complete();
         final tree = await request;
-        expect(tree.single.title, 'Track 2.mp3');
+        expect(tree.map((node) => node.title), ['Track 1.mp3', 'Track 2.mp3']);
         expect(controller.trackTreeFor('code:RJ000072'), same(tree));
         expect(api.trackFetchWorkIds, [72, 72]);
       },

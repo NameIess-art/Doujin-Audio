@@ -12,6 +12,7 @@ import 'package:ffmpeg_kit_flutter_new_full/return_code.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
+import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/subtitle_parser.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 import '../../../core/platform/windows_media_tools.dart';
@@ -81,63 +82,74 @@ class SubtitleAiEngine {
       final totalChunks = (length / bytesPerChunk).ceil();
       onProgress?.call(const SubtitleTaskProgress('loading', 0, ''));
       final worker = await _SubtitleWorker.open(model);
-      final reader = await decoded.open();
       try {
-        // The pinned Japanese wav2vec2 model downsamples by 320 at 16 kHz.
-        // Round up and allow chunk boundaries; the aligner also checks actual
-        // frames before every append so a changed model cannot bypass its cap.
-        final expectedFrames = (length / (320 * 4)).ceil() + totalChunks * 2;
-        await worker.beginScriptAlignment(lines, expectedFrames);
-        for (var chunk = 0; chunk < totalChunks; chunk++) {
-          _checkCancelled(isCancelled);
-          final expectedBytes = math.min(
-            bytesPerChunk,
-            length - chunk * bytesPerChunk,
-          );
-          final bytes = await reader.read(expectedBytes);
-          if (bytes.length != expectedBytes) {
-            throw FileSystemException(
-              'Decoded audio is incomplete',
-              decoded.path,
+        final reader = await decoded.open();
+        try {
+          // The pinned Japanese wav2vec2 model downsamples by 320 at 16 kHz.
+          // Round up and allow chunk boundaries; the aligner also checks actual
+          // frames before every append so a changed model cannot bypass its cap.
+          final expectedFrames = (length / (320 * 4)).ceil() + totalChunks * 2;
+          await worker.beginScriptAlignment(lines, expectedFrames);
+          for (var chunk = 0; chunk < totalChunks; chunk++) {
+            _checkCancelled(isCancelled);
+            final expectedBytes = math.min(
+              bytesPerChunk,
+              length - chunk * bytesPerChunk,
+            );
+            final bytes = await reader.read(expectedBytes);
+            if (bytes.length != expectedBytes) {
+              throw FileSystemException(
+                'Decoded audio is incomplete',
+                decoded.path,
+              );
+            }
+            final byteCount = bytes.length;
+            final pcm = TransferableTypedData.fromList([bytes]);
+            await worker.feedScriptAlignment(
+              pcm,
+              chunk * 20.0,
+              byteCount / (16000 * 4),
+            );
+            final fraction = (chunk + 1) / totalChunks;
+            onProgress?.call(
+              SubtitleTaskProgress(
+                'matching',
+                fraction,
+                '${(fraction * 100).round()}%',
+              ),
             );
           }
-          final byteCount = bytes.length;
-          final pcm = TransferableTypedData.fromList([bytes]);
-          await worker.feedScriptAlignment(
-            pcm,
-            chunk * 20.0,
-            byteCount / (16000 * 4),
+          _checkCancelled(isCancelled);
+          final cues = await worker.endScriptAlignment();
+          if (cues.length != lines.length) {
+            throw StateError(
+              'Only ${cues.length}/${lines.length} script lines could be aligned',
+            );
+          }
+          for (var index = 0; index < cues.length; index++) {
+            if (cues[index].text != lines[index] ||
+                cues[index].end <= cues[index].start ||
+                (index > 0 && cues[index].start < cues[index - 1].end)) {
+              throw StateError('Script alignment produced invalid cue times');
+            }
+          }
+          return SubtitleDraft(
+            cues: cues,
+            kind: SubtitleDraftKind.script,
+            sourceLanguage: 'ja',
           );
-          final fraction = (chunk + 1) / totalChunks;
-          onProgress?.call(
-            SubtitleTaskProgress(
-              'matching',
-              fraction,
-              '${(fraction * 100).round()}%',
-            ),
-          );
-        }
-        _checkCancelled(isCancelled);
-        final cues = await worker.endScriptAlignment();
-        if (cues.length != lines.length) {
-          throw StateError(
-            'Only ${cues.length}/${lines.length} script lines could be aligned',
-          );
-        }
-        for (var index = 0; index < cues.length; index++) {
-          if (cues[index].text != lines[index] ||
-              cues[index].end <= cues[index].start ||
-              (index > 0 && cues[index].start < cues[index - 1].end)) {
-            throw StateError('Script alignment produced invalid cue times');
+        } finally {
+          try {
+            await reader.close();
+          } catch (error, stackTrace) {
+            AppLogService.warning(
+              'subtitle_ai_reader_close_failed',
+              error: error,
+              stackTrace: stackTrace,
+            );
           }
         }
-        return SubtitleDraft(
-          cues: cues,
-          kind: SubtitleDraftKind.script,
-          sourceLanguage: 'ja',
-        );
       } finally {
-        await reader.close();
         await worker.close();
       }
     } finally {
@@ -525,12 +537,20 @@ class _SubtitleWorker {
         }
       }
     });
-    final isolate = await Isolate.spawn(_workerMain, [port.sendPort, model]);
+    final Isolate isolate;
+    try {
+      isolate = await Isolate.spawn(_workerMain, [port.sendPort, model]);
+    } catch (_) {
+      await subscription.cancel();
+      port.close();
+      rethrow;
+    }
     try {
       final commands = await ready.future.timeout(const Duration(minutes: 5));
       await subscription.cancel();
       return _SubtitleWorker(isolate, port, commands);
     } catch (_) {
+      await subscription.cancel();
       isolate.kill(priority: Isolate.immediate);
       port.close();
       rethrow;
@@ -582,14 +602,30 @@ class _SubtitleWorker {
     }).toList();
   }
 
-  Future<void> close() async {
+  Future<void> close({Duration timeout = const Duration(seconds: 10)}) async {
     final reply = ReceivePort();
+    var timedOut = false;
     try {
       _commands.send([reply.sendPort, 'close', null]);
-      await reply.first.timeout(const Duration(seconds: 10));
+      await reply.first.timeout(timeout);
+    } on TimeoutException catch (error, stackTrace) {
+      timedOut = true;
+      AppLogService.warning(
+        'subtitle_ai_worker_close_timeout',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'subtitle_ai_worker_close_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
     } finally {
       reply.close();
-      _isolate.kill();
+      _isolate.kill(
+        priority: timedOut ? Isolate.immediate : Isolate.beforeNextEvent,
+      );
       _port.close();
     }
   }

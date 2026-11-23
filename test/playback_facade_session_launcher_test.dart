@@ -491,6 +491,52 @@ void main() {
       SessionLoopMode.crossSequential,
     );
   });
+
+  test(
+    'spawnSessionWithQueue sets currentQueueIndex and forwards targetQueueIndex',
+    () async {
+      final facade = PlaybackFacade.create(
+        databaseRepository: _RecordingRepository(),
+      )..configurePersistence(enabled: false);
+      addTearDown(facade.dispose);
+      int? preparedQueueIndex;
+      String? preparedPath;
+      facade.attachPlaybackCommands(
+        prepareSession:
+            (
+              session, {
+              required nextPath,
+              autoPlay = true,
+              forceStartAtZero = false,
+              showLoading = true,
+              targetQueueIndex,
+            }) async {
+              preparedPath = nextPath;
+              preparedQueueIndex = targetQueueIndex;
+              return true;
+            },
+        pauseSession: (_) async {},
+        startSession: (_, {required shouldStartTriggerCountdown}) async => true,
+        resolveAdvance: (_, {required forward}) => null,
+        hasAdjacent: (_, {required forward}) => false,
+      );
+
+      final tracks = [track('a'), track('b'), track('a')];
+      expect(
+        await facade.spawnSessionWithQueue(
+          tracks,
+          startIndex: 2,
+          autoPlay: true,
+        ),
+        isTrue,
+      );
+      final session = facade.ordinarySessions.single;
+      expect(session.currentQueueIndex, 2);
+      await facade.pendingSessionPreparation;
+      expect(preparedPath, tracks[2].path);
+      expect(preparedQueueIndex, 2);
+    },
+  );
 }
 
 class _DeferredNativeRemoval extends NativePlaybackRepository {

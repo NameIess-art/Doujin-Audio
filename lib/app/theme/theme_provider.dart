@@ -20,6 +20,44 @@ double appColorContrastRatio(Color first, Color second) {
   return (math.max(a, b) + 0.05) / (math.min(a, b) + 0.05);
 }
 
+/// Picks a refined dark ink or pure white foreground that satisfies [minContrast]
+/// against [background], falling back to whichever achieves higher contrast.
+Color appReadableOnColor(Color background, {double minContrast = 4.5}) {
+  const darkInk = Color(0xFF18191D);
+  final darkRatio = appColorContrastRatio(darkInk, background);
+  final whiteRatio = appColorContrastRatio(Colors.white, background);
+  if (darkRatio >= minContrast || whiteRatio >= minContrast) {
+    return darkRatio >= whiteRatio ? darkInk : Colors.white;
+  }
+  final blackRatio = appColorContrastRatio(Colors.black, background);
+  return blackRatio >= whiteRatio ? Colors.black : Colors.white;
+}
+
+/// Adjusts [accent] lightness when needed so icons, active labels, and progress
+/// rings remain clearly legible against [surface] in both light and dark modes.
+Color appReadableAccentColor(
+  Color accent,
+  Color surface, {
+  double minContrast = 3.0,
+  double? targetContrast,
+}) {
+  if (appColorContrastRatio(accent, surface) >= minContrast) return accent;
+  final goal = targetContrast ?? minContrast;
+  final isDarkSurface =
+      ThemeData.estimateBrightnessForColor(surface) == Brightness.dark;
+  final hsl = HSLColor.fromColor(accent);
+  for (var step = 1; step <= 18; step++) {
+    final targetLightness = isDarkSurface
+        ? (hsl.lightness + step * 0.045).clamp(0.0, 0.88)
+        : (hsl.lightness - step * 0.045).clamp(0.16, 1.0);
+    final candidate = hsl.withLightness(targetLightness).toColor();
+    if (appColorContrastRatio(candidate, surface) >= goal) {
+      return candidate;
+    }
+  }
+  return isDarkSurface ? const Color(0xFFD2D6DE) : const Color(0xFF363A45);
+}
+
 Color _tintDarkSurface(Color base, Color accent, double amount) =>
     Color.alphaBlend(accent.withValues(alpha: amount), base);
 
@@ -55,23 +93,125 @@ ColorScheme applyPureBlackSurface(ColorScheme scheme) {
   if (scheme.brightness != Brightness.dark) return scheme;
   const black = Color(0xFF000000);
   final accent = scheme.primary;
-  final containerLow = _tintDarkSurface(const Color(0xFF0E0F12), accent, 0.025);
-  final container = _tintDarkSurface(const Color(0xFF16171C), accent, 0.035);
+  final containerLow = _tintDarkSurface(const Color(0xFF0B0C0F), accent, 0.020);
+  final container = _tintDarkSurface(const Color(0xFF131419), accent, 0.028);
   final containerHigh = _tintDarkSurface(
-    const Color(0xFF1F2127),
+    const Color(0xFF1B1D23),
     accent,
-    0.045,
+    0.036,
   );
   final containerHighest = _tintDarkSurface(
-    const Color(0xFF2A2D35),
+    const Color(0xFF252830),
     accent,
-    0.055,
+    0.044,
   );
   return scheme.copyWith(
     surface: black,
     surfaceDim: black,
     surfaceBright: containerHigh,
     surfaceContainerLowest: black,
+    surfaceContainerLow: containerLow,
+    surfaceContainer: container,
+    surfaceContainerHigh: containerHigh,
+    surfaceContainerHighest: containerHighest,
+  );
+}
+
+/// Applies the app's calibrated light, dark, or pure-black surface elevation
+/// ramp to any generated [ColorScheme], keeping cover-derived detail palettes
+/// visually cohesive with the rest of the application.
+ColorScheme applyAppSurfaceRamp(
+  ColorScheme scheme, {
+  required Color seedColor,
+  bool pureBlack = false,
+  bool highContrast = false,
+  Color? surfaceOverride,
+}) {
+  if (scheme.brightness == Brightness.light) {
+    final lightSurface =
+        surfaceOverride ??
+        Color.alphaBlend(
+          seedColor.withValues(alpha: highContrast ? 0.015 : 0.024),
+          const Color(0xFFFAF9FB),
+        );
+    final neutralScale = highContrast ? 1.35 : 1.0;
+    final tintScale = highContrast ? 0.55 : 1.0;
+    Color stepLight(double neutralAlpha, double tintAlpha) => Color.alphaBlend(
+      scheme.primary.withValues(alpha: tintAlpha * tintScale),
+      Color.alphaBlend(
+        Colors.black.withValues(alpha: neutralAlpha * neutralScale),
+        lightSurface,
+      ),
+    );
+    return scheme.copyWith(
+      surface: lightSurface,
+      surfaceBright: lightSurface,
+      surfaceDim: Color.alphaBlend(
+        Colors.black.withValues(alpha: 0.055 * neutralScale),
+        lightSurface,
+      ),
+      surfaceContainerLowest: const Color(0xFFFFFFFF),
+      surfaceContainerLow: stepLight(0.014, 0.012),
+      surfaceContainer: stepLight(0.028, 0.018),
+      surfaceContainerHigh: stepLight(0.044, 0.024),
+      surfaceContainerHighest: stepLight(0.066, 0.030),
+    );
+  }
+
+  if (pureBlack) {
+    return applyPureBlackSurface(scheme);
+  }
+
+  final darkSurface =
+      surfaceOverride ??
+      Color.alphaBlend(
+        seedColor.withValues(alpha: highContrast ? 0.025 : 0.040),
+        const Color(0xFF111215),
+      );
+  final primary = scheme.primary;
+  final liftScale = highContrast ? 1.20 : 1.0;
+  final tintScale = highContrast ? 0.65 : 1.0;
+  final containerLowest = Color.alphaBlend(
+    Colors.black.withValues(alpha: 0.34),
+    darkSurface,
+  );
+  final containerLow = _tintDarkSurface(
+    Color.alphaBlend(
+      Colors.white.withValues(alpha: 0.030 * liftScale),
+      darkSurface,
+    ),
+    primary,
+    0.016 * tintScale,
+  );
+  final container = _tintDarkSurface(
+    Color.alphaBlend(
+      Colors.white.withValues(alpha: 0.056 * liftScale),
+      darkSurface,
+    ),
+    primary,
+    0.024 * tintScale,
+  );
+  final containerHigh = _tintDarkSurface(
+    Color.alphaBlend(
+      Colors.white.withValues(alpha: 0.088 * liftScale),
+      darkSurface,
+    ),
+    primary,
+    0.032 * tintScale,
+  );
+  final containerHighest = _tintDarkSurface(
+    Color.alphaBlend(
+      Colors.white.withValues(alpha: 0.122 * liftScale),
+      darkSurface,
+    ),
+    primary,
+    0.040 * tintScale,
+  );
+  return scheme.copyWith(
+    surface: darkSurface,
+    surfaceDim: darkSurface,
+    surfaceBright: containerHigh,
+    surfaceContainerLowest: containerLowest,
     surfaceContainerLow: containerLow,
     surfaceContainer: container,
     surfaceContainerHigh: containerHigh,
@@ -112,95 +252,31 @@ ColorScheme buildAppColorScheme({
   );
 
   if (brightness == Brightness.light) {
-    final lightSurface =
-        surfaceOverride ??
-        Color.alphaBlend(
-          seedColor.withValues(alpha: 0.03),
-          const Color(0xFFFAF9FB),
-        );
-    Color stepLight(double neutralAlpha, double tintAlpha) => Color.alphaBlend(
-      generated.primary.withValues(alpha: tintAlpha),
-      Color.alphaBlend(
-        Colors.black.withValues(alpha: neutralAlpha),
-        lightSurface,
-      ),
-    );
-    return generated.copyWith(
-      surface: lightSurface,
-      surfaceBright: lightSurface,
-      surfaceDim: Color.alphaBlend(
-        Colors.black.withValues(alpha: 0.08),
-        lightSurface,
-      ),
-      surfaceContainerLowest: const Color(0xFFFFFFFF),
-      surfaceContainerLow: stepLight(0.024, 0.028),
-      surfaceContainer: stepLight(0.048, 0.042),
-      surfaceContainerHigh: stepLight(0.074, 0.056),
-      surfaceContainerHighest: stepLight(0.105, 0.070),
+    return applyAppSurfaceRamp(
+      generated,
+      seedColor: seedColor,
+      highContrast: highContrast,
+      surfaceOverride: surfaceOverride,
     );
   }
 
-  final darkSurface = effectivePureBlack
-      ? const Color(0xFF000000)
-      : (surfaceOverride ??
-            Color.alphaBlend(
-              seedColor.withValues(alpha: 0.045),
-              const Color(0xFF111215),
-            ));
   final usePrimaryOverride = !highContrast && darkPrimaryOverride != null;
   final primary = usePrimaryOverride ? darkPrimaryOverride : generated.primary;
   Color onPrimary = generated.onPrimary;
   if (usePrimaryOverride && appColorContrastRatio(onPrimary, primary) < 4.5) {
-    const darkInk = Color(0xFF1B1B1F);
-    onPrimary =
-        appColorContrastRatio(darkInk, primary) >=
-            appColorContrastRatio(Colors.white, primary)
-        ? darkInk
-        : Colors.white;
+    onPrimary = appReadableOnColor(primary);
   }
-
   final darkScheme = generated.copyWith(
     primary: primary,
     onPrimary: onPrimary,
     surfaceTint: primary,
   );
-  if (effectivePureBlack) {
-    return applyPureBlackSurface(darkScheme);
-  }
-
-  final containerLowest = Color.alphaBlend(
-    Colors.black.withValues(alpha: 0.34),
-    darkSurface,
-  );
-  final containerLow = _tintDarkSurface(
-    Color.alphaBlend(Colors.white.withValues(alpha: 0.042), darkSurface),
-    primary,
-    0.022,
-  );
-  final container = _tintDarkSurface(
-    Color.alphaBlend(Colors.white.withValues(alpha: 0.072), darkSurface),
-    primary,
-    0.032,
-  );
-  final containerHigh = _tintDarkSurface(
-    Color.alphaBlend(Colors.white.withValues(alpha: 0.112), darkSurface),
-    primary,
-    0.042,
-  );
-  final containerHighest = _tintDarkSurface(
-    Color.alphaBlend(Colors.white.withValues(alpha: 0.155), darkSurface),
-    primary,
-    0.052,
-  );
-  return darkScheme.copyWith(
-    surface: darkSurface,
-    surfaceDim: darkSurface,
-    surfaceBright: containerHigh,
-    surfaceContainerLowest: containerLowest,
-    surfaceContainerLow: containerLow,
-    surfaceContainer: container,
-    surfaceContainerHigh: containerHigh,
-    surfaceContainerHighest: containerHighest,
+  return applyAppSurfaceRamp(
+    darkScheme,
+    seedColor: seedColor,
+    pureBlack: effectivePureBlack,
+    highContrast: highContrast,
+    surfaceOverride: surfaceOverride,
   );
 }
 
@@ -806,10 +882,14 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
   int _appThemeColorMutation = 0;
   int _customThemeColorMutation = 0;
   int _useSystemAccentColorMutation = 0;
+  int _reloadGeneration = 0;
+  bool _disposed = false;
   ThemeData? _lightTheme;
   ThemeData? _darkTheme;
   ThemeData? _highContrastLightTheme;
   ThemeData? _highContrastDarkTheme;
+  int? _lightWindowBorderColor;
+  int? _darkWindowBorderColor;
 
   ThemeMode get themeMode => _themeMode;
   bool get pureBlackTheme => _pureBlackTheme;
@@ -846,10 +926,12 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
   ThemeData get highContrastLightTheme =>
       _highContrastLightTheme ??= _buildTheme(
         _colorSchemeFor(Brightness.light, highContrast: true),
+        highContrast: true,
       );
   ThemeData get highContrastDarkTheme =>
       _highContrastDarkTheme ??= _buildTheme(
         _colorSchemeFor(Brightness.dark, highContrast: true),
+        highContrast: true,
       );
 
   ThemeData themeFor(Brightness platformBrightness, {required bool highContrast}) {
@@ -869,14 +951,26 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
   /// Computes the Windows window border RGB value for [brightness] without
   /// building the full [ThemeData] for an inactive brightness.
   int windowBorderColorFor(Brightness brightness) {
-    final colors = _colorSchemeFor(brightness);
+    final cached = brightness == Brightness.dark
+        ? _darkWindowBorderColor
+        : _lightWindowBorderColor;
+    if (cached != null) return cached;
+    final colors = brightness == Brightness.dark
+        ? (_darkTheme?.colorScheme ?? _colorSchemeFor(Brightness.dark))
+        : (_lightTheme?.colorScheme ?? _colorSchemeFor(Brightness.light));
     final border = Color.alphaBlend(
       colors.outlineVariant.withValues(
         alpha: colors.brightness == Brightness.dark ? 0.45 : 0.65,
       ),
       colors.surface,
     );
-    return border.toARGB32() & 0xffffff;
+    final value = border.toARGB32() & 0xffffff;
+    if (brightness == Brightness.dark) {
+      _darkWindowBorderColor = value;
+    } else {
+      _lightWindowBorderColor = value;
+    }
+    return value;
   }
 
   ThemeProvider({
@@ -972,7 +1066,21 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     _persistedUseSystemAccentColor = _useSystemAccentColor;
   }
 
+  void _notifyIfActive() {
+    if (!_disposed) notifyListeners();
+  }
+
+  void _bumpAllMutations() {
+    _themeModeMutation++;
+    _pureBlackThemeMutation++;
+    _barGlassEnabledMutation++;
+    _appThemeColorMutation++;
+    _customThemeColorMutation++;
+    _useSystemAccentColorMutation++;
+  }
+
   void setSystemAccentColor(Color? color) {
+    if (_disposed) return;
     final normalized = color == null
         ? null
         : Color(color.toARGB32() | 0xFF000000);
@@ -981,39 +1089,50 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     _systemAccentColorNotifier.value = normalized;
     if (!_useSystemAccentColor) return;
     _rebuildThemes();
-    notifyListeners();
+    _notifyIfActive();
   }
 
   @override
   void dispose() {
+    _disposed = true;
     _systemAccentColorNotifier.dispose();
     super.dispose();
   }
 
   Future<bool> setThemeMode(ThemeMode value) async {
+    if (_disposed) return false;
     if (_themeMode == value) return true;
     final mutation = ++_themeModeMutation;
+    final reloadGeneration = _reloadGeneration;
     _themeMode = value;
-    notifyListeners();
+    _notifyIfActive();
     final persisted = await _writePreferenceInOrder(_themeModeKey, value.name);
+    if (reloadGeneration != _reloadGeneration) return persisted;
     if (persisted) {
       _persistedThemeMode = value;
       return true;
     }
     if (mutation != _themeModeMutation) return false;
     _themeMode = _persistedThemeMode;
-    notifyListeners();
+    _notifyIfActive();
     return false;
   }
 
   Future<bool> setPureBlackTheme(bool value) async {
+    if (_disposed) return false;
     if (_pureBlackTheme == value) return true;
     final mutation = ++_pureBlackThemeMutation;
+    final reloadGeneration = _reloadGeneration;
+    final affectsActiveTheme = _themeMode != ThemeMode.light;
     _pureBlackTheme = value;
     _darkTheme = null;
     _highContrastDarkTheme = null;
-    notifyListeners();
+    _darkWindowBorderColor = null;
+    if (affectsActiveTheme) {
+      _notifyIfActive();
+    }
     final persisted = await _writePreferenceInOrder(_pureBlackThemeKey, value);
+    if (reloadGeneration != _reloadGeneration) return persisted;
     if (persisted) {
       _persistedPureBlackTheme = value;
       return true;
@@ -1022,17 +1141,23 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     _pureBlackTheme = _persistedPureBlackTheme;
     _darkTheme = null;
     _highContrastDarkTheme = null;
-    notifyListeners();
+    _darkWindowBorderColor = null;
+    if (_themeMode != ThemeMode.light) {
+      _notifyIfActive();
+    }
     return false;
   }
 
   Future<bool> setBarGlassEnabled(bool value) async {
+    if (_disposed) return false;
     if (_barGlassEnabled == value) return true;
     final mutation = ++_barGlassEnabledMutation;
+    final reloadGeneration = _reloadGeneration;
     _barGlassEnabled = value;
     _rebuildThemes();
-    notifyListeners();
+    _notifyIfActive();
     final persisted = await _writePreferenceInOrder(_barGlassEnabledKey, value);
+    if (reloadGeneration != _reloadGeneration) return persisted;
     if (persisted) {
       _persistedBarGlassEnabled = value;
       return true;
@@ -1040,11 +1165,12 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     if (mutation != _barGlassEnabledMutation) return false;
     _barGlassEnabled = _persistedBarGlassEnabled;
     _rebuildThemes();
-    notifyListeners();
+    _notifyIfActive();
     return false;
   }
 
   Future<bool> setAppThemeColor(ThemeAccentPreset value) async {
+    if (_disposed) return false;
     final clearingCustom = _customThemeColorValue != null;
     final clearingSystem = _useSystemAccentColor;
     if (_appThemeColor == value && !clearingCustom && !clearingSystem) {
@@ -1057,47 +1183,59 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     final systemMutation = clearingSystem
         ? ++_useSystemAccentColorMutation
         : _useSystemAccentColorMutation;
+    final reloadGeneration = _reloadGeneration;
     _appThemeColor = value;
     _customThemeColorValue = null;
     _useSystemAccentColor = false;
     _rebuildThemes();
-    notifyListeners();
+    _notifyIfActive();
 
-    final writes = <Future<bool>>[
-      _writePreferenceInOrder(_appThemeColorKey, value.name),
-      if (clearingCustom) _writePreferenceInOrder(_customThemeColorKey, 0),
-      if (clearingSystem)
-        _writePreferenceInOrder(_useSystemAccentColorKey, false),
-    ];
-    final results = await Future.wait(writes);
-    final persisted = !results.contains(false);
-    if (persisted) {
-      _persistedAppThemeColor = value;
-      if (clearingCustom) _persistedCustomThemeColorValue = null;
-      if (clearingSystem) _persistedUseSystemAccentColor = false;
-      return true;
-    }
+    final presetWrite = _writePreferenceInOrder(_appThemeColorKey, value.name);
+    final customWrite = clearingCustom
+        ? _writePreferenceInOrder(_customThemeColorKey, 0)
+        : null;
+    final systemWrite = clearingSystem
+        ? _writePreferenceInOrder(_useSystemAccentColorKey, false)
+        : null;
+    final presetPersisted = await presetWrite;
+    final customPersisted = customWrite == null ? true : await customWrite;
+    final systemPersisted = systemWrite == null ? true : await systemWrite;
+    final allPersisted = presetPersisted && customPersisted && systemPersisted;
+    if (reloadGeneration != _reloadGeneration) return allPersisted;
+
     var rolledBack = false;
-    if (presetMutation == _appThemeColorMutation) {
+    if (presetPersisted) {
+      _persistedAppThemeColor = value;
+    } else if (presetMutation == _appThemeColorMutation) {
       _appThemeColor = _persistedAppThemeColor;
       rolledBack = true;
     }
-    if (clearingCustom && customMutation == _customThemeColorMutation) {
-      _customThemeColorValue = _persistedCustomThemeColorValue;
-      rolledBack = true;
+    if (clearingCustom) {
+      if (customPersisted) {
+        _persistedCustomThemeColorValue = null;
+      } else if (customMutation == _customThemeColorMutation) {
+        _customThemeColorValue = _persistedCustomThemeColorValue;
+        rolledBack = true;
+      }
     }
-    if (clearingSystem && systemMutation == _useSystemAccentColorMutation) {
-      _useSystemAccentColor = _persistedUseSystemAccentColor;
-      rolledBack = true;
+    if (clearingSystem) {
+      if (systemPersisted) {
+        _persistedUseSystemAccentColor = false;
+      } else if (systemMutation == _useSystemAccentColorMutation) {
+        _useSystemAccentColor = _persistedUseSystemAccentColor;
+        rolledBack = true;
+      }
     }
+    if (allPersisted) return true;
     if (rolledBack) {
       _rebuildThemes();
-      notifyListeners();
+      _notifyIfActive();
     }
     return false;
   }
 
   Future<bool> setCustomThemeColor(Color? value) async {
+    if (_disposed) return false;
     final normalized = value == null ? null : (value.toARGB32() | 0xFF000000);
     final clearingSystem = normalized != null && _useSystemAccentColor;
     if (_customThemeColorValue == normalized && !clearingSystem) return true;
@@ -1105,49 +1243,60 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     final systemMutation = clearingSystem
         ? ++_useSystemAccentColorMutation
         : _useSystemAccentColorMutation;
+    final reloadGeneration = _reloadGeneration;
     _customThemeColorValue = normalized;
     if (clearingSystem) _useSystemAccentColor = false;
     _rebuildThemes();
-    notifyListeners();
+    _notifyIfActive();
 
-    final writes = <Future<bool>>[
-      _writePreferenceInOrder(_customThemeColorKey, normalized ?? 0),
-      if (clearingSystem)
-        _writePreferenceInOrder(_useSystemAccentColorKey, false),
-    ];
-    final results = await Future.wait(writes);
-    final persisted = !results.contains(false);
-    if (persisted) {
-      _persistedCustomThemeColorValue = normalized;
-      if (clearingSystem) _persistedUseSystemAccentColor = false;
-      return true;
-    }
+    final customWrite = _writePreferenceInOrder(
+      _customThemeColorKey,
+      normalized ?? 0,
+    );
+    final systemWrite = clearingSystem
+        ? _writePreferenceInOrder(_useSystemAccentColorKey, false)
+        : null;
+    final customPersisted = await customWrite;
+    final systemPersisted = systemWrite == null ? true : await systemWrite;
+    final allPersisted = customPersisted && systemPersisted;
+    if (reloadGeneration != _reloadGeneration) return allPersisted;
+
     var rolledBack = false;
-    if (customMutation == _customThemeColorMutation) {
+    if (customPersisted) {
+      _persistedCustomThemeColorValue = normalized;
+    } else if (customMutation == _customThemeColorMutation) {
       _customThemeColorValue = _persistedCustomThemeColorValue;
       rolledBack = true;
     }
-    if (clearingSystem && systemMutation == _useSystemAccentColorMutation) {
-      _useSystemAccentColor = _persistedUseSystemAccentColor;
-      rolledBack = true;
+    if (clearingSystem) {
+      if (systemPersisted) {
+        _persistedUseSystemAccentColor = false;
+      } else if (systemMutation == _useSystemAccentColorMutation) {
+        _useSystemAccentColor = _persistedUseSystemAccentColor;
+        rolledBack = true;
+      }
     }
+    if (allPersisted) return true;
     if (rolledBack) {
       _rebuildThemes();
-      notifyListeners();
+      _notifyIfActive();
     }
     return false;
   }
 
   Future<bool> setUseSystemAccentColor(bool value) async {
+    if (_disposed) return false;
     if (_useSystemAccentColor == value) return true;
     final mutation = ++_useSystemAccentColorMutation;
+    final reloadGeneration = _reloadGeneration;
     _useSystemAccentColor = value;
     _rebuildThemes();
-    notifyListeners();
+    _notifyIfActive();
     final persisted = await _writePreferenceInOrder(
       _useSystemAccentColorKey,
       value,
     );
+    if (reloadGeneration != _reloadGeneration) return persisted;
     if (persisted) {
       _persistedUseSystemAccentColor = value;
       return true;
@@ -1155,12 +1304,19 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     if (mutation != _useSystemAccentColorMutation) return false;
     _useSystemAccentColor = _persistedUseSystemAccentColor;
     _rebuildThemes();
-    notifyListeners();
+    _notifyIfActive();
     return false;
   }
 
   @override
   Future<void> reloadPersistedState() async {
+    if (_disposed) return;
+    _reloadGeneration++;
+    _bumpAllMutations();
+    if (_pendingPreferenceWrites.isNotEmpty) {
+      await _preferenceWriteTail;
+      if (_disposed) return;
+    }
     final previousMode = _themeMode;
     final previousPureBlack = _pureBlackTheme;
     final previousBarGlass = _barGlassEnabled;
@@ -1177,7 +1333,7 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
       return;
     }
     _rebuildThemes();
-    notifyListeners();
+    _notifyIfActive();
   }
 
   void _rebuildThemes() {
@@ -1185,6 +1341,8 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     _darkTheme = null;
     _highContrastLightTheme = null;
     _highContrastDarkTheme = null;
+    _lightWindowBorderColor = null;
+    _darkWindowBorderColor = null;
   }
 
   ColorScheme _colorSchemeFor(
@@ -1208,7 +1366,7 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     );
   }
 
-  ThemeData _buildTheme(ColorScheme scheme) {
+  ThemeData _buildTheme(ColorScheme scheme, {bool highContrast = false}) {
     final isWindows = defaultTargetPlatform == TargetPlatform.windows;
     const mobileText = TextTheme(
       bodyMedium: TextStyle(fontSize: 14, height: 1.5),
@@ -1243,14 +1401,17 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
 
     final effectivePureBlack =
         _pureBlackTheme && scheme.brightness == Brightness.dark;
-    final tokens =
-        (scheme.brightness == Brightness.dark
-                ? AppDesignTokens.dark
-                : AppDesignTokens.light)
-            .copyWith(
-              barGlassEnabled: _barGlassEnabled,
-              pureBlack: effectivePureBlack,
-            );
+    final baseTokens = switch ((scheme.brightness, highContrast)) {
+      (Brightness.dark, true) => AppDesignTokens.highContrastDark,
+      (Brightness.dark, false) => AppDesignTokens.dark,
+      (Brightness.light, true) => AppDesignTokens.highContrastLight,
+      (Brightness.light, false) => AppDesignTokens.light,
+    };
+    final tokens = baseTokens.copyWith(
+      barGlassEnabled: _barGlassEnabled,
+      pureBlack: effectivePureBlack,
+    );
+    final floatingSurface = appFloatingSurfaceColor(scheme);
 
     const buttonShape = StadiumBorder();
     final textTheme = applyAppTextThemeColors(
@@ -1326,11 +1487,6 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(tokens.radiusCard),
-          side: BorderSide(
-            color: scheme.outlineVariant.withValues(
-              alpha: tokens.standardBorderAlpha,
-            ),
-          ),
         ),
       ),
       navigationRailTheme: NavigationRailThemeData(
@@ -1501,7 +1657,7 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
         toolbarHeight: AppPageHeaderMetrics.toolbarHeight,
       ),
       snackBarTheme: SnackBarThemeData(
-        backgroundColor: scheme.surfaceContainerHigh,
+        backgroundColor: floatingSurface,
         contentTextStyle: _tabularDigits.copyWith(
           color: scheme.onSurface,
           fontWeight: FontWeight.w500,
@@ -1514,16 +1670,11 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(tokens.radiusOverlay),
-          side: BorderSide(
-            color: scheme.outlineVariant.withValues(
-              alpha: tokens.standardBorderAlpha,
-            ),
-          ),
         ),
       ),
       bottomSheetTheme: BottomSheetThemeData(
-        backgroundColor: scheme.surfaceContainerHigh,
-        modalBackgroundColor: scheme.surfaceContainerHigh,
+        backgroundColor: floatingSurface,
+        modalBackgroundColor: floatingSurface,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         modalElevation: 0,
@@ -1532,25 +1683,15 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
           borderRadius: BorderRadius.vertical(
             top: Radius.circular(tokens.radiusOverlay),
           ),
-          side: BorderSide(
-            color: scheme.outlineVariant.withValues(
-              alpha: tokens.subtleBorderAlpha,
-            ),
-          ),
         ),
       ),
       popupMenuTheme: PopupMenuThemeData(
         mouseCursor: WidgetStateMouseCursor.clickable,
-        color: scheme.surfaceContainerHigh,
+        color: floatingSurface,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(tokens.radiusCard),
-          side: BorderSide(
-            color: scheme.outlineVariant.withValues(
-              alpha: tokens.standardBorderAlpha,
-            ),
-          ),
         ),
       ),
       scrollbarTheme: ScrollbarThemeData(

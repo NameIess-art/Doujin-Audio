@@ -639,34 +639,35 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
     final folderShape = isRootFolder
         ? cardShape
         : RoundedRectangleBorder(borderRadius: folderRadius);
-    final cardContent = isRootFolder
-        ? Material(
-            color: Colors.transparent,
-            shadowColor: Colors.transparent,
-            surfaceTintColor: Colors.transparent,
-            child: AppEntryInkWell(
-              canRequestFocus: widget.isSelectionMode,
-              onLongPress: widget.onLongPress,
-              onTap: widget.isSelectionMode
-                  ? widget.onToggleSelect
-                  : () => unawaited(
-                      showAudioDetailSheet(
-                        context,
+    final cardContent = Material(
+      color: Colors.transparent,
+      shadowColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      child: AppEntryInkWell(
+        customBorder: folderShape,
+        canRequestFocus: widget.isSelectionMode,
+        onLongPress: widget.onLongPress,
+        onTap: widget.isSelectionMode
+            ? widget.onToggleSelect
+            : isRootFolder
+            ? () => unawaited(
+                showAudioDetailSheet(
+                  context,
+                  AudioDetailTarget.libraryRootFolder(folder.path),
+                  initialDetail: ref
+                      .read(libraryFacadeProvider)
+                      .resolvedAudioDetail(
                         AudioDetailTarget.libraryRootFolder(folder.path),
-                        initialDetail: ref
-                            .read(libraryFacadeProvider)
-                            .resolvedAudioDetail(
-                              AudioDetailTarget.libraryRootFolder(folder.path),
-                            ),
-                        initialCoverPath: ref
-                            .read(libraryFacadeProvider)
-                            .resolvedCoverPathForFolder(folder.path),
                       ),
-                    ),
-              child: content,
-            ),
-          )
-        : content;
+                  initialCoverPath: ref
+                      .read(libraryFacadeProvider)
+                      .resolvedCoverPathForFolder(folder.path),
+                ),
+              )
+            : null,
+        child: content,
+      ),
+    );
 
     final card = SwipeRevealCard(
       onSelectMultiple: isRootFolder ? widget.onLongPress : null,
@@ -720,19 +721,7 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
       child: cardContent,
     );
 
-    // Child folder rows paint their press ink from the expansion tile material,
-    // so they only need the wrapper that keeps long press and selection taps.
-    final result = isRootFolder
-        ? card
-        : AppEntryInkWell(
-            canRequestFocus: widget.isSelectionMode,
-            onLongPress: widget.onLongPress,
-            onTap: widget.isSelectionMode ? widget.onToggleSelect : null,
-            borderRadius: folderShape.borderRadius as BorderRadius?,
-            child: card,
-          );
-
-    return UndoableRemovalTransition(hidden: isHidden, child: result);
+    return UndoableRemovalTransition(hidden: isHidden, child: card);
   }
 }
 
@@ -857,7 +846,12 @@ class _TrackNodeWidget extends ConsumerWidget {
         shape: cardShape,
         swipeEnabled: false,
         enabled: !isSelectionMode,
-        closedColor: cs.surface,
+        closedColor: isAlreadyPlaying && !track.isVideo && useFeaturedCard
+            ? Color.alphaBlend(
+                cs.primaryContainer.withValues(alpha: 0.40),
+                cs.surface,
+              )
+            : cs.surface,
         actionLabel: removalLabel,
         removeTooltip: removalLabel,
         secondaryActionLabel: i18n.tr('audio_detail_edit_info'),
@@ -887,15 +881,11 @@ class _TrackNodeWidget extends ConsumerWidget {
         leadingActionIconWidget: isPinned ? const PushPinOffIcon() : null,
         onRemove: () => _removeTrack(context, ref, track),
         child: Material(
-          color: isAlreadyPlaying && !track.isVideo && useFeaturedCard
-              ? Color.alphaBlend(
-                  cs.primaryContainer.withValues(alpha: 0.40),
-                  cs.surface,
-                )
-              : Colors.transparent,
+          color: Colors.transparent,
           shadowColor: Colors.transparent,
           surfaceTintColor: Colors.transparent,
           child: AppEntryInkWell(
+            customBorder: cardShape,
             canRequestFocus: isSelectionMode,
             onLongPress: onLongPress,
             onTap: isSelectionMode
@@ -967,6 +957,7 @@ class _TrackNodeWidget extends ConsumerWidget {
           shadowColor: Colors.transparent,
           surfaceTintColor: Colors.transparent,
           child: AppEntryInkWell(
+            customBorder: cardShape,
             canRequestFocus: isSelectionMode,
             onLongPress: onLongPress,
             onTap: isSelectionMode

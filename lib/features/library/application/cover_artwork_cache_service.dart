@@ -39,13 +39,58 @@ int get _resolvedFolderCoverLimit =>
 const int _manualCoverValidityLimit = 1200;
 
 Map<String, T> _coverKeyMap<T>() => LinkedHashMap<String, T>(
-  equals: (a, b) => _coverIdentity(a) == _coverIdentity(b),
-  hashCode: (value) => _coverIdentity(value).hashCode,
+  equals: _coverIdentityEquals,
+  hashCode: _coverIdentityHashCode,
 );
+
+bool _coverIdentityEquals(String a, String b) {
+  final aRemote = a.startsWith('remote-cover:');
+  final bRemote = b.startsWith('remote-cover:');
+  if (aRemote || bRemote) {
+    return aRemote == bRemote &&
+        _normalizeCoverCacheKey(a) == _normalizeCoverCacheKey(b);
+  }
+  return PathMatcher.equivalenceEquals(a, b);
+}
+
+int _coverIdentityHashCode(String value) => value.startsWith('remote-cover:')
+    ? _normalizeCoverCacheKey(value).hashCode
+    : PathMatcher.equivalenceHashCode(value);
 
 String _coverIdentity(String value) => value.startsWith('remote-cover:')
     ? _normalizeCoverCacheKey(value)
     : PathMatcher.equivalenceKey(value);
+
+final class _ScopeRevisionNotifier extends ValueNotifier<int> {
+  _ScopeRevisionNotifier({
+    required void Function(_ScopeRevisionNotifier notifier) onEmpty,
+  }) : _onEmpty = onEmpty,
+       super(0);
+
+  final void Function(_ScopeRevisionNotifier notifier) _onEmpty;
+  bool _disposed = false;
+
+  void bump() {
+    if (_disposed) return;
+    value++;
+  }
+
+  @override
+  void removeListener(VoidCallback listener) {
+    super.removeListener(listener);
+    if (!_disposed && !hasListeners) {
+      _disposed = true;
+      _onEmpty(this);
+      super.dispose();
+    }
+  }
+
+  void forceDispose() {
+    if (_disposed) return;
+    _disposed = true;
+    super.dispose();
+  }
+}
 
 class CoverArtworkCacheService {
   CoverArtworkCacheService({
@@ -135,6 +180,10 @@ class CoverArtworkCacheService {
       _coverKeyMap();
   final Map<String, String> _folderCoverSelections = _coverKeyMap();
   final Map<String, int> _coverKeyRevisions = _coverKeyMap();
+  final Map<String, _ScopeRevisionNotifier> _scopeNotifiers = _coverKeyMap();
+  static final ValueNotifier<int> _disposedScopeNotifier = ValueNotifier<int>(
+    0,
+  );
   Future<void>? _folderCoverSelectionsLoadFuture;
   int _generation = 0;
   int _cacheEpoch = 0;
@@ -148,11 +197,30 @@ class CoverArtworkCacheService {
 
   int get generation => _generation;
 
+  String _scopeKeyFor(String scope) => PathMatcher.isRemoteUri(scope)
+      ? remoteCoverSearchKey(scope) ?? scope
+      : _normalizeCoverCacheKey(scope);
+
   ({int epoch, int revision}) revisionForScope(String scope) {
-    final key = PathMatcher.isRemoteUri(scope)
-        ? remoteCoverSearchKey(scope) ?? scope
-        : _normalizeCoverCacheKey(scope);
+    final key = _scopeKeyFor(scope);
     return (epoch: _cacheEpoch, revision: _coverKeyRevision(key));
+  }
+
+  /// Returns a lazily allocated per-scope notifier that automatically removes
+  /// and disposes itself once its last listener unsubscribes.
+  ValueListenable<int> scopeNotifier(String scope) {
+    if (_disposed) return _disposedScopeNotifier;
+    final key = _scopeKeyFor(scope);
+    return _scopeNotifiers.putIfAbsent(
+      key,
+      () => _ScopeRevisionNotifier(
+        onEmpty: (notifier) {
+          if (identical(_scopeNotifiers[key], notifier)) {
+            _scopeNotifiers.remove(key);
+          }
+        },
+      ),
+    );
   }
 
   Future<void> initialize() async {
@@ -589,6 +657,7 @@ class CoverArtworkCacheService {
     _resolvedTrackCoverFutures.remove(key);
     _playbackTrackCoverFutures.remove(key);
     _advanceCoverKeyRevision(key);
+    _scopeNotifiers[key]?.bump();
     _generationSlice.update(++_generation);
   }
 
@@ -1156,6 +1225,15 @@ class CoverArtworkCacheService {
       _sourceResolver.invalidateFolderImageIndexes(scope);
       _remoteCovers.invalidate(scope, clearFailure: clearRemoteFailure);
     }
+    if (_scopeNotifiers.isNotEmpty) {
+      final affectedNotifiers = <_ScopeRevisionNotifier>[
+        for (final entry in _scopeNotifiers.entries)
+          if (affected(entry.key)) entry.value,
+      ];
+      for (final notifier in affectedNotifiers) {
+        notifier.bump();
+      }
+    }
     _generationSlice.update(++_generation);
   }
 
@@ -1163,6 +1241,12 @@ class CoverArtworkCacheService {
     _cacheEpoch++;
     _artworkRepairs.clear();
     _generation++;
+    if (_scopeNotifiers.isNotEmpty) {
+      final activeNotifiers = _scopeNotifiers.values.toList(growable: false);
+      for (final notifier in activeNotifiers) {
+        notifier.bump();
+      }
+    }
     _generationSlice.update(_generation);
     _coverKeyRevisions.clear();
     _sourceResolver.invalidateAll();
@@ -1239,6 +1323,7 @@ class CoverArtworkCacheService {
 
   void trimMemory() {
     _sourceResolver.trimMemory();
+    _artworkStore.trimMemory();
     _manualCoverPathValidityCache.clear();
     _manualCoverValidationFutures.clear();
     _trackCoverLookups.removeWhere((_, lookup) => lookup.validating);
@@ -1924,6 +2009,11 @@ class CoverArtworkCacheService {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
+    final notifiers = _scopeNotifiers.values.toList(growable: false);
+    _scopeNotifiers.clear();
+    for (final notifier in notifiers) {
+      notifier.forceDispose();
+    }
     _remoteCovers.dispose();
     await _generationSlice.dispose();
   }

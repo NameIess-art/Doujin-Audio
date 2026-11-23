@@ -816,6 +816,29 @@ List<AsmrTrackFile> sortAsmrTrackTreeNaturally(Iterable<AsmrTrackFile> nodes) {
   return List<AsmrTrackFile>.unmodifiable(sorted);
 }
 
+bool isAsmrTrackTreeSortedNaturally(List<AsmrTrackFile> nodes) {
+  for (var index = 0; index < nodes.length; index++) {
+    final current = nodes[index];
+    if (index > 0 &&
+        compareNaturalTreeEntries(
+              leftIsFolder: nodes[index - 1].isFolder,
+              leftName: nodes[index - 1].title,
+              leftPath: nodes[index - 1].relativePath,
+              rightIsFolder: current.isFolder,
+              rightName: current.title,
+              rightPath: current.relativePath,
+            ) >
+            0) {
+      return false;
+    }
+    if (current.children.isNotEmpty &&
+        !isAsmrTrackTreeSortedNaturally(current.children)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 const Set<String> _asmrAudioExtensions = <String>{
   '.mp3',
   '.aac',

@@ -17,7 +17,10 @@ void main() {
       ),
     );
 
-    expect(find.byType(ShaderMask), findsNothing);
+    expect(
+      find.byWidgetPredicate((widget) => widget is ShaderMask),
+      findsNothing,
+    );
   });
 
   testWidgets('reduced motion opens bottom sheets without a timed transition', (

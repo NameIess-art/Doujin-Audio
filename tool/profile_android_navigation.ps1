@@ -94,11 +94,12 @@ try {
     $launchRequestedAt = [DateTime]::UtcNow.ToString('o')
     & adb -s $Device shell am start -n $activity | Out-Null
     $deadline = [DateTime]::UtcNow.AddSeconds(60)
+    $service = $null
     do {
         Start-Sleep -Seconds 1
         $profilePid = (@(& adb -s $Device shell pidof -s $package) -join '').Trim()
         if ($profilePid) {
-            $service = (& adb -s $Device logcat -d --pid=$profilePid -s flutter | Select-String 'The Dart VM service is listening on').Line
+            $service = (& adb -s $Device logcat -d --pid=$profilePid -s flutter | Select-String 'The Dart VM service is listening on' | Select-Object -Last 1).Line
         }
     } until ($service -match '(http://127\.0\.0\.1:)(\d+)(/\S+)' -or [DateTime]::UtcNow -gt $deadline)
     if ($service -notmatch '(http://127\.0\.0\.1:)(\d+)(/\S+)') { throw 'Profile VM service did not start.' }

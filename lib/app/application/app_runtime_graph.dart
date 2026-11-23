@@ -69,7 +69,6 @@ typedef ProductionAppRuntime = ({
   AsmrDownloadManager asmrDownloadManager,
   AsmrLibraryController asmrLibraryController,
   AsmrPlaybackCoordinator asmrPlaybackCoordinator,
-  Future<void> Function() initializePresentation,
   Future<void> Function() initializeRuntimeData,
 });
 
@@ -496,13 +495,6 @@ ProductionAppRuntime createProductionAppRuntime({
     invalidateInitialization: runtimeGraph.persistence.invalidatePendingLoad,
   );
 
-  Future<void> initializePresentation() async {
-    await Future.wait<void>([
-      appLanguageProvider.initialized,
-      runtimeGraph.persistence.initializePresentation(),
-    ]);
-  }
-
   Future<void> initializeRuntimeData() async {
     if (windowsRuntime != null) {
       await windowsRuntime.initializeRuntime(runtimeGraph.runtime.start);
@@ -521,7 +513,6 @@ ProductionAppRuntime createProductionAppRuntime({
     asmrDownloadManager: asmrDownloadManager,
     asmrLibraryController: asmrLibraryController,
     asmrPlaybackCoordinator: asmrPlaybackCoordinator,
-    initializePresentation: initializePresentation,
     initializeRuntimeData: initializeRuntimeData,
   );
 }

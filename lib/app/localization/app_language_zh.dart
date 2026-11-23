@@ -449,6 +449,7 @@ const Map<String, String> appLanguageZh = {
   'library_category_no_voice_actors': '暂无声优信息',
   'library_category_no_circles': '暂无社团信息',
   'library_category_no_matches': '没有匹配的音频',
+  'copied': '已复制',
   'copied_to_clipboard': '已复制：{value}',
   'remove_folder': '移除文件夹',
   'remove_folder_confirm': '要从音乐库移除该文件夹及其所有音频吗？\n\n{name}',

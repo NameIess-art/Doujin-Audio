@@ -355,7 +355,7 @@ class EmbeddedCoverArtworkService {
                 frameOffset += 2;
                 break;
               }
-              frameOffset++;
+              frameOffset += 2;
             }
           } else {
             while (frameOffset < offset + frameSize &&

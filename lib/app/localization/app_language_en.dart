@@ -481,6 +481,7 @@ const Map<String, String> appLanguageEn = {
   'library_category_no_voice_actors': 'No voice actors',
   'library_category_no_circles': 'No circles',
   'library_category_no_matches': 'No matching audio',
+  'copied': 'Copied',
   'copied_to_clipboard': 'Copied: {value}',
   'remove_folder': 'Remove folder',
   'remove_folder_confirm':

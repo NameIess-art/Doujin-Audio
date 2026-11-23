@@ -454,12 +454,16 @@ class _ThemeColorPickerMenuState extends State<_ThemeColorPickerMenu> {
                       !hasSystemActive &&
                       preset == widget.selected;
                   final label = widget.i18n.tr(preset.labelKey);
-                  final color = preset.colorScheme(theme.brightness).primary;
-                  final foreground =
-                      ThemeData.estimateBrightnessForColor(color) ==
-                          Brightness.dark
-                      ? Colors.white
-                      : const Color(0xFF1B1B1F);
+                  final highContrast =
+                      tokens.highContrast || MediaQuery.highContrastOf(context);
+                  final color = preset
+                      .colorScheme(
+                        theme.brightness,
+                        pureBlack: tokens.pureBlack,
+                        highContrast: highContrast,
+                      )
+                      .primary;
+                  final foreground = appReadableOnColor(color);
                   return Semantics(
                     button: true,
                     selected: isSelected,
@@ -514,6 +518,10 @@ class _ThemeColorPickerMenuState extends State<_ThemeColorPickerMenu> {
                   previewColor: buildAppColorScheme(
                     seedColor: systemAccentColor,
                     brightness: theme.brightness,
+                    pureBlack: tokens.pureBlack,
+                    highContrast:
+                        tokens.highContrast ||
+                        MediaQuery.highContrastOf(context),
                   ).primary,
                   selected: hasSystemActive,
                   onTap: widget.onSystemAccentSelected,
@@ -524,10 +532,11 @@ class _ThemeColorPickerMenuState extends State<_ThemeColorPickerMenu> {
                 valueListenable: _draftHsl,
                 builder: (context, draftHsl, _) {
                   final draftColor = draftHsl.toColor();
-                  final draftScheme = buildAppColorScheme(
-                    seedColor: draftColor,
-                    brightness: theme.brightness,
-                  );
+                  final draftOnColor =
+                      ThemeData.estimateBrightnessForColor(draftColor) ==
+                          Brightness.dark
+                      ? Colors.white
+                      : Colors.black;
                   final hexCode =
                       '#${(draftColor.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
                   return Column(
@@ -539,7 +548,7 @@ class _ThemeColorPickerMenuState extends State<_ThemeColorPickerMenu> {
                           'theme_color_custom_toggle',
                         ),
                         label: widget.i18n.tr('theme_color_custom'),
-                        previewColor: draftScheme.primary,
+                        previewColor: draftColor,
                         selected: hasCustomActive,
                         trailingIcon: _customExpanded
                             ? Icons.expand_less_rounded
@@ -574,7 +583,7 @@ class _ThemeColorPickerMenuState extends State<_ThemeColorPickerMenu> {
                                     width: 28,
                                     height: 28,
                                     decoration: BoxDecoration(
-                                      color: draftScheme.primary,
+                                      color: draftColor,
                                       shape: BoxShape.circle,
                                       border: Border.all(
                                         color: cs.outlineVariant.withValues(
@@ -605,14 +614,12 @@ class _ThemeColorPickerMenuState extends State<_ThemeColorPickerMenu> {
                                           padding: const EdgeInsets.symmetric(
                                             horizontal: 14,
                                           ),
-                                          backgroundColor: draftScheme.primary,
-                                          foregroundColor:
-                                              draftScheme.onPrimary,
+                                          backgroundColor: draftColor,
+                                          foregroundColor: draftOnColor,
                                         ),
-                                        colorScheme: draftScheme,
+                                        colorScheme: cs,
                                         platform: theme.platform,
-                                        defaultBackgroundColor:
-                                            draftScheme.primary,
+                                        defaultBackgroundColor: draftColor,
                                         animationDuration:
                                             MediaQuery.disableAnimationsOf(
                                               context,
@@ -631,7 +638,7 @@ class _ThemeColorPickerMenuState extends State<_ThemeColorPickerMenu> {
                                 value: draftHsl.hue,
                                 min: 0,
                                 max: 360,
-                                activeColor: draftScheme.primary,
+                                activeColor: draftColor,
                                 onChanged: (hue) =>
                                     _draftHsl.value = draftHsl.withHue(hue),
                               ),
@@ -640,7 +647,7 @@ class _ThemeColorPickerMenuState extends State<_ThemeColorPickerMenu> {
                                 value: draftHsl.saturation,
                                 min: 0.1,
                                 max: 1.0,
-                                activeColor: draftScheme.primary,
+                                activeColor: draftColor,
                                 onChanged: (sat) => _draftHsl.value = draftHsl
                                     .withSaturation(sat),
                               ),
@@ -649,7 +656,7 @@ class _ThemeColorPickerMenuState extends State<_ThemeColorPickerMenu> {
                                 value: draftHsl.lightness,
                                 min: 0.25,
                                 max: 0.85,
-                                activeColor: draftScheme.primary,
+                                activeColor: draftColor,
                                 onChanged: (light) => _draftHsl.value = draftHsl
                                     .withLightness(light),
                               ),
@@ -718,13 +725,7 @@ class _ThemeColorOptionRow extends StatelessWidget {
                     ? Icon(
                         Icons.check_rounded,
                         size: 14,
-                        color:
-                            ThemeData.estimateBrightnessForColor(
-                                  previewColor,
-                                ) ==
-                                Brightness.dark
-                            ? Colors.white
-                            : const Color(0xFF1B1B1F),
+                        color: appReadableOnColor(previewColor),
                       )
                     : null,
               ),

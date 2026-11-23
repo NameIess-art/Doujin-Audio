@@ -46,6 +46,7 @@ import '../../../core/widgets/scroll_activity_gate.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../../player/presentation/playback_providers.dart';
 import '../../settings/presentation/settings_providers.dart';
+import '../application/cover_artwork_cache_service.dart';
 import '../application/work_text_service.dart';
 import '../application/dlsite_metadata_service.dart';
 import '../domain/library_node.dart';
@@ -73,7 +74,10 @@ abstract interface class RemoteWorkDetail {
 
   WorkDirectorySource? cachedDirectory(WidgetRef ref);
   Future<void> initialize(WidgetRef ref);
-  Future<WorkDirectorySource> refreshDirectory(WidgetRef ref);
+  Future<WorkDirectorySource> refreshDirectory(
+    WidgetRef ref, {
+    bool forceRefresh = true,
+  });
   String directoryErrorLabel(AppLanguageProvider i18n, Object error);
 
   bool isFavorite(WidgetRef ref);
@@ -180,6 +184,11 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   // Path stack: e.g. [] for root, ['EXデータ'] for subfolder
   final List<String> _currentPathSegments = [];
   final Map<String, double> _directoryScrollOffsets = <String, double>{};
+  double _coverCollapseExtent = 0;
+  Object? _headerSubtitleKey;
+  Widget? _headerSubtitleWidget;
+  Object? _headerCoverKey;
+  Widget? _headerCoverWidget;
 
   @override
   void initState() {
@@ -399,6 +408,22 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           // Retain the cover already provided by the library metadata.
         }
       }());
+    }
+
+    if (textService.canCombineWorkFiles(folderPath)) {
+      final discovered = await textService.findWorkFiles(
+        folderPath,
+        refresh: refresh,
+      );
+      if (!isCurrent()) return;
+      _publishDataUpdate(() {
+        if (discovered.texts != null) _localTextFiles = discovered.texts!;
+        if (discovered.images != null) {
+          _localImageReferences = discovered.images!;
+        }
+        _loadingLocal = false;
+      }, request: request);
+      return;
     }
 
     await Future.wait<void>([
@@ -631,19 +656,22 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     _directorySlide.value = 1;
   }
 
+  void _retireEntryLoadBatches() {
+    if (_entryLoadBatches.isEmpty) return;
+    final controllers = _entryLoadBatches.keys.toList(growable: false);
+    _entryLoadBatches.clear();
+    for (final controller in controllers) {
+      controller.stop(canceled: false);
+    }
+    _scheduleDisposeEntryLoadControllers(controllers);
+  }
+
   void _updateDirectoryMotion(bool isLoading) {
     if (MediaQuery.disableAnimationsOf(context) || _route?.isCurrent == false) {
       _directoryFade.value = 1;
       _departingSkeletonRect = null;
       _cancelDirectorySlide();
-      if (_entryLoadBatches.isNotEmpty) {
-        final controllers = _entryLoadBatches.keys.toList(growable: false);
-        _entryLoadBatches.clear();
-        for (final controller in controllers) {
-          controller.stop(canceled: false);
-        }
-        _scheduleDisposeEntryLoadControllers(controllers);
-      }
+      _retireEntryLoadBatches();
       _directoryWasLoading = isLoading;
       return;
     }
@@ -679,7 +707,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     return const AlwaysStoppedAnimation(1);
   }
 
-  Future<void> _loadRemoteData() async {
+  Future<void> _loadRemoteData({bool forceRefresh = false}) async {
     if (_requestingRemote) return;
     final work = widget.remoteWork!;
     _requestingRemote = true;
@@ -698,13 +726,16 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           canRun: () => _isPageCurrent,
           commit: () {
             if (mounted && _route?.isActive != false) {
-              unawaited(_loadRemoteData());
+              unawaited(_loadRemoteData(forceRefresh: forceRefresh));
             }
           },
         );
         return;
       }
-      final directory = await work.refreshDirectory(ref);
+      final directory = await work.refreshDirectory(
+        ref,
+        forceRefresh: forceRefresh,
+      );
       if (!mounted) return;
       _publishDataUpdate(() {
         _remoteDirectory = directory;
@@ -733,15 +764,22 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
 
   void _switchDirectory(List<String> nextPath) {
     if (listEquals(nextPath, _currentPathSegments)) return;
+    _retireEntryLoadBatches();
     final previousKey = _currentPathSegments.join('/');
     final nextKey = nextPath.join('/');
+    final currentOffset = _scrollController.hasClients
+        ? _scrollController.offset
+        : 0.0;
     if (_scrollController.hasClients) {
-      _directoryScrollOffsets[previousKey] = _scrollController.offset;
+      _directoryScrollOffsets[previousKey] = currentOffset;
     }
     final direction = nextPath.length < _currentPathSegments.length ? -1 : 1;
+    // Keep the current cover collapse state instead of snapping the header
+    // back to maxHeight when drilling into a subfolder.
+    final collapsedTarget = currentOffset.clamp(0.0, _coverCollapseExtent);
     final targetScrollOffset = direction < 0
-        ? (_directoryScrollOffsets[nextKey] ?? 0.0)
-        : 0.0;
+        ? (_directoryScrollOffsets[nextKey] ?? collapsedTarget)
+        : collapsedTarget;
     void restoreScrollOffset() {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || !_scrollController.hasClients) return;
@@ -1635,167 +1673,61 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     const rjBarHeight = 44.0;
 
     final subtitleAccent = cs.primary;
-    final subtitleStatus = hasSubtitle == null
-        ? null
-        : Row(
-            key: const ValueKey<String>('work_detail_subtitle_status'),
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                hasSubtitle
-                    ? Icons.subtitles_rounded
-                    : Icons.subtitles_off_rounded,
-                size: 16,
-                color: hasSubtitle ? subtitleAccent : cs.onSurfaceVariant,
-              ),
-              const SizedBox(width: 5),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 100),
-                child: Text(
-                  i18n.tr(
-                    hasSubtitle ? 'asmr_has_subtitle' : 'asmr_no_subtitle',
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: hasSubtitle ? subtitleAccent : cs.onSurfaceVariant,
+    final subtitleTextStyle = Theme.of(context).textTheme.labelMedium;
+    final subtitleKey = (
+      hasSubtitle,
+      i18n.language,
+      subtitleAccent,
+      cs.onSurfaceVariant,
+      subtitleTextStyle,
+    );
+    if (_headerSubtitleKey != subtitleKey) {
+      _headerSubtitleKey = subtitleKey;
+      _headerSubtitleWidget = hasSubtitle == null
+          ? null
+          : Row(
+              key: const ValueKey<String>('work_detail_subtitle_status'),
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  hasSubtitle
+                      ? Icons.subtitles_rounded
+                      : Icons.subtitles_off_rounded,
+                  size: 16,
+                  color: hasSubtitle ? subtitleAccent : cs.onSurfaceVariant,
+                ),
+                const SizedBox(width: 5),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 100),
+                  child: Text(
+                    i18n.tr(
+                      hasSubtitle ? 'asmr_has_subtitle' : 'asmr_no_subtitle',
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: subtitleTextStyle?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: hasSubtitle ? subtitleAccent : cs.onSurfaceVariant,
+                    ),
                   ),
                 ),
-              ),
-            ],
-          );
-
-    Widget buildCover(BuildContext context, WidgetRef ref) {
-      final String? trimmedCover = coverPath?.trim();
-      final bool hasValidCover =
-          trimmedCover != null && trimmedCover.isNotEmpty;
-      final bool isRemoteCover =
-          hasValidCover &&
-          (trimmedCover.startsWith('http://') ||
-              trimmedCover.startsWith('https://') ||
-              !widget.isLocal);
-
-      if (isRemoteCover) {
-        final remoteUrl = trimmedCover;
-        final library = ref.read(libraryFacadeProvider);
-        final coverUi = ref.read(libraryCoverUiControllerProvider);
-        final coverResolution = ref.watch(coverImageResolutionProvider);
-        final cacheWidth = coverCacheWidthForResolution(coverResolution);
-        String? resolvePreviewPath() {
-          for (final url in [...?widget.remoteWork?.alternateCoverUrls]) {
-            if (url == null || url.trim() == remoteUrl) continue;
-            final preview = library.resolvedCoverPathForRemoteCover(url);
-            if (preview != null) return preview;
-          }
-          return null;
-        }
-
-        final (coverRevision, resolved, previewPath) = ref.watch(
-          coverGenerationProvider.select((_) {
-            final resolvedPath = library.resolvedCoverPathForRemoteCover(
-              remoteUrl,
+              ],
             );
-            final preview = resolvePreviewPath();
-            final scopeRevision = resolvedPath != null
-                ? null
-                : library.coverArtworkCacheService.revisionForScope(remoteUrl);
-            return (scopeRevision, resolvedPath, preview);
-          }),
-        );
-        Widget coverPlaceholder(BuildContext context) {
-          if (previewPath == null) return const CoverFallbackArtwork();
-          // List thumbnails and main covers can be different URLs. Reuse the
-          // list's decoded pixels while the main image downloads and decodes.
-          return LocalCoverImage(
-            path: previewPath,
-            cacheWidth: coverThumbnailCacheWidth(
-              logicalWidth:
-                  LibraryLikeCardMetrics.coverHeight *
-                  LibraryLikeCardMetrics.coverAspectRatio,
-              devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
-              resolution: coverResolution,
-            ),
-            useDefaultCacheWidth: false,
-            deferLoadDuringInteraction: true,
-            fit: BoxFit.cover,
-          );
-        }
+    }
 
-        final requestKey = (remoteUrl, resolved, coverRevision);
-        if (_coverRequestKey != requestKey) {
-          _coverRequestKey = requestKey;
-          _coverFuture = resolved != null
-              ? Future.value(resolved)
-              : coverUi.deferredRemoteCover(remoteUrl, context: context);
-        }
-        return AsyncRemoteCoverImage(
-          deferLoadDuringInteraction: true,
-          onImageError: ref
-              .read(libraryFacadeProvider)
-              .coverArtworkCacheService
-              .reportArtworkReadFailure,
-          url: remoteUrl,
-          future: _coverFuture!,
-          initialPath: resolved,
-          retryFutureBuilder: () =>
-              coverUi.deferredRemoteCover(remoteUrl, context: context),
-          retryDelay: const Duration(seconds: 3),
-          maxRetryAttempts: 3,
-          fit: BoxFit.cover,
-          cacheWidth: cacheWidth,
-          useDefaultCacheWidth: cacheWidth != null,
-          loadingBuilder: (context) =>
-              CoverLoadingArtwork(placeholder: coverPlaceholder(context)),
-          fallbackBuilder: coverPlaceholder,
-        );
-      } else if (widget.isLocal) {
-        final library = ref.read(libraryFacadeProvider);
-        final (resolved, coverRevision) = ref.watch(
-          coverGenerationProvider.select((_) {
-            final targetPath = _localTarget!.targetPath;
-            final resolvedPath =
-                library.resolvedCoverPathForFolder(targetPath) ?? coverPath;
-            final scopeRevision = resolvedPath != null
-                ? null
-                : library.coverArtworkCacheService.revisionForScope(targetPath);
-            return (resolvedPath, scopeRevision);
-          }),
-        );
-        final requestKey = (_localTarget, resolved, coverRevision);
-        if (_coverRequestKey != requestKey) {
-          _coverRequestKey = requestKey;
-          _coverFuture = Future.value(resolved);
-        }
-        Future<String?> retryCover() async {
-          // The initial discovery still owns this lookup, including results
-          // waiting behind navigation. Do not start a second discovery.
-          if (_loadingLocal) return _localManualCover;
-          final request = _localLoadRequest;
-          final path = await ref
-              .read(libraryCoverUiControllerProvider)
-              .deferredFolderCover(_localTarget!.targetPath, context: context);
-          if (mounted &&
-              request == _localLoadRequest &&
-              _localManualCover != path) {
-            _publishDataUpdate(() => _localManualCover = path, request: request);
-          }
-          return path;
-        }
-
-        return AsyncLocalCoverImage(
-          deferLoadDuringInteraction: true,
-          onImageError:
-              library.coverArtworkCacheService.reportArtworkReadFailure,
-          future: _coverFuture!,
-          requestKey: resolved,
-          initialPath: resolved,
-          retryFutureBuilder: retryCover,
-          fit: BoxFit.cover,
-        );
-      } else {
-        return const LocalCoverImage(fit: BoxFit.cover);
-      }
+    final coverKey = (
+      widget.isLocal,
+      _localTarget,
+      widget.remoteWork,
+      coverPath,
+    );
+    if (_headerCoverKey != coverKey || _headerCoverWidget == null) {
+      _headerCoverKey = coverKey;
+      final resolvedCoverPath = coverPath;
+      _headerCoverWidget = Consumer(
+        builder: (context, coverRef, _) =>
+            _buildCoverWidget(context, coverRef, resolvedCoverPath),
+      );
     }
 
     Widget buildBody(BuildContext context, WidgetRef ref, double width) {
@@ -1806,6 +1738,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
         380.0,
       );
       final coverMinHeight = coverMaxHeight.clamp(0.0, 120.0);
+      _coverCollapseExtent = coverMaxHeight - coverMinHeight;
       final entryMenus =
           <(WorkEntryType, String?), List<UnifiedMenuEntry<WorkEntryAction>>>{};
       final moreLabel = i18n.tr('more_actions');
@@ -1841,14 +1774,11 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                     title: displayTitle,
                     rjCode: displayRj,
                     circleName: displayCircle,
-                    subtitleStatus: subtitleStatus,
-                    coverWidget: Consumer(
-                      builder: (context, coverRef, _) =>
-                          buildCover(context, coverRef),
-                    ),
+                    subtitleStatus: _headerSubtitleWidget,
+                    coverWidget: _headerCoverWidget!,
                     accentColor: cs.primary,
                     surfaceColor: cs.surface,
-                    onCopyMetadata: (value) => _copyText(context, value),
+                    onCopyMetadata: _copyMetadata,
                   ),
                 ),
 
@@ -1938,7 +1868,8 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                         ),
                         error: error,
                         retryTooltip: i18n.tr('retry'),
-                        onRetry: () => unawaited(_loadRemoteData()),
+                        onRetry: () =>
+                            unawaited(_loadRemoteData(forceRefresh: true)),
                       ),
                     ),
                   ),
@@ -2161,6 +2092,152 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     );
   }
 
+  void _copyMetadata(String value) => _copyText(context, value);
+
+  Widget _buildCoverWidget(
+    BuildContext context,
+    WidgetRef ref,
+    String? coverPath,
+  ) {
+    final String? trimmedCover = coverPath?.trim();
+    final bool hasValidCover = trimmedCover != null && trimmedCover.isNotEmpty;
+    final bool isRemoteCover =
+        hasValidCover &&
+        (trimmedCover.startsWith('http://') ||
+            trimmedCover.startsWith('https://') ||
+            !widget.isLocal);
+
+    final coverResolution = ref.watch(coverImageResolutionProvider);
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final headerCacheWidth = coverCacheWidthForResolution(coverResolution);
+
+    if (isRemoteCover) {
+      final remoteUrl = trimmedCover;
+      final library = ref.read(libraryFacadeProvider);
+      final cache = library.coverArtworkCacheService;
+      final coverUi = ref.read(libraryCoverUiControllerProvider);
+      final alternateUrls = <String>[
+        for (final url in [...?widget.remoteWork?.alternateCoverUrls])
+          if (url != null && url.trim().isNotEmpty && url.trim() != remoteUrl)
+            url.trim(),
+      ];
+      String? resolvePreviewPath() {
+        for (final url in alternateUrls) {
+          final preview = library.resolvedCoverPathForRemoteCover(url);
+          if (preview != null) return preview;
+        }
+        return null;
+      }
+
+      return _WorkCoverScopesBuilder(
+        cache: cache,
+        scopes: <String>[remoteUrl, ...alternateUrls],
+        builder: (context, revisionToken) {
+          final resolved = library.resolvedCoverPathForRemoteCover(remoteUrl);
+          final previewPath = resolvePreviewPath();
+          final coverRevision = resolved != null
+              ? null
+              : (cache.revisionForScope(remoteUrl), revisionToken);
+          Widget coverPlaceholder(BuildContext context) {
+            if (previewPath == null) return const CoverFallbackArtwork();
+            // List thumbnails and main covers can be different URLs. Reuse the
+            // list's decoded pixels while the main image downloads and decodes.
+            return LocalCoverImage(
+              path: previewPath,
+              cacheWidth: coverThumbnailCacheWidth(
+                logicalWidth:
+                    LibraryLikeCardMetrics.coverHeight *
+                    LibraryLikeCardMetrics.coverAspectRatio,
+                devicePixelRatio: dpr,
+                resolution: coverResolution,
+              ),
+              useDefaultCacheWidth: false,
+              deferLoadDuringInteraction: true,
+              fit: BoxFit.cover,
+            );
+          }
+
+          final requestKey = (remoteUrl, resolved, coverRevision);
+          if (_coverRequestKey != requestKey) {
+            _coverRequestKey = requestKey;
+            _coverFuture = resolved != null
+                ? Future.value(resolved)
+                : coverUi.deferredRemoteCover(remoteUrl, context: context);
+          }
+          return AsyncRemoteCoverImage(
+            deferLoadDuringInteraction: true,
+            onImageError: cache.reportArtworkReadFailure,
+            url: remoteUrl,
+            future: _coverFuture!,
+            initialPath: resolved,
+            retryFutureBuilder: () =>
+                coverUi.deferredRemoteCover(remoteUrl, context: context),
+            retryDelay: const Duration(seconds: 3),
+            maxRetryAttempts: 3,
+            fit: BoxFit.cover,
+            cacheWidth: headerCacheWidth,
+            useDefaultCacheWidth: headerCacheWidth != null,
+            loadingBuilder: (context) =>
+                CoverLoadingArtwork(placeholder: coverPlaceholder(context)),
+            fallbackBuilder: coverPlaceholder,
+          );
+        },
+      );
+    } else if (widget.isLocal) {
+      final library = ref.read(libraryFacadeProvider);
+      final cache = library.coverArtworkCacheService;
+      final targetPath = _localTarget!.targetPath;
+      return _WorkCoverScopesBuilder(
+        cache: cache,
+        scopes: <String>[targetPath],
+        builder: (context, revisionToken) {
+          final resolved =
+              library.resolvedCoverPathForFolder(targetPath) ?? coverPath;
+          final coverRevision = resolved != null
+              ? null
+              : (cache.revisionForScope(targetPath), revisionToken);
+          final requestKey = (_localTarget, resolved, coverRevision);
+          if (_coverRequestKey != requestKey) {
+            _coverRequestKey = requestKey;
+            _coverFuture = Future.value(resolved);
+          }
+          Future<String?> retryCover() async {
+            // The initial discovery still owns this lookup, including results
+            // waiting behind navigation. Do not start a second discovery.
+            if (_loadingLocal) return _localManualCover;
+            final request = _localLoadRequest;
+            final path = await ref
+                .read(libraryCoverUiControllerProvider)
+                .deferredFolderCover(_localTarget!.targetPath, context: context);
+            if (mounted &&
+                request == _localLoadRequest &&
+                _localManualCover != path) {
+              _publishDataUpdate(
+                () => _localManualCover = path,
+                request: request,
+              );
+            }
+            return path;
+          }
+
+          return AsyncLocalCoverImage(
+            deferLoadDuringInteraction: true,
+            onImageError: cache.reportArtworkReadFailure,
+            future: _coverFuture!,
+            requestKey: resolved,
+            initialPath: resolved,
+            retryFutureBuilder: retryCover,
+            cacheWidth: headerCacheWidth,
+            useDefaultCacheWidth: false,
+            fit: BoxFit.cover,
+          );
+        },
+      );
+    } else {
+      return const LocalCoverImage(fit: BoxFit.cover);
+    }
+  }
+
   void _copyText(BuildContext context, String rawValue) {
     final value = rawValue.trim();
     if (value.isEmpty) return;
@@ -2259,4 +2336,70 @@ class _HiddenRemovals {
 
   @override
   int get hashCode => Object.hashAllUnordered(keys);
+}
+
+class _WorkCoverScopesBuilder extends StatefulWidget {
+  const _WorkCoverScopesBuilder({
+    required this.cache,
+    required this.scopes,
+    required this.builder,
+  });
+
+  final CoverArtworkCacheService cache;
+  final List<String> scopes;
+  final Widget Function(BuildContext context, int revisionToken) builder;
+
+  @override
+  State<_WorkCoverScopesBuilder> createState() =>
+      _WorkCoverScopesBuilderState();
+}
+
+class _WorkCoverScopesBuilderState extends State<_WorkCoverScopesBuilder> {
+  final List<ValueListenable<int>> _listenables = <ValueListenable<int>>[];
+  int _revisionToken = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _attach();
+  }
+
+  @override
+  void didUpdateWidget(covariant _WorkCoverScopesBuilder oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.cache, widget.cache) ||
+        !listEquals(oldWidget.scopes, widget.scopes)) {
+      _detach();
+      _attach();
+    }
+  }
+
+  void _attach() {
+    for (final scope in widget.scopes) {
+      final listenable = widget.cache.scopeNotifier(scope);
+      listenable.addListener(_onScopeChanged);
+      _listenables.add(listenable);
+    }
+  }
+
+  void _detach() {
+    for (final listenable in _listenables) {
+      listenable.removeListener(_onScopeChanged);
+    }
+    _listenables.clear();
+  }
+
+  void _onScopeChanged() {
+    if (!mounted) return;
+    setState(() => _revisionToken++);
+  }
+
+  @override
+  void dispose() {
+    _detach();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context, _revisionToken);
 }

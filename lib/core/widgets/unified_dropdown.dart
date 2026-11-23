@@ -64,6 +64,38 @@ class UnifiedDropdownButton<T> extends StatefulWidget {
 
 class _UnifiedDropdownButtonState<T> extends State<UnifiedDropdownButton<T>> {
   final _focusNode = FocusNode();
+  late List<DropdownMenuItem<T>> _alignedItems;
+  late List<Widget> _selectedItems;
+
+  @override
+  void initState() {
+    super.initState();
+    _rebuildItems();
+  }
+
+  @override
+  void didUpdateWidget(covariant UnifiedDropdownButton<T> oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.items, widget.items) ||
+        oldWidget.alignment != widget.alignment ||
+        oldWidget.multilineItems != widget.multilineItems ||
+        oldWidget.insetTrigger != widget.insetTrigger) {
+      _rebuildItems();
+    }
+  }
+
+  void _rebuildItems() {
+    _alignedItems = _alignItems(
+      widget.items,
+      widget.alignment,
+      widget.multilineItems,
+      // The unpadded Material trigger expands its popup by 16px
+      // at the start and 24px at the end to align the labels.
+      // Reserve the extra end space so the text wraps identically.
+      trailingPadding: widget.insetTrigger ? 12 : 32,
+    );
+    _selectedItems = _buildSelectedItems(widget.items, widget.alignment);
+  }
 
   @override
   void dispose() {
@@ -74,64 +106,49 @@ class _UnifiedDropdownButtonState<T> extends State<UnifiedDropdownButton<T>> {
   @override
   Widget build(BuildContext context) {
     final onChanged = widget.onChanged;
+    final dropdown = ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 44),
+      child: ButtonTheme.fromButtonThemeData(
+        data: ButtonTheme.of(
+          context,
+        ).copyWith(alignedDropdown: widget.insetTrigger),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<T>(
+            mouseCursor: WidgetStateMouseCursor.clickable,
+            dropdownMenuItemMouseCursor: WidgetStateMouseCursor.clickable,
+            focusColor: Colors.transparent,
+            focusNode: _focusNode,
+            value: widget.value,
+            icon: const Icon(Icons.arrow_drop_down),
+            items: _alignedItems,
+            selectedItemBuilder: (_) => _selectedItems,
+            onChanged: onChanged == null
+                ? null
+                : (value) {
+                    if (FocusManager.instance.highlightMode !=
+                        FocusHighlightMode.traditional) {
+                      _focusNode.unfocus(
+                        disposition: UnfocusDisposition.previouslyFocusedChild,
+                      );
+                    }
+                    onChanged(value);
+                  },
+            isExpanded: true,
+            isDense: widget.isDense,
+            alignment: widget.alignment,
+            menuMaxHeight: widget.menuMaxHeight,
+            itemHeight: widget.multilineItems ? null : kMinInteractiveDimension,
+            dropdownColor: Theme.of(context).colorScheme.surfaceContainerHigh,
+            borderRadius: AppRadius.borderMedium,
+          ),
+        ),
+      ),
+    );
     final button = _UnifiedDropdownPointerShell(
       enabled: onChanged != null,
       paintSurface: true,
       blurBackground: widget.blurBackground,
-      builder: (context, feedback) {
-        return ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 44),
-          child: ButtonTheme.fromButtonThemeData(
-            data: ButtonTheme.of(
-              context,
-            ).copyWith(alignedDropdown: widget.insetTrigger),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<T>(
-                mouseCursor: WidgetStateMouseCursor.clickable,
-                dropdownMenuItemMouseCursor: WidgetStateMouseCursor.clickable,
-                focusColor: Colors.transparent,
-                focusNode: _focusNode,
-                value: widget.value,
-                icon: const Icon(Icons.arrow_drop_down),
-                items: _alignItems(
-                  widget.items,
-                  widget.alignment,
-                  widget.multilineItems,
-                  // The unpadded Material trigger expands its popup by 16px
-                  // at the start and 24px at the end to align the labels.
-                  // Reserve the extra end space so the text wraps identically.
-                  trailingPadding: widget.insetTrigger ? 12 : 32,
-                ),
-                selectedItemBuilder: (context) =>
-                    _buildSelectedItems(widget.items, widget.alignment),
-                onChanged: onChanged == null
-                    ? null
-                    : (value) {
-                        if (FocusManager.instance.highlightMode !=
-                            FocusHighlightMode.traditional) {
-                          _focusNode.unfocus(
-                            disposition:
-                                UnfocusDisposition.previouslyFocusedChild,
-                          );
-                        }
-                        onChanged(value);
-                      },
-                isExpanded: true,
-                isDense: widget.isDense,
-                alignment: widget.alignment,
-                menuMaxHeight: widget.menuMaxHeight,
-                itemHeight: widget.multilineItems
-                    ? null
-                    : kMinInteractiveDimension,
-                dropdownColor: Theme.of(
-                  context,
-                ).colorScheme.surfaceContainerHigh,
-                borderRadius: AppRadius.borderMedium,
-              ),
-            ),
-          ),
-        );
-      },
+      child: dropdown,
     );
     // Keep the fitted trigger anchored inside its slot so the popup shares
     // both its width and its selected label's position.
@@ -144,7 +161,7 @@ class _UnifiedDropdownButtonState<T> extends State<UnifiedDropdownButton<T>> {
   }
 }
 
-class UnifiedDropdownButtonFormField<T> extends StatelessWidget {
+class UnifiedDropdownButtonFormField<T> extends StatefulWidget {
   const UnifiedDropdownButtonFormField({
     super.key,
     required this.initialValue,
@@ -167,9 +184,44 @@ class UnifiedDropdownButtonFormField<T> extends StatelessWidget {
   final bool multilineItems;
 
   @override
+  State<UnifiedDropdownButtonFormField<T>> createState() =>
+      _UnifiedDropdownButtonFormFieldState<T>();
+}
+
+class _UnifiedDropdownButtonFormFieldState<T>
+    extends State<UnifiedDropdownButtonFormField<T>> {
+  late List<DropdownMenuItem<T>> _alignedItems;
+  late List<Widget> _selectedItems;
+
+  @override
+  void initState() {
+    super.initState();
+    _rebuildItems();
+  }
+
+  @override
+  void didUpdateWidget(covariant UnifiedDropdownButtonFormField<T> oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.items, widget.items) ||
+        oldWidget.alignment != widget.alignment ||
+        oldWidget.multilineItems != widget.multilineItems) {
+      _rebuildItems();
+    }
+  }
+
+  void _rebuildItems() {
+    _alignedItems = _alignItems(
+      widget.items,
+      widget.alignment,
+      widget.multilineItems,
+    );
+    _selectedItems = _buildSelectedItems(widget.items, widget.alignment);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final field = _UnifiedDropdownPointerShell(
-      enabled: onChanged != null,
+      enabled: widget.onChanged != null,
       paintSurface: false,
       builder: (context, feedback) {
         return ButtonTheme.fromButtonThemeData(
@@ -177,27 +229,30 @@ class UnifiedDropdownButtonFormField<T> extends StatelessWidget {
           child: DropdownButtonFormField<T>(
             mouseCursor: WidgetStateMouseCursor.clickable,
             dropdownMenuItemMouseCursor: WidgetStateMouseCursor.clickable,
-            initialValue: initialValue,
+            initialValue: widget.initialValue,
             icon: const Icon(Icons.arrow_drop_down),
-            items: _alignItems(items, alignment, multilineItems),
-            selectedItemBuilder: (context) =>
-                _buildSelectedItems(items, alignment),
-            onChanged: onChanged,
+            items: _alignedItems,
+            selectedItemBuilder: (_) => _selectedItems,
+            onChanged: widget.onChanged,
             focusColor: Colors.transparent,
-            decoration: _hoverFormDecoration(context, decoration, feedback),
+            decoration: _hoverFormDecoration(
+              context,
+              widget.decoration,
+              feedback,
+            ),
             isExpanded: true,
-            alignment: alignment,
-            menuMaxHeight: menuMaxHeight,
-            itemHeight: multilineItems ? null : kMinInteractiveDimension,
+            alignment: widget.alignment,
+            menuMaxHeight: widget.menuMaxHeight,
+            itemHeight: widget.multilineItems ? null : kMinInteractiveDimension,
             dropdownColor: Theme.of(context).colorScheme.surfaceContainerHigh,
             borderRadius: AppRadius.borderMedium,
           ),
         );
       },
     );
-    if (expandWidth) return SizedBox(width: double.infinity, child: field);
+    if (widget.expandWidth) return SizedBox(width: double.infinity, child: field);
     return Align(
-      alignment: alignment,
+      alignment: widget.alignment,
       widthFactor: 1,
       heightFactor: 1,
       child: IntrinsicWidth(child: field),
@@ -250,9 +305,10 @@ class _UnifiedDropdownPointerShell extends StatelessWidget {
   const _UnifiedDropdownPointerShell({
     required this.enabled,
     required this.paintSurface,
-    required this.builder,
+    this.builder,
+    this.child,
     this.blurBackground = true,
-  });
+  }) : assert(builder != null || child != null);
 
   final bool enabled;
   final bool paintSurface;
@@ -260,8 +316,9 @@ class _UnifiedDropdownPointerShell extends StatelessWidget {
   final Widget Function(
     BuildContext context,
     ({bool hovered, bool pressed}) feedback,
-  )
+  )?
   builder;
+  final Widget? child;
 
   @override
   Widget build(BuildContext context) {
@@ -272,18 +329,16 @@ class _UnifiedDropdownPointerShell extends StatelessWidget {
         enabled: enabled,
         builder: (context, states) => ValueListenableBuilder<Set<WidgetState>>(
           valueListenable: states,
-          builder: (context, value, _) {
+          child: child,
+          builder: (context, value, staticChild) {
             final disableAnimations = MediaQuery.disableAnimationsOf(context);
             final isWindows = theme.platform == TargetPlatform.windows;
             final hovered =
-                enabled &&
-                isWindows &&
-                value.contains(WidgetState.hovered);
+                enabled && isWindows && value.contains(WidgetState.hovered);
             final pressed = enabled && value.contains(WidgetState.pressed);
-            final innerTrigger = builder(context, (
-              hovered: hovered,
-              pressed: pressed,
-            ));
+            final innerTrigger =
+                staticChild ??
+                builder!(context, (hovered: hovered, pressed: pressed));
             final trigger = isWindows
                 ? innerTrigger
                 : AnimatedScale(

@@ -31,6 +31,7 @@ class _SubtitleModelDownloadDialogState
   bool _waiting = false;
   bool _failed = false;
   bool _cancelled = false;
+  bool _runInBackground = false;
   Object? _lastError;
 
   @override
@@ -43,16 +44,27 @@ class _SubtitleModelDownloadDialogState
     }
   }
 
+  @override
+  void dispose() {
+    if (_waiting && !_runInBackground && !_cancelled) {
+      _cancelled = true;
+      widget.store.cancelDownload(widget.spec);
+    }
+    super.dispose();
+  }
+
   Future<void> _observeDownload() async {
     if (_waiting) return;
     setState(() {
       _waiting = true;
       _failed = false;
       _cancelled = false;
+      _runInBackground = false;
       _lastError = null;
     });
     try {
       await widget.store.ensure(widget.spec, isCancelled: () => _cancelled);
+      _waiting = false;
       if (mounted) Navigator.of(context).pop(true);
     } on SubtitleModelDownloadCancelled {
       if (mounted) {
@@ -71,6 +83,11 @@ class _SubtitleModelDownloadDialogState
     } finally {
       if (mounted) setState(() => _waiting = false);
     }
+  }
+
+  void _continueInBackground() {
+    _runInBackground = true;
+    Navigator.pop(context, true);
   }
 
   void _cancelDownload() {
@@ -159,7 +176,7 @@ class _SubtitleModelDownloadDialogState
                   label: i18n.tr('cancel'),
                 ),
                 AppPrimaryButton(
-                  onPressed: () => Navigator.pop(context, true),
+                  onPressed: _continueInBackground,
                   label: i18n.tr('subtitle_download_in_background'),
                 ),
               ] else ...[

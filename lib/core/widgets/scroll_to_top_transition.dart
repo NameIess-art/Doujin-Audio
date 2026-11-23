@@ -76,17 +76,28 @@ class ScrollToTopTransitionState extends State<ScrollToTopTransition> {
         }
         if (position.pixels > _animationStart(position)) {
           final image = _captureSnapshot();
-          if (image == null) return;
-          _top = position.minScrollExtent;
-          _start = _animationStart(position);
-          _snapshotOpacity?.dispose();
-          _snapshotOpacity = _ScrollProgressOpacityAnimation(
-            position: position,
-            start: _start,
-            top: _top,
-          );
-          setState(() => _snapshot = image);
-          position.jumpTo(_start);
+          if (image != null) {
+            _top = position.minScrollExtent;
+            _start = _animationStart(position);
+            _snapshotOpacity?.dispose();
+            _snapshotOpacity = _ScrollProgressOpacityAnimation(
+              position: position,
+              start: _start,
+              top: _top,
+            );
+            setState(() => _snapshot = image);
+            position.jumpTo(_start);
+            // Let the snapshot overlay and jumped viewport finish their layout
+            // frame before starting the smooth return animation.
+            await WidgetsBinding.instance.endOfFrame;
+            if (!mounted ||
+                generation != _generation ||
+                !controller.hasClients ||
+                !identical(controller.position, position) ||
+                !identical(widget.controller(), controller)) {
+              return;
+            }
+          }
         }
       }
 

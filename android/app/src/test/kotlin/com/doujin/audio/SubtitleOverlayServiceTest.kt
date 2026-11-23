@@ -105,6 +105,23 @@ class SubtitleOverlayServiceTest {
     }
 
     @Test
+    fun `unbinding removes overlay view immediately for pure bound lifecycle`() {
+        ShadowSettings.setCanDrawOverlays(true)
+        val controller = Robolectric.buildService(SubtitleOverlayService::class.java).create()
+        try {
+            val service = controller.get()
+            val manager = service.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            assertEquals(1, Shadow.extract<ShadowWindowManagerImpl>(manager).views.size)
+
+            assertFalse(service.onUnbind(Intent()))
+            assertTrue(Shadow.extract<ShadowWindowManagerImpl>(manager).views.isEmpty())
+        } finally {
+            controller.destroy()
+            ShadowSettings.setCanDrawOverlays(false)
+        }
+    }
+
+    @Test
     fun `setStyle deduplicates identical style parameters without recreating background`() {
         ShadowSettings.setCanDrawOverlays(true)
         val controller = Robolectric.buildService(SubtitleOverlayService::class.java).create()

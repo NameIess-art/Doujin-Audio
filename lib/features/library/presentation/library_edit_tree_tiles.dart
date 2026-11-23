@@ -310,7 +310,7 @@ class _LibraryEditTreeListState extends ConsumerState<LibraryEditTreeList>
     final offset = widget.leading == null ? 0 : 1;
     return ListView.builder(
       padding: widget.padding,
-      itemCount: rows.isEmpty ? 1 : offset + rows.length,
+      itemCount: offset + (rows.isEmpty ? 1 : rows.length),
       findChildIndexCallback: (key) {
         if (key is! ValueKey<String>) return null;
         final index = indices[key.value];

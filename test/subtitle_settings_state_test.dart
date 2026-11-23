@@ -375,4 +375,88 @@ void main() {
 
     await Future<void>.delayed(Duration.zero);
   });
+
+  test(
+    'reloadPersistedState awaits in-flight appearance and list writes and ignores stale results',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final store = _CountingPreferences();
+      SharedPreferencesStorePlatform.instance = store;
+      await AppPreferences.init();
+      final notifier = SubtitleSettingsNotifier(
+        loadState: () async => SubtitleSettingsState(fontSize: 18),
+      );
+      addTearDown(notifier.dispose);
+      await Future<void>.delayed(Duration.zero);
+      expect(notifier.state.fontSize, 18);
+
+      final writeGate = Completer<void>();
+      var blockNext = true;
+      store.beforeWrite = () async {
+        if (!blockNext) return;
+        blockNext = false;
+        await writeGate.future;
+      };
+      store.rejectWrites = true;
+      notifier.setFontSize(30);
+      await Future<void>.delayed(Duration.zero);
+
+      var reloadDone = false;
+      final reload = notifier.reloadPersistedState().then((_) {
+        reloadDone = true;
+      });
+      await Future<void>.delayed(Duration.zero);
+      expect(reloadDone, isFalse);
+
+      writeGate.complete();
+      await reload;
+      expect(reloadDone, isTrue);
+      expect(notifier.state.appearanceSaveFailed, isFalse);
+      expect(notifier.state.fontSize, 18);
+    },
+  );
+
+  test(
+    'setStringList writes are serialized and drained by flushPendingWrites',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final store = _CountingPreferences();
+      SharedPreferencesStorePlatform.instance = store;
+      await AppPreferences.init();
+      final notifier = SubtitleSettingsNotifier();
+      addTearDown(notifier.dispose);
+      await Future<void>.delayed(Duration.zero);
+
+      final firstGate = Completer<void>();
+      var blocked = false;
+      store.beforeWrite = () async {
+        if (blocked) return;
+        blocked = true;
+        await firstGate.future;
+      };
+
+      notifier.updatePosition('session', 10);
+      notifier.updatePosition('session', 20);
+      notifier.setFontSize(22);
+      await Future<void>.delayed(Duration.zero);
+
+      // Second position write waits for the first to finish.
+      expect(
+        store.writes.where((entry) => entry.$1 == 'flutter.subtitle_positions'),
+        hasLength(1),
+      );
+
+      var flushed = false;
+      final flush = notifier.flushPendingWrites().then((_) => flushed = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(flushed, isFalse);
+
+      firstGate.complete();
+      await flush;
+      expect(flushed, isTrue);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getStringList('subtitle_positions'), ['session|20.0']);
+      expect(prefs.getString('subtitle_font_size'), '22.0');
+    },
+  );
 }

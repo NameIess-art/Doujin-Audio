@@ -26,6 +26,12 @@ class SubtitleOverlayService : Service() {
     private lateinit var params: WindowManager.LayoutParams
     private val binder = LocalBinder()
     private var appliedStyle: OverlayStyle? = null
+    private var dragLayoutUpdatePending = false
+    private val applyPendingDragLayout = Runnable {
+        dragLayoutUpdatePending = false
+        val view = subtitleTextView ?: return@Runnable
+        updateOverlayLayout(view)
+    }
 
     private data class OverlayStyle(
         val fontSize: Float,
@@ -45,6 +51,11 @@ class SubtitleOverlayService : Service() {
 
     override fun onBind(intent: Intent?): IBinder {
         return binder
+    }
+
+    override fun onUnbind(intent: Intent?): Boolean {
+        removeOverlayView()
+        return false
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -134,6 +145,17 @@ class SubtitleOverlayService : Service() {
                         if (nextX != params.x || nextY != params.y) {
                             params.x = nextX
                             params.y = nextY
+                            if (subtitleTextView === textView && !dragLayoutUpdatePending) {
+                                dragLayoutUpdatePending = true
+                                textView.postOnAnimation(applyPendingDragLayout)
+                            }
+                        }
+                        return true
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        if (dragLayoutUpdatePending) {
+                            dragLayoutUpdatePending = false
+                            textView.removeCallbacks(applyPendingDragLayout)
                             if (subtitleTextView === textView) {
                                 updateOverlayLayout(textView)
                             }
@@ -240,9 +262,11 @@ class SubtitleOverlayService : Service() {
 
     private fun removeOverlayView() {
         appliedStyle = null
+        dragLayoutUpdatePending = false
         val view = subtitleTextView
         subtitleTextView = null
         if (view != null) {
+            view.removeCallbacks(applyPendingDragLayout)
             try {
                 windowManager.removeView(view)
             } catch (_: IllegalArgumentException) {

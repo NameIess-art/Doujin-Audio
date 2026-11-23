@@ -33,7 +33,8 @@ class _ActiveSessionCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final tokens = AppDesignTokens.of(context);
+    final floatingSurface = appFloatingSurfaceColor(cs);
 
     final cardHeight = embedded ? kActiveSessionCarouselDockHeight : 56.0;
     const coverDistance = 4.0;
@@ -108,7 +109,10 @@ class _ActiveSessionCard extends ConsumerWidget {
     final screenSize = MediaQuery.sizeOf(context);
     final isTinyWindow = screenSize.width < 300 || screenSize.height < 300;
     final activeColor = session.playbackQueue?.colorValue != null
-        ? Color(session.playbackQueue!.colorValue!)
+        ? appReadableAccentColor(
+            Color(session.playbackQueue!.colorValue!),
+            floatingSurface,
+          )
         : cs.primary;
 
     if (circularCover) {
@@ -142,6 +146,9 @@ class _ActiveSessionCard extends ConsumerWidget {
     }
 
     final cardBody = Material(
+      key: embedded
+          ? null
+          : ValueKey<String>('active_session_card_${session.id}'),
       color: Colors.transparent,
       child: AppEntryInkWell(
         key: embedded
@@ -150,28 +157,18 @@ class _ActiveSessionCard extends ConsumerWidget {
               )
             : null,
         excludeFromSemantics: true,
-        // The home dock's ink follows its capsule, while the raised routed
-        // dock has its own clipped surface.
-        customBorder: embedded
-            ? (isRoutedDock && isPlaybackRaised
-                  ? RoundedRectangleBorder(borderRadius: cardBorderRadius)
-                  : const StadiumBorder())
-            : null,
+        customBorder: embedded ? const StadiumBorder() : null,
         borderRadius: embedded ? null : BorderRadius.circular(cardRadius),
         onTap: () => onOpen(context),
         child: Ink(
           height: cardHeight,
           decoration: BoxDecoration(
-            color: embedded
-                ? Colors.transparent
-                : (isDark ? cs.surfaceContainer : cs.surfaceContainerHigh),
+            color: embedded ? Colors.transparent : floatingSurface,
             borderRadius: BorderRadius.circular(cardRadius),
             border: embedded
                 ? null
                 : Border.all(
-                    color: cs.outlineVariant.withValues(
-                      alpha: isDark ? 0.24 : 0.42,
-                    ),
+                    color: appOverlayBorderColor(cs, tokens, elevated: true),
                   ),
             boxShadow: embedded || isTinyWindow
                 ? null
@@ -270,11 +267,13 @@ class _ActiveSessionCard extends ConsumerWidget {
         enabled: !embedded,
         pressedScale: 0.985,
         releaseCurve: kAppSpringCurve,
-        child: ClipRRect(
-          key: ValueKey<String>('active_session_card_${session.id}'),
-          borderRadius: cardBorderRadius,
-          child: cardBody,
-        ),
+        child: embedded
+            ? ClipRRect(
+                key: ValueKey<String>('active_session_card_${session.id}'),
+                borderRadius: cardBorderRadius,
+                child: cardBody,
+              )
+            : cardBody,
       ),
     );
   }
@@ -292,7 +291,10 @@ class _ActiveSessionCard extends ConsumerWidget {
     required EdgeInsets contentPadding,
   }) {
     final activeColor = session.playbackQueue?.colorValue != null
-        ? Color(session.playbackQueue!.colorValue!)
+        ? appReadableAccentColor(
+            Color(session.playbackQueue!.colorValue!),
+            appFloatingSurfaceColor(cs),
+          )
         : cs.primary;
     final hasAsmrOnePlaybackError =
         view.error != null && (currentTrack?.isRemoteAsmr ?? false);
@@ -403,11 +405,17 @@ class _ActiveSessionCard extends ConsumerWidget {
     if (!retainDockPages) return content;
     return LayoutBuilder(
       builder: (context, constraints) {
-        // The capsule clips the controls as it narrows. Give the same
-        // mounted content enough room for the cover and play button.
-        final width = constraints.maxWidth < _expandedDockThreshold
-            ? _expandedDockThreshold
-            : constraints.maxWidth;
+        // The capsule clips the controls as it narrows. Fix the mounted row to
+        // its expanded target width so the dock animation only clips the outer
+        // viewport instead of re-laying out the entire row on every frame.
+        final targetWidth = expandedDockWidth;
+        final width = targetWidth != null
+            ? (constraints.maxWidth > targetWidth
+                  ? constraints.maxWidth
+                  : targetWidth)
+            : (constraints.maxWidth < _expandedDockThreshold
+                  ? _expandedDockThreshold
+                  : constraints.maxWidth);
         return OverflowBox(
           alignment: Alignment.centerLeft,
           minWidth: width,
@@ -426,10 +434,12 @@ class _ActiveSessionIndicator extends StatelessWidget {
   const _ActiveSessionIndicator({
     required this.sessions,
     required this.indexListenable,
+    this.opacity = 1.0,
   });
 
   final List<PlaybackSessionSnapshot> sessions;
   final ValueListenable<int> indexListenable;
+  final double opacity;
 
   @override
   Widget build(BuildContext context) {
@@ -451,7 +461,9 @@ class _ActiveSessionIndicator extends StatelessWidget {
               child: Center(
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: colors.onSurfaceVariant.withValues(alpha: 0.38),
+                    color: colors.onSurfaceVariant.withValues(
+                      alpha: 0.38 * opacity,
+                    ),
                     borderRadius: shape,
                   ),
                   child: const SizedBox(width: 4, height: dotHeight),
@@ -464,6 +476,12 @@ class _ActiveSessionIndicator extends StatelessWidget {
         final count = sessions.length;
         final active = index % count;
         final queueColor = sessions[active].playbackQueue?.colorValue;
+        final highlightColor = queueColor == null
+            ? colors.primary
+            : appReadableAccentColor(
+                Color(queueColor),
+                appFloatingSurfaceColor(colors),
+              );
         return Semantics(
           key: const ValueKey('active_session_indicator'),
           label: '${active + 1} / $count',
@@ -484,9 +502,9 @@ class _ActiveSessionIndicator extends StatelessWidget {
                     width: highlightWidth,
                     height: dotHeight,
                     decoration: BoxDecoration(
-                      color: queueColor == null
-                          ? colors.primary
-                          : Color(queueColor),
+                      color: highlightColor.withValues(
+                        alpha: highlightColor.a * opacity,
+                      ),
                       borderRadius: shape,
                     ),
                   ),

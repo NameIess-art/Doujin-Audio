@@ -817,6 +817,13 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('app_search_confirm')));
       await pumpUntilFound(tester, find.text('Long audio'));
       expect(find.text('Short audio'), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byType(LibrarySearchAllResults),
+          matching: find.byType(InputChip),
+        ),
+        findsNothing,
+      );
       expect(fixture.settings.slice.state.librarySearchHistory, isEmpty);
     },
     variant: const TargetPlatformVariant({

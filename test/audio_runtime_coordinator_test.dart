@@ -231,15 +231,48 @@ void main() {
 
     await expectLater(coordinator.start(), throwsStateError);
     await coordinator.enterBackground();
+    expect(backgroundEntries, 0);
     await coordinator.start();
+    expect(backgroundEntries, 1);
     await coordinator.enterBackground();
 
     expect(attempts, 2);
     expect(listeningStarts, 1);
-    expect(backgroundEntries, 1);
+    expect(backgroundEntries, 2);
     await coordinator.dispose();
     expect(listeningStops, 1);
   });
+
+  test(
+    'records pre-startup lifecycle transitions and applies latest after start',
+    () async {
+      final startGate = Completer<void>();
+      final events = <String>[];
+      final coordinator = AudioRuntimeCoordinator(
+        snapshots: const Stream<NativePlaybackSnapshot>.empty(),
+        progressUpdates: const Stream<NativePlaybackProgressUpdate>.empty(),
+        startListening: () {},
+        stopListening: () async {},
+        onSnapshot: (_) {},
+        onProgress: (_) {},
+        onStart: () => startGate.future,
+        onEnterBackground: () => events.add('background'),
+        onResumeForeground: () => events.add('foreground'),
+        onDispose: () {},
+      );
+      addTearDown(coordinator.dispose);
+
+      await coordinator.enterBackground();
+      final starting = coordinator.start();
+      await coordinator.resumeForeground();
+      await coordinator.enterBackground();
+      expect(events, isEmpty);
+
+      startGate.complete();
+      await starting;
+      expect(events, ['background']);
+    },
+  );
 
   for (final background in [true, false]) {
     final transition = background ? 'background' : 'foreground';

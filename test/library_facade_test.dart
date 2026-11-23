@@ -2888,14 +2888,14 @@ void main() {
       expect(library.audioDetailTargetForTrack(track), target);
       await library.backfillMissingLibraryDurations();
       expect(repository.detailBatchLoadCount, 1);
-      expect(repository.detailLoadCount, 0);
+      expect(repository.detailLoadCount, 1);
       expect(repository.labelLoadCount, 1);
       expect(documents.readCount, 1);
       expect(documents.writeCount, 1);
 
       await library.backfillMissingLibraryDurations();
       expect(repository.detailBatchLoadCount, 1);
-      expect(repository.detailLoadCount, 0);
+      expect(repository.detailLoadCount, 1);
       expect(repository.labelLoadCount, 1);
       expect(documents.readCount, 1);
       expect(documents.writeCount, 1);
@@ -2903,7 +2903,7 @@ void main() {
       final reopened = openLibrary();
       await reopened.backfillMissingLibraryDurations();
       expect(repository.detailBatchLoadCount, 2);
-      expect(repository.detailLoadCount, 0);
+      expect(repository.detailLoadCount, 1);
       expect(repository.labelLoadCount, 1);
       expect(documents.readCount, 1);
       expect(documents.writeCount, 1);
@@ -3151,7 +3151,7 @@ void main() {
           service: service,
         )..configurePersistence(enabled: false);
         addTearDown(library.dispose);
-        for (var index = 0; index < (importing ? 33 : 2); index++) {
+        for (var index = 0; index < (importing ? 33 : 5); index++) {
           final folder = '/library/checkpoint_$index';
           final track = _localDurationTrack(
             folder,
@@ -3178,7 +3178,7 @@ void main() {
         addTearDown(metadata.dispose);
         final paused = Completer<void>();
         final release = Completer<bool>();
-        final expectedReads = importing ? 32 : 1;
+        final expectedReads = importing ? 32 : 4;
         Future<bool> waitForIdle() async {
           if (documents.readCount < expectedReads) return true;
           if (!paused.isCompleted) paused.complete();
@@ -4868,6 +4868,14 @@ class _CountingTestPersistenceRepository extends TestPersistenceRepository {
   Future<List<AudioDetail>> loadMany(Iterable<AudioDetailTarget> targets) {
     detailBatchLoadCount++;
     return super.loadMany(targets);
+  }
+
+  @override
+  Future<Map<String, Duration?>> loadDurations(
+    Iterable<AudioDetailTarget> targets,
+  ) {
+    detailBatchLoadCount++;
+    return super.loadDurations(targets);
   }
 
   @override

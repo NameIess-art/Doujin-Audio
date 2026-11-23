@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/core/widgets/app_edit_panel.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'support/asmr_controller_test_fixture.dart';
@@ -112,7 +111,9 @@ void main() {
     final panelMaterial = find
         .descendant(of: panelSurface, matching: find.byType(Material))
         .first;
-    expect(tester.widget<Material>(panelMaterial).color!.a, 1);
+    final material = tester.widget<Material>(panelMaterial);
+    expect(material.color!.a, 1);
+    expect((material.shape! as RoundedRectangleBorder).side, BorderSide.none);
     expect(
       find.ancestor(of: panelSurface, matching: find.byType(ScaleTransition)),
       findsOneWidget,
@@ -131,27 +132,30 @@ void main() {
         .first;
     expect(tester.getSize(logoutFinder).height, 48);
     expect(tester.getSize(syncFinder).height, 48);
-    final statusBox = tester.widget<DecoratedBox>(
-      find
-          .ancestor(
-            of: find.text(i18n.tr('asmr_logged_in_as', {'name': 'alice'})),
+    for (final label in [
+      i18n.tr('asmr_logged_in_as', {'name': 'alice'}),
+      i18n.tr('asmr_account_not_synced'),
+      i18n.tr('asmr_account_sync_done'),
+    ]) {
+      final status = find.text(label);
+      expect(status, findsOneWidget);
+      expect(
+        find.descendant(
+          of: panelMaterial,
+          matching: find.ancestor(
+            of: status,
             matching: find.byType(DecoratedBox),
-          )
-          .first,
-    );
-    final statusDecoration = statusBox.decoration as BoxDecoration;
-    final panelContext = tester.element(panelSurface);
-    expect(
-      statusDecoration.color,
-      Theme.of(panelContext).colorScheme.surfaceContainer,
-    );
-    expect(
-      statusDecoration.borderRadius,
-      BorderRadius.circular(AppDesignTokens.of(panelContext).radiusCard),
-    );
+          ),
+        ),
+        findsNothing,
+      );
+    }
 
     await tester.tap(find.text(i18n.tr('asmr_logout_action')));
-    await pumpUntilFound(tester, find.text(i18n.tr('asmr_logout_confirm_title')));
+    await pumpUntilFound(
+      tester,
+      find.text(i18n.tr('asmr_logout_confirm_title')),
+    );
     await tester.tap(find.text(i18n.tr('asmr_logout_action')).last);
     await pumpUntilFound(
       tester,

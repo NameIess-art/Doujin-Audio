@@ -1,25 +1,33 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:doujin_audio/core/app_language.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
+import 'package:doujin_audio/core/media/dlsite_metadata.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'package:doujin_audio/features/library/application/audio_detail_repository.dart';
+import 'package:doujin_audio/features/library/application/dlsite_metadata_batch_session.dart';
+import 'package:doujin_audio/features/library/application/dlsite_metadata_service.dart';
 import 'package:doujin_audio/features/library/application/library_catalog.dart';
+import 'package:doujin_audio/features/library/application/library_entry_editor_service.dart';
 import 'package:doujin_audio/features/library/application/library_facade.dart';
 import 'package:doujin_audio/features/library/application/library_scan_coordinator.dart';
 import 'package:doujin_audio/features/library/application/library_scan_data_source.dart';
 import 'package:doujin_audio/features/library/application/library_scanner_service.dart';
 import 'package:doujin_audio/features/library/application/library_snapshot_cache_service.dart';
 import 'package:doujin_audio/features/library/application/library_sorting.dart';
+import 'package:doujin_audio/features/library/domain/audio_detail_store.dart';
 import 'package:doujin_audio/features/library/domain/audio_library_category.dart';
 import 'package:doujin_audio/features/library/domain/library_entry.dart';
 import 'package:doujin_audio/features/library/domain/library_node.dart';
+import 'package:doujin_audio/features/library/domain/library_persistence_repository.dart';
 import 'package:doujin_audio/features/library/presentation/library_edit_tree_projection.dart';
 import 'package:doujin_audio/infrastructure/sqlite/sqlite_library_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as path;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 const _scanLabels = LibraryScanLabels(
@@ -583,6 +591,232 @@ void main() {
       expect(exported, isTrue);
     },
   );
+
+  test(
+    'C2 concurrent catalog batches preserve both SQLite commits and reconcile handles commit failure cleanly',
+    () async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final firstCommitGate = Completer<void>();
+      var commitIndex = 0;
+      var failNextCommit = false;
+      final wrappedRepo = _InterceptingLibraryRepo(
+        repo,
+        onCommitLibraryBatch: () async {
+          commitIndex++;
+          if (commitIndex == 1) {
+            await firstCommitGate.future;
+          }
+          if (failNextCommit) {
+            failNextCommit = false;
+            throw StateError('simulated commit failure');
+          }
+        },
+      );
+      final facade = LibraryFacade.create(databaseRepository: wrappedRepo)
+        ..configureCoverArtworkRuntime(
+          isActiveCoverKey: (_) => false,
+          onActiveCoverChanged: () {},
+        );
+      addTearDown(facade.dispose);
+      facade.configurePersistence(enabled: true);
+
+      const folderA = 'C:\\ConcurrentBatch\\WorkA';
+      const folderB = 'C:\\ConcurrentBatch\\WorkB';
+      final trackA = _track('$folderA\\01.mp3', groupKey: folderA);
+      final trackB = _track('$folderB\\02.mp3', groupKey: folderB);
+
+      facade.beginLibraryBatch();
+      facade.addWatchedFolder(folderA, notify: false);
+      facade.addTracks([trackA]);
+      final firstEnd = facade.endLibraryBatch();
+
+      // Start and finish a second batch while the first batch is awaiting SQLite.
+      facade.beginLibraryBatch();
+      facade.addWatchedFolder(folderB, notify: false);
+      facade.addTracks([trackB]);
+      final secondEnd = facade.endLibraryBatch();
+
+      firstCommitGate.complete();
+      await Future.wait(<Future<void>>[firstEnd, secondEnd]);
+
+      final persistedTracks = await repo.loadStartupTracks();
+      expect(
+        persistedTracks.map((t) => t.path),
+        containsAll([trackA.path, trackB.path]),
+      );
+
+      // Failed reconcileLibraryDiskSnapshot batch must not escape as unhandled error
+      // and must release the path-mutation gate once done.
+      const libRoot = 'C:\\ReconcileErrLib';
+      const deletedWork = '$libRoot\\Deleted';
+      facade.addWatchedLibrary(libRoot, notify: false);
+      facade.addWatchedFolder(deletedWork, notify: false);
+      await facade.flushPendingPersistence();
+
+      failNextCommit = true;
+      facade.reconcileLibraryDiskSnapshot(
+        libRoot,
+        LibraryEntryDiskSnapshot(
+          audioFilePaths: const [],
+          scannedFolderPaths: const {},
+          authoritative: true,
+        ),
+      );
+      await facade.flushPendingPersistence();
+      final scanGen = facade.tryBeginScan(source: libRoot);
+      expect(scanGen, isNonZero);
+      facade.finishScan(scanGen);
+    },
+  );
+
+  test(
+    'H14 removeFolder awaits excludeLibraryFolder so active tracks are removed before returning',
+    () async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      library.configurePersistence(enabled: true);
+      const libRoot = 'C:\\AwaitExcludeLib';
+      const workDir = '$libRoot\\Work1';
+      final track = _track('$workDir\\01.mp3', groupKey: workDir);
+      library.addWatchedLibrary(libRoot, notify: false);
+      library.addWatchedFolder(workDir, notify: false);
+      library.addTracks([track]);
+      await library.flushPendingPersistence();
+
+      final kind = await library.removeFolder(workDir);
+      expect(kind, LibraryRemovalKind.libraryFolderRecoverable);
+      // Immediately upon removeFolder completion, track must already be excluded & removed.
+      expect(library.trackByPath(track.path), isNull);
+      expect(library.isLibraryFolderExplicitlyExcluded(libRoot, workDir), isTrue);
+    },
+  );
+
+  test(
+    'H15 applyDlsiteMetadata preserves probed local duration when remote duration is null without overwriting local salesCount',
+    () async {
+      const workPath = 'C:\\MetaPreserve\\RJ123456';
+      final target = AudioDetailTarget.libraryRootFolder(workPath);
+      final initial = AudioDetail.empty(target).copyWith(
+        duration: const Duration(minutes: 42),
+        salesCount: 321,
+      );
+      await library.saveAudioDetail(initial);
+
+      final result = await library.applyDlsiteMetadata(
+        initial,
+        DlsiteMetadata(
+          rjCode: 'RJ123456',
+          workTitle: 'Title',
+          circleName: 'Circle',
+          voiceActors: const ['CV'],
+          tags: const ['Tag'],
+          salesCount: 9876,
+          rating: 4.8,
+        ),
+        saveCover: false,
+        language: AppLanguage.en,
+      );
+
+      expect(result.detail.duration, const Duration(minutes: 42));
+      expect(result.detail.salesCount, 321);
+
+      final reloaded = await library.loadAudioDetail(target);
+      expect(reloaded.detail.duration, const Duration(minutes: 42));
+      expect(reloaded.detail.salesCount, 321);
+    },
+  );
+
+  test(
+    'H17 renaming single track with mismatched Windows casing succeeds without false conflict or SQLite crash',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp('case_track_ren_');
+      addTearDown(() => tempDir.delete(recursive: true));
+      final workPath = PathMatcher.normalize(tempDir.path);
+      final file = File(path.join(workPath, 'TrackOne.mp3'))
+        ..writeAsBytesSync(const [1, 2, 3, 4]);
+      final storedPath = PathMatcher.normalize(file.path);
+
+      library.configurePersistence(enabled: true);
+      library.addWatchedFolder(workPath);
+      library.addTracks([_track(storedPath, groupKey: workPath)]);
+      await library.flushPendingPersistence();
+
+      // Rename passing lowercase entryPath while DB/memory stores mixed-case path.
+      final renamed = await library.renameWorkEntryToName(
+        libraryRootPath: workPath,
+        entryPath: storedPath.toLowerCase(),
+        targetName: 'TrackRenamed',
+        isMedia: true,
+        isDirectory: false,
+      );
+      final expectedNewPath = PathMatcher.normalize(
+        path.join(workPath, 'TrackRenamed.mp3'),
+      );
+      expect(PathMatcher.equalsNormalized(renamed, expectedNewPath), isTrue);
+      expect(library.trackByPath(expectedNewPath), isNotNull);
+      expect(await repo.loadTrackDetail(renamed), isNotNull);
+      expect(await repo.loadTrackDetail(storedPath), isNull);
+    },
+  );
+
+  test(
+    'M19 DlsiteMetadataBatchSession.forLibrary reloads latest AudioDetail before applying metadata',
+    () async {
+      final stubMetadata = DlsiteMetadata(
+        rjCode: 'RJ222222',
+        workTitle: 'Updated Work',
+        circleName: 'Circle',
+        voiceActors: const ['VA'],
+        tags: const ['Tag'],
+      );
+      final facade = LibraryFacade.create(
+        databaseRepository: repo,
+        metadataService: _StubDlsiteMetadataService(stubMetadata),
+      )
+        ..configureCoverArtworkRuntime(
+          isActiveCoverKey: (_) => false,
+          onActiveCoverChanged: () {},
+        );
+      addTearDown(facade.dispose);
+
+      const workPath = 'C:\\BatchLatest\\RJ222222';
+      final target = AudioDetailTarget.libraryRootFolder(workPath);
+      final staleDetail = AudioDetail.empty(target).copyWith(rjCode: 'RJ222222');
+      // Persist fresher duration & manual cover after the batch entry snapshot was created.
+      await facade.saveAudioDetail(
+        staleDetail.copyWith(
+          duration: const Duration(minutes: 55),
+          cardCoverPath: '$workPath\\cover.jpg',
+          cardCoverSelected: true,
+        ),
+      );
+      final entry = AudioLibraryCategoryEntry(
+        target: target,
+        title: 'RJ222222',
+        path: workPath,
+        isFolder: true,
+        detail: staleDetail,
+        tracks: const [],
+      );
+      final session = DlsiteMetadataBatchSession.forLibrary(
+        entries: [entry],
+        library: facade,
+        language: AppLanguage.en,
+      );
+      addTearDown(session.dispose);
+      session.start();
+      await Future<void>.delayed(Duration.zero);
+      expect(session.confirmAllMatched(saveCover: false), 1);
+
+      final result = await session.applyConfirmed();
+      expect(result.savedCount, 1);
+
+      final reloaded = await facade.loadAudioDetail(target);
+      expect(reloaded.detail.workTitle, 'Updated Work');
+      expect(reloaded.detail.duration, const Duration(minutes: 55));
+      expect(reloaded.detail.cardCoverPath, '$workPath\\cover.jpg');
+      expect(reloaded.detail.cardCoverSelected, isTrue);
+    },
+  );
 }
 
 final class _ThrowingSecondFolderScanDataSource
@@ -690,6 +924,9 @@ final class _FakeScanCatalog implements LibraryCatalog {
   int durationBackfillCount = 0;
 
   @override
+  Future<void> get scanIdle => Future<void>.value();
+
+  @override
   void cancelScan() {}
 
   @override
@@ -709,4 +946,82 @@ final class _FakeScanCatalog implements LibraryCatalog {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+final class _InterceptingLibraryRepo
+    implements LibraryPersistenceRepository, AudioDetailStore {
+  _InterceptingLibraryRepo(
+    this._inner, {
+    required this.onCommitLibraryBatch,
+  });
+
+  final SqliteLibraryRepository _inner;
+  final Future<void> Function() onCommitLibraryBatch;
+
+  @override
+  Future<void> commitLibraryBatch({
+    required List<MusicTrack> tracks,
+    required List<LibraryEntry> entries,
+    required Map<String, String> catalogSettings,
+    List<String> removedTrackPaths = const [],
+    Map<String, List<String>> removedEntryPaths = const {},
+  }) async {
+    await onCommitLibraryBatch();
+    await _inner.commitLibraryBatch(
+      tracks: tracks,
+      entries: entries,
+      catalogSettings: catalogSettings,
+      removedTrackPaths: removedTrackPaths,
+      removedEntryPaths: removedEntryPaths,
+    );
+  }
+
+  @override
+  Future<List<MusicTrack>> loadStartupTracks() => _inner.loadStartupTracks();
+
+  @override
+  Future<Iterable<LibraryEntry>> loadAllLibraryEntries() =>
+      _inner.loadAllLibraryEntries();
+
+  @override
+  Future<Map<String, String?>> loadAppSettings(List<String> keys) =>
+      _inner.loadAppSettings(keys);
+
+  @override
+  Future<void> upsertCatalogTracks(List<MusicTrack> tracks) =>
+      _inner.upsertCatalogTracks(tracks);
+
+  @override
+  Future<void> upsertLibraryEntries(
+    List<LibraryEntry> entries, {
+    int? scanGeneration,
+  }) => _inner.upsertLibraryEntries(entries, scanGeneration: scanGeneration);
+
+  @override
+  Future<AudioDetail?> load(AudioDetailTarget target) => _inner.load(target);
+
+  @override
+  Future<List<AudioDetail>> loadMany(Iterable<AudioDetailTarget> targets) =>
+      _inner.loadMany(targets);
+
+  @override
+  Future<void> upsert(AudioDetail detail) => _inner.upsert(detail);
+
+  @override
+  Future<void> delete(AudioDetailTarget target) => _inner.delete(target);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+final class _StubDlsiteMetadataService extends DlsiteMetadataService {
+  _StubDlsiteMetadataService(this.metadata);
+
+  final DlsiteMetadata metadata;
+
+  @override
+  Future<DlsiteMetadata> fetchByRjCode(
+    String rjCode, {
+    AppLanguage language = AppLanguage.ja,
+  }) async => metadata;
 }

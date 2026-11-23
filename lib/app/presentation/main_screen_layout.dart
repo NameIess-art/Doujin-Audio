@@ -24,6 +24,7 @@ extension _MainScreenLayout on _MainScreenState {
     BuildContext context, {
     required bool isDesktop,
     required bool isLandscapeLayout,
+    required bool isLargeScreen,
     required bool hasOverlaySessions,
     required bool tinyMode,
   }) {
@@ -31,6 +32,7 @@ extension _MainScreenLayout on _MainScreenState {
       context,
       isDesktop: isDesktop,
       isLandscapeLayout: isLandscapeLayout,
+      isLargeScreen: isLargeScreen,
     );
     // Secondary routes cover and reveal this same dock with their page motion.
     // Keep the page under the same parent when playback restores portrait.
@@ -82,10 +84,8 @@ extension _MainScreenLayout on _MainScreenState {
     BuildContext context, {
     required bool isDesktop,
     required bool isLandscapeLayout,
+    required bool isLargeScreen,
   }) {
-    final layoutSize = MediaQuery.sizeOf(context);
-    final width = layoutSize.width;
-    final isLargeScreen = width >= 980;
     final radius = BorderRadius.circular(
       isDesktop
           ? (isLargeScreen ? AppRadius.card : AppRadius.medium)
@@ -133,7 +133,10 @@ extension _MainScreenLayout on _MainScreenState {
                   border: isLandscapeLayout
                       ? null
                       : Border.all(
-                          color: pageCs.outlineVariant.withValues(alpha: 0.85),
+                          color: appOverlayBorderColor(
+                            pageCs,
+                            AppDesignTokens.of(context),
+                          ),
                         ),
                   boxShadow: isLandscapeLayout
                       ? null
@@ -768,7 +771,7 @@ class _MobileBottomBarContentState extends State<_MobileBottomBarContent> {
       entries[activeIndex],
     ];
 
-    Widget buildDestination(MapEntry<int, MainDestination> entry) {
+    Widget buildDestinationChild(MapEntry<int, MainDestination> entry) {
       final index = entry.key;
       final item = destinations[index];
       final selected = index == activeIndex;
@@ -796,81 +799,59 @@ class _MobileBottomBarContentState extends State<_MobileBottomBarContent> {
         ),
       );
 
-      return AnimatedBuilder(
-        key: ValueKey(item.type),
-        animation: _motionListenable,
-        child: IgnorePointer(
-          ignoring: widget.isPlaybackExpanded && !selected,
-          child: ExcludeSemantics(
-            excluding: widget.isPlaybackExpanded && !selected,
-            child: Semantics(
-              key: ValueKey<String>('main_destination_${item.labelKey}'),
-              button: true,
-              selected: selected,
-              label: label,
-              hint: widget.isPlaybackExpanded && selected
-                  ? widget.i18n.tr('dock_show_navigation')
-                  : null,
-              child: Material(
-                type: MaterialType.transparency,
-                child: IconTheme.merge(
-                  data: IconThemeData(color: selected ? activeColor : inactive),
-                  child: _BottomDestinationInkResponse(
-                    inkKey: ValueKey<String>(
-                      'main_destination_ink_${item.labelKey}',
+      return IgnorePointer(
+        ignoring: widget.isPlaybackExpanded && !selected,
+        child: ExcludeSemantics(
+          excluding: widget.isPlaybackExpanded && !selected,
+          child: Semantics(
+            key: ValueKey<String>('main_destination_${item.labelKey}'),
+            button: true,
+            selected: selected,
+            label: label,
+            hint: widget.isPlaybackExpanded && selected
+                ? widget.i18n.tr('dock_show_navigation')
+                : null,
+            child: Material(
+              type: MaterialType.transparency,
+              child: IconTheme.merge(
+                data: IconThemeData(color: selected ? activeColor : inactive),
+                child: _BottomDestinationInkResponse(
+                  inkKey: ValueKey<String>(
+                    'main_destination_ink_${item.labelKey}',
+                  ),
+                  onTap: widget.isPlaybackExpanded && selected
+                      ? widget.onCurrentTap
+                      : () => widget.onSwitchPage(index),
+                  child: CustomSingleChildLayout(
+                    delegate: _DestinationIconOffsetDelegate(
+                      index: index,
+                      geometry: _geometry,
+                      relayout: _motionListenable,
                     ),
-                    onTap: widget.isPlaybackExpanded && selected
-                        ? widget.onCurrentTap
-                        : () => widget.onSwitchPage(index),
-                    child: AnimatedBuilder(
-                      animation: _motionListenable,
-                      child: RepaintBoundary(child: icon),
-                      builder: (context, child) {
-                        final geometry = _geometry();
-                        final destination = geometry.destinationRect(index);
-                        final indicator = geometry.indicatorRect(index);
-                        final dx = indicator.width > 0
-                            ? indicator.center.dx - destination.center.dx
-                            : 0.0;
-                        return Transform.translate(
-                          offset: Offset(dx, 0),
-                          child: child,
-                        );
-                      },
-                    ),
+                    child: RepaintBoundary(child: icon),
                   ),
                 ),
               ),
             ),
           ),
         ),
-        builder: (context, child) {
-          final geometry = _geometry();
-          if (!selected && geometry.fadeProgress == 1) {
-            return const SizedBox.shrink();
-          }
-          return Positioned.fromRect(
-            rect: geometry.destinationRect(index),
-            child: selected
-                ? child!
-                : FadeTransition(
-                    opacity: _inactiveOpacity,
-                    child: Transform.scale(
-                      scale: 1 - 0.15 * geometry.fadeProgress,
-                      child: child,
-                    ),
-                  ),
-          );
-        },
       );
     }
 
-    final layoutKey = Object.hashAll(destinations.map((item) => item.type));
-    final stackChild = Stack(
-      children: [
-        for (final entry in layeredEntries) buildDestination(entry),
-      ],
+    final destinationChildren = <int, Widget>{
+      for (final entry in layeredEntries)
+        entry.key: buildDestinationChild(entry),
+    };
+    final indicatorBox = IgnorePointer(
+      child: DecoratedBox(
+        key: const ValueKey('mobile_navigation_indicator'),
+        decoration: ShapeDecoration(
+          color: SlidingSelectionIndicator.fill(cs.primary),
+          shape: SlidingSelectionIndicator.shape,
+        ),
+      ),
     );
+    final layoutKey = Object.hashAll(destinations.map((item) => item.type));
     return Theme(
       data: Theme.of(context).copyWith(splashFactory: NoSplash.splashFactory),
       child: _MobileBottomBarDragScrubber(
@@ -885,49 +866,77 @@ class _MobileBottomBarContentState extends State<_MobileBottomBarContent> {
             index: activeIndex,
             layoutKey: layoutKey,
             overridePosition: dragPosition ?? pageDragPosition,
-            child: stackChild,
-            builder: (context, position, child) {
-              return Stack(
-                fit: StackFit.expand,
-                children: [
-                  AnimatedBuilder(
-                    animation: _motionListenable,
-                    builder: (context, _) {
-                      final rect = SlidingSelectionIndicator.rectAt(
-                        position,
-                        _indicatorRect,
-                      )!;
-                      return Stack(
-                        children: [
-                          Positioned.fromRect(
-                            rect: rect,
-                            child: IgnorePointer(
-                              child: DecoratedBox(
-                                key: const ValueKey(
-                                  'mobile_navigation_indicator',
-                                ),
-                                decoration: ShapeDecoration(
-                                  color: SlidingSelectionIndicator.fill(
-                                    cs.primary,
+            child: const SizedBox.shrink(),
+            builder: (context, position, _) => AnimatedBuilder(
+              animation: _motionListenable,
+              builder: (context, _) {
+                final geometry = _geometry();
+                final indicatorRect = SlidingSelectionIndicator.rectAt(
+                  position,
+                  geometry.indicatorRect,
+                )!;
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Positioned.fromRect(
+                      rect: indicatorRect,
+                      child: indicatorBox,
+                    ),
+                    for (final entry in layeredEntries)
+                      Positioned.fromRect(
+                        key: ValueKey(entry.value.type),
+                        rect: geometry.destinationRect(entry.key),
+                        child: entry.key == activeIndex
+                            ? destinationChildren[entry.key]!
+                            : Offstage(
+                                offstage: geometry.fadeProgress == 1,
+                                child: FadeTransition(
+                                  opacity: _inactiveOpacity,
+                                  child: Transform.scale(
+                                    scale: 1 - 0.15 * geometry.fadeProgress,
+                                    child: destinationChildren[entry.key]!,
                                   ),
-                                  shape: SlidingSelectionIndicator.shape,
                                 ),
                               ),
-                            ),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                  child!,
-                ],
-              );
-            },
+                      ),
+                  ],
+                );
+              },
+            ),
           ),
         ),
       ),
     );
   }
+}
+
+class _DestinationIconOffsetDelegate extends SingleChildLayoutDelegate {
+  _DestinationIconOffsetDelegate({
+    required this.index,
+    required this.geometry,
+    required Listenable relayout,
+  }) : super(relayout: relayout);
+
+  final int index;
+  final _MobileBottomBarGeometry Function() geometry;
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) {
+    final g = geometry();
+    final destination = g.destinationRect(index);
+    final indicator = g.indicatorRect(index);
+    final dx = indicator.width > 0
+        ? indicator.center.dx - destination.center.dx
+        : 0.0;
+    return Offset(
+      (size.width - childSize.width) / 2 + dx,
+      (size.height - childSize.height) / 2,
+    );
+  }
+
+  @override
+  bool shouldRelayout(_DestinationIconOffsetDelegate oldDelegate) =>
+      oldDelegate.index != index || oldDelegate.geometry != geometry;
 }
 
 class _BottomDestinationOpacityAnimation extends Animation<double> {

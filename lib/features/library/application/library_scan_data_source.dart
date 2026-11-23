@@ -474,6 +474,34 @@ Iterable<Map<String, Object?>> _enumerateFileSystemFolderChunks(
       continue;
     }
 
+    final currentDirPath = path.normalize(currentDir.path);
+    final relativeDirRaw = PathMatcher.relativeWithin(
+      currentDirPath,
+      normalizedRoot,
+    );
+    late final String dirGroupKey;
+    late final String dirGroupTitle;
+    late final String dirGroupSubtitle;
+    if (relativeDirRaw != null) {
+      final normalizedRelDir = relativeDirRaw.replaceAll('\\', '/');
+      if (normalizedRelDir.isEmpty || normalizedRelDir == '.') {
+        dirGroupKey = normalizedRoot;
+        dirGroupTitle = path.basename(normalizedRoot);
+        dirGroupSubtitle = normalizedRoot;
+      } else {
+        final topLevel = normalizedRelDir.split('/').first;
+        dirGroupKey = path.join(normalizedRoot, topLevel);
+        dirGroupTitle = topLevel;
+        dirGroupSubtitle = dirGroupKey;
+      }
+    } else {
+      dirGroupKey = currentDirPath;
+      final folderName = path.basename(currentDirPath);
+      dirGroupTitle = folderName.isEmpty ? currentDirPath : folderName;
+      dirGroupSubtitle = currentDirPath;
+    }
+    final scannedAtMs = DateTime.now().millisecondsSinceEpoch;
+
     for (final entity in children) {
       if (entity is Directory) {
         final directoryPath = path.normalize(entity.path);
@@ -496,38 +524,15 @@ Iterable<Map<String, Object?>> _enumerateFileSystemFolderChunks(
         // File timestamps are optional scan metadata.
       }
 
-      final parentFolder = path.dirname(absolutePath);
-      final relative = PathMatcher.relativeWithin(absolutePath, normalizedRoot);
-      var groupKey = parentFolder;
-      var groupTitle = path.basename(parentFolder);
-      var groupSubtitle = parentFolder;
-
-      if (relative != null) {
-        final relativeDir = path.dirname(relative).replaceAll('\\', '/');
-        if (relativeDir == '.' || relativeDir.isEmpty) {
-          groupKey = normalizedRoot;
-          groupTitle = path.basename(normalizedRoot);
-          groupSubtitle = normalizedRoot;
-        } else {
-          final topLevel = relativeDir.split('/').first;
-          groupKey = path.join(normalizedRoot, topLevel);
-          groupTitle = topLevel;
-          groupSubtitle = groupKey;
-        }
-      } else {
-        final folderName = path.basename(parentFolder);
-        groupTitle = folderName.isEmpty ? parentFolder : folderName;
-      }
-
       trackBuffer.add(<String, Object?>{
         'path': absolutePath,
         'displayName': path.basenameWithoutExtension(absolutePath),
-        'groupKey': groupKey,
-        'groupTitle': groupTitle,
-        'groupSubtitle': groupSubtitle,
+        'groupKey': dirGroupKey,
+        'groupTitle': dirGroupTitle,
+        'groupSubtitle': dirGroupSubtitle,
         'isSingle': false,
         'isVideo': isVideoMediaFile(absolutePath),
-        'scannedAtMs': DateTime.now().millisecondsSinceEpoch,
+        'scannedAtMs': scannedAtMs,
         'fileSizeBytes': fileStat?.size,
         'modifiedAtMs': fileStat?.modified.millisecondsSinceEpoch,
       });

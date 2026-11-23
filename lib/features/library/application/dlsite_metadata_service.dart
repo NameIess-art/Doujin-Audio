@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 
 import '../../../core/app_language.dart';
@@ -32,15 +34,107 @@ class DlsiteMetadataException implements Exception {
   String toString() => message;
 }
 
+class DlsiteMetadataCancelledException extends DlsiteMetadataException {
+  const DlsiteMetadataCancelledException() : super('DLsite request cancelled');
+}
+
+/// Lightweight cancellation token for DLsite lookups. Supports both explicit
+/// passing via [DlsiteMetadataService.fetchByRjCodeCancellable] and Zone-scoped
+/// propagation via [runScoped] so callers behind [LibraryMetadataSource] can
+/// still abort in-flight probes without changing the interface signature.
+final class DlsiteRequestCancellation {
+  static final Object _zoneKey = Object();
+
+  static DlsiteRequestCancellation? get current =>
+      Zone.current[_zoneKey] as DlsiteRequestCancellation?;
+
+  static T runScoped<T>(
+    DlsiteRequestCancellation cancellation,
+    T Function() body,
+  ) => runZoned(body, zoneValues: <Object?, Object?>{_zoneKey: cancellation});
+
+  bool _cancelled = false;
+  final Set<void Function()> _listeners = <void Function()>{};
+
+  bool get isCancelled => _cancelled;
+
+  void cancel() {
+    if (_cancelled) return;
+    _cancelled = true;
+    final listeners = _listeners.toList(growable: false);
+    _listeners.clear();
+    for (final listener in listeners) {
+      listener();
+    }
+  }
+
+  void throwIfCancelled() {
+    if (_cancelled) throw const DlsiteMetadataCancelledException();
+  }
+
+  void Function() addListener(void Function() listener) {
+    if (_cancelled) {
+      listener();
+    } else {
+      _listeners.add(listener);
+    }
+    return () => _listeners.remove(listener);
+  }
+
+  Future<T> waitFor<T>(Future<T> future) async {
+    throwIfCancelled();
+    final result = Completer<T>();
+    final removeListener = addListener(() {
+      if (!result.isCompleted) {
+        result.completeError(const DlsiteMetadataCancelledException());
+      }
+    });
+    unawaited(
+      future.then<void>(
+        (value) {
+          if (!result.isCompleted) result.complete(value);
+        },
+        onError: (Object error, StackTrace stackTrace) {
+          if (!result.isCompleted) result.completeError(error, stackTrace);
+        },
+      ),
+    );
+    try {
+      return await result.future;
+    } finally {
+      removeListener();
+    }
+  }
+
+  Future<void> delay(Duration duration) async {
+    throwIfCancelled();
+    final completed = Completer<void>();
+    final timer = Timer(duration, completed.complete);
+    try {
+      await waitFor(completed.future);
+    } finally {
+      timer.cancel();
+    }
+  }
+}
+
+typedef _DlsiteCacheEntry = ({
+  DlsiteMetadata? metadata,
+  DlsiteMetadataException? error,
+  DateTime expiresAt,
+});
+
 class DlsiteMetadataService implements LibraryMetadataSource {
   DlsiteMetadataService({
     HttpClient? httpClient,
     FileCachePlatformGateway? fileCacheGateway,
     Duration requestTimeout = const Duration(seconds: 8),
+    DateTime Function()? now,
   }) : _httpClient = httpClient ?? HttpClient(),
        _fileCacheGateway =
            fileCacheGateway ?? FileCachePlatformGateway.instance,
-       _requestTimeout = requestTimeout {
+       _requestTimeout = requestTimeout,
+       _now = now ?? DateTime.now {
     try {
       _httpClient.connectionTimeout = requestTimeout;
     } catch (_) {
@@ -50,6 +144,10 @@ class DlsiteMetadataService implements LibraryMetadataSource {
 
   static const int _maxRequestAttempts = 2;
   static const int _maxCoverBytes = 5 * 1024 * 1024;
+  static const int _siteProbeConcurrency = 3;
+  static const int _metadataCacheMaxEntries = 128;
+  static const Duration _positiveCacheTtl = Duration(minutes: 15);
+  static const Duration _negativeCacheTtl = Duration(minutes: 2);
   static const List<String> _productSites = <String>[
     'maniax',
     'home',
@@ -62,12 +160,28 @@ class DlsiteMetadataService implements LibraryMetadataSource {
   final HttpClient _httpClient;
   final FileCachePlatformGateway _fileCacheGateway;
   final Duration _requestTimeout;
+  final DateTime Function() _now;
+  final LinkedHashMap<(String, AppLanguage), _DlsiteCacheEntry> _metadataCache =
+      LinkedHashMap<(String, AppLanguage), _DlsiteCacheEntry>();
+
+  void clearCache() => _metadataCache.clear();
 
   @override
   Future<DlsiteMetadata> fetchByRjCode(
     String rjCode, {
     AppLanguage language = AppLanguage.ja,
+  }) => fetchByRjCodeCancellable(
+    rjCode,
+    language: language,
+    cancellation: DlsiteRequestCancellation.current,
+  );
+
+  Future<DlsiteMetadata> fetchByRjCodeCancellable(
+    String rjCode, {
+    AppLanguage language = AppLanguage.ja,
+    DlsiteRequestCancellation? cancellation,
   }) async {
+    cancellation?.throwIfCancelled();
     final normalized = AudioDetail.findRjCodeInText(rjCode);
     if (normalized == null) {
       throw const DlsiteMetadataException(
@@ -76,81 +190,287 @@ class DlsiteMetadataService implements LibraryMetadataSource {
       );
     }
 
+    final cacheKey = (normalized, language);
+    final cached = _readCache(cacheKey);
+    if (cached != null) {
+      if (cached.metadata != null) return cached.metadata!;
+      if (cached.error != null) throw cached.error!;
+    }
+
     final languages = <AppLanguage>[
       language,
       if (language != AppLanguage.ja) AppLanguage.ja,
     ];
+    final primarySite = _productSites.first;
+    final secondarySites = _productSites.sublist(1);
     Object? lastError;
+
     for (final candidateLanguage in languages) {
-      for (final site in _productSites) {
-        try {
-          final uri = Uri.https('www.dlsite.com', '/$site/api/=/product.json', {
-            'workno': normalized,
-          });
-          final metadata = await _fetchProductMetadata(
-            uri,
-            language: candidateLanguage,
-          );
-          if (metadata.circleName.trim().isEmpty ||
-              metadata.voiceActors.isEmpty ||
-              metadata.tags.isEmpty ||
-              metadata.releaseDate == null ||
-              metadata.coverUrl == null ||
-              metadata.rating == null) {
-            try {
-              final html = await _get(
-                Uri.https(
-                  'www.dlsite.com',
-                  '/$site/work/=/product_id/$normalized.html',
-                ),
-                language: candidateLanguage,
-              );
-              final page = decodeDlsiteProductHtml(
-                html,
-                fallbackRjCode: normalized,
-              );
-              if (page != null) return metadata.fillMissingFrom(page);
-            } on DlsiteMetadataException {
-              // A blocked product page must not discard usable JSON metadata.
-            }
-          }
-          return metadata;
-        } on DlsiteMetadataException catch (error) {
-          lastError = error;
-          if (error.isNetworkFailure) rethrow;
-        } catch (error) {
-          lastError = error;
+      cancellation?.throwIfCancelled();
+      // Probe maniax first since most doujin audio works live there, then race
+      // the remaining sites with bounded concurrency.
+      try {
+        final primaryResult = await _probeProductJsonSite(
+          primarySite,
+          normalized,
+          language: candidateLanguage,
+          cancellation: cancellation,
+        );
+        if (primaryResult != null) {
+          _writeCachePositive(cacheKey, primaryResult);
+          return primaryResult;
         }
+      } on DlsiteMetadataCancelledException {
+        rethrow;
+      } on DlsiteMetadataException catch (error) {
+        lastError = error;
+        if (error.isNetworkFailure) rethrow;
+      } catch (error) {
+        lastError = error;
       }
-      for (final site in _productSites) {
-        try {
-          final uri = Uri.https(
+
+      final secondaryJson = await _raceSites<DlsiteMetadata>(
+        secondarySites,
+        (site, siteCancel) => _probeProductJsonSite(
+          site,
+          normalized,
+          language: candidateLanguage,
+          cancellation: siteCancel,
+        ),
+        parentCancellation: cancellation,
+      );
+      if (secondaryJson.value != null) {
+        _writeCachePositive(cacheKey, secondaryJson.value!);
+        return secondaryJson.value!;
+      }
+      if (secondaryJson.networkFailure != null) {
+        throw secondaryJson.networkFailure!;
+      }
+      lastError = secondaryJson.lastError ?? lastError;
+
+      // HTML fallback: probe maniax first, then race remaining sites.
+      try {
+        final primaryHtml = await _probeProductHtmlSite(
+          primarySite,
+          normalized,
+          language: candidateLanguage,
+          cancellation: cancellation,
+        );
+        if (primaryHtml != null) {
+          _writeCachePositive(cacheKey, primaryHtml);
+          return primaryHtml;
+        }
+      } on DlsiteMetadataCancelledException {
+        rethrow;
+      } on DlsiteMetadataException catch (error) {
+        lastError = error;
+        if (error.isNetworkFailure) rethrow;
+      } catch (error) {
+        lastError = error;
+      }
+
+      final secondaryHtml = await _raceSites<DlsiteMetadata>(
+        secondarySites,
+        (site, siteCancel) => _probeProductHtmlSite(
+          site,
+          normalized,
+          language: candidateLanguage,
+          cancellation: siteCancel,
+        ),
+        parentCancellation: cancellation,
+      );
+      if (secondaryHtml.value != null) {
+        _writeCachePositive(cacheKey, secondaryHtml.value!);
+        return secondaryHtml.value!;
+      }
+      if (secondaryHtml.networkFailure != null) {
+        throw secondaryHtml.networkFailure!;
+      }
+      lastError = secondaryHtml.lastError ?? lastError;
+    }
+
+    if (lastError is DlsiteMetadataException) {
+      if (lastError.isNotFound) {
+        _writeCacheNegative(cacheKey, lastError);
+      }
+      throw lastError;
+    }
+    const notFound = DlsiteMetadataException(
+      'No DLsite metadata found',
+      kind: DlsiteMetadataFailureKind.notFound,
+    );
+    _writeCacheNegative(cacheKey, notFound);
+    throw notFound;
+  }
+
+  _DlsiteCacheEntry? _readCache((String, AppLanguage) key) {
+    final entry = _metadataCache.remove(key);
+    if (entry == null) return null;
+    if (!_now().isBefore(entry.expiresAt)) return null;
+    _metadataCache[key] = entry;
+    return entry;
+  }
+
+  void _writeCachePositive((String, AppLanguage) key, DlsiteMetadata metadata) {
+    _writeCacheEntry(key, (
+      metadata: metadata,
+      error: null,
+      expiresAt: _now().add(_positiveCacheTtl),
+    ));
+  }
+
+  void _writeCacheNegative(
+    (String, AppLanguage) key,
+    DlsiteMetadataException error,
+  ) {
+    _writeCacheEntry(key, (
+      metadata: null,
+      error: error,
+      expiresAt: _now().add(_negativeCacheTtl),
+    ));
+  }
+
+  void _writeCacheEntry((String, AppLanguage) key, _DlsiteCacheEntry entry) {
+    _metadataCache.remove(key);
+    _metadataCache[key] = entry;
+    while (_metadataCache.length > _metadataCacheMaxEntries) {
+      _metadataCache.remove(_metadataCache.keys.first);
+    }
+  }
+
+  Future<DlsiteMetadata?> _probeProductJsonSite(
+    String site,
+    String normalized, {
+    required AppLanguage language,
+    DlsiteRequestCancellation? cancellation,
+  }) async {
+    cancellation?.throwIfCancelled();
+    final uri = Uri.https('www.dlsite.com', '/$site/api/=/product.json', {
+      'workno': normalized,
+    });
+    final metadata = await _fetchProductMetadata(
+      uri,
+      language: language,
+      cancellation: cancellation,
+    );
+    if (metadata.circleName.trim().isEmpty ||
+        metadata.voiceActors.isEmpty ||
+        metadata.tags.isEmpty ||
+        metadata.releaseDate == null ||
+        metadata.coverUrl == null ||
+        metadata.rating == null) {
+      try {
+        final html = await _get(
+          Uri.https(
             'www.dlsite.com',
             '/$site/work/=/product_id/$normalized.html',
-          );
-          final html = await _get(uri, language: candidateLanguage);
-          final metadata = decodeDlsiteProductHtml(
-            html,
-            fallbackRjCode: normalized,
-          );
-          if (metadata != null &&
-              metadata.rjCode.isNotEmpty &&
-              metadata.workTitle.isNotEmpty) {
-            return metadata;
+          ),
+          language: language,
+          cancellation: cancellation,
+        );
+        final page = await _decodeProductHtmlAsync(
+          html,
+          fallbackRjCode: normalized,
+          cancellation: cancellation,
+        );
+        if (page != null) return metadata.fillMissingFrom(page);
+      } on DlsiteMetadataCancelledException {
+        rethrow;
+      } on DlsiteMetadataException {
+        // A blocked product page must not discard usable JSON metadata.
+      }
+    }
+    return metadata;
+  }
+
+  Future<DlsiteMetadata?> _probeProductHtmlSite(
+    String site,
+    String normalized, {
+    required AppLanguage language,
+    DlsiteRequestCancellation? cancellation,
+  }) async {
+    cancellation?.throwIfCancelled();
+    final uri = Uri.https(
+      'www.dlsite.com',
+      '/$site/work/=/product_id/$normalized.html',
+    );
+    final html = await _get(
+      uri,
+      language: language,
+      cancellation: cancellation,
+    );
+    final metadata = await _decodeProductHtmlAsync(
+      html,
+      fallbackRjCode: normalized,
+      cancellation: cancellation,
+    );
+    if (metadata != null &&
+        metadata.rjCode.isNotEmpty &&
+        metadata.workTitle.isNotEmpty) {
+      return metadata;
+    }
+    return null;
+  }
+
+  Future<({T? value, DlsiteMetadataException? networkFailure, Object? lastError})>
+  _raceSites<T>(
+    List<String> sites,
+    Future<T?> Function(String site, DlsiteRequestCancellation cancellation)
+    probe, {
+    DlsiteRequestCancellation? parentCancellation,
+  }) async {
+    if (sites.isEmpty) {
+      return (value: null, networkFailure: null, lastError: null);
+    }
+    parentCancellation?.throwIfCancelled();
+    final childCancellation = DlsiteRequestCancellation();
+    final removeParent = parentCancellation?.addListener(
+      childCancellation.cancel,
+    );
+    var nextIndex = 0;
+    T? winner;
+    DlsiteMetadataException? networkFailure;
+    Object? lastError;
+
+    Future<void> worker() async {
+      while (!childCancellation.isCancelled) {
+        if (nextIndex >= sites.length) return;
+        final site = sites[nextIndex++];
+        try {
+          final result = await probe(site, childCancellation);
+          if (result != null && winner == null) {
+            winner = result;
+            childCancellation.cancel();
+            return;
           }
+        } on DlsiteMetadataCancelledException {
+          return;
         } on DlsiteMetadataException catch (error) {
           lastError = error;
-          if (error.isNetworkFailure) rethrow;
+          if (error.isNetworkFailure) {
+            networkFailure ??= error;
+          }
         } catch (error) {
           lastError = error;
         }
       }
     }
-    if (lastError is DlsiteMetadataException) throw lastError;
-    throw const DlsiteMetadataException(
-      'No DLsite metadata found',
-      kind: DlsiteMetadataFailureKind.notFound,
-    );
+
+    try {
+      final workerCount = sites.length < _siteProbeConcurrency
+          ? sites.length
+          : _siteProbeConcurrency;
+      await Future.wait(List<Future<void>>.generate(workerCount, (_) => worker()));
+      parentCancellation?.throwIfCancelled();
+      return (
+        value: winner,
+        networkFailure: winner == null ? networkFailure : null,
+        lastError: lastError,
+      );
+    } finally {
+      removeParent?.call();
+      childCancellation.cancel();
+    }
   }
 
   @override
@@ -284,13 +604,13 @@ class DlsiteMetadataService implements LibraryMetadataSource {
     }
 
     if (PathMatcher.isContentUri(folderPath)) {
-      final bytes = <int>[];
+      final bytes = BytesBuilder(copy: false);
       try {
         await for (final chunk in response.timeout(_requestTimeout)) {
           if (bytes.length + chunk.length > _maxCoverBytes) {
             throw const DlsiteMetadataException('Cover response is too large');
           }
-          bytes.addAll(chunk);
+          bytes.add(chunk);
         }
       } on TimeoutException {
         throw const DlsiteMetadataException(
@@ -303,7 +623,7 @@ class DlsiteMetadataService implements LibraryMetadataSource {
       final savedCover = await _fileCacheGateway.writeFileBytesToFolder(
         folder: folderPath,
         name: resolvedFileName,
-        bytes: Uint8List.fromList(bytes),
+        bytes: bytes.takeBytes(),
         mimeType: mimeType,
       );
       if (savedCover == null) {
@@ -356,19 +676,75 @@ class DlsiteMetadataService implements LibraryMetadataSource {
     }
   }
 
-  Future<String> _get(Uri uri, {required AppLanguage language}) async {
+  Future<String> _get(
+    Uri uri, {
+    required AppLanguage language,
+    DlsiteRequestCancellation? cancellation,
+  }) async {
     Object? lastError;
     for (var attempt = 0; attempt < _maxRequestAttempts; attempt += 1) {
+      cancellation?.throwIfCancelled();
+      HttpClientRequest? openedRequest;
+      StreamSubscription<List<int>>? subscription;
+      var attemptRetired = false;
+      var responseConsumed = false;
+      final removeAbortListener = cancellation?.addListener(() {
+        openedRequest?.abort(const DlsiteMetadataCancelledException());
+        unawaited(subscription?.cancel());
+      });
       try {
-        final request = await _httpClient.getUrl(uri).timeout(_requestTimeout);
+        final opening = _httpClient.getUrl(uri).then((request) {
+          if (cancellation?.isCancelled == true) {
+            request.abort(const DlsiteMetadataCancelledException());
+            throw const DlsiteMetadataCancelledException();
+          }
+          if (attemptRetired) {
+            request.abort();
+            throw const DlsiteMetadataException('DLsite request attempt ended');
+          }
+          openedRequest = request;
+          return request;
+        });
+        final request = await (cancellation?.waitFor(opening) ?? opening)
+            .timeout(_requestTimeout);
+        cancellation?.throwIfCancelled();
         _applyHeaders(request, language);
-        final response = await request.close().timeout(_requestTimeout);
-        final bytes = await response
-            .fold<List<int>>(<int>[], (buffer, chunk) => buffer..addAll(chunk))
+        final closing = request.close().then((response) {
+          if (cancellation?.isCancelled == true) {
+            unawaited(response.listen(null).cancel());
+            throw const DlsiteMetadataCancelledException();
+          }
+          return response;
+        });
+        final response = await (cancellation?.waitFor(closing) ?? closing)
             .timeout(_requestTimeout);
         if (response.statusCode >= 200 && response.statusCode < 300) {
+          final builder = BytesBuilder(copy: false);
+          final completed = Completer<Uint8List>();
+          subscription = response.listen(
+            builder.add,
+            onError: (Object error, StackTrace stackTrace) {
+              if (!completed.isCompleted) {
+                completed.completeError(error, stackTrace);
+              }
+            },
+            onDone: () {
+              if (!completed.isCompleted) {
+                completed.complete(builder.takeBytes());
+              }
+            },
+            cancelOnError: true,
+          );
+          final bytes =
+              await (cancellation?.waitFor(completed.future) ??
+                      completed.future)
+                  .timeout(_requestTimeout);
+          responseConsumed = true;
+          cancellation?.throwIfCancelled();
           return utf8.decode(bytes, allowMalformed: true);
         }
+        await _discardResponse(response);
+        responseConsumed = true;
         final error = DlsiteMetadataException(
           'DLsite request failed: ${response.statusCode}',
         );
@@ -377,7 +753,10 @@ class DlsiteMetadataService implements LibraryMetadataSource {
           throw error;
         }
         lastError = error;
+      } on DlsiteMetadataCancelledException {
+        rethrow;
       } on TimeoutException {
+        cancellation?.throwIfCancelled();
         const error = DlsiteMetadataException(
           'DLsite request timed out',
           isNetworkFailure: true,
@@ -385,14 +764,27 @@ class DlsiteMetadataService implements LibraryMetadataSource {
         if (attempt == _maxRequestAttempts - 1) throw error;
         lastError = error;
       } on IOException catch (error) {
+        cancellation?.throwIfCancelled();
         final networkError = DlsiteMetadataException(
           'DLsite request failed: $error',
           isNetworkFailure: true,
         );
         if (attempt == _maxRequestAttempts - 1) throw networkError;
         lastError = networkError;
+      } finally {
+        attemptRetired = true;
+        removeAbortListener?.call();
+        if (!responseConsumed) {
+          openedRequest?.abort();
+        }
+        await subscription?.cancel();
       }
-      await Future<void>.delayed(Duration(milliseconds: 250 * (attempt + 1)));
+      final delay = Duration(milliseconds: 250 * (attempt + 1));
+      if (cancellation != null) {
+        await cancellation.delay(delay);
+      } else {
+        await Future<void>.delayed(delay);
+      }
     }
     if (lastError is DlsiteMetadataException) throw lastError;
     throw const DlsiteMetadataException('DLsite request failed');
@@ -401,19 +793,41 @@ class DlsiteMetadataService implements LibraryMetadataSource {
   Future<DlsiteMetadata> _fetchProductMetadata(
     Uri uri, {
     required AppLanguage language,
+    DlsiteRequestCancellation? cancellation,
   }) async {
-    final response = await _get(uri, language: language);
-    final product = decodeDlsiteProductJsonResponse(response);
-    if (product == null) {
+    final response = await _get(
+      uri,
+      language: language,
+      cancellation: cancellation,
+    );
+    final decoding = compute(_computeDecodeDlsiteProductJson, response);
+    final metadata = await (cancellation?.waitFor(decoding) ?? decoding);
+    if (metadata == null) {
       throw const DlsiteMetadataException(
         'No DLsite metadata found',
         kind: DlsiteMetadataFailureKind.notFound,
       );
     }
-
-    final metadata = DlsiteMetadata.fromProductJson(product);
     if (metadata.rjCode.isEmpty || metadata.workTitle.isEmpty) {
       throw const DlsiteMetadataException('Incomplete DLsite metadata');
+    }
+    return metadata;
+  }
+
+  Future<DlsiteMetadata?> _decodeProductHtmlAsync(
+    String html, {
+    required String fallbackRjCode,
+    DlsiteRequestCancellation? cancellation,
+  }) async {
+    final decoding = compute(_computeDecodeDlsiteProductHtml, (
+      html: html,
+      fallbackRjCode: fallbackRjCode,
+    ));
+    final metadata = await (cancellation?.waitFor(decoding) ?? decoding);
+    if (metadata != null && metadata.dlsiteRegionRestricted) {
+      AppLogService.warning(
+        'dlsite_metadata_region_restricted rj=${metadata.rjCode}',
+      );
     }
     return metadata;
   }
@@ -469,6 +883,16 @@ class DlsiteMetadataService implements LibraryMetadataSource {
   }
 }
 
+DlsiteMetadata? _computeDecodeDlsiteProductJson(String response) {
+  final product = decodeDlsiteProductJsonResponse(response);
+  if (product == null) return null;
+  return DlsiteMetadata.fromProductJson(product);
+}
+
+DlsiteMetadata? _computeDecodeDlsiteProductHtml(
+  ({String html, String fallbackRjCode}) input,
+) => decodeDlsiteProductHtml(input.html, fallbackRjCode: input.fallbackRjCode);
+
 Map<String, dynamic>? decodeDlsiteProductJsonResponse(String response) {
   final decoded = json.decode(response);
   final product = _firstDlsiteProductObject(decoded);
@@ -509,9 +933,6 @@ DlsiteMetadata? decodeDlsiteProductHtml(
         r'国家[・·/／、]区域|國家[・·/／、]地區|country\s*(?:/|or|and)?\s*region|国(?:または|や|・|/)?地域|お住まいの地域',
         caseSensitive: false,
       ).hasMatch(_htmlText(html) ?? '');
-  if (regionRestricted) {
-    AppLogService.warning('dlsite_metadata_region_restricted rj=$rjCode');
-  }
 
   final ogTitle = _htmlMetaContent(html, 'og:title');
   final ogCircleMatch = ogTitle == null

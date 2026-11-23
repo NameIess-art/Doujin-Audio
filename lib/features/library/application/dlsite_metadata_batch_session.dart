@@ -154,8 +154,17 @@ final class DlsiteMetadataBatchSession extends ChangeNotifier {
     apply: (item) async {
       final metadata = item.confirmedMetadata;
       if (metadata == null) return;
+      final loaded = await library.loadAudioDetail(item.entry.target);
+      final latestDetail =
+          loaded.detail.updatedAt != null ||
+              loaded.detail.createdAt != null ||
+              !loaded.detail.hasNoMetadata ||
+              loaded.detail.cardCoverPath != null ||
+              loaded.detail.cardCoverSelected
+          ? loaded.detail
+          : item.entry.detail;
       await library.applyDlsiteMetadata(
-        item.entry.detail,
+        latestDetail,
         metadata,
         saveCover: item.saveCover ?? false,
         language: language,
@@ -399,16 +408,19 @@ final class DlsiteMetadataBatchSession extends ChangeNotifier {
         .length;
     try {
       for (var index = 0; index < _items.length; index += 1) {
+        if (_disposed) break;
         final item = _items[index];
         if (!item.isReadyToApply) continue;
         try {
           await apply(item);
+          if (_disposed) break;
           _items[index] = item.copyWith(
             status: DlsiteMetadataBatchLookupStatus.applied,
             clearError: true,
           );
           savedCount += 1;
         } catch (error) {
+          if (_disposed) break;
           _items[index] = item.copyWith(
             status: DlsiteMetadataBatchLookupStatus.saveFailed,
             error: error,

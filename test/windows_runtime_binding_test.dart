@@ -168,6 +168,47 @@ void main() {
     expect(calls, ['ready', 'saveTimer', 'dispose']);
   });
 
+  for (final blockedSave in [true, false]) {
+    test(
+      'endSession reply covers stalled ${blockedSave ? 'save' : 'dispose'}',
+      () async {
+        final blocked = Completer<void>();
+        if (blockedSave) {
+          saveGate = blocked;
+        } else {
+          runtime.disposeGate = blocked;
+        }
+        final shortBinding = WindowsRuntimeBinding(
+          desktop: WindowsDesktopService(channel: channel),
+          endSessionReplyBudget: const Duration(milliseconds: 50),
+        );
+        await shortBinding.attach();
+        shortBinding.bindRuntime(
+          runtime: runtime,
+          playback: playback,
+          notifications: notifications,
+          timer: timer,
+        );
+        await shortBinding.initializeRuntime(() async {});
+
+        final trayExit = _sendAction(channel, 'exit');
+        await Future<void>.delayed(Duration.zero);
+        await expectLater(
+          _sendAction(
+            channel,
+            'endSession',
+          ).timeout(const Duration(seconds: 1)),
+          throwsA(isA<PlatformException>()),
+        );
+        expect(calls, ['ready', 'saveTimer', if (!blockedSave) 'dispose']);
+        blocked.complete();
+        await trayExit;
+        expect(calls, ['ready', 'saveTimer', 'dispose']);
+        expect(runtime.fastShutdown, isTrue);
+      },
+    );
+  }
+
   test('repeated exit shares one cleanup and closes the window once', () async {
     runtime.disposeGate = Completer<void>();
     await attach();
@@ -217,6 +258,7 @@ void main() {
       await attach();
       final first = _sendAction(channel, 'exit');
       await Future<void>.delayed(Duration.zero);
+      expect(runtime.disposeFastShutdownCalls, [false]);
       var acknowledged = false;
       final second = _sendAction(channel, 'endSession').then((_) {
         acknowledged = true;
@@ -224,6 +266,8 @@ void main() {
       final repeated = _sendAction(channel, 'endSession');
       await Future<void>.delayed(Duration.zero);
       expect(acknowledged, false);
+      expect(runtime.fastShutdown, isTrue);
+      expect(runtime.disposeFastShutdownCalls, [false, true]);
       runtime.disposeGate!.complete();
       await Future.wait([first, second, repeated]);
       expect(calls, ['ready', 'saveTimer', 'dispose']);
@@ -286,7 +330,7 @@ void main() {
     () async {
       final shortBinding = WindowsRuntimeBinding(
         desktop: WindowsDesktopService(channel: channel),
-        endSessionDrainBudget: const Duration(milliseconds: 60),
+        endSessionDrainBudget: const Duration(milliseconds: 120),
       );
       await shortBinding.attach();
       shortBinding.bindRuntime(
@@ -295,15 +339,63 @@ void main() {
         notifications: notifications,
         timer: timer,
       );
+      await shortBinding.initializeRuntime(() async {});
+      runtime.resumeEntered = Completer<void>();
+      runtime.resumeGate = Completer<void>();
+      final stuckAction = _sendAction(channel, 'resume');
+      await runtime.resumeEntered!.future;
+
       final stuckInit = Completer<void>();
-      final initFuture = shortBinding.initializeRuntime(() => stuckInit.future);
+      final initFuture = shortBinding.initializeStartup(() => stuckInit.future);
       final sw = Stopwatch()..start();
       await _sendAction(channel, 'endSession');
       sw.stop();
-      expect(calls, ['ready', 'dispose']);
-      expect(sw.elapsedMilliseconds, lessThan(400));
+      expect(calls, ['ready', 'resumeForeground', 'saveTimer', 'dispose']);
+      expect(runtime.fastShutdown, isTrue);
+      expect(runtime.disposeFastShutdownCalls, [true]);
+      expect(sw.elapsedMilliseconds, lessThan(220));
       stuckInit.complete();
+      runtime.resumeGate!.complete();
       await expectLater(initFuture, throwsStateError);
+      await stuckAction;
+    },
+  );
+
+  test(
+    'endSession escalates an ongoing exit to fastShutdown and bounds drain wait',
+    () async {
+      final shortBinding = WindowsRuntimeBinding(
+        desktop: WindowsDesktopService(channel: channel),
+        endSessionDrainBudget: const Duration(milliseconds: 80),
+      );
+      await shortBinding.attach();
+      shortBinding.bindRuntime(
+        runtime: runtime,
+        playback: playback,
+        notifications: notifications,
+        timer: timer,
+      );
+      await shortBinding.initializeRuntime(() async {});
+      runtime.resumeEntered = Completer<void>();
+      runtime.resumeGate = Completer<void>();
+      final stuckAction = _sendAction(channel, 'resume');
+      await runtime.resumeEntered!.future;
+
+      final exitAction = _sendAction(channel, 'exit');
+      await Future<void>.delayed(Duration.zero);
+      expect(calls, ['ready', 'resumeForeground']);
+
+      final sw = Stopwatch()..start();
+      final endSessionAction = _sendAction(channel, 'endSession');
+      await Future.wait([exitAction, endSessionAction]);
+      sw.stop();
+
+      expect(calls, ['ready', 'resumeForeground', 'saveTimer', 'dispose']);
+      expect(runtime.fastShutdown, isTrue);
+      expect(runtime.disposeFastShutdownCalls, [true]);
+      expect(sw.elapsedMilliseconds, lessThan(400));
+      runtime.resumeGate!.complete();
+      await stuckAction;
     },
   );
 
@@ -403,6 +495,9 @@ Future<void> _sendAction(MethodChannel channel, String action) {
 final class _Runtime implements AppRuntimeLifecycle {
   _Runtime(this.calls);
   final List<String> calls;
+  final List<bool> disposeFastShutdownCalls = <bool>[];
+  bool fastShutdown = false;
+  Future<void>? _disposeFuture;
   Completer<void>? disposeGate;
   Completer<void>? resumeEntered;
   Completer<void>? resumeGate;
@@ -411,7 +506,13 @@ final class _Runtime implements AppRuntimeLifecycle {
   Object? disposeError;
   Future<void> Function()? disposePlayback;
   @override
-  Future<void> dispose() async {
+  Future<void> dispose({bool fastShutdown = false}) {
+    disposeFastShutdownCalls.add(fastShutdown);
+    if (fastShutdown) this.fastShutdown = true;
+    return _disposeFuture ??= _runDispose();
+  }
+
+  Future<void> _runDispose() async {
     calls.add('dispose');
     await disposeGate?.future;
     if (disposeError case final error?) throw error;

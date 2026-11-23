@@ -1,9 +1,13 @@
 package com.doujin.audio
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
+import com.doujin.audio.player.session.NativePlaybackUsageCheckpoint
 import com.doujin.audio.player.session.NativePlaybackUsageLedger
 import java.util.Calendar
 import java.util.concurrent.Executor
+import java.util.concurrent.RejectedExecutionException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -11,6 +15,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -154,5 +159,53 @@ class NativePlaybackUsageLedgerTest {
         assertEquals(persistedId, batches[0]["id"])
         val secondDays = batches[1]["days"] as List<*>
         assertEquals(750L, ((secondDays.single() as Map<*, *>)["totalMs"] as Number).toLong())
+    }
+
+    @Test fun `checkpoint readAsync updates active items synchronously so a later pause is not overwritten`() {
+        val tasks = ArrayDeque<Runnable>()
+        val ledger = ledger(Executor { tasks.addLast(it) })
+        var currentItems = listOf(work)
+        val checkpoint = NativePlaybackUsageCheckpoint(
+            ledger = ledger,
+            handler = Handler(Looper.getMainLooper()),
+            items = { currentItems },
+            isScreenInteractive = { true },
+            hasPlayback = { currentItems.isNotEmpty() }
+        )
+
+        checkpoint.update()
+        advance(1_000)
+
+        var asyncResult: Result<List<Map<String, Any?>>>? = null
+        checkpoint.readAsync { asyncResult = it }
+
+        // Pause on main thread BEFORE the queued read task runs on the writer thread.
+        currentItems = emptyList()
+        checkpoint.update()
+        advance(5_000)
+
+        while (tasks.isNotEmpty()) tasks.removeFirst().run()
+        shadowOf(Looper.getMainLooper()).idle()
+
+        val batches = checkNotNull(asyncResult).getOrThrow()
+        val days = batches.single()["days"] as List<*>
+        assertEquals(1_000L, ((days.single() as Map<*, *>)["totalMs"] as Number).toLong())
+        // No phantom duration was accrued during the 5s paused period.
+        advance(5_000)
+        assertEquals(1, ledger.read().size)
+    }
+
+    @Test fun `readAsync and acknowledgeAsync deliver failures instead of hanging when executor rejects`() {
+        val rejecting = ledger(Executor { throw RejectedExecutionException("executor stopped") })
+
+        var readResult: Result<List<Map<String, Any?>>>? = null
+        rejecting.readAsync { readResult = it }
+        assertTrue(checkNotNull(readResult).isFailure)
+        assertTrue(readResult!!.exceptionOrNull() is RejectedExecutionException)
+
+        var ackResult: Result<Unit>? = null
+        rejecting.acknowledgeAsync(setOf("b1")) { ackResult = it }
+        assertTrue(checkNotNull(ackResult).isFailure)
+        assertTrue(ackResult!!.exceptionOrNull() is RejectedExecutionException)
     }
 }

@@ -390,6 +390,95 @@ class FileCachePlatformGateway {
         const <Map<String, String>>[];
   }
 
+  Future<({List<Map<String, String>> texts, List<CoverImageReference> images})>
+  discoverWindowsWorkFiles(String folderPath) async {
+    if (!_isWindows() || _isAndroid()) {
+      throw UnsupportedError(
+        'Combined local work file discovery is only supported on Windows.',
+      );
+    }
+    if (IOOverrides.current == null) {
+      return Isolate.run(
+        () => _discoverWindowsWorkFilesSync(folderPath),
+        debugName: 'windows_work_files_discovery',
+      );
+    }
+    return _discoverWindowsWorkFilesSync(folderPath);
+  }
+
+  static ({List<Map<String, String>> texts, List<CoverImageReference> images})
+  _discoverWindowsWorkFilesSync(String folderPath) {
+    final directory = Directory(folderPath);
+    if (!directory.existsSync()) {
+      throw FileSystemException(
+        'Document directory is unavailable.',
+        folderPath,
+      );
+    }
+    final texts = <Map<String, String>>[];
+    final imageFiles = <File>[];
+    final pendingDirs = <Directory>[directory];
+    var isRoot = true;
+    while (pendingDirs.isNotEmpty) {
+      final current = pendingDirs.removeLast();
+      final List<FileSystemEntity> entries;
+      try {
+        entries = current.listSync(followLinks: false);
+      } on FileSystemException {
+        if (isRoot) rethrow;
+        continue;
+      }
+      isRoot = false;
+      for (final entity in entries) {
+        if (entity is File) {
+          final filePath = entity.path;
+          if (_windowsImageExtension.hasMatch(filePath)) {
+            imageFiles.add(entity);
+          } else if (_windowsWorkTextExtensions.contains(
+            path.extension(filePath).toLowerCase(),
+          )) {
+            try {
+              final relativePath = path
+                  .relative(filePath, from: folderPath)
+                  .replaceAll(r'\', '/');
+              texts.add({
+                'name': path.basename(filePath),
+                'relativePath': relativePath,
+                'path': filePath,
+                'fileSizeBytes': entity.lengthSync().toString(),
+              });
+            } on FileSystemException {
+              // Skip unreadable or vanished text files.
+            }
+          }
+        } else if (entity is Directory) {
+          pendingDirs.add(entity);
+        }
+      }
+    }
+    texts.sort(
+      (a, b) => a['relativePath']!.toLowerCase().compareTo(
+        b['relativePath']!.toLowerCase(),
+      ),
+    );
+    imageFiles.sort(_compareWindowsImages);
+    final images = <CoverImageReference>[];
+    for (final file in imageFiles) {
+      try {
+        images.add(
+          CoverImageReference(
+            displayPath: file.path,
+            sourcePath: file.path,
+            fileSizeBytes: file.lengthSync(),
+          ),
+        );
+      } on FileSystemException {
+        // Skip unreadable or vanished image files.
+      }
+    }
+    return (texts: texts, images: images);
+  }
+
   static final RegExp _windowsImageExtension = RegExp(
     r'\.(png|jpe?g|webp|bmp|gif)$',
     caseSensitive: false,

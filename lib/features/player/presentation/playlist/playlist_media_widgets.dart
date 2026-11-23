@@ -132,16 +132,26 @@ class SessionHeroArtwork extends ConsumerWidget {
               ),
             ),
             Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.black.withValues(alpha: 0.1),
-                      Colors.transparent,
-                      Colors.black.withValues(alpha: 0.2),
-                    ],
+              child: IgnorePointer(
+                child: AnimatedOpacity(
+                  key: const ValueKey('session_detail_cover_vignette_fade'),
+                  opacity: coverLanded ? 1 : 0,
+                  duration: MediaQuery.disableAnimationsOf(context)
+                      ? Duration.zero
+                      : kAppFadeDuration,
+                  curve: kAppFadeCurve,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.black.withValues(alpha: 0.1),
+                          Colors.transparent,
+                          Colors.black.withValues(alpha: 0.2),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ),

@@ -7,6 +7,7 @@ import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/core/media/search_query_utils.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_edit_panel.dart';
+import 'package:doujin_audio/core/widgets/app_search_suggestions.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/search_highlight.dart';
 import 'package:doujin_audio/features/library/presentation/library_search_all_results.dart';
@@ -166,6 +167,56 @@ void main() {
       isNull,
     );
   });
+
+  test(
+    'an invalidated subtitle lookup cannot repopulate search caches',
+    () async {
+      final track = testMusicTrack(
+        name: 'Rain',
+        path: '/work/rain.mp3',
+        groupKey: '/work',
+        groupTitle: 'Work',
+      );
+      final root = FolderNode('Work', '/work')..addChild(TrackNode(track));
+      final result = FilteredLibraryTreeResult(tree: [root], matchCount: 1);
+      final snapshot = AudioLibraryCategorySnapshot(
+        entries: const [],
+        structureRevision: 1,
+        detailRevision: 1,
+      );
+      final index = LibrarySearchIndex();
+      addTearDown(index.dispose);
+      final lookupStarted = Completer<void>();
+      final oldLookup = Completer<bool>();
+      var oldRequestIsActive = true;
+      final old = result.filterSubtitles(
+        snapshot: snapshot,
+        hasSubtitle: true,
+        checkTrack: (_) {
+          lookupStarted.complete();
+          return oldLookup.future;
+        },
+        isActive: () => oldRequestIsActive,
+        trackSubtitleCache: index.trackSubtitleCacheForRevision(1),
+        workSubtitleCache: index.workSubtitleCacheForRevision(1),
+      );
+      await lookupStarted.future;
+      oldRequestIsActive = false;
+      index.invalidateSubtitleCache();
+      oldLookup.complete(true);
+      expect(await old, isNull);
+
+      final refreshed = await result.filterSubtitles(
+        snapshot: snapshot,
+        hasSubtitle: true,
+        checkTrack: (_) async => false,
+        isActive: () => true,
+        trackSubtitleCache: index.trackSubtitleCacheForRevision(1),
+        workSubtitleCache: index.workSubtitleCacheForRevision(1),
+      );
+      expect(refreshed?.tree, isEmpty);
+    },
+  );
 
   test('search result cache retains only twelve recently used queries', () {
     final index = LibrarySearchIndex();
@@ -522,7 +573,7 @@ void main() {
   );
 
   testWidgets(
-    'pending searches retain mounted results and their committed highlights',
+    'pending searches retain old highlights but disable old result actions',
     (tester) async {
       final pending = Completer<LibraryTreeSnapshot>();
       final tracks = [
@@ -600,11 +651,19 @@ void main() {
       expect(SearchHighlightScope.termsOf(tester.element(listFinder)), [
         'audio',
       ]);
-      expect(selectionTree, nodes);
+      expect(selectionTree, isEmpty);
+      expect(
+        find.text('Ocean audio', findRichText: true).hitTestable(),
+        findsNothing,
+      );
 
       pending.complete(LibraryTreeSnapshot(tree: nodes, leafFolderCount: 0));
       await tester.pumpAndSettle();
       expect(find.text('Ocean audio', findRichText: true), findsWidgets);
+      expect(
+        find.text('Ocean audio', findRichText: true).hitTestable(),
+        findsWidgets,
+      );
       expect(find.text('Rain audio', findRichText: true), findsNothing);
       expect(selectionTree.single.path, tracks.first.path);
       expect(tester.element(listFinder), same(initialList));
@@ -1024,6 +1083,62 @@ void main() {
 
       expect(clearedFilters, 1);
       expect(editedSearch, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'IME composing collapse updates suggestion chip selection without new text changes',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final target = AudioDetailTarget.libraryRootFolder('/library/work');
+      fixture.library.addWatchedFolder('/library/work', notify: false);
+      fixture.library.addTracks([
+        testMusicTrack(
+          name: 'Track',
+          path: '/library/work/01.mp3',
+          groupKey: '/library/work',
+          groupTitle: 'Work',
+        ),
+      ], persist: false);
+      await tester.runAsync(
+        () => fixture.library.saveAudioDetail(
+          AudioDetail.empty(target).copyWith(tags: const ['ASMR']),
+        ),
+      );
+      await tester.runAsync(fixture.library.audioLibraryCategorySnapshot);
+
+      await tester.pumpWidget(fixture.build(const LibrarySearchPage()));
+      await tester.pumpAndSettle();
+
+      final textField = tester.widget<TextField>(
+        find.byKey(const ValueKey('app_search_field')),
+      );
+      final controller = textField.controller!;
+
+      AppSearchSuggestionSection tagSection() =>
+          tester.widget(find.byKey(const ValueKey('library_search_tags')));
+
+      // Simulate IME composing text 'ASMR': onChanged parses it, but selection
+      // sync defers while composing is active.
+      controller.value = const TextEditingValue(
+        text: 'ASMR',
+        selection: TextSelection.collapsed(offset: 4),
+        composing: TextRange(start: 0, end: 4),
+      );
+      textField.onChanged?.call('ASMR');
+      await tester.pump();
+      expect(tagSection().isSelected('ASMR'), isFalse);
+
+      // Collapse composing range without changing text: controller listener
+      // must flush suggestion chip selection.
+      controller.value = const TextEditingValue(
+        text: 'ASMR',
+        selection: TextSelection.collapsed(offset: 4),
+      );
+      await tester.pump();
+      expect(tagSection().isSelected('ASMR'), isTrue);
       expect(tester.takeException(), isNull);
     },
   );

@@ -65,6 +65,7 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
   static const _portraitRestoreTimeout = Duration(milliseconds: 500);
   static const _coverDuration = Duration(milliseconds: 380);
   static const _reverseCoverDuration = Duration(milliseconds: 320);
+  static const double _minMidFlightUpgradeSpan = 0.12;
   static const double interactiveReadyThreshold = 0.9;
 
   SessionDetailRoute({
@@ -117,6 +118,7 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
   bool _reducedMotion = false;
   bool _revealBehind = false;
   bool _entryPrepared = false;
+  bool _entryFlightEnded = false;
   bool _closing = false;
   ui.FlutterView? _view;
   (Size, double)? _viewMetrics;
@@ -187,15 +189,29 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
   }
 
   void _applyMidFlightHighResCover(ui.Image decoded) {
-    if (_disposed || _detailHighResImage != null) {
+    if (_disposed || _detailHighResImage != null || _entryFlightEnded) {
+      decoded.dispose();
+      return;
+    }
+    final flight = _flight.value;
+    if (flight == null) {
+      _detailHighResImage = decoded;
+      return;
+    }
+    if (flight.reverse) {
+      decoded.dispose();
+      return;
+    }
+    final start = animation?.value ?? 0.0;
+    final remaining = (1.0 - start).clamp(0.0, 1.0);
+    if (!_reducedMotion && remaining < _minMidFlightUpgradeSpan) {
+      // Avoid a 1-2 frame sharpness snap right at landing; let the landed
+      // cover crossfade smoothly from the retained high-res image instead.
       decoded.dispose();
       return;
     }
     _detailHighResImage = decoded;
-    final flight = _flight.value;
-    if (flight == null || flight.reverse) return;
-    final start = animation?.value ?? 0.0;
-    final span = (120 / _coverDuration.inMilliseconds).clamp(0.0, 1.0 - start);
+    final span = (120 / _coverDuration.inMilliseconds).clamp(0.0, remaining);
     final upgradeOpacity = _reducedMotion || span <= 0.02
         ? kAlwaysCompleteAnimation
         : animation!.drive(
@@ -374,6 +390,9 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
                 ?.currentTrackPath,
           );
         }
+        if (animation.status == AnimationStatus.completed) {
+          _entryFlightEnded = true;
+        }
       });
     }
     final page = PopScope<void>(
@@ -525,8 +544,10 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
   }
 
   void _handleFlightStatus(AnimationStatus status) {
-    if (status == AnimationStatus.completed ||
-        status == AnimationStatus.dismissed) {
+    if (status == AnimationStatus.completed) {
+      _entryFlightEnded = true;
+      _clearFlight();
+    } else if (status == AnimationStatus.dismissed) {
       _clearFlight();
     }
   }
@@ -534,6 +555,9 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
   void _clearFlight() {
     final flight = _flight.value;
     if (flight == null) return;
+    if (!flight.reverse) {
+      _entryFlightEnded = true;
+    }
     _flightStart?.setInFlight(false);
     _flightEnd?.setInFlight(false);
     _flightStart = null;

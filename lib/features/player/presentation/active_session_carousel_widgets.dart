@@ -410,9 +410,9 @@ class _ActiveSessionCard extends ConsumerWidget {
         // viewport instead of re-laying out the entire row on every frame.
         final targetWidth = expandedDockWidth;
         final width = targetWidth != null
-            ? (constraints.maxWidth > targetWidth
-                  ? constraints.maxWidth
-                  : targetWidth)
+            ? (constraints.maxWidth <= kActiveSessionCarouselDockHeight
+                  ? targetWidth
+                  : constraints.maxWidth)
             : (constraints.maxWidth < _expandedDockThreshold
                   ? _expandedDockThreshold
                   : constraints.maxWidth);

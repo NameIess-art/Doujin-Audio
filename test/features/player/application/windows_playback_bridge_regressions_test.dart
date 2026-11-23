@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:doujin_audio/features/player/application/native_playback_bridge.dart'
+    show nativePlaybackQueueResyncRequiredCode;
 import 'package:doujin_audio/features/player/application/windows_playback_bridge.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:media_kit/media_kit.dart';
@@ -438,6 +440,126 @@ void main() {
         expect(platform.state.position, const Duration(seconds: 30));
       },
     );
+
+    test(
+      'duplicate track in custom queue does not bypass jump or reopen via _seekExistingTrack',
+      () async {
+        final queue = <Map<String, Object?>>[
+          {'uri': 'https://example.com/a.wav', 'path': '/a.wav', 'title': 'A1'},
+          {'uri': 'https://example.com/b.wav', 'path': '/b.wav', 'title': 'B'},
+          {'uri': 'https://example.com/a.wav', 'path': '/a.wav', 'title': 'A2'},
+        ];
+        final prepared = await bridge.prepareSession(
+          sessionId: 'dup',
+          uri: Uri.parse('https://example.com/a.wav'),
+          path: '/a.wav',
+          title: 'A1',
+          queue: queue,
+          queueStartIndex: 0,
+          autoPlay: true,
+        );
+        expect(prepared.isOk, isTrue, reason: prepared.errorOrNull);
+        final platform = players.single;
+        platform.emitDuration(const Duration(minutes: 3));
+        expect(platform.state.playlist.index, 0);
+
+        // Reusing existing queue with a different index of a duplicate track and
+        // non-zero startPosition must require resync instead of seeking index 0.
+        final resyncRequired = await bridge.prepareSession(
+          sessionId: 'dup',
+          uri: Uri.parse('https://example.com/a.wav'),
+          path: '/a.wav',
+          title: 'A2',
+          queueStartIndex: 2,
+          startPosition: const Duration(seconds: 10),
+          autoPlay: true,
+          reuseExistingQueue: true,
+        );
+        expect(resyncRequired.isFailure, isTrue);
+        expect(
+          resyncRequired.errorCodeOrNull,
+          nativePlaybackQueueResyncRequiredCode,
+        );
+        expect(platform.state.playlist.index, 0);
+
+        // Switching to the duplicate track at index 2 with zero position must jump
+        // libmpv to physical index 2 rather than leaving it on index 0.
+        final jumped = await bridge.prepareSession(
+          sessionId: 'dup',
+          uri: Uri.parse('https://example.com/a.wav'),
+          path: '/a.wav',
+          title: 'A2',
+          queueStartIndex: 2,
+          autoPlay: true,
+          reuseExistingQueue: true,
+        );
+        expect(jumped.isOk, isTrue, reason: jumped.errorOrNull);
+        expect(jumped.valueOrNull!.queueIndex, 2);
+        expect(platform.jumps, 1);
+        expect(platform.state.playlist.index, 2);
+
+        // Switching back to index 0 while paused with a non-zero position must not
+        // reuse physical index 2 via _seekExistingTrack.
+        final pausedSwitch = await bridge.prepareSession(
+          sessionId: 'dup',
+          uri: Uri.parse('https://example.com/a.wav'),
+          path: '/a.wav',
+          title: 'A1',
+          queue: queue,
+          queueStartIndex: 0,
+          startPosition: const Duration(seconds: 15),
+        );
+        expect(pausedSwitch.isOk, isTrue, reason: pausedSwitch.errorOrNull);
+        expect(pausedSwitch.valueOrNull!.queueIndex, 0);
+        expect(platform.disposed, isTrue);
+        expect(bridge.playerForSession('dup'), isNull);
+      },
+    );
+
+    test(
+      '_seekExistingTrack preserves pendingStart until duration is loaded',
+      () async {
+        final queue = <Map<String, Object?>>[
+          {'uri': 'https://example.com/a.wav', 'path': '/a.wav', 'title': 'A'},
+        ];
+        final prepared = await bridge.prepareSession(
+          sessionId: 'pending-seek',
+          uri: Uri.parse('https://example.com/a.wav'),
+          path: '/a.wav',
+          title: 'A',
+          queue: queue,
+          queueStartIndex: 0,
+          startPosition: const Duration(seconds: 5),
+          autoPlay: true,
+        );
+        expect(prepared.isOk, isTrue, reason: prepared.errorOrNull);
+        final platform = players.single;
+        expect(platform.state.duration, Duration.zero);
+        expect(platform.seeks, isEmpty);
+
+        final sought = await bridge.prepareSession(
+          sessionId: 'pending-seek',
+          uri: Uri.parse('https://example.com/a.wav'),
+          path: '/a.wav',
+          title: 'A',
+          queueStartIndex: 0,
+          startPosition: const Duration(seconds: 25),
+          autoPlay: true,
+          reuseExistingQueue: true,
+        );
+        expect(sought.isOk, isTrue, reason: sought.errorOrNull);
+        expect(sought.valueOrNull!.processingState, 'loading');
+        expect(sought.valueOrNull!.position, const Duration(seconds: 25));
+        expect(platform.seeks, isEmpty);
+
+        // Once duration loads, restorePendingPosition applies the 25s start target.
+        platform.emitDuration(const Duration(minutes: 4));
+        await Future<void>.microtask(() {});
+        await bridge.setVolume('pending-seek', 1.0);
+        expect(platform.seeks, [const Duration(seconds: 25)]);
+        expect(platform.state.playing, isTrue);
+      },
+    );
   });
 }
 
@@ -445,11 +567,18 @@ class _FakePlatformPlayer extends PlatformPlayer {
   _FakePlatformPlayer() : super(configuration: const PlayerConfiguration());
 
   int opens = 0;
+  int jumps = 0;
+  final seeks = <Duration>[];
   bool disposed = false;
   Completer<void>? pauseStarted;
   Completer<void>? pauseGate;
   Completer<void>? seekStarted;
   Completer<void>? seekGate;
+
+  void emitDuration(Duration duration) {
+    state = state.copyWith(duration: duration);
+    durationController.add(duration);
+  }
 
   void emitCompleted() {
     state = state.copyWith(playing: false, completed: true);
@@ -497,8 +626,22 @@ class _FakePlatformPlayer extends PlatformPlayer {
   Future<void> seek(Duration position) async {
     if (seekStarted?.isCompleted == false) seekStarted!.complete();
     await seekGate?.future;
+    seeks.add(position);
     state = state.copyWith(position: position, completed: false);
     positionController.add(position);
+  }
+
+  @override
+  Future<void> jump(int index) async {
+    jumps++;
+    state = state.copyWith(
+      playlist: Playlist(state.playlist.medias, index: index),
+      playing: true,
+      position: Duration.zero,
+      completed: false,
+    );
+    playlistController.add(state.playlist);
+    playingController.add(true);
   }
 
   @override

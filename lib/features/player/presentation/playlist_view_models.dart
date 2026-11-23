@@ -112,10 +112,10 @@ class MainOverlayUiState {
   @override
   bool operator ==(Object other) {
     return other is MainOverlayUiState &&
-        (other.overlaySessions == overlaySessions ||
-            (other.overlaySessions is! PlaybackSessionOverlayList &&
-                overlaySessions is! PlaybackSessionOverlayList &&
-                listEquals(other.overlaySessions, overlaySessions))) &&
+        PlaybackSessionOverlayList.equals(
+          other.overlaySessions,
+          overlaySessions,
+        ) &&
         other.playingSessionCount == playingSessionCount &&
         other.hasPlayingAudioSession == hasPlayingAudioSession &&
         other.activeSessionCount == activeSessionCount &&
@@ -125,9 +125,7 @@ class MainOverlayUiState {
 
   @override
   int get hashCode => Object.hash(
-    overlaySessions is PlaybackSessionOverlayList
-        ? overlaySessions
-        : Object.hashAll(overlaySessions),
+    PlaybackSessionOverlayList.hash(overlaySessions),
     playingSessionCount,
     hasPlayingAudioSession,
     activeSessionCount,
@@ -144,29 +142,15 @@ final class PlaybackSessionOverlayList
 
   final List<PlaybackSessionSnapshot> _items;
 
-  @override
-  int get length => _items.length;
-
-  @override
-  set length(int value) => throw UnsupportedError('read-only');
-
-  @override
-  PlaybackSessionSnapshot operator [](int index) => _items[index];
-
-  @override
-  void operator []=(int index, PlaybackSessionSnapshot value) {
-    throw UnsupportedError('read-only');
-  }
-
-  @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) return true;
-    if (other is! PlaybackSessionOverlayList || other.length != length) {
-      return false;
-    }
-    for (var index = 0; index < length; index++) {
-      final left = this[index];
-      final right = other[index];
+  static bool equals(
+    List<PlaybackSessionSnapshot> leftList,
+    List<PlaybackSessionSnapshot> rightList,
+  ) {
+    if (identical(leftList, rightList)) return true;
+    if (leftList.length != rightList.length) return false;
+    for (var index = 0; index < leftList.length; index++) {
+      final left = leftList[index];
+      final right = rightList[index];
       if (left.id != right.id ||
           left.currentTrackPath != right.currentTrackPath ||
           left.playbackRequested != right.playbackRequested ||
@@ -187,9 +171,8 @@ final class PlaybackSessionOverlayList
     return true;
   }
 
-  @override
-  int get hashCode => Object.hashAll(
-    _items.map(
+  static int hash(List<PlaybackSessionSnapshot> sessions) => Object.hashAll(
+    sessions.map(
       (session) => Object.hash(
         session.id,
         session.currentTrackPath,
@@ -202,6 +185,32 @@ final class PlaybackSessionOverlayList
       ),
     ),
   );
+
+  @override
+  int get length => _items.length;
+
+  @override
+  set length(int value) => throw UnsupportedError('read-only');
+
+  @override
+  PlaybackSessionSnapshot operator [](int index) => _items[index];
+
+  @override
+  void operator []=(int index, PlaybackSessionSnapshot value) {
+    throw UnsupportedError('read-only');
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    if (other is! PlaybackSessionOverlayList) {
+      return false;
+    }
+    return equals(this, other);
+  }
+
+  @override
+  int get hashCode => hash(_items);
 }
 
 @immutable

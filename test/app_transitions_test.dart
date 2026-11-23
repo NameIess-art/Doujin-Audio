@@ -5613,8 +5613,14 @@ void main() {
         await tester.pumpAndSettle();
         expect(coordinator.isInteracting, isFalse);
 
-        // Flip true -> false -> true before the post-frame fade callback runs.
+        // Frame 1: flip true -> false so didUpdateWidget runs _prepareFade()
+        // and its post-frame callback begins the interaction while
+        // controller.value is still 0.0 (no animation time elapsed yet).
         setHostState(() => showPlaceholder = false);
+        await tester.pump();
+        expect(coordinator.isVisualUpdateDeferred, isTrue);
+
+        // Flip back to true before the forward animation advances past 0.0.
         setHostState(() => showPlaceholder = true);
         await tester.pump();
         await tester.pump();
@@ -5623,6 +5629,63 @@ void main() {
         expect(coordinator.isInteracting, isFalse);
         expect(coordinator.isVisualUpdateDeferred, isFalse);
         expect(find.text('placeholder'), findsOneWidget);
+        expect(find.text('content'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'AnimatedTreeReveal preserves child state across reveal, collapse, and reduced motion',
+      (tester) async {
+        var visible = true;
+        var reducedMotion = false;
+        late StateSetter setHostState;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: StatefulBuilder(
+              builder: (context, setState) {
+                setHostState = setState;
+                return MediaQuery(
+                  data: MediaQueryData(disableAnimations: reducedMotion),
+                  child: AnimatedTreeReveal(
+                    visible: visible,
+                    animateInitial: true,
+                    child: const _StateProbe(label: 'tree-child'),
+                  ),
+                );
+              },
+            ),
+          ),
+        );
+        final initialState = tester.state(find.byType(_StateProbe));
+
+        // Finish initial reveal animation (0 -> 1).
+        await tester.pumpAndSettle();
+        expect(tester.state(find.byType(_StateProbe)), same(initialState));
+
+        // Collapse (1 -> 0) and settle at collapsed state.
+        setHostState(() => visible = false);
+        await tester.pump();
+        await tester.pump(kAppFadeDuration ~/ 2);
+        expect(tester.state(find.byType(_StateProbe)), same(initialState));
+        await tester.pumpAndSettle();
+        expect(tester.state(find.byType(_StateProbe)), same(initialState));
+
+        // Expand again (0 -> 1) and settle.
+        setHostState(() => visible = true);
+        await tester.pump();
+        await tester.pump(kAppFadeDuration ~/ 2);
+        expect(tester.state(find.byType(_StateProbe)), same(initialState));
+        await tester.pumpAndSettle();
+        expect(tester.state(find.byType(_StateProbe)), same(initialState));
+
+        // Toggle reduced motion without losing child state.
+        setHostState(() => reducedMotion = true);
+        await tester.pump();
+        expect(tester.state(find.byType(_StateProbe)), same(initialState));
+        setHostState(() => reducedMotion = false);
+        await tester.pump();
+        expect(tester.state(find.byType(_StateProbe)), same(initialState));
       },
     );
 

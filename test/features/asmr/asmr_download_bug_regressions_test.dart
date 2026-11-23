@@ -623,11 +623,18 @@ void main() {
         saveCover: false,
       );
 
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await manager
+          .taskStream(work.workKey)
+          .firstWhere((task) => task != null)
+          .timeout(const Duration(seconds: 3));
       expect(manager.getTask(work.workKey), isNotNull);
       // Trigger deleteTask while startDownload still holds _startingTasks.
-      final deleteFuture = manager.deleteTask(work.workKey);
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+      var deleteCompleted = false;
+      final deleteFuture = manager
+          .deleteTask(work.workKey)
+          .whenComplete(() => deleteCompleted = true);
+      await Future<void>.microtask(() {});
+      expect(deleteCompleted, isFalse);
       releasePersistence.complete();
 
       await Future.wait([

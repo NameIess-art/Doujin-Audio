@@ -180,7 +180,19 @@ internal class NativePlaybackRecoveryDatabase(val owner: Context) :
             }
         }
 
-    fun sessionIds(activeOnly: Boolean = false): List<String> = readProgress(null, activeOnly).map { it.sessionId }
+    fun sessionIds(activeOnly: Boolean = false): List<String> = readableDatabase.query(
+        "sessions",
+        arrayOf("session_id"),
+        if (activeOnly) "(playing != 0 OR play_when_ready != 0)" else null,
+        null,
+        null,
+        null,
+        "rowid"
+    ).use { cursor ->
+        buildList {
+            while (cursor.moveToNext()) add(cursor.getString(0))
+        }
+    }
 
     fun loadSessions(sessionIds: Set<String>?, activeOnly: Boolean): List<StoredNativePlaybackSession> {
         val db = readableDatabase
@@ -204,39 +216,6 @@ internal class NativePlaybackRecoveryDatabase(val owner: Context) :
             } catch (error: JSONException) {
                 Log.w("PlaybackRecovery", "Unable to decode a stored playback session", error)
                 null
-            }
-        }
-    }
-
-    private fun readProgress(sessionIds: Set<String>?, activeOnly: Boolean): List<StoredNativePlaybackProgress> {
-        val db = readableDatabase
-        val pages = sessionIds?.chunked(500) ?: listOf(null)
-        return buildList {
-            for (ids in pages) {
-                val predicates = buildList {
-                    if (activeOnly) add("(playing != 0 OR play_when_ready != 0)")
-                    if (ids != null) add("session_id IN (${ids.joinToString(",") { "?" }})")
-                }
-                db.query(
-                    "sessions",
-                    arrayOf("session_id", "position_ms", "playing", "play_when_ready"),
-                    predicates.joinToString(" AND ").ifEmpty { null },
-                    ids?.toTypedArray(),
-                    null,
-                    null,
-                    "rowid"
-                ).use { cursor ->
-                    while (cursor.moveToNext()) {
-                        add(
-                            StoredNativePlaybackProgress(
-                                sessionId = cursor.getString(0),
-                                positionMs = cursor.getLong(1),
-                                playing = cursor.getInt(2) != 0,
-                                playWhenReady = cursor.getInt(3) != 0
-                            )
-                        )
-                    }
-                }
             }
         }
     }

@@ -323,7 +323,7 @@ class _DurationPicker extends ConsumerWidget {
           void Function(int) onChange,
         ) {
           return SizedBox(
-            width: pickerWidth.clamp(84.0, 132.0).toDouble(),
+            width: pickerWidth.clamp(0.0, 132.0).toDouble(),
             child: Column(
               children: [
                 Container(

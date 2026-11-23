@@ -373,7 +373,7 @@ void main() {
         if (cleanup == 'root') {
           await library.removeFolder(root);
         } else {
-          if (cleanup.endsWith('batch')) library.beginLibraryBatch();
+          if (cleanup.endsWith('batch')) await library.beginLibraryBatch();
           library.removeLibraryEntriesByPaths(root, [audio.path]);
           if (cleanup.endsWith('batch')) await library.endLibraryBatch();
         }
@@ -795,7 +795,7 @@ void main() {
         if (undo) library.setLibraryTrackExcluded(root, track.path, true);
         final exclusions = library.libraryExclusionMatcherForLibrary(root);
         final entries = library.libraryEntrySnapshotForLibrary(root);
-        library.beginStagedLibraryRefresh();
+        await library.beginStagedLibraryRefresh();
         library.setLibraryTrackExcluded(root, track.path, !undo);
         await Future<void>.delayed(Duration.zero);
         library.applyStagedLibraryRefreshChunk(
@@ -1393,7 +1393,7 @@ void main() {
           skipPersistence: false,
         );
         final library = runtimeGraph.library;
-        library.beginLibraryBatch();
+        await library.beginLibraryBatch();
         library.addWatchedLibrary(directory.path, notify: false);
         library.recordLibraryEntriesForTracks(directory.path, [track]);
         library.addOrReplaceTracks([track]);
@@ -1501,7 +1501,7 @@ void main() {
             isTrue,
           );
           expect(library.trackByPath(excludedPath), isNull);
-          library.beginLibraryBatch();
+          await library.beginLibraryBatch();
           await library.clearLibraryExclusions(root);
           await library.endLibraryBatch();
           expect(library.trackByPath(excludedPath), isNotNull);
@@ -1766,7 +1766,7 @@ void main() {
       await repository.upsertLibraryEntries(
         library.libraryEntriesForLibrary(root),
       );
-      library.beginStagedLibraryRefresh();
+      await library.beginStagedLibraryRefresh();
       library.applyStagedLibraryRefreshChunk(
         sourceFolderPath: oldFolder,
         libraryRoot: root,
@@ -3502,7 +3502,7 @@ void main() {
         );
         await Future<void>.delayed(Duration.zero);
         final afterScanStart = notificationCount;
-        runtimeGraph.library.beginLibraryBatch();
+        await runtimeGraph.library.beginLibraryBatch();
         runtimeGraph.library.addOrReplaceTracks(
           <MusicTrack>[
             MusicTrack(
@@ -3551,7 +3551,7 @@ void main() {
           groupSubtitle: root,
           isSingle: false,
         );
-        runtimeGraph.library.beginLibraryBatch();
+        await runtimeGraph.library.beginLibraryBatch();
         runtimeGraph.library.recordLibraryEntriesForTracks(root, <MusicTrack>[
           track,
         ]);
@@ -3610,7 +3610,7 @@ void main() {
         scannedAt: DateTime.fromMillisecondsSinceEpoch(2000),
       );
 
-      runtimeGraph.library.beginLibraryBatch();
+      await runtimeGraph.library.beginLibraryBatch();
       runtimeGraph.library.recordLibraryEntriesForTracks(
         libraryPath,
         <MusicTrack>[firstTrack],
@@ -3663,7 +3663,7 @@ void main() {
             isFavorite: true,
             tags: const <String>['keep'],
           );
-          runtimeGraph.library.beginLibraryBatch();
+          await runtimeGraph.library.beginLibraryBatch();
           runtimeGraph.library.addWatchedFolder(root, notify: false);
           runtimeGraph.library.addOrReplaceTracks(<MusicTrack>[
             original,

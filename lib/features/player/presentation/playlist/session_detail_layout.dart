@@ -9,7 +9,9 @@ import '../../../../core/widgets/app_buttons.dart';
 import '../../../../core/widgets/horizontal_edge_fade_scroll.dart';
 import '../../../../core/widgets/marquee_text.dart';
 import '../../../../core/widgets/async_cover_image.dart';
+import 'playlist_progress_widgets.dart';
 import 'playlist_shared_helpers.dart';
+import 'playlist_transport_controls.dart';
 
 class SessionDetailLayout extends StatelessWidget {
   const SessionDetailLayout({
@@ -210,9 +212,17 @@ class SessionDetailLayout extends StatelessWidget {
         final coverHorizontalMargin = segmentPanelExpanded
             ? 0.0
             : coverHorizontalInset;
-        final expandedCoverHeight = max(
-          0.0,
-          (constraints.maxWidth - coverHorizontalInset * 2) * 3 / 4,
+        final progressHeight = SessionProgressBar.preferredHeight(context);
+        final fixedControlsHeight =
+            progressHeight +
+            PrimaryPlaybackControls.portraitHeight +
+            PlaybackSecondaryControlSurface.height;
+        final expandedCoverHeight = min(
+          max(0.0, (constraints.maxWidth - coverHorizontalInset * 2) * 3 / 4),
+          max(
+            0.0,
+            constraints.maxHeight - padding.vertical - fixedControlsHeight,
+          ),
         );
         final coverHeight = segmentPanelExpanded ? 0.0 : expandedCoverHeight;
 
@@ -295,8 +305,8 @@ class SessionDetailLayout extends StatelessWidget {
                               220.0,
                               constraints.maxHeight -
                                   coverHeight -
-                                  44.0 -
-                                  92.0 -
+                                  progressHeight -
+                                  PrimaryPlaybackControls.portraitHeight -
                                   50.0,
                             ),
                           ),

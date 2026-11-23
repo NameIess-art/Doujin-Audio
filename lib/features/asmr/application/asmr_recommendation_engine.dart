@@ -13,61 +13,6 @@ String? _findRjCode(String text) =>
 class AsmrRecommendationEngine {
   const AsmrRecommendationEngine();
 
-  static final Expando<
-    ({int sourceLength, List<AsmrRecommendationSeenTrackSummary> summaries})
-  >
-  _seenTrackSummaryCache =
-      Expando<
-        ({int sourceLength, List<AsmrRecommendationSeenTrackSummary> summaries})
-      >();
-  static final Expando<
-    ({int sourceLength, List<AsmrRecommendationSeenWorkSummary> summaries})
-  >
-  _seenWorkSummaryCache =
-      Expando<
-        ({int sourceLength, List<AsmrRecommendationSeenWorkSummary> summaries})
-      >();
-
-  static List<AsmrRecommendationSeenTrackSummary> _cachedSeenTrackSummaries(
-    List<MusicTrack> localTracks,
-  ) {
-    if (localTracks.isEmpty) {
-      return const <AsmrRecommendationSeenTrackSummary>[];
-    }
-    final cached = _seenTrackSummaryCache[localTracks];
-    if (cached != null && cached.sourceLength == localTracks.length) {
-      return cached.summaries;
-    }
-    final summaries = List<AsmrRecommendationSeenTrackSummary>.unmodifiable(
-      _summarizeSeenTracks(localTracks),
-    );
-    _seenTrackSummaryCache[localTracks] = (
-      sourceLength: localTracks.length,
-      summaries: summaries,
-    );
-    return summaries;
-  }
-
-  static List<AsmrRecommendationSeenWorkSummary> _cachedSeenWorkSummaries(
-    List<AsmrWork> works,
-  ) {
-    if (works.isEmpty) {
-      return const <AsmrRecommendationSeenWorkSummary>[];
-    }
-    final cached = _seenWorkSummaryCache[works];
-    if (cached != null && cached.sourceLength == works.length) {
-      return cached.summaries;
-    }
-    final summaries = List<AsmrRecommendationSeenWorkSummary>.unmodifiable(
-      _summarizeSeenWorks(works, const <AsmrWork>[]),
-    );
-    _seenWorkSummaryCache[works] = (
-      sourceLength: works.length,
-      summaries: summaries,
-    );
-    return summaries;
-  }
-
   Future<List<AsmrWork>> rankAsync({
     required List<AsmrWork> candidates,
     required List<MusicTrack> localTracks,
@@ -85,13 +30,10 @@ class AsmrRecommendationEngine {
         voiceActorWeights != null &&
         circleWeights != null;
     final seenTrackSummaries = useExternalWeightsOnly
-        ? _cachedSeenTrackSummaries(localTracks)
+        ? _summarizeSeenTracks(localTracks)
         : const <AsmrRecommendationSeenTrackSummary>[];
     final seenWorkSummaries = useExternalWeightsOnly
-        ? <AsmrRecommendationSeenWorkSummary>[
-            ..._cachedSeenWorkSummaries(favoriteWorks),
-            ..._cachedSeenWorkSummaries(historyWorks),
-          ]
+        ? _summarizeSeenWorks(favoriteWorks, historyWorks)
         : const <AsmrRecommendationSeenWorkSummary>[];
     final request = AsmrRecommendationRankRequest(
       candidates: candidates,
@@ -502,36 +444,6 @@ class AsmrRecommendationRankRequest {
 }
 
 List<AsmrWork> rankAsmrRecommendations(AsmrRecommendationRankRequest request) {
-  final useExternalWeightsOnly =
-      request.tagWeights != null &&
-      request.voiceActorWeights != null &&
-      request.circleWeights != null &&
-      request.seenTrackSummaries.isEmpty &&
-      request.seenWorkSummaries.isEmpty &&
-      (request.localTracks.isNotEmpty ||
-          request.favoriteWorks.isNotEmpty ||
-          request.historyWorks.isNotEmpty);
-  if (useExternalWeightsOnly) {
-    return const AsmrRecommendationEngine()._rankInternal(
-      candidates: request.candidates,
-      localTracks: const <MusicTrack>[],
-      favoriteWorks: const <AsmrWork>[],
-      historyWorks: const <AsmrWork>[],
-      seenTrackSummaries: AsmrRecommendationEngine._summarizeSeenTracks(
-        request.localTracks,
-      ),
-      seenWorkSummaries: AsmrRecommendationEngine._summarizeSeenWorks(
-        request.favoriteWorks,
-        request.historyWorks,
-      ),
-      refreshSeed: request.refreshSeed,
-      limit: request.limit,
-      explorationWorkIds: request.explorationWorkIds,
-      tagWeights: request.tagWeights,
-      voiceActorWeights: request.voiceActorWeights,
-      circleWeights: request.circleWeights,
-    );
-  }
   return const AsmrRecommendationEngine()._rankInternal(
     candidates: request.candidates,
     localTracks: request.localTracks,

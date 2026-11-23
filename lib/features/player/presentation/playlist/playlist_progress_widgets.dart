@@ -63,6 +63,21 @@ class SessionProgressBar extends StatelessWidget {
   static final Set<_ProgressSliderFrameState> _mountedFrames =
       <_ProgressSliderFrameState>{};
 
+  static double get seekTargetHeight =>
+      defaultTargetPlatform == TargetPlatform.android
+      ? kMinInteractiveDimension
+      : 20.0;
+
+  static double preferredHeight(
+    BuildContext context, {
+    bool inlineTimecodes = false,
+  }) {
+    final timecodeHeight = MediaQuery.textScalerOf(context).scale(13) * 1.1;
+    return inlineTimecodes
+        ? max(seekTargetHeight, timecodeHeight)
+        : seekTargetHeight + max(20.0, timecodeHeight);
+  }
+
   static bool get isInteracting =>
       _mountedFrames.any((frame) => frame._sliderDragging || frame._pointerDown);
 
@@ -226,7 +241,10 @@ class _ProgressSliderAndTimecodesState
     if (_isDragging || _dragValueMs != null) {
       _isDragging = false;
       _dragValueMs = null;
-      widget.onSeekCancel?.call();
+      final onSeekCancel = widget.onSeekCancel;
+      if (onSeekCancel != null) {
+        SchedulerBinding.instance.addPostFrameCallback((_) => onSeekCancel());
+      }
     }
     _positionGate
       ..removeListener(_handlePositionTick)
@@ -568,7 +586,8 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
   }
 
   double _scrubScaleForOffset(Offset localPosition) {
-    final verticalDistance = (localPosition.dy - 10.0).abs();
+    final verticalDistance =
+        (localPosition.dy - SessionProgressBar.seekTargetHeight / 2).abs();
     if (verticalDistance >= 96.0) return 0.25;
     if (verticalDistance >= 48.0) return 0.5;
     return 1.0;
@@ -744,6 +763,7 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final sliderHeight = SessionProgressBar.seekTargetHeight;
     final showFineScrubBadge = _sliderDragging && _scrubScale < 1.0;
     final fineScrubText = _scrubScale <= 0.25 ? '0.25×' : '0.5×';
     final slider = CompositedTransformTarget(
@@ -761,8 +781,9 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
           widget.onHoverExit();
         },
         child: SizedBox(
-          height: 20,
+          height: sliderHeight,
           child: Stack(
+            fit: StackFit.expand,
             clipBehavior: Clip.none,
             children: [
               Positioned.fill(child: widget.staticLayer),
@@ -859,7 +880,7 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
               ),
               if (showFineScrubBadge)
                 Positioned(
-                  top: -22,
+                  top: sliderHeight / 2 - 32,
                   left: 0,
                   right: 0,
                   child: IgnorePointer(
@@ -914,7 +935,7 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
                 link: _layerLink,
                 showWhenUnlinked: false,
                 followerAnchor: Alignment.bottomLeft,
-                offset: Offset(value.left, -8),
+                offset: Offset(value.left, sliderHeight / 2 - 18),
                 child: ScaleTransition(
                   scale: Tween<double>(
                     begin: 0.92,
@@ -982,10 +1003,22 @@ class _ProgressTimecodeRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          TimecodeLabel(text: value.elapsedText),
-          TimecodeLabel(text: value.remainingText, alignEnd: true),
+          Expanded(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: TimecodeLabel(text: value.elapsedText),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: TimecodeLabel(text: value.remainingText, alignEnd: true),
+            ),
+          ),
         ],
       ),
     );

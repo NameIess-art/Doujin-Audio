@@ -41,35 +41,19 @@ class PlayingSoundWaveIndicator extends StatefulWidget {
 }
 
 class _PlayingSoundWaveIndicatorState extends State<PlayingSoundWaveIndicator>
-    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+    with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   ValueListenable<bool>? _scrollActivity;
   bool _tickerEnabled = false;
   bool _disableAnimations = false;
-  bool _appForeground = true;
-
-  static bool _isForegroundState(AppLifecycleState? state) =>
-      state == null ||
-      state == AppLifecycleState.resumed ||
-      state == AppLifecycleState.inactive;
 
   @override
   void initState() {
     super.initState();
-    _appForeground = _isForegroundState(WidgetsBinding.instance.lifecycleState);
-    WidgetsBinding.instance.addObserver(this);
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 22),
     );
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    final foreground = _isForegroundState(state);
-    if (_appForeground == foreground) return;
-    _appForeground = foreground;
-    _syncAnimation();
   }
 
   @override
@@ -92,7 +76,6 @@ class _PlayingSoundWaveIndicatorState extends State<PlayingSoundWaveIndicator>
         widget.isPlaying &&
         _tickerEnabled &&
         !_disableAnimations &&
-        _appForeground &&
         !(_scrollActivity?.value ?? false);
     if (animate && !_controller.isAnimating) {
       _controller.repeat();
@@ -109,7 +92,6 @@ class _PlayingSoundWaveIndicatorState extends State<PlayingSoundWaveIndicator>
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
     _scrollActivity?.removeListener(_syncAnimation);
     _controller.dispose();
     super.dispose();

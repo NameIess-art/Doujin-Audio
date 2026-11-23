@@ -274,7 +274,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   Future<void> prepareForPersistedStateReset() async {
     _metadataCoordinator.prepareForReset();
     cancelScan();
-    await scanIdle;
+    await waitForScanAvailability();
     await _startupMaintenanceCoordinator.cancelAndWait();
     await _catalogWrites.flushPendingBatches();
     await _persistenceCoordinator.prepareForReset();
@@ -282,6 +282,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   }
 
   Future<void> flushPendingPersistence() async {
+    await _pathMutationCompletion?.future;
     await _catalogWrites.flushPendingBatches();
     await _persistenceCoordinator.flush();
     await detailCacheService.waitForPendingOperations();
@@ -423,13 +424,22 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   Future<DlsiteMetadata> fetchPreferredMetadata(
     String rjCode, {
     required AppLanguage language,
-  }) => _metadataCoordinator.fetchPreferredMetadata(rjCode, language: language);
+    bool forceRefresh = false,
+  }) => _metadataCoordinator.fetchPreferredMetadata(
+    rjCode,
+    language: language,
+    forceRefresh: forceRefresh,
+  );
 
   Future<List<DlsiteMetadata>> searchPreferredMetadataByTitles(
     Iterable<String> titles, {
     required AppLanguage language,
-  }) =>
-      _metadataCoordinator.searchPreferredMetadata(titles, language: language);
+    bool forceRefresh = false,
+  }) => _metadataCoordinator.searchPreferredMetadata(
+    titles,
+    language: language,
+    forceRefresh: forceRefresh,
+  );
 
   AudioDetail? resolvedAudioDetail(AudioDetailTarget target) =>
       _metadataCoordinator.resolvedDetail(target);
@@ -644,49 +654,40 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
       return retainedFolders;
     }
     final retainedIndex = PathMembershipIndex(retainedFolders);
-    final foldersToRemove = <String>[];
-    for (final folder in _service.childFoldersForLibrary(root)) {
-      if (PathMatcher.equalsNormalized(folder, root)) continue;
-      final canonical = organizer.canonicalLibraryFolderPath(root, folder);
-      if (!retainedIndex.containsEquivalent(canonical)) {
-        foldersToRemove.add(folder);
-      }
-    }
     final completion = _pathMutationCompletion = Completer<void>();
-    _catalogWrites.beginLibraryBatch(snapshotAllEntries: false);
-    _catalogWrites.rememberBatchEntriesForLibrary(root);
-    for (final folder in foldersToRemove) {
-      _catalogWrites.removeWatchedFolder(folder, notify: false);
-    }
-    _catalogWrites.removeTracksDeletedFromFolder(
-      root,
-      snapshot.audioFilePathSet,
-    );
-    _catalogWrites.removeLibraryEntriesDeletedFromFolder(root, root, {
-      ...snapshot.audioFilePaths,
-      ...retainedFolders,
-    });
-    unawaited(
-      _catalogWrites.endLibraryBatch().then<void>(
-        (_) {
-          if (identical(_pathMutationCompletion, completion)) {
-            _pathMutationCompletion = null;
+    unawaited(() async {
+      try {
+        await _catalogWrites.beginLibraryBatch(snapshotAllEntries: false);
+        _catalogWrites.rememberBatchEntriesForLibrary(root);
+        for (final folder in _service.childFoldersForLibrary(root)) {
+          if (PathMatcher.equalsNormalized(folder, root)) continue;
+          final canonical = organizer.canonicalLibraryFolderPath(root, folder);
+          if (!retainedIndex.containsEquivalent(canonical)) {
+            _catalogWrites.removeWatchedFolder(folder, notify: false);
           }
-          completion.complete();
-        },
-        onError: (Object error, StackTrace stackTrace) {
-          AppLogService.error(
-            'library_disk_snapshot_reconcile_failed',
-            error: error,
-            stackTrace: stackTrace,
-          );
-          if (identical(_pathMutationCompletion, completion)) {
-            _pathMutationCompletion = null;
-          }
-          completion.complete();
-        },
-      ),
-    );
+        }
+        _catalogWrites.removeTracksDeletedFromFolder(
+          root,
+          snapshot.audioFilePathSet,
+        );
+        _catalogWrites.removeLibraryEntriesDeletedFromFolder(root, root, {
+          ...snapshot.audioFilePaths,
+          ...retainedFolders,
+        });
+        await _catalogWrites.endLibraryBatch();
+      } catch (error, stackTrace) {
+        AppLogService.error(
+          'library_disk_snapshot_reconcile_failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      } finally {
+        if (identical(_pathMutationCompletion, completion)) {
+          _pathMutationCompletion = null;
+        }
+        completion.complete();
+      }
+    }());
     _syncStateSlice();
     return retainedFolders;
   }
@@ -920,11 +921,11 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   }
 
   @override
-  void beginLibraryBatch({bool snapshotAllEntries = true}) =>
+  Future<void> beginLibraryBatch({bool snapshotAllEntries = true}) =>
       _catalogWrites.beginLibraryBatch(snapshotAllEntries: snapshotAllEntries);
 
   @override
-  void beginStagedLibraryRefresh() =>
+  Future<void> beginStagedLibraryRefresh() =>
       _catalogWrites.beginStagedLibraryRefresh();
 
   @override

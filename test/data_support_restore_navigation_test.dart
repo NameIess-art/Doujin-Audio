@@ -231,7 +231,7 @@ class _RestoreTestRuntime implements AppRuntimeLifecycle {
   Future<void> resumeForeground() async {}
 
   @override
-  Future<void> dispose() async {}
+  Future<void> dispose({bool fastShutdown = false}) async {}
 
   @override
   Future<void> handleMemoryPressure() async {}

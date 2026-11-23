@@ -129,4 +129,52 @@ class FileCacheVideoFrameResolverTest {
             mixed.recycle()
         }
     }
+
+    @Test
+    fun `selectFrame tries 1s and 0s with closest fallback before returning blank frame`() {
+        val resolver = FileCacheVideoFrameResolver(
+            RuntimeEnvironment.getApplication(),
+            temporaryFolder.newFolder(),
+            {},
+            { null }
+        )
+        fun solidBitmap(color: Int) =
+            Bitmap.createBitmap(20, 20, Bitmap.Config.ARGB_8888).apply { eraseColor(color) }
+
+        val calls = mutableListOf<Pair<Long, Int>>()
+        val pickedClosest = resolver.selectFrame(durationMs = 10_000L) { timestampUs, option ->
+            calls += timestampUs to option
+            if (timestampUs == 0L && option == android.media.MediaMetadataRetriever.OPTION_CLOSEST) {
+                solidBitmap(Color.rgb(120, 120, 120))
+            } else {
+                solidBitmap(Color.BLACK)
+            }
+        }
+        try {
+            assertTrue(pickedClosest != null && !resolver.isBlankBitmap(pickedClosest))
+            assertEquals(
+                listOf(
+                    3_000_000L to android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                    5_000_000L to android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                    7_000_000L to android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                    1_500_000L to android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                    1_000_000L to android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                    0L to android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                    1_000_000L to android.media.MediaMetadataRetriever.OPTION_CLOSEST,
+                    0L to android.media.MediaMetadataRetriever.OPTION_CLOSEST
+                ),
+                calls
+            )
+        } finally {
+            pickedClosest?.recycle()
+        }
+
+        val allBlank = resolver.selectFrame(durationMs = 10_000L) { _, _ -> solidBitmap(Color.BLACK) }
+        try {
+            assertTrue(allBlank != null && !allBlank.isRecycled)
+            assertTrue(resolver.isBlankBitmap(allBlank!!))
+        } finally {
+            allBlank?.recycle()
+        }
+    }
 }

@@ -265,7 +265,9 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
     await removeMissingTemporarySessions();
   }
 
-  Future<void> removeMissingTemporarySessions() async {
+  Future<void> removeMissingTemporarySessions({
+    bool Function()? canApply,
+  }) async {
     final candidates = [
       for (final session in _service.sessions.values)
         if (session.isTemporary &&
@@ -277,6 +279,7 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
     final missing = await Future.wait(
       candidates.map((candidate) => _isMissingTemporarySource(candidate.$2)),
     );
+    if (canApply?.call() == false) return;
     final staleIds = <String>[];
     for (var index = 0; index < candidates.length; index++) {
       final (session, source, generation) = candidates[index];

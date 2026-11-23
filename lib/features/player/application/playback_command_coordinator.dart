@@ -419,5 +419,6 @@ final class PlaybackCommandCoordinator
     focusedSessionId: focusedSessionId,
   );
 
-  Future<void> reconcileNativeRuntime() => _reconcileNativeRuntime();
+  Future<void> reconcileNativeRuntime({bool Function()? canApply}) =>
+      _applyNativeRuntimeSnapshot(syncUi: true, canApply: canApply);
 }

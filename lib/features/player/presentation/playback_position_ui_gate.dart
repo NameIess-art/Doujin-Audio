@@ -173,18 +173,14 @@ class PlaybackPositionUiGate extends ChangeNotifier {
         lastNotify != null &&
         now - lastNotify < minUpdateInterval.inMilliseconds) {
       _dirty = true;
-      if (alignToFrame) {
-        _scheduleFrameFlush();
-      } else {
-        _scheduleThrottleFlush(
-          Duration(
-            milliseconds:
-                minUpdateInterval.inMilliseconds - (now - lastNotify),
-          ),
-        );
-      }
+      _scheduleThrottleFlush(
+        Duration(
+          milliseconds: minUpdateInterval.inMilliseconds - (now - lastNotify),
+        ),
+      );
       return;
     }
+    _cancelScheduledFlush();
     _dirty = false;
     _lastNotifyMs = now;
     _publishedValue = _value;
@@ -212,10 +208,17 @@ class PlaybackPositionUiGate extends ChangeNotifier {
   }
 
   void _scheduleThrottleFlush(Duration delay) {
-    if (_throttleTimer != null || _disposed) return;
+    if (_throttleTimer != null || _frameFlushCallbackId != null || _disposed) {
+      return;
+    }
     _throttleTimer = Timer(delay, () {
       _throttleTimer = null;
-      if (_dirty) _publish(force: true);
+      if (_disposed || !_dirty) return;
+      if (alignToFrame) {
+        _scheduleFrameFlush();
+      } else {
+        _publish(force: true);
+      }
     });
   }
 

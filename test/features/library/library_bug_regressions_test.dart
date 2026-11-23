@@ -7,17 +7,22 @@ import 'package:doujin_audio/core/media/dlsite_metadata.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
+import 'package:doujin_audio/core/persistence/json_document_store.dart';
+import 'package:doujin_audio/features/library/application/audio_detail_document_repository.dart';
 import 'package:doujin_audio/features/library/application/audio_detail_repository.dart';
 import 'package:doujin_audio/features/library/application/dlsite_metadata_batch_session.dart';
 import 'package:doujin_audio/features/library/application/dlsite_metadata_service.dart';
 import 'package:doujin_audio/features/library/application/library_catalog.dart';
 import 'package:doujin_audio/features/library/application/library_entry_editor_service.dart';
 import 'package:doujin_audio/features/library/application/library_facade.dart';
+import 'package:doujin_audio/features/library/application/library_organizer.dart';
 import 'package:doujin_audio/features/library/application/library_scan_coordinator.dart';
 import 'package:doujin_audio/features/library/application/library_scan_data_source.dart';
 import 'package:doujin_audio/features/library/application/library_scanner_service.dart';
+import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/features/library/application/library_snapshot_cache_service.dart';
 import 'package:doujin_audio/features/library/application/library_sorting.dart';
+import 'package:doujin_audio/features/library/application/work_text_service.dart';
 import 'package:doujin_audio/features/library/domain/audio_detail_store.dart';
 import 'package:doujin_audio/features/library/domain/audio_library_category.dart';
 import 'package:doujin_audio/features/library/domain/library_entry.dart';
@@ -25,6 +30,7 @@ import 'package:doujin_audio/features/library/domain/library_node.dart';
 import 'package:doujin_audio/features/library/domain/library_persistence_repository.dart';
 import 'package:doujin_audio/features/library/presentation/library_edit_tree_projection.dart';
 import 'package:doujin_audio/infrastructure/sqlite/sqlite_library_repository.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -100,7 +106,7 @@ void main() {
 
       final generation = library.tryBeginScan(source: 'refresh');
       expect(generation, isPositive);
-      library.beginStagedLibraryRefresh();
+      await library.beginStagedLibraryRefresh();
       library.applyStagedLibraryRefreshChunk(
         sourceFolderPath: folder,
         libraryRoot: folder,
@@ -181,7 +187,7 @@ void main() {
       await library.flushPendingPersistence();
 
       // Remove the first track inside a batch so libraryIndexByPath for second is stale.
-      library.beginLibraryBatch(snapshotAllEntries: false);
+      await library.beginLibraryBatch(snapshotAllEntries: false);
       library.removeTracksByPath([first.path]);
 
       // Call with different casing on Windows; must not throw RangeError and must update canonical path.
@@ -309,7 +315,7 @@ void main() {
       library.excludeLibraryFolder(root, excludedSub);
 
       final track = _track(opaqueTrack, groupKey: excludedSub);
-      library.beginStagedLibraryRefresh();
+      await library.beginStagedLibraryRefresh();
       library.applyStagedLibraryRefreshChunk(
         sourceFolderPath: root,
         libraryRoot: root,
@@ -625,16 +631,17 @@ void main() {
       final trackA = _track('$folderA\\01.mp3', groupKey: folderA);
       final trackB = _track('$folderB\\02.mp3', groupKey: folderB);
 
-      facade.beginLibraryBatch();
+      await facade.beginLibraryBatch();
       facade.addWatchedFolder(folderA, notify: false);
       facade.addTracks([trackA]);
       final firstEnd = facade.endLibraryBatch();
 
-      // Start and finish a second batch while the first batch is awaiting SQLite.
-      facade.beginLibraryBatch();
-      facade.addWatchedFolder(folderB, notify: false);
-      facade.addTracks([trackB]);
-      final secondEnd = facade.endLibraryBatch();
+      // Request a second batch while the first batch is awaiting SQLite.
+      final secondEnd = facade.beginLibraryBatch().then((_) {
+        facade.addWatchedFolder(folderB, notify: false);
+        facade.addTracks([trackB]);
+        return facade.endLibraryBatch();
+      });
 
       firstCommitGate.complete();
       await Future.wait(<Future<void>>[firstEnd, secondEnd]);
@@ -768,19 +775,21 @@ void main() {
         voiceActors: const ['VA'],
         tags: const ['Tag'],
       );
-      final facade = LibraryFacade.create(
-        databaseRepository: repo,
-        metadataService: _StubDlsiteMetadataService(stubMetadata),
-      )
-        ..configureCoverArtworkRuntime(
-          isActiveCoverKey: (_) => false,
-          onActiveCoverChanged: () {},
-        );
+      final facade =
+          LibraryFacade.create(
+            databaseRepository: repo,
+            metadataService: _StubDlsiteMetadataService(stubMetadata),
+          )..configureCoverArtworkRuntime(
+            isActiveCoverKey: (_) => false,
+            onActiveCoverChanged: () {},
+          );
       addTearDown(facade.dispose);
 
       const workPath = 'C:\\BatchLatest\\RJ222222';
       final target = AudioDetailTarget.libraryRootFolder(workPath);
-      final staleDetail = AudioDetail.empty(target).copyWith(rjCode: 'RJ222222');
+      final staleDetail = AudioDetail.empty(
+        target,
+      ).copyWith(rjCode: 'RJ222222');
       // Persist fresher duration & manual cover after the batch entry snapshot was created.
       await facade.saveAudioDetail(
         staleDetail.copyWith(
@@ -815,6 +824,236 @@ void main() {
       expect(reloaded.detail.duration, const Duration(minutes: 55));
       expect(reloaded.detail.cardCoverPath, '$workPath\\cover.jpg');
       expect(reloaded.detail.cardCoverSelected, isTrue);
+    },
+  );
+
+  test(
+    'LibraryService.addOrReplaceTracks keeps tracksByGroup consistent for duplicate and Windows-equivalent paths in one batch',
+    () {
+      final service = LibraryService();
+      addTearDown(service.dispose);
+      const groupA = r'C:\Library\GroupA';
+      const groupB = r'C:\Library\GroupB';
+      final first = _track(r'C:\Library\GroupA\Track.mp3', groupKey: groupA);
+      final equivalent = _track(
+        'c:/library/groupa/track.mp3',
+        groupKey: groupB,
+        duration: const Duration(seconds: 90),
+      );
+      final samePathAgain = _track(
+        r'C:\Library\GroupA\Track.mp3',
+        groupKey: groupB,
+        duration: const Duration(seconds: 120),
+      );
+
+      service.addOrReplaceTracks(
+        [first, equivalent, samePathAgain],
+        persist: false,
+        mergeExistingState: false,
+      );
+
+      expect(service.library, hasLength(1));
+      expect(service.library.single.groupKey, groupB);
+      expect(service.library.single.duration, const Duration(seconds: 120));
+      expect(service.tracksByGroup[groupA], isNull);
+      expect(service.tracksByGroup[groupB], hasLength(1));
+      expect(
+        service.tracksByGroup[groupB]!.single,
+        same(service.library.single),
+      );
+      expect(service.groupOrder, [groupB]);
+    },
+  );
+
+  test(
+    'LibraryOrganizer.rootFolderPath falls back to the unindexed side when only one PathRootIndex is supplied',
+    () {
+      const organizer = LibraryOrganizer();
+      const libRoot = r'C:\Libs\Main';
+      const workDir = r'C:\Libs\Main\Work1\Disc1';
+      const watchedDir = r'C:\Standalone\Work2';
+      const watchedChild = r'C:\Standalone\Work2\Disc1';
+
+      expect(
+        PathMatcher.equalsNormalized(
+          organizer.rootFolderPath(
+            workDir,
+            [watchedDir],
+            watchedLibraries: [libRoot],
+            watchedFoldersIndex: PathRootIndex([watchedDir]),
+          ),
+          r'C:\Libs\Main\Work1',
+        ),
+        isTrue,
+      );
+      expect(
+        PathMatcher.equalsNormalized(
+          organizer.rootFolderPath(
+            watchedChild,
+            [watchedDir],
+            watchedLibraries: [libRoot],
+            watchedLibrariesIndex: PathRootIndex([libRoot]),
+          ),
+          watchedDir,
+        ),
+        isTrue,
+      );
+    },
+  );
+
+  test(
+    'a pending batch starts after rollback and commits only its own changes',
+    () async {
+      final firstCommitGate = Completer<void>();
+      var commitIndex = 0;
+      final wrappedRepo = _InterceptingLibraryRepo(
+        repo,
+        onCommitLibraryBatch: () async {
+          commitIndex++;
+          if (commitIndex == 1) {
+            await firstCommitGate.future;
+            throw StateError('first batch failed');
+          }
+        },
+      );
+      final facade = LibraryFacade.create(databaseRepository: wrappedRepo)
+        ..configureCoverArtworkRuntime(
+          isActiveCoverKey: (_) => false,
+          onActiveCoverChanged: () {},
+        );
+      addTearDown(facade.dispose);
+      facade.configurePersistence(enabled: true);
+
+      const folderA = r'C:\RollbackGuard\WorkA';
+      const folderB = r'C:\RollbackGuard\WorkB';
+      final trackA = _track('$folderA\\01.mp3', groupKey: folderA);
+      final trackB = _track('$folderB\\02.mp3', groupKey: folderB);
+
+      await facade.beginLibraryBatch();
+      facade.addWatchedFolder(folderA, notify: false);
+      facade.addTracks([trackA]);
+      final firstEnd = facade.endLibraryBatch();
+
+      final secondEnd = facade.beginLibraryBatch().then((_) {
+        expect(facade.trackByPath(trackA.path), isNull);
+        facade.addWatchedFolder(folderB, notify: false);
+        facade.addTracks([trackB]);
+        return facade.endLibraryBatch();
+      });
+
+      firstCommitGate.complete();
+      await expectLater(firstEnd, throwsStateError);
+      await secondEnd;
+
+      expect(facade.library.map((track) => track.path), [trackB.path]);
+      expect(facade.watchedFolders, [folderB]);
+      expect((await repo.loadStartupTracks()).map((track) => track.path), [
+        trackB.path,
+      ]);
+      final settings = await repo.loadAppSettings(['watched_folders_v1']);
+      expect(settings['watched_folders_v1'], contains('WorkB'));
+      expect(settings['watched_folders_v1'], isNot(contains('WorkA')));
+    },
+  );
+
+  test(
+    'applyStagedLibraryRefreshChunk with entrySnapshot and empty entryTracks does not rebuild entries from tracks',
+    () async {
+      const root = r'C:\StagedEntries\Lib';
+      final track = _track('$root\\Work\\01.mp3', groupKey: '$root\\Work');
+      library.addWatchedLibrary(root, notify: false);
+      final emptySnapshot = library.libraryEntrySnapshotForLibrary(root);
+
+      final filteredOutEntryTracks = <MusicTrack>[];
+      await library.beginStagedLibraryRefresh();
+      library.applyStagedLibraryRefreshChunk(
+        sourceFolderPath: root,
+        libraryRoot: root,
+        tracks: [track],
+        entryTracks: filteredOutEntryTracks,
+        entrySnapshot: emptySnapshot,
+      );
+      await library.finishStagedLibraryRefresh();
+
+      expect(library.trackByPath(track.path), isNotNull);
+      expect(library.libraryEntriesForLibrary(root), isEmpty);
+    },
+  );
+
+  test(
+    'WorkTextService combined Windows refresh invokes onCombinedImagesRefreshed',
+    () async {
+      if (!Platform.isWindows) return;
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final dir = await Directory.systemTemp.createTemp('work_text_refresh_');
+      addTearDown(() async {
+        if (await dir.exists()) await dir.delete(recursive: true);
+      });
+      await File(path.join(dir.path, 'cover.jpg')).writeAsBytes(const [1, 2]);
+      await File(path.join(dir.path, 'notes.txt')).writeAsString('hello');
+
+      final refreshedFolders = <String>[];
+      final service = WorkTextService(
+        combineWindowsLocalDiscovery: true,
+        onCombinedImagesRefreshed: refreshedFolders.add,
+      );
+      addTearDown(service.dispose);
+
+      expect(service.canCombineWorkFiles(dir.path), isTrue);
+      final initial = await service.findWorkFiles(dir.path);
+      expect(initial.images, hasLength(1));
+      expect(initial.texts, hasLength(1));
+      expect(refreshedFolders, isEmpty);
+
+      final refreshed = await service.findWorkFiles(dir.path, refresh: true);
+      expect(refreshed.images, hasLength(1));
+      expect(refreshedFolders, [dir.path]);
+    },
+  );
+
+  test(
+    'backfillMissingLibraryDurations imports sidecar backup even when a cover-only null-duration DB row exists',
+    () async {
+      final workDir = await Directory.systemTemp.createTemp(
+        'backfill_sidecar_cover_row_',
+      );
+      addTearDown(() async {
+        if (await workDir.exists()) await workDir.delete(recursive: true);
+      });
+      final trackPath = path.join(workDir.path, '01.mp3');
+      await File(trackPath).writeAsBytes(const [0]);
+      final target = AudioDetailTarget.libraryRootFolder(workDir.path);
+      // Write a sidecar doujin-audio.json backup with authored title & duration.
+      await AudioDetailDocumentRepository(
+        store: DefaultJsonDocumentStore(),
+      ).saveExplicit(
+        AudioDetail.empty(target).copyWith(
+          workTitle: 'Recovered Sidecar',
+          duration: const Duration(minutes: 3),
+        ),
+      );
+      // Pre-populate a cover-only SQLite row (isEmpty == true, duration == null).
+      await repo.upsert(
+        AudioDetail.empty(
+          target,
+        ).copyWith(cardCoverPath: path.join(workDir.path, 'cover.jpg')),
+      );
+
+      library.addWatchedFolder(workDir.path, notify: false);
+      library.addTracks([
+        _track(
+          trackPath,
+          groupKey: workDir.path,
+          duration: const Duration(minutes: 3),
+        ),
+      ], persist: false);
+
+      await library.backfillMissingLibraryDurations();
+
+      final loaded = await library.loadAudioDetail(target);
+      expect(loaded.detail.workTitle, 'Recovered Sidecar');
+      expect(loaded.detail.duration, const Duration(minutes: 3));
     },
   );
 }
@@ -893,10 +1132,7 @@ final class _FailingLibraryImportDataSource
 }
 
 final class _ControllableScanner extends LibraryScannerService {
-  _ControllableScanner({
-    required this.onRefresh,
-    required this.onAddFolder,
-  });
+  _ControllableScanner({required this.onRefresh, required this.onAddFolder});
 
   final Future<LibraryScanOutcome> Function() onRefresh;
   final Future<LibraryScanOutcome?> Function() onAddFolder;
@@ -950,10 +1186,7 @@ final class _FakeScanCatalog implements LibraryCatalog {
 
 final class _InterceptingLibraryRepo
     implements LibraryPersistenceRepository, AudioDetailStore {
-  _InterceptingLibraryRepo(
-    this._inner, {
-    required this.onCommitLibraryBatch,
-  });
+  _InterceptingLibraryRepo(this._inner, {required this.onCommitLibraryBatch});
 
   final SqliteLibraryRepository _inner;
   final Future<void> Function() onCommitLibraryBatch;

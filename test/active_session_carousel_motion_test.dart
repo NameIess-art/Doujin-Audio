@@ -1101,4 +1101,113 @@ void main() {
       },
     );
   }
+
+  testWidgets(
+    'mobile dock play button does not jump when toggling two-row layout',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final session = PlaybackSession(
+        id: 'row-toggle-play-button',
+        currentTrackPath: '/row-toggle.mp3',
+        loopMode: SessionLoopMode.single,
+        nonSingleLoopMode: SessionLoopMode.single,
+        volume: 1,
+        createdAt: DateTime(2026),
+        state: const PlayerState(false, ProcessingState.ready),
+      );
+      addTearDown(session.shutdown);
+      final geometryKey = GlobalKey();
+      var expanded = false;
+      var raised = false;
+      Widget shell() => fixture.build(
+        Center(
+          child: SizedBox(
+            width: 374,
+            height: 200,
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: MobileDockCapsuleContent(
+                overlaySessions: [PlaybackSessionSnapshot.fromRuntime(session)],
+                isPlaybackExpanded: expanded,
+                isPlaybackRaised: raised,
+                i18n: fixture.languageProvider,
+                mobilePlaybackGeometryKey: geometryKey,
+                onShowPlayback: () {},
+                onShowDestinations: () {},
+                onReportPlaybackCoverRect: () {},
+                buildBottomBar:
+                    (
+                      _, {
+                      required isPlaybackExpanded,
+                      required appearance,
+                      required expansion,
+                      required rowProgress,
+                      required availableWidth,
+                      required onCurrentTap,
+                    }) => const SizedBox.expand(),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final surface = find.byKey(
+        const ValueKey<String>('mobile_bottom_capsule_surface'),
+      );
+      final playback = find.byKey(
+        const ValueKey<String>('mobile_dock_playback'),
+      );
+      final playButton = find.descendant(
+        of: playback,
+        matching: find.byType(IconButton),
+      );
+
+      // Collapsed -> raised: play button lands at the final right edge in one
+      // step rather than sitting at the inline width and jumping on completion.
+      await tester.pumpWidget(shell());
+      await tester.pumpAndSettle();
+      final surfaceRight = tester.getRect(surface).right;
+
+      raised = true;
+      await tester.pumpWidget(shell());
+      for (var frame = 0; frame < 30; frame++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(
+          tester.getRect(playButton).right,
+          closeTo(surfaceRight - 6, 0.01),
+          reason: 'collapsed->raised frame=$frame',
+        );
+      }
+      await tester.pumpAndSettle();
+      expect(tester.getRect(playButton).right, closeTo(surfaceRight - 6, 0.01));
+
+      // Inline-expanded <-> raised: play button stays glued to the card's right
+      // edge throughout the motion without clipping or snapping at the end.
+      expanded = true;
+      raised = false;
+      await tester.pumpWidget(shell());
+      await tester.pumpAndSettle();
+      for (final nextRaised in [true, false]) {
+        raised = nextRaised;
+        await tester.pumpWidget(shell());
+        for (var frame = 0; frame < 30; frame++) {
+          await tester.pump(const Duration(milliseconds: 16));
+          final cardRight = tester.getRect(playback).right;
+          expect(
+            tester.getRect(playButton).right,
+            closeTo(cardRight - 6, 0.01),
+            reason: 'inline<->raised($nextRaised) frame=$frame',
+          );
+        }
+        await tester.pumpAndSettle();
+        expect(
+          tester.getRect(playButton).right,
+          closeTo(tester.getRect(playback).right - 6, 0.01),
+        );
+      }
+      expect(tester.takeException(), isNull);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.android),
+  );
 }

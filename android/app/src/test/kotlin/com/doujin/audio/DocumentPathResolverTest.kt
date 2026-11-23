@@ -90,7 +90,7 @@ class DocumentPathResolverTest {
     fun `replacement matches stale files from one directory projection`() {
         val storage = DocumentStorageOperations(RuntimeEnvironment.getApplication())
 
-        val result = storage.writeFileBytesToDocumentFolder(selected, "Track.mp3", byteArrayOf(1), "audio/mpeg")
+        val result = storage.writeFileBytesToDocumentFolder(selected, "Track.mp3", byteArrayOf(1))
 
         assertNull(result)
         assertEquals(listOf(documentUri("stale-temp")), provider.attemptedDeletes)
@@ -136,8 +136,7 @@ class DocumentPathResolverTest {
         val replacedUri = storage.writeFileBytesToDocumentFolder(
             documentUri("child-cd"),
             "voice.srt",
-            "updated".toByteArray(),
-            "text/plain"
+            "updated".toByteArray()
         )
         assertTrue(replacedUri != null)
         assertEquals(listOf("application/octet-stream"), provider.createdMimeTypes)

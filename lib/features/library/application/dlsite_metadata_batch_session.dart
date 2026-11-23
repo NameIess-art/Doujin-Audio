@@ -114,11 +114,13 @@ final class DlsiteMetadataBatchSession extends ChangeNotifier {
   DlsiteMetadataBatchSession({
     required Iterable<AudioLibraryCategoryEntry> entries,
     required DlsiteMetadataBatchLookup lookup,
+    DlsiteMetadataBatchLookup? forceRefreshLookup,
     DlsiteMetadataBatchApply? apply,
     void Function()? onApplyCompleted,
     this.maxConcurrentLookups = 3,
   }) : assert(maxConcurrentLookups > 0),
        _lookup = lookup,
+       _forceRefreshLookup = forceRefreshLookup,
        _apply = apply,
        _onApplyCompleted = onApplyCompleted,
        _items = entries
@@ -138,43 +140,57 @@ final class DlsiteMetadataBatchSession extends ChangeNotifier {
     required Iterable<AudioLibraryCategoryEntry> entries,
     required LibraryFacade library,
     required AppLanguage language,
-  }) => DlsiteMetadataBatchSession(
-    entries: entries,
-    lookup: (query) {
+  }) {
+    Future<List<DlsiteMetadata>> runLookup(
+      DlsiteMetadataQuery query, {
+      required bool forceRefresh,
+    }) {
       final rjCode = query.rjCode;
       return rjCode == null
           ? library.searchPreferredMetadataByTitles(
               query.searchTitles,
               language: language,
+              forceRefresh: forceRefresh,
             )
           : library
-                .fetchPreferredMetadata(rjCode, language: language)
+                .fetchPreferredMetadata(
+                  rjCode,
+                  language: language,
+                  forceRefresh: forceRefresh,
+                )
                 .then((metadata) => <DlsiteMetadata>[metadata]);
-    },
-    apply: (item) async {
-      final metadata = item.confirmedMetadata;
-      if (metadata == null) return;
-      final loaded = await library.loadAudioDetail(item.entry.target);
-      final latestDetail =
-          loaded.detail.updatedAt != null ||
-              loaded.detail.createdAt != null ||
-              !loaded.detail.hasNoMetadata ||
-              loaded.detail.cardCoverPath != null ||
-              loaded.detail.cardCoverSelected
-          ? loaded.detail
-          : item.entry.detail;
-      await library.applyDlsiteMetadata(
-        latestDetail,
-        metadata,
-        saveCover: item.saveCover ?? false,
-        language: language,
-        deferCategoryUpdate: true,
-      );
-    },
-    onApplyCompleted: library.flushMetadataUpdates,
-  );
+    }
+
+    return DlsiteMetadataBatchSession(
+      entries: entries,
+      lookup: (query) => runLookup(query, forceRefresh: false),
+      forceRefreshLookup: (query) => runLookup(query, forceRefresh: true),
+      apply: (item) async {
+        final metadata = item.confirmedMetadata;
+        if (metadata == null) return;
+        final loaded = await library.loadAudioDetail(item.entry.target);
+        final latestDetail =
+            loaded.detail.updatedAt != null ||
+                loaded.detail.createdAt != null ||
+                !loaded.detail.hasNoMetadata ||
+                loaded.detail.cardCoverPath != null ||
+                loaded.detail.cardCoverSelected
+            ? loaded.detail
+            : item.entry.detail;
+        await library.applyDlsiteMetadata(
+          latestDetail,
+          metadata,
+          saveCover: item.saveCover ?? false,
+          language: language,
+          deferCategoryUpdate: true,
+        );
+      },
+      onApplyCompleted: library.flushMetadataUpdates,
+    );
+  }
 
   final DlsiteMetadataBatchLookup _lookup;
+  final DlsiteMetadataBatchLookup? _forceRefreshLookup;
   final DlsiteMetadataBatchApply? _apply;
   final void Function()? _onApplyCompleted;
   final int maxConcurrentLookups;
@@ -182,6 +198,7 @@ final class DlsiteMetadataBatchSession extends ChangeNotifier {
   final Queue<int> _pending = Queue<int>();
   final Set<int> _queued = <int>{};
   final Set<int> _active = <int>{};
+  final Set<int> _forceRefreshIndices = <int>{};
   bool _started = false;
   bool _disposed = false;
 
@@ -284,6 +301,7 @@ final class DlsiteMetadataBatchSession extends ChangeNotifier {
       candidates: const <DlsiteMetadata>[],
       clearError: true,
     );
+    _forceRefreshIndices.add(index);
     _enqueue(index);
     _notify();
     _pump();
@@ -304,6 +322,7 @@ final class DlsiteMetadataBatchSession extends ChangeNotifier {
         candidates: const <DlsiteMetadata>[],
         clearError: true,
       );
+      _forceRefreshIndices.add(index);
       _enqueue(index);
       enqueued = true;
     }
@@ -463,8 +482,10 @@ final class DlsiteMetadataBatchSession extends ChangeNotifier {
       _pump();
       return;
     }
+    final forceRefresh = _forceRefreshIndices.remove(index);
     try {
-      final candidates = await _lookup(item.query);
+      final lookup = forceRefresh ? (_forceRefreshLookup ?? _lookup) : _lookup;
+      final candidates = await lookup(item.query);
       if (_disposed) return;
       final currentItem = _items[index];
       _items[index] = currentItem.copyWith(

@@ -259,6 +259,8 @@ void main() {
       );
 
       await service.load(audioPath);
+      final availabilityRevision = service.availabilityRevision;
+      expect(availabilityRevision, greaterThan(0));
       service.addListener(() => notifyCount++);
       expect(service.getOffset(audioPath), Duration.zero);
       expect(
@@ -269,6 +271,7 @@ void main() {
       // Add +1000ms offset (delay subtitle by 1s)
       await service.setTrackOffset(audioPath, const Duration(seconds: 1));
       expect(notifyCount, 1);
+      expect(service.availabilityRevision, availabilityRevision);
       expect(service.getOffset(audioPath), const Duration(seconds: 1));
       expect(service.trackSync(audioPath)?.offset, const Duration(seconds: 1));
 

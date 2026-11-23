@@ -137,7 +137,7 @@ object NativePlaybackStateStore {
         }
     }
 
-    internal fun awaitPendingPersistenceForTest(timeoutMs: Long = 10_000L): Boolean {
+    internal fun awaitPendingPersistence(timeoutMs: Long = 10_000L): Boolean {
         val latch = CountDownLatch(1)
         persistenceExecutor.execute { latch.countDown() }
         return latch.await(timeoutMs, TimeUnit.MILLISECONDS)

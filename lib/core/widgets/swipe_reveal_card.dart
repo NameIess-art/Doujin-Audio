@@ -573,7 +573,11 @@ class _SwipeRevealCardState extends State<SwipeRevealCard>
             child: child,
           );
         }
-        return ColoredBox(color: surfaceColor, child: child);
+        return ClipPath(
+          clipBehavior: Clip.hardEdge,
+          clipper: ShapeBorderClipper(shape: widget.shape),
+          child: ColoredBox(color: surfaceColor, child: child),
+        );
       }
       final content = ColoredBox(color: surfaceColor, child: child);
 
@@ -605,10 +609,11 @@ class _SwipeRevealCardState extends State<SwipeRevealCard>
         ),
       );
     }
+    final keyedChild = KeyedSubtree(key: _contentKey, child: widget.child);
     if (!widget.swipeEnabled || !widget.enabled) {
       return Padding(
         padding: widget.margin,
-        child: buildClosedContent(widget.child, clip: false),
+        child: buildClosedContent(keyedChild, clip: false),
       );
     }
     final actionWidth = _activeActionWidth;
@@ -618,10 +623,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard>
     final paneActive = _actionPaneActive || _currentProgress > 0;
     // Preserve child animations when the swipe transform and clip layer are
     // added on swipe start and removed on close.
-    final closedContent = buildClosedContent(
-      KeyedSubtree(key: _contentKey, child: widget.child),
-      clip: paneActive,
-    );
+    final closedContent = buildClosedContent(keyedChild, clip: paneActive);
     return TapRegion(
       enabled: paneActive,
       onTapOutside: paneActive ? (_) => _closePane() : null,

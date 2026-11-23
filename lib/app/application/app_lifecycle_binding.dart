@@ -141,6 +141,7 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
   bool _historyInitialized = false;
   bool _closing = false;
   bool _fastShutdown = false;
+  final Completer<void> _fastShutdownSignal = Completer<void>();
   late final AudioRuntimeCoordinator _runtime;
   bool _bindingsDisposed = false;
   Future<void>? _disposeFuture;
@@ -217,7 +218,14 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
 
   @override
   Future<void> dispose({bool fastShutdown = false}) {
-    if (fastShutdown) _fastShutdown = true;
+    if (fastShutdown && !_fastShutdown) {
+      _fastShutdown = true;
+      _fastShutdownSignal.complete();
+      if (_disposeFuture != null) {
+        // The original disposer still owns and reports this same future.
+        _runtime.dispose(fastShutdown: true).ignore();
+      }
+    }
     return _disposeFuture ??= _dispose();
   }
 
@@ -225,9 +233,14 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
     _closing = true;
     _persistence.invalidatePendingLoad();
     try {
-      await _asmrDownloads?.shutdown();
+      final downloads = _asmrDownloads?.shutdown();
+      if (downloads != null) {
+        // Downloads keep their own durable task store. On OS shutdown, let
+        // their cancellation proceed while the core runtime is released.
+        await Future.any<void>([downloads, _fastShutdownSignal.future]);
+      }
     } finally {
-      await _runtime.dispose();
+      await _runtime.dispose(fastShutdown: _fastShutdown);
     }
   }
 
@@ -246,7 +259,7 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
         await _playback.saveResumeBatchForExit();
       }
     } finally {
-      await _playback.flushSessionStatePersistence();
+      if (!_fastShutdown) await _playback.flushSessionStatePersistence();
     }
     _refreshListeningActivity();
   }
@@ -254,10 +267,17 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
   Future<void> _resumeForeground() async {
     _playback.setBackgroundMode(false);
     _keepAlive.resumeForeground();
-    await _playbackCommands.reconcileNativeRuntime();
-    await _playback.removeMissingTemporarySessions();
+    await _playbackCommands.reconcileNativeRuntime(
+      canApply: () => !_fastShutdown,
+    );
+    if (_closing) return;
+    await _playback.removeMissingTemporarySessions(
+      canApply: () => !_fastShutdown,
+    );
+    if (_closing) return;
     _notifications.resyncAfterForegroundResume();
     await _timer.syncRuntimeFromNative();
+    if (_closing) return;
     _timer.retryOverdueAutoResume();
     _refreshListeningActivity();
   }
@@ -295,12 +315,13 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
         _secondaryInitialization,
         _listeningInitialization,
       ]) {
+        if (_fastShutdown) break;
         if (pending == null) continue;
-        try {
-          await pending;
-        } catch (_) {
+        await Future.any<void>([
           // The initializer reports its failure. Drain it before closing owners.
-        }
+          pending.then<void>((_) {}, onError: (_, _) {}),
+          _fastShutdownSignal.future,
+        ]);
       }
     }
 

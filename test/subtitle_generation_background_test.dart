@@ -494,7 +494,16 @@ void main() {
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
     expect(find.text(language.tr('subtitle_generation_ready')), findsOneWidget);
-    expect(find.byType(FilledButton), findsNothing);
+    final dialog = find.byType(SubtitleGenerationDialog);
+    expect(
+      find.descendant(of: dialog, matching: find.text(language.tr('retry'))),
+      findsNothing,
+    );
+    await tester.tap(
+      find.descendant(of: dialog, matching: find.text(language.tr('close'))),
+    );
+    await tester.pumpAndSettle();
+    expect(dialog, findsNothing);
   });
 
   testWidgets('translation dialog displays the live translation percent', (

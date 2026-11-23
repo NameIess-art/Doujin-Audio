@@ -38,8 +38,9 @@ class _SubtitleModelDownloadDialogState
   void initState() {
     super.initState();
     if (widget.store.snapshot(widget.spec).active) {
+      _runInBackground = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) unawaited(_observeDownload());
+        if (mounted) unawaited(_observeDownload(runInBackground: true));
       });
     }
   }
@@ -53,13 +54,13 @@ class _SubtitleModelDownloadDialogState
     super.dispose();
   }
 
-  Future<void> _observeDownload() async {
+  Future<void> _observeDownload({bool runInBackground = false}) async {
     if (_waiting) return;
     setState(() {
       _waiting = true;
       _failed = false;
       _cancelled = false;
-      _runInBackground = false;
+      _runInBackground = runInBackground;
       _lastError = null;
     });
     try {

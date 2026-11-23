@@ -210,26 +210,33 @@ class NetworkSocket {
         _pending = _emptyBytes;
         _offset = 0;
         controller.add(leftover);
+        if (cancelled || controller.isClosed || controller.isPaused) return;
       }
       while (_bufferedChunks.isNotEmpty) {
         if (cancelled || controller.isClosed || controller.isPaused) return;
         controller.add(_bufferedChunks.removeFirst());
+        if (cancelled || controller.isClosed || controller.isPaused) return;
       }
-      if (cancelled || controller.isClosed) return;
+      if (cancelled || controller.isClosed || controller.isPaused) return;
       if (_streamError != null) {
         final error = _streamError!;
         final stack = _streamStackTrace;
         _streamError = null;
         _streamStackTrace = null;
         controller.addError(error, stack);
+        if (cancelled || controller.isClosed || controller.isPaused) return;
       }
       if (_streamDone) {
         unawaited(controller.close());
         return;
       }
-      if (controller.isPaused) return;
+      final subscription = _subscription;
+      if (subscription == null) {
+        unawaited(controller.close());
+        return;
+      }
       handedOff = true;
-      _subscription!
+      subscription
         ..onData(controller.add)
         ..onError(controller.addError)
         ..onDone(() => unawaited(controller.close()));
@@ -336,6 +343,12 @@ class NetworkSocket {
   }
 
   void destroy() {
+    _streamDone = true;
+    final waiter = _chunkWaiter;
+    if (waiter != null) {
+      _chunkWaiter = null;
+      waiter.completeError(const SocketException('Socket destroyed'));
+    }
     final subscription = _subscription;
     _subscription = null;
     _subscriptionPaused = false;

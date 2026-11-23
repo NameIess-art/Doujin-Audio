@@ -203,7 +203,7 @@ class FilteredLibraryTreeResult {
       final cached = trackSubtitleCache[key];
       if (cached != null) return cached;
       final found = await checkTrack(trackPath);
-      if (isActive() || found) {
+      if (isActive()) {
         trackSubtitleCache[key] = found;
       }
       return found;
@@ -228,7 +228,9 @@ class FilteredLibraryTreeResult {
       for (final track in tracks) {
         if (!isActive()) return false;
         if (await checkTrackCached(track.path)) {
-          if (workKey != null) workSubtitleCache![workKey] = true;
+          if (workKey != null && isActive()) {
+            workSubtitleCache![workKey] = true;
+          }
           return true;
         }
       }
@@ -305,8 +307,8 @@ class LibrarySearchIndex {
   int? _cachedDetailRevision;
   final _cache = <(String, SearchFilters), FilteredLibraryTreeResult>{};
   int? _subtitleCacheStructureRevision;
-  final Map<String, bool> _workSubtitleCache = <String, bool>{};
-  final Map<String, bool> _trackSubtitleCache = <String, bool>{};
+  Map<String, bool> _workSubtitleCache = <String, bool>{};
+  Map<String, bool> _trackSubtitleCache = <String, bool>{};
 
   static const int _maxEntries = 12;
 
@@ -318,8 +320,8 @@ class LibrarySearchIndex {
   void _syncSubtitleCacheRevision(int structureRevision) {
     if (_subtitleCacheStructureRevision == structureRevision) return;
     _subtitleCacheStructureRevision = structureRevision;
-    _workSubtitleCache.clear();
-    _trackSubtitleCache.clear();
+    _workSubtitleCache = <String, bool>{};
+    _trackSubtitleCache = <String, bool>{};
   }
 
   Map<String, bool> workSubtitleCacheForRevision(int structureRevision) {
@@ -333,8 +335,8 @@ class LibrarySearchIndex {
   }
 
   void invalidateSubtitleCache() {
-    _workSubtitleCache.clear();
-    _trackSubtitleCache.clear();
+    _workSubtitleCache = <String, bool>{};
+    _trackSubtitleCache = <String, bool>{};
     _cache.removeWhere((key, _) => key.$2.hasSubtitle != null);
   }
 

@@ -1,6 +1,5 @@
 package com.doujin.audio
 
-import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.os.Looper
@@ -86,13 +85,12 @@ class SubtitleOverlayServiceTest {
     }
 
     @Test
-    fun `service is not sticky and removes overlay when task is removed`() {
+    fun `removes overlay when task is removed`() {
         ShadowSettings.setCanDrawOverlays(true)
         val controller = Robolectric.buildService(SubtitleOverlayService::class.java).create()
         try {
             val service = controller.get()
             val manager = service.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-            assertEquals(Service.START_NOT_STICKY, service.onStartCommand(Intent(), 0, 1))
             assertEquals(1, Shadow.extract<ShadowWindowManagerImpl>(manager).views.size)
 
             service.onTaskRemoved(Intent())

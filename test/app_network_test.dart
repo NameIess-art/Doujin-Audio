@@ -790,10 +790,129 @@ void main() {
       expect(resolverCreations, 2);
     },
   );
+
+  test(
+    'NetworkSocket.destroy completes pending readBytes and readHeader with SocketException',
+    () async {
+      final bytesSocket = _StreamSocket();
+      addTearDown(bytesSocket.controller.close);
+      final bytesWrapped = NetworkSocket(bytesSocket);
+      final bytesFuture = bytesWrapped.readBytes(4);
+      await Future<void>.delayed(Duration.zero);
+      bytesWrapped.destroy();
+      await expectLater(bytesFuture, throwsA(isA<SocketException>()));
+      expect(bytesSocket.destroyed, isTrue);
+
+      final headerSocket = _StreamSocket();
+      addTearDown(headerSocket.controller.close);
+      final headerWrapped = NetworkSocket(headerSocket);
+      final headerFuture = headerWrapped.readHeader();
+      headerSocket.controller.add(
+        Uint8List.fromList(ascii.encode('HTTP/1.1 200 OK\r\n')),
+      );
+      await Future<void>.delayed(Duration.zero);
+      headerWrapped.destroy();
+      await expectLater(headerFuture, throwsA(isA<SocketException>()));
+      expect(headerSocket.destroyed, isTrue);
+    },
+  );
+
+  test(
+    'NetworkSocket.remaining handles synchronous cancel, error cancel, and destroy during drain',
+    () async {
+      // 1. Synchronous cancel in onData while draining leftover handshake bytes.
+      final cancelSocket = _StreamSocket();
+      addTearDown(cancelSocket.controller.close);
+      final cancelWrapped = NetworkSocket(cancelSocket);
+      cancelSocket.controller.add(
+        Uint8List.fromList(ascii.encode('HTTP/1.1 200 OK\r\n\r\nLEFT')),
+      );
+      expect(await cancelWrapped.readHeader(), 'HTTP/1.1 200 OK\r\n\r\n');
+      final received = <int>[];
+      late StreamSubscription<List<int>> cancelSub;
+      final cancelledDone = Completer<void>();
+      cancelSub = cancelWrapped.remaining.listen((chunk) {
+        received.addAll(chunk);
+        unawaited(cancelSub.cancel().then((_) => cancelledDone.complete()));
+      });
+      await cancelledDone.future;
+      await Future<void>.delayed(Duration.zero);
+      expect(ascii.decode(received), 'LEFT');
+
+      // 2. destroy() called synchronously while draining leftover bytes.
+      final destroySocket = _StreamSocket();
+      addTearDown(destroySocket.controller.close);
+      final destroyWrapped = NetworkSocket(destroySocket);
+      destroySocket.controller.add(
+        Uint8List.fromList(ascii.encode('HTTP/1.1 200 OK\r\n\r\nBODY')),
+      );
+      expect(await destroyWrapped.readHeader(), 'HTTP/1.1 200 OK\r\n\r\n');
+      final destroyDone = Completer<void>();
+      destroyWrapped.remaining.listen(
+        (_) => destroyWrapped.destroy(),
+        onDone: destroyDone.complete,
+      );
+      await destroyDone.future;
+      expect(destroySocket.destroyed, isTrue);
+
+      // 3. Buffered stream error with cancelOnError: true must not dereference
+      //    a nulled subscription after controller.addError().
+      final errorSocket = _StreamSocket();
+      addTearDown(errorSocket.controller.close);
+      final errorWrapped = NetworkSocket(errorSocket);
+      errorSocket.controller.add(
+        Uint8List.fromList(ascii.encode('HTTP/1.1 200 OK\r\n\r\n')),
+      );
+      expect(await errorWrapped.readHeader(), 'HTTP/1.1 200 OK\r\n\r\n');
+      errorSocket.injectError(const SocketException('upstream reset'));
+      final observedError = Completer<Object>();
+      errorWrapped.remaining.listen(
+        (_) {},
+        onError: observedError.complete,
+        cancelOnError: true,
+      );
+      expect(await observedError.future, isA<SocketException>());
+      await Future<void>.delayed(Duration.zero);
+    },
+  );
 }
 
 final class _TrackingSocket extends Fake implements Socket {
   bool destroyed = false;
+
+  @override
+  void destroy() {
+    destroyed = true;
+  }
+}
+
+final class _StreamSocket extends Fake implements Socket {
+  final StreamController<Uint8List> controller = StreamController<Uint8List>();
+  bool destroyed = false;
+  Function? _onError;
+
+  void injectError(Object error) {
+    final handler = _onError;
+    if (handler is void Function(Object, StackTrace)) {
+      handler(error, StackTrace.current);
+    }
+  }
+
+  @override
+  StreamSubscription<Uint8List> listen(
+    void Function(Uint8List event)? onData, {
+    Function? onError,
+    void Function()? onDone,
+    bool? cancelOnError,
+  }) {
+    _onError = onError;
+    return controller.stream.listen(
+      onData,
+      onError: onError,
+      onDone: onDone,
+      cancelOnError: cancelOnError,
+    );
+  }
 
   @override
   void destroy() {

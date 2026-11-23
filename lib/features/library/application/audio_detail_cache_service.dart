@@ -287,10 +287,17 @@ class AudioDetailCacheService {
     final values = targets.toList(growable: false);
     if (values.isEmpty) return const <String, Duration?>{};
     final result = <String, Duration?>{};
+    final inFlightTargets = <AudioDetailTarget>[];
     final toQuery = <AudioDetailTarget>[];
+    final seen = <String>{};
     for (final target in values) {
       final key = AudioLibraryDetailKey.forTarget(target);
-      final cached = _operationTails[key] == null ? _resolved[key] : null;
+      if (!seen.add(key)) continue;
+      if (_operationTails[key] != null) {
+        inFlightTargets.add(target);
+        continue;
+      }
+      final cached = _resolved[key];
       if (cached != null) {
         if (!cached.detail.isEmpty || cached.detail.duration != null) {
           result[key] = cached.detail.duration;
@@ -298,6 +305,16 @@ class AudioDetailCacheService {
         continue;
       }
       toQuery.add(target);
+    }
+    if (inFlightTargets.isNotEmpty) {
+      final loaded = await loadMany(inFlightTargets);
+      for (var index = 0; index < inFlightTargets.length; index++) {
+        final detail = loaded[index].detail;
+        if (!detail.isEmpty || detail.duration != null) {
+          result[AudioLibraryDetailKey.forTarget(inFlightTargets[index])] =
+              detail.duration;
+        }
+      }
     }
     if (toQuery.isNotEmpty) {
       final queried = await _repository.loadDurationsIfSupported(toQuery);

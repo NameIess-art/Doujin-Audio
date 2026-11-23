@@ -35,6 +35,7 @@ class LibrarySearchAllResults extends ConsumerStatefulWidget {
     this.queryRevision = 0,
     required this.structureRevision,
     required this.detailRevision,
+    this.subtitleRevision = 0,
     required this.scrollController,
     required this.topPadding,
     required this.isSelectionMode,
@@ -53,6 +54,7 @@ class LibrarySearchAllResults extends ConsumerStatefulWidget {
   final int queryRevision;
   final int structureRevision;
   final int detailRevision;
+  final int subtitleRevision;
   final ScrollController scrollController;
   final double topPadding;
   final bool isSelectionMode;
@@ -69,7 +71,7 @@ class LibrarySearchAllResults extends ConsumerStatefulWidget {
       _LibrarySearchAllResultsState();
 }
 
-typedef _SearchKey = (int, int, String, SearchFilters);
+typedef _SearchKey = (int, int, String, SearchFilters, int, int);
 
 class _LibrarySearchAllResultsState
     extends ConsumerState<LibrarySearchAllResults> {
@@ -78,34 +80,22 @@ class _LibrarySearchAllResultsState
   LibrarySearchIndex? _ownedSearchIndex;
   LibrarySearchIndex get _searchIndex =>
       widget.searchIndex ?? (_ownedSearchIndex ??= LibrarySearchIndex());
-  Listenable? _observedSubtitleService;
   FilteredLibraryTreeResult? _visibleSearchResult;
   _SearchKey? _visibleSearchKey;
   ({_SearchKey key, Object token})? _pendingSearch;
   Object? _visibleSearchError;
   _SearchKey? _visibleSearchErrorKey;
 
-  void _handleSubtitlesChanged() {
-    _searchIndex.invalidateSubtitleCache();
-    if (widget.filters.hasSubtitle != null && mounted) {
-      _visibleSearchKey = null;
-      _pendingSearch = null;
-      setState(() {});
-    }
-  }
-
-  void _observeSubtitleService(Listenable subtitles) {
-    if (identical(_observedSubtitleService, subtitles)) return;
-    _observedSubtitleService?.removeListener(_handleSubtitlesChanged);
-    _observedSubtitleService = subtitles;
-    subtitles.addListener(_handleSubtitlesChanged);
-  }
+  int get _effectiveSubtitleRevision =>
+      widget.filters.hasSubtitle == null ? 0 : widget.subtitleRevision;
 
   _SearchKey get _searchKey => (
     widget.structureRevision,
     widget.detailRevision,
     widget.query,
     widget.filters,
+    _effectiveSubtitleRevision,
+    widget.queryRevision,
   );
   final Set<String> _expandedSearchFolderPaths = <String>{};
   List<LibrarySearchRow> _visibleSearchItems = const [];
@@ -148,7 +138,9 @@ class _LibrarySearchAllResultsState
     super.didUpdateWidget(oldWidget);
     if (oldWidget.query != widget.query ||
         oldWidget.filters != widget.filters ||
-        oldWidget.queryRevision != widget.queryRevision) {
+        oldWidget.queryRevision != widget.queryRevision ||
+        (widget.filters.hasSubtitle != null &&
+            oldWidget.subtitleRevision != widget.subtitleRevision)) {
       _pendingSearch = null;
       _clearSearchError();
     }
@@ -164,8 +156,6 @@ class _LibrarySearchAllResultsState
   @override
   void dispose() {
     UiInteractionCoordinator.instance.cancelCommit(_searchCommitKey);
-    _observedSubtitleService?.removeListener(_handleSubtitlesChanged);
-    _observedSubtitleService = null;
     _ownedSearchIndex?.dispose();
     super.dispose();
   }
@@ -187,18 +177,20 @@ class _LibrarySearchAllResultsState
     final filters = widget.filters;
     final requestKey = _searchKey;
     if (_visibleSearchKey == requestKey) return;
-    final queryRevision = widget.queryRevision;
     if (_pendingSearch?.key == requestKey) return;
     if (_visibleSearchErrorKey == requestKey) return;
 
+    final hasSubtitle = filters.hasSubtitle;
+    final subtitles = hasSubtitle == null
+        ? null
+        : ref.read(playbackSubtitleServiceProvider);
+    final availabilityRevision = subtitles?.availabilityRevision;
     final token = Object();
     _pendingSearch = (key: requestKey, token: token);
     bool isCurrentRequest() =>
         mounted &&
-        widget.queryRevision == queryRevision &&
-        widget.filters == filters &&
-        widget.structureRevision == structureRevision &&
-        widget.detailRevision == detailRevision &&
+        _searchKey == requestKey &&
+        subtitles?.availabilityRevision == availabilityRevision &&
         libraryFacade.structureRevision == structureRevision &&
         libraryFacade.detailCacheService.revision == detailRevision &&
         identical(_pendingSearch?.token, token);
@@ -209,14 +201,7 @@ class _LibrarySearchAllResultsState
         detailRevision: detailRevision,
         filters: filters,
       );
-      final hasSubtitle = filters.hasSubtitle;
       if (cached != null && hasSubtitle == null) return cached;
-      final subtitles = hasSubtitle == null
-          ? null
-          : ref.read(playbackSubtitleServiceProvider);
-      if (subtitles != null) {
-        _observeSubtitleService(subtitles);
-      }
       late final AudioLibraryCategorySnapshot effectiveCategorySnapshot;
       if (categorySnapshot != null) {
         effectiveCategorySnapshot = categorySnapshot;
@@ -310,6 +295,7 @@ class _LibrarySearchAllResultsState
                   ..addAll(result.expandedFolderPaths);
                 _visibleSearchItems = result.initialRows;
               });
+              widget.onTreeChanged(result.tree);
             },
           );
         },
@@ -387,6 +373,7 @@ class _LibrarySearchAllResultsState
       structureRevision: structureRevision,
       detailRevision: detailRevision,
     );
+    final hasCurrentResult = _visibleSearchKey == _searchKey;
     final hasCurrentError = _visibleSearchErrorKey == _searchKey;
     // Keep mounted rows while the next query is filtered; the first load still
     // uses a skeleton, and a failed new query keeps the existing error behavior.
@@ -397,7 +384,6 @@ class _LibrarySearchAllResultsState
         ? null
         : _visibleSearchResult;
     final tree = result?.tree;
-    if (tree != null) widget.onTreeChanged(tree);
     final hasActiveFilters = widget.filters != emptySearchFilters;
     final Widget content;
     if (tree == null && hasCurrentError) {
@@ -482,26 +468,35 @@ class _LibrarySearchAllResultsState
         return Padding(
           key: ValueKey<String>('search_${node.path}'),
           padding: EdgeInsets.only(left: item.depth * 8.0),
-          child: LibraryTreeItem(
-            node: node,
-            initiallyExpanded:
-                node is FolderNode &&
-                _expandedSearchFolderPaths.contains(
-                  PathMatcher.normalize(node.path),
+          child: ExcludeFocus(
+            excluding: !hasCurrentResult,
+            child: ExcludeSemantics(
+              excluding: !hasCurrentResult,
+              child: IgnorePointer(
+                ignoring: !hasCurrentResult,
+                child: LibraryTreeItem(
+                  node: node,
+                  initiallyExpanded:
+                      node is FolderNode &&
+                      _expandedSearchFolderPaths.contains(
+                        PathMatcher.normalize(node.path),
+                      ),
+                  onFolderExpansionChanged: _handleSearchFolderExpansionChanged,
+                  renderChildrenInline: false,
+                  searchQuery: highlightQuery,
+                  isSelectionMode: item.depth == 0 && widget.isSelectionMode,
+                  isSelected: widget.selectedPaths.contains(
+                    selectionKeyForLibraryNode(node),
+                  ),
+                  onLongPress: item.depth == 0
+                      ? () => widget.onEnterSelectionMode(node)
+                      : null,
+                  onToggleSelect: item.depth == 0
+                      ? () => widget.onToggleSelection(node)
+                      : null,
                 ),
-            onFolderExpansionChanged: _handleSearchFolderExpansionChanged,
-            renderChildrenInline: false,
-            searchQuery: highlightQuery,
-            isSelectionMode: item.depth == 0 && widget.isSelectionMode,
-            isSelected: widget.selectedPaths.contains(
-              selectionKeyForLibraryNode(node),
+              ),
             ),
-            onLongPress: item.depth == 0
-                ? () => widget.onEnterSelectionMode(node)
-                : null,
-            onToggleSelect: item.depth == 0
-                ? () => widget.onToggleSelection(node)
-                : null,
           ),
         );
       }
@@ -558,7 +553,8 @@ class _LibrarySearchAllResultsState
                       if (column > 0)
                         const SizedBox(width: kResponsiveLibraryCardSpacing),
                       Expanded(
-                        child: index * columnCount + column < visibleItems.length
+                        child:
+                            index * columnCount + column < visibleItems.length
                             ? buildSearchItem(index * columnCount + column)
                             : const SizedBox.shrink(),
                       ),

@@ -202,6 +202,7 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
       _expandController.value = hasPlayback && widget.isPlaybackExpanded
           ? 1
           : 0;
+      _raisedTextLayout = hasPlayback && widget.isPlaybackRaised;
       _expandedPlaybackLayout =
           hasPlayback && (widget.isPlaybackExpanded || widget.isPlaybackRaised);
     }
@@ -310,12 +311,10 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
         widget.onReportPlaybackCoverRect();
         final availableWidth = constraints.maxWidth;
         const compactWidth = kActiveSessionCarouselDockHeight;
+        final inlineExpandedWidth = inlinePlaybackWidth(availableWidth, 1);
         final lockedPlaybackWidth = _raisedTextLayout
             ? availableWidth
-            : inlinePlaybackWidth(availableWidth, 1);
-        final playbackLayoutWidth = _expandedPlaybackLayout
-            ? lockedPlaybackWidth
-            : compactWidth;
+            : inlineExpandedWidth;
         final playbackChild = _buildPlaybackChild(context, lockedPlaybackWidth);
         final navigationChild = widget.buildBottomBar(
           context,
@@ -361,28 +360,45 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
                             onLongPress: widget.onTogglePlaybackRow,
                             child: AnimatedBuilder(
                               animation: _rowCurve,
-                              // Lock carousel layout width so clip animation
-                              // does not relayout its internal LayoutBuilder
-                              // and PageView on every frame.
-                              child: OverflowBox(
-                                alignment: Alignment.centerLeft,
-                                minWidth: playbackLayoutWidth,
-                                maxWidth: playbackLayoutWidth,
-                                minHeight: compactWidth,
-                                maxHeight: compactWidth,
-                                child: playbackChild,
-                              ),
-                              builder: (context, child) => ClipRRect(
-                                key: const ValueKey<String>(
-                                  'mobile_dock_playback_viewport',
-                                ),
-                                borderRadius: BorderRadius.lerp(
-                                  BorderRadius.circular(compactWidth / 2),
-                                  BorderRadius.zero,
-                                  _rowCurve.value,
-                                )!,
-                                child: child,
-                              ),
+                              // Lock carousel width to its target during
+                              // collapsed <-> expanded clips so it does not
+                              // relayout on every frame, and interpolate
+                              // smoothly when shifting between inline-expanded
+                              // and raised two-row widths so the play button
+                              // never jumps at animation end.
+                              child: playbackChild,
+                              builder: (context, child) {
+                                final layoutWidth = !_expandedPlaybackLayout
+                                    ? compactWidth
+                                    : (_rowController.isAnimating ||
+                                          _rowController.value > 0)
+                                    ? (_expandController.value == 0 &&
+                                              !_expandController.isAnimating
+                                          ? availableWidth
+                                          : inlineExpandedWidth +
+                                                (availableWidth -
+                                                        inlineExpandedWidth) *
+                                                    _rowCurve.value)
+                                    : inlineExpandedWidth;
+                                return ClipRRect(
+                                  key: const ValueKey<String>(
+                                    'mobile_dock_playback_viewport',
+                                  ),
+                                  borderRadius: BorderRadius.lerp(
+                                    BorderRadius.circular(compactWidth / 2),
+                                    BorderRadius.zero,
+                                    _rowCurve.value,
+                                  )!,
+                                  child: OverflowBox(
+                                    alignment: Alignment.centerLeft,
+                                    minWidth: layoutWidth,
+                                    maxWidth: layoutWidth,
+                                    minHeight: compactWidth,
+                                    maxHeight: compactWidth,
+                                    child: child,
+                                  ),
+                                );
+                              },
                             ),
                           ),
                         ),

@@ -73,6 +73,38 @@ void main() {
       timer.cancelTimer();
     });
 
+    testWidgets('adding time replaces the native alarm and keeps ticking', (
+      tester,
+    ) async {
+      final service = TimerService();
+      final power = _RecordingPowerPlatformService();
+      final timer = TimerFacade.create(
+        service: service,
+        powerPlatformService: power,
+      );
+      addTearDown(timer.dispose);
+      _attachNoopRuntime(timer);
+      timer.configureTimer(TimerMode.manual, const Duration(minutes: 5));
+      timer.startCountdown();
+      await tester.pump();
+      final initialAlarm = power.timerSyncs.single;
+      final originalEnd = service.timerEndsAt!;
+
+      timer.extendCountdown(const Duration(minutes: 1));
+      await tester.pump();
+
+      final extendedAlarm = power.timerSyncs.last;
+      expect(extendedAlarm['generation'], isNot(initialAlarm['generation']));
+      expect(
+        extendedAlarm['timerEndsAtWallClockMs'],
+        originalEnd.add(const Duration(minutes: 1)).millisecondsSinceEpoch,
+      );
+      service.timerEndsAt = DateTime.now().add(const Duration(seconds: 2));
+      await tester.pump(const Duration(seconds: 1));
+      expect(service.timerRemaining, lessThan(const Duration(minutes: 6)));
+      timer.cancelTimer();
+    });
+
     for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
       testWidgets(
         '$platform arms only the tracks playing at expiry and resumes after the last one',
@@ -950,9 +982,19 @@ void main() {
         final service = TimerService()
           ..pausedByTimerSessionIds.add('stale-session');
         final platform = _RecordingPowerPlatformService();
+        final preferences = await SharedPreferences.getInstance();
+        final settingsSaved = Completer<void>();
         final timer = TimerFacade.create(
           service: service,
           powerPlatformService: platform,
+          preferencesLoader: () async => _TrackingSharedPreferences(
+            preferences,
+            onSetString: (key) {
+              if (key == 'timer_settings_v1' && !settingsSaved.isCompleted) {
+                settingsSaved.complete();
+              }
+            },
+          ),
         );
         addTearDown(timer.dispose);
         timer.attachRuntime(
@@ -967,7 +1009,7 @@ void main() {
         );
 
         timer.configureTimer(TimerMode.trigger, const Duration(minutes: 15));
-        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await settingsSaved.future.timeout(const Duration(seconds: 2));
 
         expect(service.pausedByTimerSessionIds, isEmpty);
         expect(service.timerActive, isTrue);
@@ -1095,6 +1137,27 @@ final class _ControlledPowerPlatformService extends PowerPlatformService {
     }
     return nativeRuntime.future;
   }
+}
+
+final class _TrackingSharedPreferences extends Fake
+    implements SharedPreferences {
+  _TrackingSharedPreferences(this._delegate, {required this.onSetString});
+
+  final SharedPreferences _delegate;
+  final void Function(String key) onSetString;
+
+  @override
+  String? getString(String key) => _delegate.getString(key);
+
+  @override
+  Future<bool> setString(String key, String value) async {
+    final result = await _delegate.setString(key, value);
+    onSetString(key);
+    return result;
+  }
+
+  @override
+  Future<bool> remove(String key) => _delegate.remove(key);
 }
 
 final class _RecordingPowerPlatformService extends PowerPlatformService {

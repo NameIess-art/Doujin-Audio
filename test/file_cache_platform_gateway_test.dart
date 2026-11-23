@@ -1481,6 +1481,49 @@ void main() {
       expect(result.errorMessage, 'Storage unmounted');
     },
   );
+
+  test(
+    'discoverWindowsWorkFiles scans texts and prioritized images in one traversal',
+    () async {
+      final root = await Directory.systemTemp.createTemp(
+        'windows_work_files_combined_',
+      );
+      addTearDown(() async {
+        if (await root.exists()) await root.delete(recursive: true);
+      });
+      final sub = Directory('${root.path}${Platform.pathSeparator}sub');
+      await sub.create(recursive: true);
+      final zebraImage = File('${root.path}${Platform.pathSeparator}z.png');
+      final coverImage = File('${sub.path}${Platform.pathSeparator}cover.jpg');
+      final scriptA = File('${root.path}${Platform.pathSeparator}a_readme.md');
+      final scriptB = File('${sub.path}${Platform.pathSeparator}b_script.lrc');
+      await zebraImage.writeAsBytes(const <int>[1, 2]);
+      await coverImage.writeAsBytes(const <int>[3, 4, 5]);
+      await scriptA.writeAsString('# Title');
+      await scriptB.writeAsString('[00:01.00]Hello');
+
+      final windowsGateway = FileCachePlatformGateway(isWindows: () => true);
+      final discovered = await windowsGateway.discoverWindowsWorkFiles(
+        root.path,
+      );
+
+      expect(
+        discovered.images.map((item) => item.displayPath).toList(),
+        <String>[coverImage.path, zebraImage.path],
+      );
+      expect(discovered.images.first.fileSizeBytes, 3);
+      expect(
+        discovered.texts.map((item) => item['relativePath']).toList(),
+        <String>['a_readme.md', 'sub/b_script.lrc'],
+      );
+      expect(discovered.texts.first['name'], 'a_readme.md');
+
+      await expectLater(
+        () => gateway.discoverWindowsWorkFiles(root.path),
+        throwsUnsupportedError,
+      );
+    },
+  );
 }
 
 class _FailingDiscoveryDirectory extends Fake implements Directory {

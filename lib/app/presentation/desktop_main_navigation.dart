@@ -903,9 +903,8 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation>
     // Snap outer shell width in both landscape and wide portrait so adjacent
     // content panes never relayout frame-by-frame during sidebar motion.
     final Widget sidebar = isLandscapeLayout
-        ? AnimatedContainer(
+        ? Container(
             key: const ValueKey<bool>(true),
-            duration: Duration.zero,
             width: containerWidth,
             padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
             decoration: sidebarDecoration,
@@ -929,9 +928,8 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation>
                     alignment: Alignment.topLeft,
                     minWidth: animatedWidth,
                     maxWidth: animatedWidth,
-                    child: AnimatedContainer(
+                    child: Container(
                       key: const ValueKey<bool>(false),
-                      duration: Duration.zero,
                       width: animatedWidth,
                       padding: const EdgeInsets.fromLTRB(
                         10,

@@ -19,14 +19,17 @@ import 'support/app_runtime_test_fixture.dart';
 
 class _CountingLibraryService extends LibraryService {
   int trackExclusionReads = 0;
-  int exclusionSnapshots = 0;
+  final _observedExclusionMatchers = Set<LibraryExclusionMatcher>.identity();
+
+  int get exclusionSnapshots => _observedExclusionMatchers.length;
 
   @override
   LibraryExclusionMatcher libraryExclusionMatcherForLibrary(
     String libraryPath,
   ) {
-    exclusionSnapshots++;
-    return super.libraryExclusionMatcherForLibrary(libraryPath);
+    final matcher = super.libraryExclusionMatcherForLibrary(libraryPath);
+    _observedExclusionMatchers.add(matcher);
+    return matcher;
   }
 
   @override

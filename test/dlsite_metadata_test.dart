@@ -714,6 +714,184 @@ void main() {
       }
     },
   );
+
+  test(
+    'forceRefresh and clearCache bypass 2-minute notFound negative cache',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final transport = HttpClient();
+      var found = false;
+      var requestCount = 0;
+      server.listen((request) async {
+        requestCount++;
+        if (found && request.uri.path == '/maniax/api/=/product.json') {
+          request.response.write(
+            jsonEncode([
+              {
+                'workno': 'RJ01777777',
+                'work_name': 'Recovered Work',
+                'maker_name': 'Circle',
+                'image_main': {'url': 'https://img.dlsite.jp/main.jpg'},
+              },
+            ]),
+          );
+        } else if (request.uri.path.endsWith('.json')) {
+          request.response.write('[]');
+        } else {
+          request.response.write('<html></html>');
+        }
+        await request.response.close();
+      });
+      try {
+        final now = DateTime(2026, 4, 1, 12);
+        final service = DlsiteMetadataService(
+          httpClient: _LocalDlsiteHttpClient(transport, server.port),
+          now: () => now,
+        );
+
+        await expectLater(
+          service.fetchByRjCode('RJ01777777'),
+          throwsA(
+            isA<DlsiteMetadataException>().having(
+              (e) => e.isNotFound,
+              'isNotFound',
+              isTrue,
+            ),
+          ),
+        );
+        final requestsAfterNotFound = requestCount;
+
+        // Cached negative lookup hits cache without issuing new HTTP requests.
+        await expectLater(
+          service.fetchByRjCode('RJ01777777'),
+          throwsA(isA<DlsiteMetadataException>()),
+        );
+        expect(requestCount, requestsAfterNotFound);
+
+        // Explicit retry with forceRefresh bypasses negative cache.
+        found = true;
+        final recovered = await service.fetchByRjCodeCancellable(
+          'RJ01777777',
+          forceRefresh: true,
+        );
+        expect(recovered.workTitle, 'Recovered Work');
+        expect(requestCount, greaterThan(requestsAfterNotFound));
+
+        // clearCache also invalidates cached entries.
+        final requestsBeforeClear = requestCount;
+        service.clearCache();
+        await service.fetchByRjCode('RJ01777777');
+        expect(requestCount, greaterThan(requestsBeforeClear));
+      } finally {
+        transport.close(force: true);
+        await server.close(force: true);
+      }
+    },
+  );
+
+  test(
+    'late HttpClientResponse arriving after close timeout is discarded',
+    () async {
+      var discardedCount = 0;
+      final lateResponses = <Completer<HttpClientResponse>>[];
+      final client = _LateCloseHttpClient(
+        onClose: () {
+          final completer = Completer<HttpClientResponse>();
+          lateResponses.add(completer);
+          return completer.future;
+        },
+      );
+      final service = DlsiteMetadataService(
+        httpClient: client,
+        requestTimeout: const Duration(milliseconds: 20),
+      );
+
+      await expectLater(
+        service.fetchByRjCode('RJ01666666'),
+        throwsA(
+          isA<DlsiteMetadataException>().having(
+            (e) => e.isNetworkFailure,
+            'isNetworkFailure',
+            isTrue,
+          ),
+        ),
+      );
+      expect(lateResponses, isNotEmpty);
+
+      for (final completer in lateResponses) {
+        completer.complete(
+          _TrackableDiscardResponse(onCancelled: () => discardedCount++),
+        );
+      }
+      await Future<void>.delayed(Duration.zero);
+      expect(discardedCount, lateResponses.length);
+    },
+  );
+}
+
+class _LateCloseHttpClient implements HttpClient {
+  _LateCloseHttpClient({required this.onClose});
+
+  final Future<HttpClientResponse> Function() onClose;
+
+  @override
+  Future<HttpClientRequest> getUrl(Uri url) async =>
+      _LateCloseHttpRequest(onClose);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _LateCloseHttpRequest implements HttpClientRequest {
+  _LateCloseHttpRequest(this._onClose);
+
+  final Future<HttpClientResponse> Function() _onClose;
+
+  @override
+  final HttpHeaders headers = _NoopHttpHeaders();
+
+  @override
+  Future<HttpClientResponse> close() => _onClose();
+
+  @override
+  void abort([Object? exception, StackTrace? stackTrace]) {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _NoopHttpHeaders implements HttpHeaders {
+  @override
+  void set(String name, Object value, {bool preserveHeaderCase = false}) {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _TrackableDiscardResponse extends Stream<List<int>>
+    implements HttpClientResponse {
+  _TrackableDiscardResponse({required this.onCancelled});
+
+  final void Function() onCancelled;
+
+  @override
+  StreamSubscription<List<int>> listen(
+    void Function(List<int> event)? onData, {
+    Function? onError,
+    void Function()? onDone,
+    bool? cancelOnError,
+  }) {
+    final controller = StreamController<List<int>>(onCancel: onCancelled);
+    return controller.stream.listen(
+      onData,
+      onError: onError,
+      onDone: onDone,
+      cancelOnError: cancelOnError,
+    );
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _HangingHttpClient implements HttpClient {

@@ -115,6 +115,8 @@ class TransportPlaybackControlPanel extends StatelessWidget {
 }
 
 class PrimaryPlaybackControls extends ConsumerStatefulWidget {
+  static const portraitHeight = 92.0;
+
   const PrimaryPlaybackControls({
     super.key,
     required this.session,
@@ -284,7 +286,7 @@ class _PrimaryPlaybackControlsState
     final canNext = enabled && hasNext;
 
     final primaryRow = SizedBox(
-      height: isLandscape ? 48 : 92,
+      height: isLandscape ? 48 : PrimaryPlaybackControls.portraitHeight,
       child: LayoutBuilder(
         builder: (context, constraints) {
           final compact = constraints.maxWidth < 400;
@@ -610,6 +612,8 @@ class _PlaybackSecondaryControlsState
 }
 
 class PlaybackSecondaryControlSurface extends StatelessWidget {
+  static const height = 46.0;
+
   const PlaybackSecondaryControlSurface({super.key, required this.child});
 
   final Widget child;
@@ -623,7 +627,7 @@ class PlaybackSecondaryControlSurface extends StatelessWidget {
         ? cs.surfaceBright
         : cs.surfaceContainerHigh;
     final glassEnabled = tokens.barGlassEnabled;
-    const capsuleHeight = 46.0;
+    const capsuleHeight = height;
     const borderRadius = BorderRadius.all(Radius.circular(capsuleHeight / 2));
     return SizedBox(
       height: capsuleHeight,

@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:isolate';
 import 'dart:typed_data';
 import 'package:characters/characters.dart';
 import 'package:charset/charset.dart';
@@ -297,6 +296,7 @@ class WorkTextService {
     Future<List<CoverImageReference>> Function(String, {required bool refresh})?
     discoverImagesWithRefresh,
     bool combineWindowsLocalDiscovery = false,
+    void Function(String folderPath)? onCombinedImagesRefreshed,
     Duration directoryCacheTtl = defaultDirectoryCacheTtl,
     DateTime Function()? clock,
   }) : _platformGateway = platformGateway ?? FileCachePlatformGateway.instance,
@@ -304,6 +304,7 @@ class WorkTextService {
        _discoverImages = discoverImages,
        _discoverImagesWithRefresh = discoverImagesWithRefresh,
        _combineWindowsLocalDiscovery = combineWindowsLocalDiscovery,
+       _onCombinedImagesRefreshed = onCombinedImagesRefreshed,
        _directoryCacheTtl = directoryCacheTtl,
        _clock = clock ?? DateTime.now;
 
@@ -316,6 +317,7 @@ class WorkTextService {
   })?
   _discoverImagesWithRefresh;
   final bool _combineWindowsLocalDiscovery;
+  final void Function(String folderPath)? _onCombinedImagesRefreshed;
   final Duration _directoryCacheTtl;
   final DateTime Function() _clock;
   final _directoryFiles = <String, Future<List<WorkTextFile>>>{};
@@ -404,6 +406,7 @@ class WorkTextService {
 
   bool _canUseCombinedWindowsDiscovery(String folderPath) {
     if (!Platform.isWindows ||
+        defaultTargetPlatform != TargetPlatform.windows ||
         folderPath.trim().isEmpty ||
         PathMatcher.isContentUri(folderPath) ||
         PathMatcher.isRemoteUri(folderPath)) {
@@ -453,6 +456,7 @@ class WorkTextService {
       if (existing != null) {
         try {
           final result = await existing;
+          if (refresh) _onCombinedImagesRefreshed?.call(folderPath);
           return (texts: result.texts, images: result.images);
         } catch (_) {
           return (texts: cachedTexts, images: cachedImages);
@@ -465,15 +469,14 @@ class WorkTextService {
       request;
       request =
           (() async {
-            final discovered = IOOverrides.current == null
-                ? await Isolate.run(
-                    () => _discoverWindowsWorkFilesSync(folderPath),
-                  )
-                : _discoverWindowsWorkFilesSync(folderPath);
+            final discovered = await _platformGateway.discoverWindowsWorkFiles(
+              folderPath,
+            );
+            final discoveredTexts = _parseWorkTextFiles(discovered.texts);
             final texts =
-                cachedTexts != null && listEquals(cachedTexts, discovered.texts)
+                cachedTexts != null && listEquals(cachedTexts, discoveredTexts)
                 ? cachedTexts
-                : List<WorkTextFile>.unmodifiable(discovered.texts);
+                : List<WorkTextFile>.unmodifiable(discoveredTexts);
             final images =
                 cachedImages != null &&
                     listEquals(cachedImages, discovered.images)
@@ -505,6 +508,7 @@ class WorkTextService {
       _combinedRequests[key] = request;
       try {
         final result = await request;
+        if (refresh) _onCombinedImagesRefreshed?.call(folderPath);
         return (texts: result.texts, images: result.images);
       } catch (error, stackTrace) {
         AppLogService.warning(
@@ -617,6 +621,12 @@ class WorkTextService {
     String workFolderPath,
   ) async {
     final rawList = await _platformGateway.discoverWorkTexts(workFolderPath);
+    return _parseWorkTextFiles(rawList);
+  }
+
+  static List<WorkTextFile> _parseWorkTextFiles(
+    List<Map<String, String>> rawList,
+  ) {
     return rawList
         .map((map) {
           return WorkTextFile(
@@ -783,123 +793,4 @@ final class WorkTextReadRequest {
 
 final class WorkTextReadCancelled implements Exception {
   const WorkTextReadCancelled();
-}
-
-final RegExp _windowsWorkImageExtension = RegExp(
-  r'\.(png|jpe?g|webp|bmp|gif)$',
-  caseSensitive: false,
-);
-
-const List<String> _windowsPreferredCoverNames = <String>[
-  'cover',
-  'folder',
-  'front',
-  'album',
-  'artwork',
-  'poster',
-];
-
-const Set<String> _windowsWorkTextExtensions = <String>{
-  ...supportedSubtitleExtensions,
-  '.md',
-  '.pdf',
-};
-
-int _windowsImagePriority(String filePath) {
-  final stem = paths.basenameWithoutExtension(filePath).trim().toLowerCase();
-  final exact = _windowsPreferredCoverNames.indexOf(stem);
-  if (exact >= 0) return exact;
-  for (var i = 0; i < _windowsPreferredCoverNames.length; i++) {
-    if (stem.contains(_windowsPreferredCoverNames[i])) {
-      return 100 + i;
-    }
-  }
-  return 200;
-}
-
-int _compareWindowsImages(File a, File b) {
-  final priority = _windowsImagePriority(
-    a.path,
-  ).compareTo(_windowsImagePriority(b.path));
-  if (priority != 0) return priority;
-  final lower = a.path.toLowerCase().compareTo(b.path.toLowerCase());
-  if (lower != 0) return lower;
-  return a.path.compareTo(b.path);
-}
-
-({List<WorkTextFile> texts, List<CoverImageReference> images})
-_discoverWindowsWorkFilesSync(String folderPath) {
-  final directory = Directory(folderPath);
-  if (!directory.existsSync()) {
-    throw FileSystemException(
-      'Document directory is unavailable.',
-      folderPath,
-    );
-  }
-  final texts = <WorkTextFile>[];
-  final imageFiles = <File>[];
-  final pendingDirs = <Directory>[directory];
-  var isRoot = true;
-  while (pendingDirs.isNotEmpty) {
-    final current = pendingDirs.removeLast();
-    final List<FileSystemEntity> entries;
-    try {
-      entries = current.listSync(followLinks: false);
-    } on FileSystemException {
-      if (isRoot) rethrow;
-      continue;
-    }
-    isRoot = false;
-    for (final entity in entries) {
-      if (entity is File) {
-        final filePath = entity.path;
-        if (_windowsWorkImageExtension.hasMatch(filePath)) {
-          imageFiles.add(entity);
-        } else if (_windowsWorkTextExtensions.contains(
-          paths.extension(filePath).toLowerCase(),
-        )) {
-          try {
-            final relativePath = paths
-                .relative(filePath, from: folderPath)
-                .replaceAll(r'\', '/');
-            final name = paths.basename(filePath);
-            if (name.isNotEmpty && filePath.isNotEmpty) {
-              texts.add(
-                WorkTextFile(
-                  name: name,
-                  relativePath: relativePath,
-                  path: filePath,
-                  fileSizeBytes: entity.lengthSync(),
-                ),
-              );
-            }
-          } on FileSystemException {
-            // Skip unreadable or vanished text files.
-          }
-        }
-      } else if (entity is Directory) {
-        pendingDirs.add(entity);
-      }
-    }
-  }
-  texts.sort(
-    (a, b) =>
-        a.relativePath.toLowerCase().compareTo(b.relativePath.toLowerCase()),
-  );
-  imageFiles.sort(_compareWindowsImages);
-  final images = <CoverImageReference>[];
-  for (final file in imageFiles) {
-    try {
-      images.add(
-        CoverImageReference(
-          displayPath: file.path,
-          sourcePath: file.path,
-          fileSizeBytes: file.lengthSync(),
-        ),
-      );
-    } on FileSystemException {
-      // Skip unreadable or vanished image files.
-    }
-  }
-  return (texts: texts, images: images);
 }

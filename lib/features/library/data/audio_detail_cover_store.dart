@@ -28,11 +28,14 @@ final class AudioDetailCoverStore {
         : detail.copyWith(cardCoverPath: value);
   }
 
-  Future<Map<String, Object?>> documentFields(AudioDetail detail) async {
+  static const Map<String, Object?> _emptyDocumentFields = <String, Object?>{
+    relativePathKey: null,
+    embeddedKey: null,
+  };
+
+  static Map<String, Object?>? _resolveQuickDocumentFields(AudioDetail detail) {
     final coverPath = detail.cardCoverPath;
-    if (coverPath == null) {
-      return const <String, Object?>{relativePathKey: null, embeddedKey: null};
-    }
+    if (coverPath == null) return _emptyDocumentFields;
     final basePath = _portableBasePath(detail.target);
     final relative = basePath == null
         ? null
@@ -44,8 +47,14 @@ final class AudioDetailCoverStore {
     }
     if (PathMatcher.isContentUri(coverPath) ||
         PathMatcher.isRemoteUri(coverPath)) {
-      return const <String, Object?>{relativePathKey: null, embeddedKey: null};
+      return _emptyDocumentFields;
     }
+    return null;
+  }
+
+  Future<Map<String, Object?>> documentFields(AudioDetail detail) async {
+    final quick = _resolveQuickDocumentFields(detail);
+    if (quick != null) return quick;
     if (IOOverrides.current == null) {
       return Isolate.run(() => buildDocumentFieldsSync(detail));
     }
@@ -57,46 +66,19 @@ final class AudioDetailCoverStore {
   /// together with JSON encoding so base64 payloads never cross isolate
   /// boundaries twice.
   static Map<String, Object?> buildDocumentFieldsSync(AudioDetail detail) {
-    final coverPath = detail.cardCoverPath;
-    if (coverPath == null) {
-      return const <String, Object?>{relativePathKey: null, embeddedKey: null};
-    }
-    final basePath = _portableBasePathStatic(detail.target);
-    final relative = basePath == null
-        ? null
-        : _normalizeRelativePathStatic(
-            PathMatcher.relativeWithin(coverPath, basePath),
-          );
-    if (relative != null) {
-      return <String, Object?>{relativePathKey: relative, embeddedKey: null};
-    }
-    if (PathMatcher.isContentUri(coverPath) ||
-        PathMatcher.isRemoteUri(coverPath)) {
-      return const <String, Object?>{relativePathKey: null, embeddedKey: null};
-    }
+    final quick = _resolveQuickDocumentFields(detail);
+    if (quick != null) return quick;
+    final coverPath = detail.cardCoverPath!;
     try {
       final file = File(coverPath);
-      if (!file.existsSync()) {
-        return const <String, Object?>{
-          relativePathKey: null,
-          embeddedKey: null,
-        };
-      }
+      if (!file.existsSync()) return _emptyDocumentFields;
       final length = file.lengthSync();
       if (length <= 0 || length > maxCoverFileBytes) {
-        return const <String, Object?>{
-          relativePathKey: null,
-          embeddedKey: null,
-        };
+        return _emptyDocumentFields;
       }
       final bytes = file.readAsBytesSync();
       final mimeType = detectCoverMimeType(coverPath, bytes);
-      if (mimeType == null) {
-        return const <String, Object?>{
-          relativePathKey: null,
-          embeddedKey: null,
-        };
-      }
+      if (mimeType == null) return _emptyDocumentFields;
       return <String, Object?>{
         relativePathKey: null,
         embeddedKey: <String, Object?>{
@@ -108,7 +90,7 @@ final class AudioDetailCoverStore {
         },
       };
     } on Object {
-      return const <String, Object?>{relativePathKey: null, embeddedKey: null};
+      return _emptyDocumentFields;
     }
   }
 
@@ -200,18 +182,12 @@ final class AudioDetailCoverStore {
     });
   }
 
-  String? _portableBasePath(AudioDetailTarget target) =>
-      _portableBasePathStatic(target);
-
-  static String? _portableBasePathStatic(AudioDetailTarget target) =>
+  static String? _portableBasePath(AudioDetailTarget target) =>
       target.isLibraryRootFolder
       ? target.targetPath
       : PathMatcher.parentPath(target.targetPath);
 
-  String? _normalizeRelativePath(Object? value) =>
-      _normalizeRelativePathStatic(value);
-
-  static String? _normalizeRelativePathStatic(Object? value) {
+  static String? _normalizeRelativePath(Object? value) {
     if (value is! String) return null;
     final normalized = value.trim().replaceAll('\\', '/');
     if (normalized.isEmpty || normalized.startsWith('/')) return null;

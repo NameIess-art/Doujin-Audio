@@ -389,7 +389,7 @@ class _DlsiteMetadataReviewPageState
     }
   }
 
-  Future<void> _fetch() async {
+  Future<void> _fetch({bool forceRefresh = false}) async {
     setState(() {
       _loading = true;
       _error = null;
@@ -427,11 +427,13 @@ class _DlsiteMetadataReviewPageState
                       await library.fetchPreferredMetadata(
                         rjCode,
                         language: language,
+                        forceRefresh: forceRefresh,
                       ),
                     ]
                   : library.searchPreferredMetadataByTitles(
                       widget.searchTitles,
                       language: language,
+                      forceRefresh: forceRefresh,
                     );
             },
           );
@@ -913,7 +915,7 @@ class _DlsiteMetadataReviewPageState
                             bottomInset,
                           ),
                           child: DlsiteReviewErrorView(
-                            onRetry: _fetch,
+                            onRetry: () => unawaited(_fetch(forceRefresh: true)),
                             onSkip: widget.allowSkip ? _skip : null,
                           ),
                         )

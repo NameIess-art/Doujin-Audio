@@ -2130,7 +2130,7 @@ void main() {
   }
 
   testWidgets(
-    'SessionProgressBar renders compact slider height and tight timecode spacing',
+    'SessionProgressBar keeps a thin rail and platform-specific seek target',
     (tester) async {
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
@@ -2158,8 +2158,13 @@ void main() {
       final sliderFinder = find.byType(Slider);
       expect(sliderFinder, findsOneWidget);
       final sliderRect = tester.getRect(sliderFinder);
-      // Slider height is compact (20px)
-      expect(sliderRect.height, lessThanOrEqualTo(24));
+      expect(SliderTheme.of(tester.element(sliderFinder)).trackHeight, 3);
+      expect(
+        sliderRect.height,
+        defaultTargetPlatform == TargetPlatform.android
+            ? kMinInteractiveDimension
+            : 20,
+      );
 
       final timecodeFinder = find.byType(TimecodeLabel).first;
       expect(timecodeFinder, findsOneWidget);
@@ -2169,6 +2174,10 @@ void main() {
       final gap = timecodeRect.top - sliderRect.bottom;
       expect(gap, lessThanOrEqualTo(5));
     },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 
   testWidgets(
@@ -2618,7 +2627,7 @@ void main() {
             .first;
         expect(
           tester.getBottomLeft(capsule).dy,
-          lessThan(tester.getTopLeft(find.byType(Slider)).dy),
+          lessThan(tester.getCenter(find.byType(Slider)).dy - 10),
         );
         expect(
           tester.getTopLeft(capsule).dy,
@@ -4613,7 +4622,12 @@ void main() {
 
     await tester.tap(find.byTooltip(languageProvider.tr('audio_features')));
     await tester.pumpAndSettle();
-    expect(artwork, findsNothing);
+    final artworkOpacity = find.ancestor(
+      of: artwork,
+      matching: find.byType(AnimatedOpacity),
+    );
+    expect(tester.widget<AnimatedOpacity>(artworkOpacity.first).opacity, 0);
+    expect(artwork.hitTestable(), findsNothing);
     final panelSurface = find.byKey(
       const ValueKey<String>('playback_expanded_control_panel_surface'),
     );
@@ -15756,7 +15770,7 @@ void main() {
   }
 
   testWidgets(
-    'landscape session detail hides the capsule on the first feature panel frame',
+    'landscape session detail keeps the transport beside the feature panel',
     (tester) async {
       final themeProvider = ThemeProvider(
         loadPersistedState: false,
@@ -15774,6 +15788,7 @@ void main() {
         const ValueKey('playback_secondary_controls'),
       );
       expect(secondaryControlsFinder, findsOneWidget);
+      final secondaryControlsRect = tester.getRect(secondaryControlsFinder);
       final closeButton = find.byKey(
         const ValueKey('session_detail_close_button'),
       );
@@ -15797,7 +15812,7 @@ void main() {
 
       await tester.tap(tuneButtonFinder);
       await tester.pump();
-      expect(secondaryControlsFinder, findsNothing);
+      expect(tester.getRect(secondaryControlsFinder), secondaryControlsRect);
       expect(menuOpacity(), 0);
       expect(cover, findsNothing);
       await tester.pump(kAppFadeDuration ~/ 2);
@@ -15809,6 +15824,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const ValueKey('segments_landscape')), findsOneWidget);
+      expect(tester.getRect(secondaryControlsFinder), secondaryControlsRect);
       expect(cover, findsNothing);
       final titleRect = tester.getRect(
         find.byKey(const ValueKey('title_marquee_subtitle-session')),
@@ -15920,7 +15936,7 @@ void main() {
         contentPaddings,
         contains(const EdgeInsets.fromLTRB(16, 0, 16, 16)),
       );
-      expect(secondaryControlsFinder, findsNothing);
+      expect(tester.getRect(secondaryControlsFinder), secondaryControlsRect);
 
       expect(await themeProvider.setBarGlassEnabled(true), isTrue);
       await tester.pumpAndSettle();

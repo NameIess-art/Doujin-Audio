@@ -186,19 +186,51 @@ extension AppDatabaseBackup on AppDatabase {
       await candidate.transaction((txn) async {
         final localActivity = await _listeningRecency(txn, 'local_restore');
         final backupActivity = await _listeningRecency(txn, 'main');
-        if (localActivity.lastPlayed > backupActivity.lastPlayed ||
+        final keepLocalActivity =
+            localActivity.lastPlayed > backupActivity.lastPlayed ||
             (localActivity.lastPlayed == backupActivity.lastPlayed &&
-                localActivity.totalMs > backupActivity.totalMs)) {
-          // The totals, history and import IDs describe the same batch snapshot.
-          for (final entry in _listeningRestoreColumns.entries) {
-            final table = entry.key;
-            final columns = entry.value;
+                localActivity.totalMs > backupActivity.totalMs);
+        final keepLocalHistory =
+            localActivity.historyChanged == backupActivity.historyChanged
+            ? keepLocalActivity
+            : localActivity.historyChanged > backupActivity.historyChanged;
+        for (final MapEntry(key: table, value: columns)
+            in _listeningRestoreColumns.entries) {
+          if (table == 'listening_history'
+              ? keepLocalHistory
+              : keepLocalActivity) {
             await txn.rawDelete('DELETE FROM main.$table');
             await txn.execute(
               'INSERT INTO main.$table ($columns) '
               'SELECT $columns FROM local_restore.$table',
             );
           }
+        }
+        final localSettings = [
+          if (keepLocalActivity) _listeningActivityPlaybackAtKey,
+          if (keepLocalHistory) _listeningHistoryEditedAtKey,
+        ];
+        for (final key in localSettings) {
+          await txn.delete(
+            'app_kv_settings',
+            where: 'key = ?',
+            whereArgs: [key],
+          );
+          await txn.execute(
+            'INSERT INTO main.app_kv_settings (key, value) '
+            'SELECT key, value FROM local_restore.app_kv_settings WHERE key = ?',
+            [key],
+          );
+        }
+        if (keepLocalActivity != keepLocalHistory) {
+          // The chosen history may omit the latest play in the chosen totals.
+          final lastPlayed = keepLocalActivity
+              ? localActivity.lastPlayed
+              : backupActivity.lastPlayed;
+          await txn.insert('app_kv_settings', {
+            'key': _listeningActivityPlaybackAtKey,
+            'value': lastPlayed.toString(),
+          }, conflictAlgorithm: ConflictAlgorithm.replace);
         }
         for (final MapEntry(key: key, value: catalogKey)
             in interestCatalogKeys.entries) {
@@ -370,17 +402,30 @@ Future<bool> _attachReadableRestoreSource(
   }
 }
 
-Future<({int lastPlayed, int totalMs})> _listeningRecency(
+Future<({int lastPlayed, int historyChanged, int totalMs})> _listeningRecency(
   Transaction txn,
   String schema,
 ) async {
   final row = (await txn.rawQuery(
     'SELECT (SELECT MAX(last_played_at_ms) FROM $schema.listening_history) '
     'AS last_played, (SELECT SUM(milliseconds) FROM $schema.listening_days) '
-    'AS total_ms',
+    'AS total_ms, (SELECT value FROM $schema.app_kv_settings WHERE key = ?) '
+    'AS history_edited_at, (SELECT value FROM $schema.app_kv_settings '
+    'WHERE key = ?) AS activity_playback_at',
+    [_listeningHistoryEditedAtKey, _listeningActivityPlaybackAtKey],
   )).single;
+  final lastVisible = (row['last_played'] as int?) ?? -1;
+  final historyEdited = int.tryParse(row['history_edited_at'] as String? ?? '');
+  final lastRecorded = int.tryParse(
+    row['activity_playback_at'] as String? ?? '',
+  );
   return (
-    lastPlayed: (row['last_played'] as int?) ?? -1,
+    lastPlayed: lastRecorded != null && lastRecorded > lastVisible
+        ? lastRecorded
+        : lastVisible,
+    historyChanged: historyEdited != null && historyEdited > lastVisible
+        ? historyEdited
+        : lastVisible,
     totalMs: (row['total_ms'] as int?) ?? 0,
   );
 }

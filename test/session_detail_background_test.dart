@@ -4,7 +4,9 @@ import 'dart:ui' as ui;
 
 import 'package:doujin_audio/app/presentation/app_orientation_controller.dart';
 import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
+import 'package:doujin_audio/app/presentation/windows_window_title_bar.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/app/theme/app_styles.dart';
 import 'package:doujin_audio/app/theme/theme_provider.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/media/cover_image_resolution.dart';
@@ -484,7 +486,7 @@ void main() {
             )
             .opacity
             .value;
-        for (final name in ['close', 'title']) {
+        for (final name in ['close', 'title', 'cover_vignette']) {
           expect(overlayOpacity(name), 0, reason: name);
         }
         expect(enter.from, sourceRect);
@@ -546,7 +548,7 @@ void main() {
           expect(upgradeFinder, findsNothing);
           expect(tester.widget<RawImage>(detailImage).image!.width, 192);
         }
-        for (final name in ['close', 'title']) {
+        for (final name in ['close', 'title', 'cover_vignette']) {
           expect(overlayOpacity(name), 0);
         }
         await tester.pump(const Duration(milliseconds: 150));
@@ -554,7 +556,7 @@ void main() {
           expect(previewFinder, findsNothing);
           expect(upgradeFinder, findsNothing);
         }
-        for (final name in ['close', 'title']) {
+        for (final name in ['close', 'title', 'cover_vignette']) {
           expect(overlayOpacity(name), inExclusiveRange(0, 1));
         }
         await tester.pumpAndSettle();
@@ -562,7 +564,7 @@ void main() {
           expect(previewFinder, findsNothing);
           expect(tester.widget<RawImage>(detailImage).image!.width, 192);
         }
-        for (final name in ['close', 'title']) {
+        for (final name in ['close', 'title', 'cover_vignette']) {
           expect(overlayOpacity(name), 1);
         }
         expect(flightFinder, findsNothing);
@@ -629,7 +631,7 @@ void main() {
         expect(exit.to, tester.getRect(target));
         expect(exit.reverse, isTrue);
         expect(exit.progress.value, inExclusiveRange(0, 1));
-        for (final name in ['close', 'title']) {
+        for (final name in ['close', 'title', 'cover_vignette']) {
           expect(overlayOpacity(name), 1);
         }
         await tester.pumpAndSettle();
@@ -1353,7 +1355,10 @@ void main() {
     final closeRect = tester.getRect(
       find.byKey(const ValueKey('session_detail_close_button')),
     );
-    expect(closeRect.top, 36.0);
+    expect(
+      closeRect.top,
+      WindowsWindowTitleBar.height + AppPageHeaderMetrics.padding.top,
+    );
     expect(closeRect.left, 24.0);
 
     await tester.drag(

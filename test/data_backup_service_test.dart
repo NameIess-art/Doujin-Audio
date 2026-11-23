@@ -61,6 +61,195 @@ void main() {
     await temporaryDirectory.delete(recursive: true);
   });
 
+  for (final phase in ['committing', 'committed']) {
+    test(
+      'startup handles a missing $phase journal with a flushed part',
+      () async {
+        const marker = 'restore_marker';
+        final date = DateTime.utc(2026, 11, 18);
+        await appDatabase.saveAppSetting(marker, 'replacement');
+        final exporter = DataBackupService(
+          database: appDatabase,
+          accountStore: accountStore,
+          appUpdateService: _FakeAppUpdateService(),
+          supportDirectoryProvider: () async => temporaryDirectory,
+          platformName: 'test-platform',
+        );
+        final exported = await exporter.exportBackup(
+          '${temporaryDirectory.path}/interrupted.dabackup',
+        );
+        await databaseDirectory.create();
+        final currentPath = '${databaseDirectory.path}/${AppDatabase.fileName}';
+        await appDatabase.createPortableSnapshot(currentPath);
+        final current = await databaseFactoryFfi.openDatabase(currentPath);
+        final retryStore = _FailFirstRestoreAccountStore();
+        final restorer = DataBackupService(
+          database: AppDatabase.test(current),
+          accountStore: retryStore,
+          supportDirectoryProvider: () async => temporaryDirectory,
+          databasesPathProvider: () async => databaseDirectory.path,
+          platformName: 'test-platform',
+        );
+        await restorer.inspectAndStageRestore(exported.path);
+
+        final restorePath = '${temporaryDirectory.path}/backup_restore';
+        final rollback = await Directory('$restorePath/rollback').create();
+        final original = await databaseFactoryFfi.openDatabase(
+          '${rollback.path}/${AppDatabase.fileName}',
+        );
+        await AppDatabase.createSchemaForTest(original);
+        await AppDatabase.test(original).saveAppSetting(marker, 'original');
+        await original.close();
+        await File('${rollback.path}/preferences.json').writeAsString('{}');
+        await File('${rollback.path}/asmr-account.json').writeAsString(
+          jsonEncode(AsmrAccountBackupSnapshot(createdAt: date).toJson()),
+        );
+        await File('$restorePath/journal.json.part').writeAsString(
+          jsonEncode({'phase': phase, 'createdAt': date.toIso8601String()}),
+        );
+        await File('$restorePath/journal.json').delete();
+        await current.close();
+
+        final outcome = await restorer.applyAtStartup();
+        final restored = await databaseFactoryFfi.openDatabase(currentPath);
+        addTearDown(restored.close);
+        final actualMarker = await AppDatabase.test(
+          restored,
+        ).loadAppSetting(marker);
+        if (phase == 'committed') {
+          expect(outcome?.succeeded, isTrue);
+          expect(actualMarker, 'replacement');
+          expect(retryStore.failed, isFalse);
+        } else {
+          expect(outcome?.errorCode, 'restore_failed_rolled_back');
+          expect(actualMarker, 'original');
+          expect(retryStore.failed, isTrue);
+        }
+        expect(await Directory(restorePath).exists(), isFalse);
+      },
+    );
+  }
+
+  for (final (undo, additionalListening) in [
+    (false, false),
+    (true, false),
+    (false, true),
+  ]) {
+    test(
+      'older backup preserves history edit (undo: $undo, added listening: $additionalListening)',
+      () async {
+        await databaseDirectory.create();
+        final currentPath = '${databaseDirectory.path}/${AppDatabase.fileName}';
+        final current = await databaseFactoryFfi.openDatabase(currentPath);
+        await AppDatabase.createSchemaForTest(current);
+        final currentDatabase = AppDatabase.test(current);
+        final played = ListeningWorkRecord(
+          workKey: 'history',
+          track: MusicTrack(
+            path: '/history.mp3',
+            displayName: 'history',
+            groupKey: 'history',
+            groupTitle: 'history',
+            groupSubtitle: '',
+            isSingle: true,
+          ),
+          milliseconds: 5000,
+          lastPlayedAtMs: 1000,
+        );
+        await currentDatabase.importListeningBatch('history:1', [
+          ListeningDayRecord(
+            date: '2026-11-16',
+            totalMs: 5000,
+            works: [played],
+          ),
+        ]);
+        DataBackupService backupFor(AppDatabase database) => DataBackupService(
+          database: database,
+          accountStore: accountStore,
+          appUpdateService: _FakeAppUpdateService(),
+          supportDirectoryProvider: () async => temporaryDirectory,
+          databasesPathProvider: () async => databaseDirectory.path,
+          platformName: 'test-platform',
+        );
+        final backup = backupFor(currentDatabase);
+        if (undo) {
+          await currentDatabase.removeListeningHistoryEntry(played.workKey);
+        }
+        final exported = await backup.exportBackup(
+          '${temporaryDirectory.path}/older-history.dabackup',
+        );
+        if (undo) {
+          await currentDatabase.restoreListeningHistoryEntry(
+            played,
+            legacyOrder: 0,
+          );
+        } else {
+          if (additionalListening) {
+            final later = ListeningWorkRecord(
+              workKey: 'later',
+              track: played.track,
+              milliseconds: 2000,
+              lastPlayedAtMs: 2000,
+            );
+            await currentDatabase.importListeningBatch('history:2', [
+              ListeningDayRecord(
+                date: '2026-11-16',
+                totalMs: 2000,
+                works: [later],
+              ),
+            ]);
+            await currentDatabase.removeListeningHistoryEntry(later.workKey);
+          }
+          await currentDatabase.removeListeningHistoryEntry(played.workKey);
+        }
+
+        await backup.inspectAndStageRestore(exported.path);
+        expect((await backup.applyAtStartup())?.succeeded, isTrue);
+        final restored = await databaseFactoryFfi.openDatabase(currentPath);
+        addTearDown(() async {
+          if (restored.isOpen) await restored.close();
+        });
+        final restoredDatabase = AppDatabase.test(restored);
+        expect(await restoredDatabase.countListeningHistory(), undo ? 1 : 0);
+        expect(
+          (await restoredDatabase.loadListeningDays()).single['milliseconds'],
+          additionalListening ? 7000 : 5000,
+        );
+
+        if (!undo && !additionalListening) {
+          await appDatabase.importListeningBatch('older:1', [
+            ListeningDayRecord(
+              date: '2026-11-16',
+              totalMs: 4000,
+              works: [
+                ListeningWorkRecord(
+                  workKey: 'older',
+                  track: played.track,
+                  milliseconds: 4000,
+                  lastPlayedAtMs: 500,
+                ),
+              ],
+            ),
+          ]);
+          final earlier = await backupFor(appDatabase).exportBackup(
+            '${temporaryDirectory.path}/earlier-history.dabackup',
+          );
+          final secondRestore = backupFor(restoredDatabase);
+          await secondRestore.inspectAndStageRestore(earlier.path);
+          expect((await secondRestore.applyAtStartup())?.succeeded, isTrue);
+          final reopened = await databaseFactoryFfi.openDatabase(currentPath);
+          addTearDown(reopened.close);
+          final afterSecondRestore = AppDatabase.test(reopened);
+          expect(await afterSecondRestore.countListeningHistory(), 0);
+          expect(
+            (await afterSecondRestore.loadListeningDays()).single['milliseconds'],
+            5000,
+          );
+        }
+      },
+    );
+  }
+
   test(
     'file-backed snapshot copies only the app schema and keeps the source',
     () async {
@@ -1366,5 +1555,18 @@ class _FakeAppUpdateService extends AppUpdateService {
   Future<AppVersionInfo> currentAppVersion() async {
     await beforeRead?.call();
     return const AppVersionInfo(versionName: '0.17.0', buildNumber: 1700);
+  }
+}
+
+class _FailFirstRestoreAccountStore extends SecureAsmrTokenStore {
+  bool failed = false;
+
+  @override
+  Future<void> replaceFromBackup(AsmrAccountBackupSnapshot snapshot) async {
+    if (!failed) {
+      failed = true;
+      throw StateError('account restore failed');
+    }
+    await super.replaceFromBackup(snapshot);
   }
 }

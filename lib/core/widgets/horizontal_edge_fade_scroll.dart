@@ -130,22 +130,18 @@ ShaderCallback _edgeShaderCallbackFor(bool fadeLeft, bool fadeRight) =>
 class _HorizontalEdgeMask extends ShaderMask {
   _HorizontalEdgeMask({
     required this.enabled,
-    required this.fadeLeft,
-    required this.fadeRight,
+    required bool fadeLeft,
+    required bool fadeRight,
     required super.blendMode,
     required super.child,
   }) : super(shaderCallback: _edgeShaderCallbackFor(fadeLeft, fadeRight));
 
   final bool enabled;
-  final bool fadeLeft;
-  final bool fadeRight;
 
   @override
   RenderShaderMask createRenderObject(BuildContext context) =>
       _RenderHorizontalEdgeMask(
         enabled: enabled,
-        fadeLeft: fadeLeft,
-        fadeRight: fadeRight,
         shaderCallback: shaderCallback,
         blendMode: blendMode,
       );
@@ -156,31 +152,23 @@ class _HorizontalEdgeMask extends ShaderMask {
     covariant _RenderHorizontalEdgeMask renderObject,
   ) {
     renderObject
+      ..shaderCallback = shaderCallback
       ..blendMode = blendMode
-      ..enabled = enabled
-      ..fadeLeft = fadeLeft
-      ..fadeRight = fadeRight;
+      ..enabled = enabled;
   }
 }
 
 class _RenderHorizontalEdgeMask extends RenderShaderMask {
   _RenderHorizontalEdgeMask({
     required bool enabled,
-    required bool fadeLeft,
-    required bool fadeRight,
     required super.shaderCallback,
     required super.blendMode,
-  }) : _enabled = enabled,
-       _fadeLeft = fadeLeft,
-       _fadeRight = fadeRight;
+  }) : _enabled = enabled;
 
   bool _enabled;
-  bool _fadeLeft;
-  bool _fadeRight;
   Shader? _cachedShader;
   Size? _cachedSize;
-  bool? _cachedFadeLeft;
-  bool? _cachedFadeRight;
+  ShaderCallback? _cachedCallback;
 
   set enabled(bool value) {
     if (_enabled == value) return;
@@ -189,18 +177,11 @@ class _RenderHorizontalEdgeMask extends RenderShaderMask {
     markNeedsPaint();
   }
 
-  set fadeLeft(bool value) {
-    if (_fadeLeft == value) return;
-    _fadeLeft = value;
+  @override
+  set shaderCallback(ShaderCallback value) {
+    if (shaderCallback == value) return;
     _cachedShader = null;
-    markNeedsPaint();
-  }
-
-  set fadeRight(bool value) {
-    if (_fadeRight == value) return;
-    _fadeRight = value;
-    _cachedShader = null;
-    markNeedsPaint();
+    super.shaderCallback = value;
   }
 
   @override
@@ -220,15 +201,10 @@ class _RenderHorizontalEdgeMask extends RenderShaderMask {
     const overlap = 1.0;
     if (_cachedShader == null ||
         _cachedSize != size ||
-        _cachedFadeLeft != _fadeLeft ||
-        _cachedFadeRight != _fadeRight) {
-      _cachedShader = _edgeShaderCallbackFor(
-        _fadeLeft,
-        _fadeRight,
-      )(const Offset(overlap, overlap) & size);
+        _cachedCallback != shaderCallback) {
+      _cachedShader = shaderCallback(const Offset(overlap, overlap) & size);
       _cachedSize = size;
-      _cachedFadeLeft = _fadeLeft;
-      _cachedFadeRight = _fadeRight;
+      _cachedCallback = shaderCallback;
     }
     layer ??= ShaderMaskLayer();
     layer!

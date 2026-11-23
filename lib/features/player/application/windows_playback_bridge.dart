@@ -601,10 +601,11 @@ class WindowsPlaybackBridge
             final clampedPosition = startPosition < Duration.zero
                 ? Duration.zero
                 : startPosition;
+            final sameIndex = index == session.index;
             final sameTrack =
                 _WindowsPlaybackSession._queueKey(session.queue[session.index]) ==
                 _WindowsPlaybackSession._queueKey(targetItem);
-            if (!sameTrack && clampedPosition != Duration.zero) {
+            if (!(sameIndex && sameTrack) && clampedPosition != Duration.zero) {
               throw const _WindowsBridgeFailure(
                 nativePlaybackQueueResyncRequiredCode,
                 'Reusing existing queue requires zero start position on track switch',
@@ -637,7 +638,7 @@ class WindowsPlaybackBridge
             session.externalQueueRevision = 0;
             session.isTemporary = isTemporary;
             if (!sameTrack) session.duration = null;
-            if (sameTrack && clampedPosition > Duration.zero) {
+            if (sameIndex && sameTrack && clampedPosition > Duration.zero) {
               await _seekExistingTrack(session, player, generation);
             } else {
               await _jump(session, player);
@@ -679,6 +680,7 @@ class WindowsPlaybackBridge
         }
         final index = (queueStartIndex ?? 0).clamp(0, items.length - 1);
         final previousQueue = session.queue;
+        final sameIndex = previousQueue.isNotEmpty && index == session.index;
         final sameTrack =
             previousQueue.isNotEmpty &&
             _WindowsPlaybackSession._queueKey(previousQueue[session.index]) ==
@@ -749,6 +751,7 @@ class WindowsPlaybackBridge
             !wasCompleted &&
             !wasNativeQueueLimited &&
             !hadRetainedCurrent &&
+            sameIndex &&
             sameTrack &&
             sameQueueStructure) {
           await _seekExistingTrack(session, player, generation);
@@ -819,7 +822,10 @@ class WindowsPlaybackBridge
   ) async {
     session.cancelIdleRelease();
     session.error = null;
-    session.pendingStart = null;
+    final target = session.clampPosition(session.position);
+    final deferSeek =
+        session.pendingStart != null || player.state.duration <= Duration.zero;
+    session.pendingStart = deferSeek ? target : null;
     session.lastProgressPosition = null;
     session.lastProgressElapsed = null;
     if (!session.wantsPlay && player.state.playing) {
@@ -835,10 +841,20 @@ class WindowsPlaybackBridge
     if (!_isCurrent(session) || generation != session.generation) {
       throw ArgumentError('Playback preparation was superseded');
     }
-    final target = session.clampPosition(session.position);
-    await player.seek(session.absolutePosition(target));
     session.position = target;
     session.seekRevision++;
+    if (session.pendingStart != null ||
+        player.state.duration <= Duration.zero) {
+      session.pendingStart = target;
+      if (player.state.duration > Duration.zero) {
+        await session.restorePendingPosition(
+          player,
+          isCurrent: () => _isCurrent(session),
+        );
+      }
+      return;
+    }
+    await player.seek(session.absolutePosition(target));
     if (!_isCurrent(session) || generation != session.generation) {
       throw ArgumentError('Playback preparation was superseded');
     }

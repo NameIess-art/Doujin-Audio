@@ -11,10 +11,12 @@ extension PlaybackCommandQueueSync on PlaybackCommandCoordinator {
     final generation = session.loadGeneration;
     final queueRevision = session.queueVersion;
     final previousQueue = session.nativePlaybackQueueCache;
-    final nativeQueue = await _nativePlaybackQueueFor(
+    final builtQueue = await _nativePlaybackQueueWithBaseKey(
       session,
       currentPath: session.currentTrackPath,
     );
+    final nativeQueue = builtQueue.queue;
+    final builtBaseKey = builtQueue.baseKey;
     if (!_isRegisteredSession(session) ||
         session.loadGeneration != generation ||
         session.queueVersion != queueRevision ||
@@ -57,10 +59,9 @@ extension PlaybackCommandQueueSync on PlaybackCommandCoordinator {
       session.clearNativePlaybackQueueCache();
       return false;
     }
-    session.syncedNativeQueueBaseKey = Object.hash(
-      session.nativePlaybackQueueScopeCacheKey,
-      _libraryFacade.contentRevision,
-    );
+    if (scopeChanged) {
+      session.syncedNativeQueueBaseKey = builtBaseKey;
+    }
     _playbackFacade.updateNativeSessionRetainedContentUris(
       session.id,
       <Object?>[
@@ -207,10 +208,12 @@ extension PlaybackCommandQueueSync on PlaybackCommandCoordinator {
         session.currentQueueIndex = nextIndex;
         session.currentTrackPath = tracks[nextIndex].path;
         _notifyPlaybackChanged(session.id);
-        final nativeQueue = await nativePlaybackQueueFor(
+        final builtQueue = await _nativePlaybackQueueWithBaseKey(
           session,
           currentPath: session.currentTrackPath,
         );
+        final nativeQueue = builtQueue.queue;
+        final builtBaseKey = builtQueue.baseKey;
         if (!_isRegisteredSession(session) ||
             session.queueVersion != queueRevision ||
             session.loadGeneration != generation) {
@@ -239,10 +242,7 @@ extension PlaybackCommandQueueSync on PlaybackCommandCoordinator {
           return false;
         }
         if (result.isOk) {
-          session.syncedNativeQueueBaseKey = Object.hash(
-            session.nativePlaybackQueueScopeCacheKey,
-            _libraryFacade.contentRevision,
-          );
+          session.syncedNativeQueueBaseKey = builtBaseKey;
           if (result.valueOrNull != null) {
             _handleNativePlaybackSnapshot(result.valueOrNull!);
           }

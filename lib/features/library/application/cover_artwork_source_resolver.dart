@@ -370,7 +370,7 @@ final class CoverArtworkSourceResolver {
 
   bool get _supportsContentUriLookup =>
       AppPlatform.isAndroid ||
-      (!kReleaseMode && defaultTargetPlatform == TargetPlatform.android) ||
+      (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) ||
       !identical(_fileCacheGateway, FileCachePlatformGateway.instance);
 
   Future<String?> resolveVideoFramePathForTrack(MusicTrack track) async {

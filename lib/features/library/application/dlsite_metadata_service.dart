@@ -180,6 +180,7 @@ class DlsiteMetadataService implements LibraryMetadataSource {
     String rjCode, {
     AppLanguage language = AppLanguage.ja,
     DlsiteRequestCancellation? cancellation,
+    bool forceRefresh = false,
   }) async {
     cancellation?.throwIfCancelled();
     final normalized = AudioDetail.findRjCodeInText(rjCode);
@@ -191,10 +192,14 @@ class DlsiteMetadataService implements LibraryMetadataSource {
     }
 
     final cacheKey = (normalized, language);
-    final cached = _readCache(cacheKey);
-    if (cached != null) {
-      if (cached.metadata != null) return cached.metadata!;
-      if (cached.error != null) throw cached.error!;
+    if (forceRefresh) {
+      _metadataCache.remove(cacheKey);
+    } else {
+      final cached = _readCache(cacheKey);
+      if (cached != null) {
+        if (cached.metadata != null) return cached.metadata!;
+        if (cached.error != null) throw cached.error!;
+      }
     }
 
     final languages = <AppLanguage>[
@@ -711,8 +716,12 @@ class DlsiteMetadataService implements LibraryMetadataSource {
         _applyHeaders(request, language);
         final closing = request.close().then((response) {
           if (cancellation?.isCancelled == true) {
-            unawaited(response.listen(null).cancel());
+            unawaited(_discardResponse(response));
             throw const DlsiteMetadataCancelledException();
+          }
+          if (attemptRetired) {
+            unawaited(_discardResponse(response));
+            throw const DlsiteMetadataException('DLsite request attempt ended');
           }
           return response;
         });

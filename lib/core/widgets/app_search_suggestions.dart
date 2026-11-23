@@ -65,19 +65,6 @@ class AppSearchSuggestionSection extends StatelessWidget {
         accentColor: accent,
         maxItems: maxExpandedItems,
         collapsedRows: 3,
-        headerSignature: (
-          title,
-          isLoading,
-          errorText,
-          emptyText,
-          expandLabel,
-          collapseLabel,
-          clearLabel,
-          onClear != null,
-          items.isEmpty,
-          retryLabel,
-          onRetry != null,
-        ),
         headerBuilder: (context, canExpand, expanded, toggle) => Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -205,7 +192,6 @@ class AppElementChipSliver extends StatefulWidget {
     this.maxItems,
     this.collapsedRows,
     this.headerBuilder,
-    this.headerSignature,
     this.resolveRowCount = false,
     this.buildItemMenu,
   }) : assert(maxItems == null || maxItems > 0),
@@ -225,7 +211,6 @@ class AppElementChipSliver extends StatefulWidget {
   final int? maxItems;
   final int? collapsedRows;
   final Widget Function(BuildContext, bool, bool, VoidCallback)? headerBuilder;
-  final Object? headerSignature;
 
   /// Completes row measurement in batches so a draggable scrollbar can use
   /// the full range after the visible rows have been laid out.
@@ -255,45 +240,9 @@ class _AppElementChipSliverState extends State<AppElementChipSliver> {
   Locale? _layoutLocale;
   bool _layoutComplete = false;
   bool _measurementScheduled = false;
-  Widget? _cachedContent;
-  Object? _cachedContentKey;
-  final Set<String> _measuredItems = <String>{};
-  final Set<String> _measuredSelection = <String>{};
   late final String _measurementCommitKey =
       'app_element_chip_sliver_${identityHashCode(this)}';
   final _rowsKey = GlobalKey();
-
-  @override
-  void didUpdateWidget(covariant AppElementChipSliver oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (_cachedContent == null) return;
-    if (!identical(oldWidget.items, widget.items) ||
-        !identical(oldWidget.labels, widget.labels) ||
-        oldWidget.maxItems != widget.maxItems ||
-        oldWidget.collapsedRows != widget.collapsedRows ||
-        oldWidget.resolveRowCount != widget.resolveRowCount ||
-        oldWidget.readOnly != widget.readOnly ||
-        oldWidget.mutedHint != widget.mutedHint ||
-        oldWidget.accentColor != widget.accentColor ||
-        oldWidget.isEnabled != widget.isEnabled ||
-        oldWidget.isMuted != widget.isMuted ||
-        (oldWidget.buildItemMenu == null) != (widget.buildItemMenu == null) ||
-        (oldWidget.headerBuilder == null) != (widget.headerBuilder == null) ||
-        (widget.headerBuilder != null &&
-            (widget.headerSignature == null ||
-                oldWidget.headerSignature != widget.headerSignature))) {
-      _cachedContent = null;
-      return;
-    }
-    for (final item in _measuredItems) {
-      if (widget.isSelected(item) != _measuredSelection.contains(item)) {
-        _cachedContent = null;
-        _measuredItems.clear();
-        _measuredSelection.clear();
-        return;
-      }
-    }
-  }
 
   @override
   void dispose() {
@@ -318,7 +267,7 @@ class _AppElementChipSliverState extends State<AppElementChipSliver> {
         // A new search or layout replaces the queue during the next layout.
         _ensureRows(_itemCount, maxNewItems: _measurementBatchSize);
         if (_layoutComplete) {
-          setState(() => _cachedContent = null);
+          setState(() {});
           // A new delegate count alone does not relayout unchanged visible rows.
           _rowsKey.currentContext?.findRenderObject()?.markNeedsLayout();
         } else {
@@ -328,7 +277,7 @@ class _AppElementChipSliverState extends State<AppElementChipSliver> {
     );
   }
 
-  bool _layout(
+  void _layout(
     double width,
     TextStyle style,
     TextScaler scaler,
@@ -351,7 +300,7 @@ class _AppElementChipSliverState extends State<AppElementChipSliver> {
         identical(_layoutLabels, widget.labels) &&
         _layoutLimit == limit &&
         _itemCount == itemCount) {
-      return false;
+      return;
     }
     if (_layoutStyle != style ||
         _layoutScaler != scaler ||
@@ -373,11 +322,8 @@ class _AppElementChipSliverState extends State<AppElementChipSliver> {
     _nextItemIndex = 0;
     _pendingItem = null;
     _rows.clear();
-    _measuredItems.clear();
-    _measuredSelection.clear();
     _layoutComplete = itemCount == 0;
     _ensureRows(widget.collapsedRows ?? 1);
-    return true;
   }
 
   void _ensureRows(int count, {int? maxNewItems}) {
@@ -445,33 +391,18 @@ class _AppElementChipSliverState extends State<AppElementChipSliver> {
     final scaler = MediaQuery.textScalerOf(context);
     final direction = Directionality.of(context);
     final locale = Localizations.maybeLocaleOf(context);
+    double? builtWidth;
+    Widget? builtSliver;
     return SliverLayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.crossAxisExtent;
-        final layoutChanged = _layout(width, style, scaler, direction, locale);
-        final contentKey = (
-          width,
-          style,
-          scaler,
-          direction,
-          locale,
-          accent,
-          cs,
-          _expanded,
-          _layoutComplete,
-          widget.collapsedRows,
-          widget.resolveRowCount,
-          widget.readOnly,
-          widget.mutedHint,
-          widget.headerSignature,
-        );
-        if (layoutChanged || _cachedContentKey != contentKey) {
-          _cachedContent = null;
-          _cachedContentKey = contentKey;
-        }
-        // Scroll constraints change every frame. Reuse the delegate until
-        // layout, theme, header, or visible selection state actually changes.
-        if (_cachedContent != null) return _cachedContent!;
+        // Scroll constraints change every frame without rebuilding this State.
+        // Reuse this build's sliver while crossAxisExtent stays constant so
+        // visible rows are not rebuilt on every scroll tick, while any widget
+        // or state rebuild creates a fresh closure with empty locals.
+        if (builtSliver != null && builtWidth == width) return builtSliver!;
+        builtWidth = width;
+        _layout(width, style, scaler, direction, locale);
         final collapsedRows = widget.collapsedRows;
         final expanded = collapsedRows == null || _expanded;
         if (expanded && widget.resolveRowCount) {
@@ -508,19 +439,18 @@ class _AppElementChipSliverState extends State<AppElementChipSliver> {
           },
         );
         final header = widget.headerBuilder;
-        return _cachedContent = header == null
+        return builtSliver = header == null
             ? rows
             : SliverMainAxisGroup(
                 slivers: [
                   SliverToBoxAdapter(
-                    child: header(
-                      context,
-                      canExpand,
-                      expanded,
-                      () => setState(() {
-                        _expanded = !_expanded;
-                        _cachedContent = null;
-                      }),
+                    child: Builder(
+                      builder: (context) => header(
+                        context,
+                        canExpand,
+                        expanded,
+                        () => setState(() => _expanded = !_expanded),
+                      ),
                     ),
                   ),
                   rows,
@@ -535,12 +465,6 @@ class _AppElementChipSliverState extends State<AppElementChipSliver> {
     final muted = !enabled || (widget.isMuted?.call(item) ?? false);
     final hasItemMenu = enabled && !widget.readOnly && widget.buildItemMenu != null;
     final selected = widget.isSelected(item);
-    _measuredItems.add(item);
-    if (selected) {
-      _measuredSelection.add(item);
-    } else {
-      _measuredSelection.remove(item);
-    }
     final key = ValueKey(item);
     final chip = AppElementChip(
       key: hasItemMenu ? null : key,

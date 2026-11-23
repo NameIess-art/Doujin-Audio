@@ -271,14 +271,15 @@ class NativePlaybackStateStoreTest {
     }
 
     @Test
-    fun `recovery database configures WAL busy timeout migrates v1 to v2 without data loss and updates metadata without rewriting chunks`() {
+    fun `recovery database configures WAL busy timeout and v1 to v2 migration`() {
         NativePlaybackRecoveryDatabase(context).use { database ->
             val db = database.writableDatabase
             val journalMode = db.rawQuery("PRAGMA journal_mode", null).use { cursor ->
                 assertTrue(cursor.moveToFirst())
                 cursor.getString(0)
             }
-            assertTrue(journalMode.lowercase() in setOf("wal", "memory"))
+            assertTrue(db.isWriteAheadLoggingEnabled)
+            assertEquals("wal", journalMode.lowercase())
             val busyTimeout = run {
                 db.beginTransaction()
                 try {

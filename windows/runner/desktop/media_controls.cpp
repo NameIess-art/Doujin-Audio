@@ -116,6 +116,12 @@ class EndpointNotifications : public Microsoft::WRL::RuntimeClass<
     std::lock_guard<std::mutex> lock(mutex_);
     window_ = nullptr;
   }
+  void PostIfPending() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (window_ && (disconnected_ || !previous_defaults_.empty())) {
+      PostMessage(window_, kAudioEndpointChanged, 0, 0);
+    }
+  }
   HRESULT STDMETHODCALLTYPE OnDeviceStateChanged(LPCWSTR id,DWORD state) override {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!id) return S_OK;
@@ -258,31 +264,38 @@ struct MediaControls::EndpointState {
     CallbackMayRunLong(instance);
     const std::unique_ptr<std::shared_ptr<EndpointState>> owner(
         static_cast<std::shared_ptr<EndpointState>*>(context));
-    (*owner)->InitializeInBackground();
+    (*owner)->InitializeInBackground(/*allow_changed_mode=*/false);
   }
 
-  void InitializeInBackground() {
+  void InitializeInBackground(bool allow_changed_mode) {
     HWND target = nullptr;
     {
       std::lock_guard<std::mutex> lock(mutex);
       if (shutting_down) return;
       target = window;
     }
+    // On a threadpool thread, RPC_E_CHANGED_MODE indicates an STA with no
+    // message loop; avoid creating MMDeviceEnumerator there. Only the UI-thread
+    // synchronous fallback may reuse its existing pumped STA.
     const HRESULT com_hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-    if (FAILED(com_hr) && com_hr != RPC_E_CHANGED_MODE) return;
+    if (FAILED(com_hr) && !(allow_changed_mode && com_hr == RPC_E_CHANGED_MODE)) {
+      return;
+    }
     const bool should_uninit = SUCCEEDED(com_hr);
 
     CO_MTA_USAGE_COOKIE cookie = nullptr;
     Microsoft::WRL::ComPtr<IMMDeviceEnumerator> endpoints;
     Microsoft::WRL::ComPtr<IAgileReference> agile;
     Microsoft::WRL::ComPtr<EndpointNotifications> listener_local;
-    bool registered = false;
 
     try {
       winrt::check_hresult(CoIncrementMTAUsage(&cookie));
       winrt::check_hresult(CoCreateInstance(
           __uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
           IID_PPV_ARGS(&endpoints)));
+      winrt::check_hresult(RoGetAgileReference(
+          AGILEREFERENCE_DEFAULT, __uuidof(IMMDeviceEnumerator),
+          endpoints.Get(), &agile));
       Microsoft::WRL::ComPtr<IMMDevice> device;
       std::wstring id;
       if (SUCCEEDED(endpoints->GetDefaultAudioEndpoint(eRender, eMultimedia, &device))) {
@@ -293,16 +306,10 @@ struct MediaControls::EndpointState {
         }
       }
       listener_local = Microsoft::WRL::Make<EndpointNotifications>(target, id);
+      if (!listener_local) winrt::throw_hresult(E_OUTOFMEMORY);
       winrt::check_hresult(
           endpoints->RegisterEndpointNotificationCallback(listener_local.Get()));
-      registered = true;
-      winrt::check_hresult(RoGetAgileReference(
-          AGILEREFERENCE_DEFAULT, __uuidof(IMMDeviceEnumerator),
-          endpoints.Get(), &agile));
     } catch (const winrt::hresult_error& e) {
-      if (registered && endpoints && listener_local) {
-        endpoints->UnregisterEndpointNotificationCallback(listener_local.Get());
-      }
       agile.Reset();
       endpoints.Reset();
       listener_local.Reset();
@@ -324,7 +331,7 @@ struct MediaControls::EndpointState {
       } else {
         mta_cookie = cookie;
         agile_endpoints = std::move(agile);
-        listener = std::move(listener_local);
+        listener = listener_local;
       }
     }
 
@@ -336,6 +343,9 @@ struct MediaControls::EndpointState {
       listener_local.Reset();
       if (cookie) CoDecrementMTAUsage(cookie);
     } else {
+      // Re-post if a disconnect fired between callback registration and publish.
+      listener_local->PostIfPending();
+      listener_local.Reset();
       endpoints.Reset();
     }
     if (should_uninit) CoUninitialize();
@@ -387,7 +397,7 @@ void MediaControls::Initialize() {
   if (TrySubmitThreadpoolCallback(EndpointState::InitWorker, owner.get(), nullptr)) {
     owner.release();
   } else {
-    endpoint_state_->InitializeInBackground();
+    endpoint_state_->InitializeInBackground(/*allow_changed_mode=*/true);
   }
   EnsureHotkeysRegistered();
   if (pending_update_) {

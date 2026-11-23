@@ -1123,14 +1123,11 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     if (_pureBlackTheme == value) return true;
     final mutation = ++_pureBlackThemeMutation;
     final reloadGeneration = _reloadGeneration;
-    final affectsActiveTheme = _themeMode != ThemeMode.light;
     _pureBlackTheme = value;
     _darkTheme = null;
     _highContrastDarkTheme = null;
     _darkWindowBorderColor = null;
-    if (affectsActiveTheme) {
-      _notifyIfActive();
-    }
+    _notifyIfActive();
     final persisted = await _writePreferenceInOrder(_pureBlackThemeKey, value);
     if (reloadGeneration != _reloadGeneration) return persisted;
     if (persisted) {
@@ -1142,9 +1139,7 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     _darkTheme = null;
     _highContrastDarkTheme = null;
     _darkWindowBorderColor = null;
-    if (_themeMode != ThemeMode.light) {
-      _notifyIfActive();
-    }
+    _notifyIfActive();
     return false;
   }
 
@@ -1311,11 +1306,11 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
   @override
   Future<void> reloadPersistedState() async {
     if (_disposed) return;
-    _reloadGeneration++;
+    final generation = ++_reloadGeneration;
     _bumpAllMutations();
     if (_pendingPreferenceWrites.isNotEmpty) {
       await _preferenceWriteTail;
-      if (_disposed) return;
+      if (_disposed || generation != _reloadGeneration) return;
     }
     final previousMode = _themeMode;
     final previousPureBlack = _pureBlackTheme;

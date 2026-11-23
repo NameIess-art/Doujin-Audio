@@ -5,8 +5,6 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
-import com.doujin.audio.channel.*
-import com.doujin.audio.player.session.NativePlaybackSession
 
 internal fun exclusivePlaybackSessionIdsToPause(
     targetSessionId: String,
@@ -31,105 +29,6 @@ internal data class NativeTimerPauseResult(
     val sessionIds: List<String>,
     val waitingForTrackEnd: Boolean
 )
-
-internal data class NativeTimerPauseTargets(
-    val sessionIds: List<String>,
-    val trackEndTargets: List<String>,
-    val immediatePauseTargets: List<String>
-)
-
-internal fun selectTimerPauseTargets(
-    activeSessionIds: List<String>,
-    interruptedSessionIds: List<String>,
-    intendedSessionIds: Set<String>,
-    stopAfterCurrentTrack: Boolean
-): NativeTimerPauseTargets {
-    val sessionIds = (activeSessionIds + interruptedSessionIds + intendedSessionIds).distinct()
-    val trackEndTargets = if (stopAfterCurrentTrack) {
-        activeSessionIds - interruptedSessionIds.toSet()
-    } else {
-        emptyList()
-    }
-    val immediatePauseTargets = if (stopAfterCurrentTrack) {
-        sessionIds - trackEndTargets.toSet()
-    } else {
-        sessionIds
-    }
-    return NativeTimerPauseTargets(sessionIds, trackEndTargets, immediatePauseTargets)
-}
-
-internal fun shouldRetainWarmPausedAudioPlayer(
-    sessionId: String,
-    focusedSessionId: String?,
-    playbackSuspended: Boolean,
-    hasActiveUiListeners: Boolean,
-    hasActivePlayback: Boolean,
-    player: Player?
-): Boolean = !playbackSuspended &&
-    hasActiveUiListeners &&
-    !hasActivePlayback &&
-    focusedSessionId == sessionId &&
-    player != null &&
-    player.playerError == null &&
-    player.playbackState != Player.STATE_ENDED
-
-internal fun isTimerDueForStickyRestart(
-    timerEndsElapsedRealtimeMs: Long?,
-    timerEndsAtWallClockMs: Long?,
-    nowElapsedRealtimeMs: Long,
-    nowWallClockMs: Long
-): Boolean = timerEndsElapsedRealtimeMs?.let { it <= nowElapsedRealtimeMs }
-    ?: (timerEndsAtWallClockMs?.let { it <= nowWallClockMs } == true)
-
-internal fun formatPlaybackServiceLogState(
-    sessionLogState: String,
-    foregroundStarted: Boolean,
-    audioFocusHeld: Boolean,
-    screenInteractive: Boolean,
-    activePlayback: Boolean,
-    keepAlivePlayback: Boolean
-): String = "${sessionLogState}foregroundStarted=$foregroundStarted " +
-    "audioFocusHeld=$audioFocusHeld " +
-    "screenInteractive=$screenInteractive " +
-    "activePlayback=$activePlayback " +
-    "keepAlivePlayback=$keepAlivePlayback"
-
-internal fun dispatchNotificationTransportCommand(
-    command: String,
-    session: NativePlaybackSession?,
-    clearTrackStop: (String) -> Unit,
-    play: (String) -> Unit,
-    pause: (String) -> Map<String, Any?>,
-    publishPauseBatchSnapshots: (List<Map<String, Any?>>) -> Unit,
-    publishPauseBatchIds: (List<String>) -> Unit
-) {
-    val target = session ?: return
-    val player = target.playerOrNull()
-    when (command) {
-        NATIVE_PLAYBACK_TRANSPORT_PREVIOUS -> {
-            clearTrackStop(target.sessionId)
-            if (player != null && player.hasPreviousMediaItem()) player.seekToPreviousMediaItem()
-        }
-        NATIVE_PLAYBACK_TRANSPORT_NEXT -> {
-            clearTrackStop(target.sessionId)
-            if (player != null && player.hasNextMediaItem()) player.seekToNextMediaItem()
-        }
-        NATIVE_PLAYBACK_TRANSPORT_PLAY_PAUSE -> {
-            val isActive = player?.let { it.isPlaying || it.playWhenReady } == true
-            if (isActive) {
-                @Suppress("UNCHECKED_CAST")
-                val pausedSnapshot = pause(target.sessionId)["value"] as? Map<String, Any?>
-                if (pausedSnapshot != null) {
-                    publishPauseBatchSnapshots(listOf(pausedSnapshot))
-                } else {
-                    publishPauseBatchIds(listOf(target.sessionId))
-                }
-            } else {
-                play(target.sessionId)
-            }
-        }
-    }
-}
 
 internal data class NativeTimerResumeResult(
     val resumedSessionIds: List<String>,

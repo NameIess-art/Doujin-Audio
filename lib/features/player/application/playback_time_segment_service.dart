@@ -45,10 +45,21 @@ final class PlaybackTimeSegmentService {
     final session = _playback.sessionById(sessionId);
     final trackPath = session?.currentTrackPath;
     if (session == null || trackPath == null || trackPath.isEmpty) return null;
+    return _resolveSessionTrackKey(sessionId, trackPath).trackKey;
+  }
+
+  ({String trackKey, bool cacheable}) _resolveSessionTrackKey(
+    String sessionId,
+    String trackPath,
+  ) {
     final track = _paths.sessionTrackForPath(sessionId, trackPath);
-    return track == null
-        ? PathMatcher.normalize(trackPath)
-        : TimeSegmentLabel.trackKeyFor(track);
+    if (track != null) {
+      return (trackKey: TimeSegmentLabel.trackKeyFor(track), cacheable: true);
+    }
+    return (
+      trackKey: PathMatcher.normalize(trackPath),
+      cacheable: !PathMatcher.isRemoteUri(trackPath),
+    );
   }
 
   String trackKeyForTrack(MusicTrack track) =>
@@ -62,10 +73,16 @@ final class PlaybackTimeSegmentService {
     for (final entry in _loops.entries.toList(growable: false)) {
       if (entry.value.labelId == label.id) {
         final session = _playback.sessionById(entry.key);
+        final trackPath = session?.currentTrackPath;
+        final resolved = trackPath != null && trackPath.isNotEmpty
+            ? _resolveSessionTrackKey(entry.key, trackPath)
+            : null;
         _loops[entry.key] = _TimeSegmentLoopRuntime.fromLabel(
           label,
-          cachedTrackPath: session?.currentTrackPath,
-          cachedTrackKey: trackKeyForSession(entry.key),
+          cachedTrackPath: resolved?.cacheable == true ? trackPath : null,
+          cachedTrackKey: resolved?.cacheable == true
+              ? resolved!.trackKey
+              : null,
         );
       }
     }
@@ -101,14 +118,18 @@ final class PlaybackTimeSegmentService {
       _clearLoop(sessionId);
       return;
     }
-    final currentTrackKey = trackKeyForSession(sessionId);
+    final trackPath = session.currentTrackPath;
+    final resolved = trackPath.isNotEmpty
+        ? _resolveSessionTrackKey(sessionId, trackPath)
+        : null;
     _loops[sessionId] = _TimeSegmentLoopRuntime.fromLabel(
       label,
-      cachedTrackPath: session.currentTrackPath,
-      cachedTrackKey: currentTrackKey,
+      cachedTrackPath: resolved?.cacheable == true ? trackPath : null,
+      cachedTrackKey: resolved?.cacheable == true ? resolved!.trackKey : null,
     );
     _bindPosition(sessionId);
-    if (currentTrackKey == label.trackKey && !label.contains(session.position)) {
+    if (resolved?.trackKey == label.trackKey &&
+        !label.contains(session.position)) {
       _seekToStart(sessionId, label.start);
     }
   }
@@ -179,10 +200,15 @@ final class PlaybackTimeSegmentService {
     if (loop.cachedTrackPath == trackPath) {
       return loop.cachedTrackKey == loop.trackKey;
     }
-    final trackKey = trackKeyForSession(sessionId);
-    loop.cachedTrackPath = trackPath;
-    loop.cachedTrackKey = trackKey;
-    return trackKey == loop.trackKey;
+    final resolved = _resolveSessionTrackKey(sessionId, trackPath);
+    if (resolved.cacheable) {
+      loop.cachedTrackPath = trackPath;
+      loop.cachedTrackKey = resolved.trackKey;
+    } else {
+      loop.cachedTrackPath = null;
+      loop.cachedTrackKey = null;
+    }
+    return resolved.trackKey == loop.trackKey;
   }
 
   void _handlePosition(String sessionId, Duration position) {

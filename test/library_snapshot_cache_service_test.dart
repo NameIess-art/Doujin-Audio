@@ -1458,6 +1458,66 @@ void main() {
     expect(buildCount, 2);
     expect(commitCount, 1);
   });
+
+  test(
+    'trimMemory frees idle snapshots without cancelling in-flight tree or category builds',
+    () async {
+      const root = '/library/work';
+      final library = LibraryService()
+        ..addWatchedFolder(root)
+        ..library.add(_track(path: '$root/01.mp3', groupKey: root))
+        ..markStructureChanged();
+      addTearDown(library.dispose);
+      final cardGate = Completer<LibraryTreeSnapshot>();
+      final treeGate = Completer<LibraryTreeSnapshot>();
+      final snapshot = const LibraryOrganizer().buildTree(
+        tracks: library.library,
+        watchedFolders: library.watchedFoldersSnapshot,
+      );
+      final detailCache = AudioDetailCacheService(
+        repository: _FakeAudioDetailRepository(),
+      );
+      addTearDown(detailCache.dispose);
+      final service = LibrarySnapshotCacheService(
+        libraryService: library,
+        detailCacheService: detailCache,
+        cardSnapshotBuilder: (_) => cardGate.future,
+        treeSnapshotBuilder: (_) => treeGate.future,
+      );
+      addTearDown(service.dispose);
+
+      var treeCommitted = 0;
+      var categoryCommitted = 0;
+      final treeFuture = service.treeSnapshot(
+        onCommitted: () => treeCommitted++,
+      );
+      final categoryFuture = service.categorySnapshot(
+        onCommitted: () => categoryCommitted++,
+        isActive: () => true,
+      );
+
+      // Trim memory while both builds are actively in flight.
+      service.trimMemory();
+
+      cardGate.complete(snapshot);
+      treeGate.complete(snapshot);
+      final resolvedTree = await treeFuture;
+      final resolvedCategory = await categoryFuture;
+
+      expect(resolvedTree.tree, hasLength(1));
+      expect(resolvedCategory.entries, hasLength(1));
+      expect(treeCommitted, 1);
+      expect(categoryCommitted, 1);
+      expect(service.treeSnapshotRevision, library.structureRevision);
+      expect(service.categorySnapshotSync, same(resolvedCategory));
+
+      // Once idle, trimMemory frees cached tree and category snapshots.
+      service.trimMemory();
+      expect(service.tree, isEmpty);
+      expect(service.treeSnapshotRevision, -1);
+      expect(service.categorySnapshotSync, isNull);
+    },
+  );
 }
 
 class _BatchCoverArtwork implements CoverArtworkCacheService {

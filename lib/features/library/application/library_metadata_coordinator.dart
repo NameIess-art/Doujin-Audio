@@ -371,12 +371,37 @@ final class LibraryMetadataCoordinator {
     final knownDurations = <String, Duration?>{};
     final missing = <AudioDetailTarget>[];
     if (fastDurations != null) {
+      final nullDurationCandidates = <AudioDetailTarget>[];
       for (var index = 0; index < targets.length; index++) {
         final key = targetKeys[index];
+        final duration = fastDurations[key];
         if (!fastDurations.containsKey(key)) {
           missing.add(targets[index]);
+        } else if (duration != null) {
+          knownDurations[key] = duration;
         } else {
-          knownDurations[key] = fastDurations[key];
+          knownDurations[key] = null;
+          final cached = _detailCacheService.resolvedDetail(targets[index]);
+          if (cached == null) {
+            nullDurationCandidates.add(targets[index]);
+          } else if (cached.isEmpty) {
+            missing.add(targets[index]);
+          }
+        }
+      }
+      if (nullDurationCandidates.isNotEmpty) {
+        if (!await checkpoint()) return;
+        final checkedDetails = await _detailCacheService.loadSearchDetails(
+          nullDurationCandidates,
+        );
+        if (!_isCurrent(epoch)) return;
+        for (var index = 0; index < nullDurationCandidates.length; index++) {
+          final detail = checkedDetails[index];
+          final key = _targetKey(nullDurationCandidates[index]);
+          knownDurations[key] = detail.duration;
+          if (detail.isEmpty && detail.duration == null) {
+            missing.add(nullDurationCandidates[index]);
+          }
         }
       }
     } else {
@@ -543,42 +568,50 @@ final class LibraryMetadataCoordinator {
       }
 
       if (pendingSaves.isNotEmpty) {
-        if (pendingSaves.length > 1) {
-          for (var start = 0; start < pendingSaves.length; start += 64) {
-            if (!await checkpoint()) return;
-            await _detailCacheService.loadMany(
-              pendingSaves.skip(start).take(64).map((item) => item.target),
-            );
-          }
-        }
+        const prewarmChunkSize = 64;
         const maxConcurrentSaves = 4;
         for (
-          var start = 0;
-          start < pendingSaves.length;
-          start += maxConcurrentSaves
+          var chunkStart = 0;
+          chunkStart < pendingSaves.length;
+          chunkStart += prewarmChunkSize
         ) {
           if (!await checkpoint()) return;
-          final end = (start + maxConcurrentSaves).clamp(
+          final chunkEnd = (chunkStart + prewarmChunkSize).clamp(
             0,
             pendingSaves.length,
           );
-          final wave = pendingSaves.sublist(start, end);
-          final results = await Future.wait([
-            for (final item in wave)
-              saveMissingDuration(
-                item.target,
-                item.duration,
-                deferCategoryUpdate: true,
-                skipSynchronizedDocument: true,
-              ),
-          ]);
-          if (!_isCurrent(epoch)) return;
-          for (var i = 0; i < wave.length; i++) {
-            final result = results[i];
-            if (!result.documentFailed && result.detail.duration != null) {
-              synchronized[wave[i].targetKey] =
-                  result.detail.duration!.inMilliseconds;
-              syncChanged = true;
+          final chunk = pendingSaves.sublist(chunkStart, chunkEnd);
+          if (chunk.length > 1) {
+            await _detailCacheService.loadMany(
+              chunk.map((item) => item.target),
+            );
+            if (!await checkpoint()) return;
+          }
+          for (
+            var start = 0;
+            start < chunk.length;
+            start += maxConcurrentSaves
+          ) {
+            if (!await checkpoint()) return;
+            final end = (start + maxConcurrentSaves).clamp(0, chunk.length);
+            final wave = chunk.sublist(start, end);
+            final results = await Future.wait([
+              for (final item in wave)
+                saveMissingDuration(
+                  item.target,
+                  item.duration,
+                  deferCategoryUpdate: true,
+                  skipSynchronizedDocument: true,
+                ),
+            ]);
+            if (!_isCurrent(epoch)) return;
+            for (var i = 0; i < wave.length; i++) {
+              final result = results[i];
+              if (!result.documentFailed && result.detail.duration != null) {
+                synchronized[wave[i].targetKey] =
+                    result.detail.duration!.inMilliseconds;
+                syncChanged = true;
+              }
             }
           }
         }
@@ -954,16 +987,24 @@ final class LibraryMetadataCoordinator {
   Future<DlsiteMetadata> fetchPreferredMetadata(
     String rjCode, {
     required AppLanguage language,
-  }) async => (await _lookupPreferredMetadata(
-    (source) async => [await source.fetchByRjCode(rjCode, language: language)],
-  )).single;
+    bool forceRefresh = false,
+  }) async {
+    if (forceRefresh) _metadataService.clearCache();
+    return (await _lookupPreferredMetadata(
+      (source) async => [await source.fetchByRjCode(rjCode, language: language)],
+    )).single;
+  }
 
   Future<List<DlsiteMetadata>> searchPreferredMetadata(
     Iterable<String> titles, {
     required AppLanguage language,
-  }) => _lookupPreferredMetadata(
-    (source) => source.searchByTitleCandidates(titles, language: language),
-  );
+    bool forceRefresh = false,
+  }) {
+    if (forceRefresh) _metadataService.clearCache();
+    return _lookupPreferredMetadata(
+      (source) => source.searchByTitleCandidates(titles, language: language),
+    );
+  }
 
   Future<List<DlsiteMetadata>> _lookupPreferredMetadata(
     Future<List<DlsiteMetadata>> Function(LibraryMetadataSource) lookup,

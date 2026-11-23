@@ -3,7 +3,6 @@ import 'dart:math' as math;
 import '../../core/widgets/app_buttons.dart';
 import '../../core/widgets/app_dialog.dart';
 import '../../core/widgets/app_feedback.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
@@ -886,25 +885,6 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
   }
 }
 
-class _WindowMaxNotifier extends ChangeNotifier implements ValueListenable<int> {
-  _WindowMaxNotifier(this._value);
-
-  int _value;
-
-  @override
-  int get value => _value;
-
-  set value(int next) {
-    if (_value == next) return;
-    _value = next;
-    notifyListeners();
-  }
-
-  void syncWithoutNotify(int next) {
-    _value = next;
-  }
-}
-
 class _BarListeningChart extends StatefulWidget {
   const _BarListeningChart({
     required this.listKey,
@@ -950,12 +930,13 @@ class _BarListeningChartState extends State<_BarListeningChart> {
     milliseconds: 140,
   );
 
-  late final _WindowMaxNotifier _windowMaxMs;
+  int _windowMaxMs = 0;
+  final ValueNotifier<int> _windowMaxNotifier = ValueNotifier<int>(0);
 
   @override
   void initState() {
     super.initState();
-    _windowMaxMs = _WindowMaxNotifier(_computeWindowMax());
+    _windowMaxMs = _computeWindowMax();
     widget.controller.addListener(_handleScroll);
   }
 
@@ -966,19 +947,22 @@ class _BarListeningChartState extends State<_BarListeningChart> {
       oldWidget.controller.removeListener(_handleScroll);
       widget.controller.addListener(_handleScroll);
     }
-    _windowMaxMs.syncWithoutNotify(_computeWindowMax());
+    _windowMaxMs = _computeWindowMax();
   }
 
   @override
   void dispose() {
     widget.controller.removeListener(_handleScroll);
-    _windowMaxMs.dispose();
+    _windowMaxNotifier.dispose();
     super.dispose();
   }
 
   void _handleScroll() {
     if (widget.skeleton) return;
-    _windowMaxMs.value = _computeWindowMax();
+    final next = _computeWindowMax();
+    if (next == _windowMaxMs) return;
+    _windowMaxMs = next;
+    _windowMaxNotifier.value++;
   }
 
   int _computeWindowMax() {
@@ -1024,9 +1008,10 @@ class _BarListeningChartState extends State<_BarListeningChart> {
             left: 0,
             right: 0,
             child: IgnorePointer(
-              child: ValueListenableBuilder<int>(
-                valueListenable: _windowMaxMs,
-                builder: (context, windowMaxMs, _) {
+              child: ListenableBuilder(
+                listenable: _windowMaxNotifier,
+                builder: (context, _) {
+                  final windowMaxMs = _windowMaxMs;
                   if (windowMaxMs <= 0) return const SizedBox.shrink();
                   return Row(
                     children: [
@@ -1079,10 +1064,10 @@ class _BarListeningChartState extends State<_BarListeningChart> {
                               height: 28.0 + (index % 4) * 30,
                               borderRadius: 5,
                             )
-                          : ValueListenableBuilder<int>(
-                              valueListenable: _windowMaxMs,
-                              builder: (context, windowMaxMs, _) {
-                                final scaleDenom = math.max(1, windowMaxMs);
+                          : ListenableBuilder(
+                              listenable: _windowMaxNotifier,
+                              builder: (context, _) {
+                                final scaleDenom = math.max(1, _windowMaxMs);
                                 return AnimatedContainer(
                                   duration: barDuration,
                                   curve: Curves.easeOutCubic,
@@ -1152,26 +1137,29 @@ class _HeatmapPeriodCellState extends State<_HeatmapPeriodCell> {
 
   @override
   Widget build(BuildContext context) {
-    return Semantics(
-      label: widget.description,
-      selected: widget.selected,
-      button: true,
-      child: InkWell(
-        key: widget.periodKey,
-        mouseCursor: WidgetStateMouseCursor.clickable,
-        onTap: widget.onTap,
-        onHover: (hovering) {
-          if (_hovered != hovering) setState(() => _hovered = hovering);
-        },
-        borderRadius: BorderRadius.circular(3),
-        child: ExcludeSemantics(
-          child: Container(
-            decoration: BoxDecoration(
-              color: widget.fillColor,
-              borderRadius: BorderRadius.circular(3),
-              border: widget.selected || _hovered
-                  ? Border.all(color: widget.borderColor, width: 1.5)
-                  : null,
+    return Tooltip(
+      message: widget.description,
+      child: Semantics(
+        label: widget.description,
+        selected: widget.selected,
+        button: true,
+        child: InkWell(
+          key: widget.periodKey,
+          mouseCursor: WidgetStateMouseCursor.clickable,
+          onTap: widget.onTap,
+          onHover: (hovering) {
+            if (_hovered != hovering) setState(() => _hovered = hovering);
+          },
+          borderRadius: BorderRadius.circular(3),
+          child: ExcludeSemantics(
+            child: Container(
+              decoration: BoxDecoration(
+                color: widget.fillColor,
+                borderRadius: BorderRadius.circular(3),
+                border: widget.selected || _hovered
+                    ? Border.all(color: widget.borderColor, width: 1.5)
+                    : null,
+              ),
             ),
           ),
         ),

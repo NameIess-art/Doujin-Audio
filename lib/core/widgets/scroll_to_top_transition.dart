@@ -87,16 +87,6 @@ class ScrollToTopTransitionState extends State<ScrollToTopTransition> {
             );
             setState(() => _snapshot = image);
             position.jumpTo(_start);
-            // Let the snapshot overlay and jumped viewport finish their layout
-            // frame before starting the smooth return animation.
-            await WidgetsBinding.instance.endOfFrame;
-            if (!mounted ||
-                generation != _generation ||
-                !controller.hasClients ||
-                !identical(controller.position, position) ||
-                !identical(widget.controller(), controller)) {
-              return;
-            }
           }
         }
       }

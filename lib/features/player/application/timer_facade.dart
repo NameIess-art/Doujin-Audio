@@ -181,17 +181,13 @@ final class TimerFacade {
 
   void startCountdown() {
     if (_service.timerDuration == null || _service.timerActive) return;
-    _service.countdownTimer?.cancel();
-    final generation = ++_service.timerGeneration;
+    _service.timerGeneration++;
     _service.timerActive = true;
     _service.timerWaitingForPlayback = false;
     _service.timerRemaining = _service.timerDuration;
     _service.timerEndsAt = DateTime.now().add(_service.timerDuration!);
     _setFadeMultiplier(1.0);
-    _service.countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (generation != _service.timerGeneration) return;
-      _tickCountdown();
-    });
+    _scheduleCountdownTicks();
     _changed();
     unawaited(saveRuntime());
     unawaited(syncNativeAlarms());
@@ -224,6 +220,8 @@ final class TimerFacade {
     _service.timerDuration = updatedDuration > nextRemaining
         ? updatedDuration
         : nextRemaining;
+    _service.timerGeneration++;
+    _scheduleCountdownTicks();
     if (nextRemaining > const Duration(seconds: 30)) {
       _setFadeMultiplier(1.0);
     }
@@ -607,9 +605,12 @@ final class TimerFacade {
   }
 
   void restoreCountdownTimer() {
-    final endsAt = _service.timerEndsAt;
-    if (endsAt == null) return;
+    if (_service.timerEndsAt == null) return;
     _setFadeMultiplier(1.0);
+    _scheduleCountdownTicks();
+  }
+
+  void _scheduleCountdownTicks() {
     final generation = _service.timerGeneration;
     _service.countdownTimer?.cancel();
     _service.countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {

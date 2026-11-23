@@ -1123,6 +1123,106 @@ void main() {
       debugDefaultTargetPlatformOverride = null;
     },
   );
+
+  testWidgets(
+    'toggling enabled and swipeEnabled preserves child state',
+    (tester) async {
+      var enabled = true;
+      var swipeEnabled = true;
+      late StateSetter update;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 260,
+                height: 96,
+                child: StatefulBuilder(
+                  builder: (context, setState) {
+                    update = setState;
+                    return SwipeRevealCard(
+                      enabled: enabled,
+                      swipeEnabled: swipeEnabled,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      actionLabel: 'Remove',
+                      removeTooltip: 'Remove',
+                      onRemove: () {},
+                      child: const _StatefulCardChild(),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final initialState = tester.state(find.byType(_StatefulCardChild));
+      update(() => enabled = false);
+      await tester.pump();
+      expect(tester.state(find.byType(_StatefulCardChild)), same(initialState));
+
+      update(() {
+        enabled = true;
+        swipeEnabled = false;
+      });
+      await tester.pump();
+      expect(tester.state(find.byType(_StatefulCardChild)), same(initialState));
+
+      update(() => swipeEnabled = true);
+      await tester.pump();
+      expect(tester.state(find.byType(_StatefulCardChild)), same(initialState));
+    },
+    variant: const TargetPlatformVariant({TargetPlatform.android}),
+  );
+
+  testWidgets(
+    'non-rounded shapes stay clipped with ClipPath while closed',
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 260,
+                height: 96,
+                child: SwipeRevealCard(
+                  shape: const StadiumBorder(),
+                  actionLabel: 'Remove',
+                  removeTooltip: 'Remove',
+                  onRemove: () {},
+                  child: const SizedBox.expand(child: Text('Stadium card')),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(
+        find.descendant(
+          of: find.byType(SwipeRevealCard),
+          matching: find.byType(ClipPath),
+        ),
+        findsOneWidget,
+      );
+    },
+  );
+}
+
+class _StatefulCardChild extends StatefulWidget {
+  const _StatefulCardChild();
+
+  @override
+  State<_StatefulCardChild> createState() => _StatefulCardChildState();
+}
+
+class _StatefulCardChildState extends State<_StatefulCardChild> {
+  @override
+  Widget build(BuildContext context) => const Center(child: Text('Stateful'));
 }
 
 Widget _tickerCard(ValueNotifier<bool> ticking) => MaterialApp(

@@ -201,7 +201,7 @@ class LibraryScannerService {
         return false;
       }
       if (!batchStarted) {
-        provider.beginStagedLibraryRefresh();
+        await provider.beginStagedLibraryRefresh();
         batchStarted = true;
       }
       if (chunk.removeWatchedFolders.isNotEmpty ||
@@ -551,7 +551,9 @@ class LibraryScannerService {
     var wasCancelled = false;
 
     try {
-      provider.beginLibraryBatch(snapshotAllEntries: shouldClearExclusions);
+      await provider.beginLibraryBatch(
+        snapshotAllEntries: shouldClearExclusions,
+      );
       batchStarted = true;
       if (shouldClearExclusions) {
         exclusionSnapshot = provider.snapshotLibraryExclusions(
@@ -765,7 +767,7 @@ class LibraryScannerService {
           .libraryEntriesForLibrary(normalizedFolderPath)
           .map((entry) => PathMatcher.normalize(entry.path)),
     );
-    provider.beginLibraryBatch(snapshotAllEntries: false);
+    await provider.beginLibraryBatch(snapshotAllEntries: false);
     var added = 0;
     var completed = false;
     var wasCancelled = false;
@@ -894,7 +896,7 @@ class LibraryScannerService {
         source: 'import_files',
       );
     }
-    provider.beginLibraryBatch(snapshotAllEntries: false);
+    await provider.beginLibraryBatch(snapshotAllEntries: false);
 
     var added = 0;
     var fileExists = false;

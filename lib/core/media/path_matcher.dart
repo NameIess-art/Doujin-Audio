@@ -142,93 +142,16 @@ abstract final class PathMatcher {
   }
 
   static String? _tryFastEquivalenceKey(String value) {
-    final len = value.length;
-    if (len == 0) return null;
-    final c0 = value.codeUnitAt(0);
-
-    // Clean POSIX absolute paths `/...` (not starting with `//`).
-    if (c0 == 0x2F) {
-      if (len == 1) return 'file:/';
-      if (value.codeUnitAt(1) == 0x2F) return null;
-      final effectiveEnd = value.codeUnitAt(len - 1) == 0x2F ? len - 1 : len;
-      if (effectiveEnd <= 1) return null;
-      var segStart = 1;
-      for (var i = 1; i < effectiveEnd; i++) {
-        final c = value.codeUnitAt(i);
-        if (c == 0x5C) return null;
-        if (c == 0x2F) {
-          final segLen = i - segStart;
-          if (segLen == 0 ||
-              (segLen == 1 && value.codeUnitAt(segStart) == 0x2E) ||
-              (segLen == 2 &&
-                  value.codeUnitAt(segStart) == 0x2E &&
-                  value.codeUnitAt(segStart + 1) == 0x2E)) {
-            return null;
-          }
-          segStart = i + 1;
-        }
-      }
-      final lastLen = effectiveEnd - segStart;
-      if (lastLen == 0 ||
-          (lastLen == 1 && value.codeUnitAt(segStart) == 0x2E) ||
-          (lastLen == 2 &&
-              value.codeUnitAt(segStart) == 0x2E &&
-              value.codeUnitAt(segStart + 1) == 0x2E)) {
-        return null;
-      }
-      return effectiveEnd == len
+    final fast = _classifyFastEquivalence(value);
+    if (fast < 0) return null;
+    final end = fast >> 1;
+    if ((fast & 1) == 0) {
+      return end == value.length
           ? 'file:$value'
-          : 'file:${value.substring(0, effectiveEnd)}';
+          : 'file:${value.substring(0, end)}';
     }
-
-    // Clean Windows drive paths `X:\...` or `X:/...`.
-    if (len >= 3 &&
-        value.codeUnitAt(1) == 0x3A &&
-        ((c0 >= 0x41 && c0 <= 0x5A) || (c0 >= 0x61 && c0 <= 0x7A))) {
-      final c2 = value.codeUnitAt(2);
-      if (c2 != 0x5C && c2 != 0x2F) return null;
-      if (len == 3) {
-        final drive = c0 <= 0x5A ? String.fromCharCode(c0 + 32) : value[0];
-        return 'windows:$drive:/';
-      }
-      final lastChar = value.codeUnitAt(len - 1);
-      final effectiveEnd = (lastChar == 0x5C || lastChar == 0x2F)
-          ? len - 1
-          : len;
-      if (effectiveEnd <= 3) return null;
-      var hasBackslash = c2 == 0x5C;
-      var segStart = 3;
-      for (var i = 3; i < effectiveEnd; i++) {
-        final c = value.codeUnitAt(i);
-        if (c == 0x5C || c == 0x2F) {
-          if (c == 0x5C) hasBackslash = true;
-          final segLen = i - segStart;
-          if (segLen == 0 ||
-              (segLen == 1 && value.codeUnitAt(segStart) == 0x2E) ||
-              (segLen == 2 &&
-                  value.codeUnitAt(segStart) == 0x2E &&
-                  value.codeUnitAt(segStart + 1) == 0x2E)) {
-            return null;
-          }
-          segStart = i + 1;
-        }
-      }
-      final lastLen = effectiveEnd - segStart;
-      if (lastLen == 0 ||
-          (lastLen == 1 && value.codeUnitAt(segStart) == 0x2E) ||
-          (lastLen == 2 &&
-              value.codeUnitAt(segStart) == 0x2E &&
-              value.codeUnitAt(segStart + 1) == 0x2E)) {
-        return null;
-      }
-      final sliced = effectiveEnd == len
-          ? value
-          : value.substring(0, effectiveEnd);
-      final canonical = hasBackslash ? sliced.replaceAll('\\', '/') : sliced;
-      return 'windows:${canonical.toLowerCase()}';
-    }
-
-    return null;
+    final sliced = end == value.length ? value : value.substring(0, end);
+    return 'windows:${sliced.replaceAll('\\', '/').toLowerCase()}';
   }
 
   static int _hashCombine(int hash, int codeUnit) {

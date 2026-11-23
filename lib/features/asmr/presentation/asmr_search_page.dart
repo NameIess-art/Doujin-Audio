@@ -47,6 +47,7 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
 
   int _requestSerial = 0;
   bool _refreshPending = false;
+  bool _wasComposing = false;
   ModalRoute<dynamic>? _route;
   bool _wasCurrent = true;
   late final String _refreshCommitKey =
@@ -83,6 +84,7 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
     _searchController?.beginSearchSession();
     _languageProvider = ref.read(appLanguageProviderInstanceProvider);
     _languageProvider.addListener(_handleLanguageChanged);
+    _controller.addListener(_handleControllerChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       UiInteractionCoordinator.instance.scheduleCommit(
@@ -94,6 +96,20 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
         unawaited(_onSubmitted(legacySearchElements(widget.initialQuery)));
       }
     });
+  }
+
+  void _handleControllerChanged() {
+    final composing = _controller.value.composing;
+    final isComposing = composing.isValid && !composing.isCollapsed;
+    if (_wasComposing && !isComposing) {
+      _wasComposing = false;
+      // When IME commits without changing text, onChanged will not fire.
+      if (_inputQuery.value == _controller.text) {
+        _syncSuggestionSelection();
+      }
+      return;
+    }
+    _wasComposing = isComposing;
   }
 
   void _syncSuggestionSelection({bool allowDuringComposing = false}) {
@@ -614,6 +630,7 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
     _suggestionSelection.dispose();
     _searchController?.endSearchSession();
     _languageProvider.removeListener(_handleLanguageChanged);
+    _controller.removeListener(_handleControllerChanged);
     _controller.dispose();
     _focusNode.dispose();
     for (final controller in _scrollControllers.values) {

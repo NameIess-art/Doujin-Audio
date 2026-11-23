@@ -162,6 +162,8 @@ class PlaybackTimerAlarmSchedulerTest {
     fun `timer expiry with stopAfterCurrentTrack recovers persisted candidates after service restart`() {
         val service = Robolectric.buildService(NativePlaybackService::class.java).get()
         val state = timerState().copy(
+            timerEndsAtWallClockMs = System.currentTimeMillis() - 1L,
+            timerEndsElapsedRealtimeMs = SystemClock.elapsedRealtime(),
             pausedSessionIds = emptyList(),
             stopAfterCurrentTrack = true
         )
@@ -202,6 +204,33 @@ class PlaybackTimerAlarmSchedulerTest {
             persistence.shutdown()
             assertTrue(persistence.awaitTermination())
         }
+    }
+
+    @Test
+    fun `expiry writeback does not replace an extended countdown or its alarm`() {
+        val expired = timerState().copy(
+            timerEndsAtWallClockMs = System.currentTimeMillis() - 1L,
+            timerEndsElapsedRealtimeMs = SystemClock.elapsedRealtime()
+        )
+        val extended = timerState().copy(pausedSessionIds = emptyList())
+        NativePlaybackStateStore.saveTimerRuntimeState(context, extended)
+        PlaybackTimerAlarmScheduler.rescheduleFromStoredState(context)
+        val alarmManager = context.getSystemService(AlarmManager::class.java)
+        val currentAlarm = shadowOf(alarmManager).scheduledAlarms.single()
+
+        val outcome = ReflectionHelpers.callInstanceMethod<String>(
+            PlaybackTimerAlarmScheduler,
+            "finishTimerExpired",
+            ClassParameter.from(Context::class.java, context),
+            ClassParameter.from(StoredPlaybackTimerRuntimeState::class.java, expired),
+            ClassParameter.from(List::class.java, listOf("old-session")),
+            ClassParameter.from(Boolean::class.javaPrimitiveType, false)
+        )
+
+        assertEquals(PlaybackTimerAlarmScheduler.resultStale, outcome)
+        assertEquals(extended, NativePlaybackStateStore.loadTimerRuntimeState(context))
+        assertTrue(NativePlaybackStateStore.loadPausedSessionIds(context).isEmpty())
+        assertEquals(currentAlarm, shadowOf(alarmManager).scheduledAlarms.single())
     }
 
     @Test

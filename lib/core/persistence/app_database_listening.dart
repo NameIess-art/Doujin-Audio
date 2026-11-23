@@ -1,5 +1,8 @@
 part of 'app_database.dart';
 
+const _listeningHistoryEditedAtKey = 'listening_history_edited_at_v1';
+const _listeningActivityPlaybackAtKey = 'listening_activity_playback_at_v1';
+
 extension AppDatabaseListening on AppDatabase {
   Future<bool> importListeningBatch(
     String batchId,
@@ -120,6 +123,18 @@ extension AppDatabaseListening on AppDatabase {
             where: 'work_key = ?',
             whereArgs: [workKey],
           );
+          // A history deletion does not undo the underlying listening time.
+          await txn.rawInsert(
+            'INSERT OR REPLACE INTO app_kv_settings (key, value) '
+            'VALUES (?, MAX(?, COALESCE((SELECT CAST(value AS INTEGER) '
+            'FROM app_kv_settings WHERE key = ?), -1)))',
+            [
+              _listeningActivityPlaybackAtKey,
+              entry['last_played_at_ms'],
+              _listeningActivityPlaybackAtKey,
+            ],
+          );
+          await _recordListeningHistoryEdit(txn);
           return entry;
         }),
       );
@@ -129,12 +144,17 @@ extension AppDatabaseListening on AppDatabase {
     required int legacyOrder,
   }) => _runDatabaseWrite(
     // Playback can recreate the entry while its Undo prompt is still open.
-    (db) => _insertListeningHistory(
-      db,
-      work,
-      legacyOrder,
-      conflictAlgorithm: ConflictAlgorithm.ignore,
-    ),
+    (db) => db.transaction((txn) async {
+      await txn.insert('listening_history', {
+        'work_key': work.workKey,
+        'track_json': jsonEncode(work.track.toJson()),
+        'last_played_at_ms': work.lastPlayedAtMs,
+        'legacy_order': legacyOrder,
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+      if (Sqflite.firstIntValue(await txn.rawQuery('SELECT changes()')) != 0) {
+        await _recordListeningHistoryEdit(txn);
+      }
+    }),
   );
 
   Future<Map<String, Object?>?> findListeningTrack(String key) =>
@@ -184,18 +204,11 @@ Future<Map<String, Object?>?> _findListeningHistoryEntry(
   return rows.firstOrNull;
 }
 
-Future<void> _insertListeningHistory(
-  DatabaseExecutor db,
-  ListeningWorkRecord work,
-  int legacyOrder, {
-  ConflictAlgorithm? conflictAlgorithm,
-}) async {
-  await db.insert('listening_history', {
-    'work_key': work.workKey,
-    'track_json': jsonEncode(work.track.toJson()),
-    'last_played_at_ms': work.lastPlayedAtMs,
-    'legacy_order': legacyOrder,
-  }, conflictAlgorithm: conflictAlgorithm);
+Future<void> _recordListeningHistoryEdit(Transaction txn) async {
+  await txn.insert('app_kv_settings', {
+    'key': _listeningHistoryEditedAtKey,
+    'value': DateTime.now().millisecondsSinceEpoch.toString(),
+  }, conflictAlgorithm: ConflictAlgorithm.replace);
 }
 
 Future<Set<String>> _loadExistingListeningDays(

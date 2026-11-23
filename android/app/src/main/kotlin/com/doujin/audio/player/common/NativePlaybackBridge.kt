@@ -233,7 +233,7 @@ class NativePlaybackBridge(
         private val canStartService: Boolean,
         private val requireForegroundBootstrap: Boolean,
         private val dispatchAsync: ((NativePlaybackService, (Map<String, Any?>) -> Unit) -> Unit)?,
-        private val dispatch: (NativePlaybackService) -> Map<String, Any?>
+        private val dispatch: ((NativePlaybackService) -> Map<String, Any?>)?
     ) : Runnable {
         private val startedAtMs = SystemClock.elapsedRealtime()
         private var completed = false
@@ -272,8 +272,13 @@ class NativePlaybackBridge(
                     }
                     return
                 }
+                val syncDispatch = dispatch
+                if (syncDispatch == null) {
+                    complete(serviceUnavailable(method))
+                    return
+                }
                 val response = try {
-                    dispatch(service)
+                    syncDispatch(service)
                 } catch (error: Exception) {
                     commandFailure(error)
                 }
@@ -388,8 +393,14 @@ internal class ParsedPlaybackCommand(
     val dispatchBackground: ((Context) -> Map<String, Any?>)? = null,
     val dispatchInactive: ((Context) -> Map<String, Any?>)? = null,
     val dispatchAsync: ((NativePlaybackService, (Map<String, Any?>) -> Unit) -> Unit)? = null,
-    val dispatch: (NativePlaybackService) -> Map<String, Any?>
-)
+    val dispatch: ((NativePlaybackService) -> Map<String, Any?>)? = null
+) {
+    init {
+        require(dispatchAsync != null || dispatch != null) {
+            "Playback command requires a live dispatch handler."
+        }
+    }
+}
 
 internal fun parsePlaybackCommand(call: MethodCall): ParsedPlaybackCommand {
     val arguments = call.argumentReader()
@@ -408,7 +419,7 @@ internal fun parsePlaybackCommand(call: MethodCall): ParsedPlaybackCommand {
             dispatchAsync = { service, complete ->
                 service.readUsageAsync(complete)
             }
-        ) { service -> service.readUsage() }
+        )
         NativePlaybackMethods.ACKNOWLEDGE_USAGE -> {
             val ids = arguments.requiredList("batchIds")
             require(ids.all { it is String && it.isNotEmpty() }) { "batchIds is required." }
@@ -421,7 +432,7 @@ internal fun parsePlaybackCommand(call: MethodCall): ParsedPlaybackCommand {
                 dispatchAsync = { service, complete ->
                     service.acknowledgeUsageAsync(batchIds, complete)
                 }
-            ) { service -> service.acknowledgeUsage(batchIds) }
+            )
         }
         NativePlaybackMethods.RESET_USAGE -> ParsedPlaybackCommand(dispatchInactive = { context ->
             NativePlaybackUsageLedger.get(context).reset()

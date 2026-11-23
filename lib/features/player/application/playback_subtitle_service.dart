@@ -159,8 +159,13 @@ class PlaybackSubtitleService extends ChangeNotifier {
     onApplied,
   );
 
-  void _notifyIfActive() {
-    if (!_disposed) notifyListeners();
+  int _availabilityRevision = 0;
+  int get availabilityRevision => _availabilityRevision;
+
+  void _notifyIfActive({bool availabilityChanged = false}) {
+    if (_disposed) return;
+    if (availabilityChanged) _availabilityRevision++;
+    notifyListeners();
   }
 
   String? _lastTrackKeyInput;
@@ -894,17 +899,21 @@ class PlaybackSubtitleService extends ChangeNotifier {
     if (savedFromFile == null) {
       throw StateError('Edited subtitle file could not be read');
     }
-    return _applySubtitle(trackPath, savedFromFile);
+    return _applySubtitle(trackPath, savedFromFile, availabilityChanged: false);
   }
 
-  SubtitleTrack _applySubtitle(String trackPath, SubtitleTrack subtitle) {
+  SubtitleTrack _applySubtitle(
+    String trackPath,
+    SubtitleTrack subtitle, {
+    bool availabilityChanged = true,
+  }) {
     final key = _trackKey(trackPath);
     _automaticRetries.remove(key);
     final edited = subtitle.withOffset(getOffset(trackPath));
     _trackRevisions[key] = (_trackRevisions[key] ?? 0) + 1;
     _putCachedTrack(key, edited, _subtitleSource(trackPath));
     _onTrackLoaded?.call(trackPath, edited);
-    _notifyIfActive();
+    _notifyIfActive(availabilityChanged: availabilityChanged);
 
     return edited;
   }
@@ -1350,6 +1359,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
           _loadingSources[key] = source;
         }
         final track = _trackResolver(trackPath);
+        final hadCustomPath = source.$5 != null;
         final subtitleTrack =
             await (_subtitleLoader?.call(trackPath, track) ??
                 _loadTrack(
@@ -1379,6 +1389,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
             !identical(_loading[key], task)) {
           return subtitleTrack;
         }
+        final hadCachedTrack = _tracks[key] != null;
         if (subtitleTrack != null || !_hasRemoteSubtitleUrl(track)) {
           _putCachedTrack(key, subtitleTrack, source);
         } else {
@@ -1393,7 +1404,11 @@ class PlaybackSubtitleService extends ChangeNotifier {
           }
         }
         _onTrackLoaded?.call(trackPath, subtitleTrack);
-        _notifyIfActive();
+        _notifyIfActive(
+          availabilityChanged:
+              hadCachedTrack != (subtitleTrack != null) ||
+              (hadCustomPath && source.$5 == null),
+        );
         return subtitleTrack;
       } finally {
         if (identical(_loading[key], task)) {
@@ -1580,7 +1595,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
     _cachedWindowValid = false;
     _cachedWindowStart = null;
     _cachedWindowEnd = null;
-    _notifyIfActive();
+    _notifyIfActive(availabilityChanged: true);
   }
 
   Future<SubtitleTrack?> _loadTrack(

@@ -54,6 +54,7 @@ final class AudioRuntimeCoordinator implements AppRuntimeLifecycle {
   bool _started = false;
   bool _disposed = false;
   Future<void>? _disposeFuture;
+  final _fastShutdownSignal = Completer<void>();
 
   @override
   Future<void> start() {
@@ -143,7 +144,10 @@ final class AudioRuntimeCoordinator implements AppRuntimeLifecycle {
   }
 
   @override
-  Future<void> dispose() {
+  Future<void> dispose({bool fastShutdown = false}) {
+    if (fastShutdown && !_fastShutdownSignal.isCompleted) {
+      _fastShutdownSignal.complete();
+    }
     return _disposeFuture ??= _dispose();
   }
 
@@ -176,12 +180,12 @@ final class AudioRuntimeCoordinator implements AppRuntimeLifecycle {
     }
     final lifecycle = _lifecycleFuture;
     if (lifecycle != null) {
-      try {
-        await lifecycle;
-      } catch (_) {
-        // The transition reports its error to its caller. Owners must remain
-        // alive until already-started native replies finish applying state.
-      }
+      // A normal exit drains native replies. During OS shutdown, the closing
+      // lifecycle binding discards late reconciliation results instead.
+      await Future.any<void>([
+        lifecycle.then<void>((_) {}, onError: (Object _, StackTrace _) {}),
+        _fastShutdownSignal.future,
+      ]);
     }
     await attempt(_onDispose);
     if (firstError != null) Error.throwWithStackTrace(firstError!, firstStack!);

@@ -304,22 +304,33 @@ class NetworkRouteTest {
             val serverExecutor = Executors.newSingleThreadExecutor()
             val callers = Executors.newFixedThreadPool(4)
             val queryCount = java.util.concurrent.atomic.AtomicInteger(0)
+            val allCallersEntered = java.util.concurrent.CountDownLatch(4)
             try {
                 val exchange = serverExecutor.submit {
+                    val received = mutableListOf<Pair<ByteArray, SocketAddress>>()
                     repeat(2) {
                         val packet = DatagramPacket(ByteArray(512), 512)
                         server.soTimeout = 3_000
                         server.receive(packet)
                         queryCount.incrementAndGet()
-                        Thread.sleep(100)
-                        val query = packet.data.copyOf(packet.length)
+                        received += packet.data.copyOf(packet.length) to packet.socketAddress
+                    }
+                    assertTrue(allCallersEntered.await(3, TimeUnit.SECONDS))
+                    for ((query, address) in received) {
                         val ipv6 = query[query.size - 3].toInt() == 28
-                        val address = if (ipv6) ByteArray(16).also { it[15] = 4 } else byteArrayOf(127, 0, 0, 4)
-                        val response = dnsAnswer(query, address, ipv6)
-                        server.send(DatagramPacket(response, response.size, packet.socketAddress))
+                        val ip = if (ipv6) ByteArray(16).also { it[15] = 4 } else byteArrayOf(127, 0, 0, 4)
+                        val response = dnsAnswer(query, ip, ipv6)
+                        server.send(DatagramPacket(response, response.size, address))
                     }
                 }
-                val dns = NetworkRouteDns("127.0.0.1", server.localPort)
+                val dns = NetworkRouteDns(
+                    "127.0.0.1",
+                    server.localPort,
+                    clockMs = {
+                        allCallersEntered.countDown()
+                        System.nanoTime() / 1_000_000L
+                    }
+                )
                 val gate = java.util.concurrent.CountDownLatch(1)
                 val futures = List(4) {
                     callers.submit<List<InetAddress>> {

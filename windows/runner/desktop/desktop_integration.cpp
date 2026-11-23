@@ -464,9 +464,9 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
         for (const auto& action : pending) Action(action);
       } else if (call.method_name() == "exit") {
         result->Success();
-        if (!ending_session_) {
-          SavePlacement();
+        if (!ending_session_ && !quitting_) {
           quitting_ = true;
+          SavePlacement();
           PostMessage(window_,WM_CLOSE,0,0);
         }
       } else if (call.method_name() == "setFullscreen") {
@@ -796,7 +796,7 @@ void DesktopIntegration::EndSession() {
     tray_menu_open_ = false;
     EndMenu();
   }
-  SavePlacement();
+  if (!quitting_) SavePlacement();
   if (subtitles_) subtitles_->SavePlacement();
   struct Completion { bool finished = false; bool success = false; };
   // A reply may arrive after the deadline, so it must not capture stack state.
@@ -1180,19 +1180,15 @@ std::optional<LRESULT> DesktopIntegration::HandleMessage(UINT message, WPARAM wp
   // A previously queued tray exit must not destroy the engine during the reply wait.
   if (message == WM_CLOSE && ending_session_) return 0;
   if (message == WM_CLOSE) {
-    if (!quitting_) {
-      if (!ready_) {
-        quitting_ = true;
-        SavePlacement();
-        return std::nullopt;
-      }
-      SavePlacement();
-      ShowWindow(window_, SW_HIDE);
-      Action("background");
-      return 0;
-    }
+    if (quitting_) return std::nullopt;
     SavePlacement();
-    return std::nullopt;
+    if (!ready_) {
+      quitting_ = true;
+      return std::nullopt;
+    }
+    ShowWindow(window_, SW_HIDE);
+    Action("background");
+    return 0;
   }
   if (message == WM_QUERYENDSESSION) return TRUE;
   if (message == WM_ENDSESSION) {

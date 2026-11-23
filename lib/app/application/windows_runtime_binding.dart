@@ -5,21 +5,25 @@ import '../../core/platform/windows_desktop_service.dart';
 import '../../features/player/application/notification_facade.dart';
 import '../../features/player/application/playback_facade.dart';
 import '../../features/player/application/timer_facade.dart';
-import 'app_lifecycle_binding.dart';
 import 'app_runtime_lifecycle.dart';
 
 /// Owns desktop commands from bootstrap through runtime shutdown.
 class WindowsRuntimeBinding {
   static const defaultEndSessionDrainBudget = Duration(milliseconds: 800);
+  // Leave time for the channel reply before the runner's four-second deadline.
+  static const defaultEndSessionReplyBudget = Duration(seconds: 3);
 
   WindowsRuntimeBinding({
     WindowsDesktopService? desktop,
     Duration endSessionDrainBudget = defaultEndSessionDrainBudget,
+    Duration endSessionReplyBudget = defaultEndSessionReplyBudget,
   }) : _desktop = desktop ?? WindowsDesktopService.instance,
-       _endSessionDrainBudget = endSessionDrainBudget;
+       _endSessionDrainBudget = endSessionDrainBudget,
+       _endSessionReplyBudget = endSessionReplyBudget;
 
   final WindowsDesktopService _desktop;
   final Duration _endSessionDrainBudget;
+  final Duration _endSessionReplyBudget;
   AppRuntimeLifecycle? _runtime;
   PlaybackFacade? _playback;
   NotificationFacade? _notifications;
@@ -28,9 +32,13 @@ class WindowsRuntimeBinding {
   Future<void>? _attachment;
   Future<void>? _initialization;
   Future<void>? _shutdown;
+  Future<void>? _endSessionReply;
   bool _closing = false;
   bool _endingSession = false;
+  bool _disposingRuntime = false;
   bool _stateLoaded = false;
+  Stopwatch? _endSessionWatch;
+  final Completer<void> _endSessionSignal = Completer<void>();
   String? _pendingLifecycleAction;
   final _pausedByTaskbar = <String>{};
   bool _taskbarPauseIncomplete = false;
@@ -108,13 +116,40 @@ class WindowsRuntimeBinding {
 
   Future<void> _onAction(String action) async {
     if (action == 'exit' || action == 'endSession') {
-      if (action == 'endSession') _endingSession = true;
+      if (action == 'endSession' && !_endingSession) {
+        _endingSession = true;
+        _endSessionWatch = Stopwatch()..start();
+        if (!_endSessionSignal.isCompleted) _endSessionSignal.complete();
+        if (_disposingRuntime && _runtime != null) {
+          unawaited(
+            Future<void>.sync(
+              () => _runtime!.dispose(fastShutdown: true),
+            ).then<void>((_) {}, onError: (_, _) {}),
+          );
+        }
+      }
       _pendingLifecycleAction = null;
       if (!_closing) {
         _closing = true;
         _invalidateInitialization?.call();
       }
-      await (_shutdown ??= _saveAndDispose(closeWindow: action == 'exit'));
+      final shutdown = _shutdown ??= _saveAndDispose(
+        closeWindow: action == 'exit',
+      );
+      if (action == 'endSession') {
+        await (_endSessionReply ??= shutdown.timeout(
+          _endSessionReplyBudget - _endSessionWatch!.elapsed,
+          onTimeout: () {
+            // Keep the cleanup running in order if the process has time left.
+            throw TimeoutException(
+              'Windows end-session cleanup exceeded the reply deadline',
+              _endSessionReplyBudget,
+            );
+          },
+        ));
+      } else {
+        await shutdown;
+      }
       return;
     }
     if (_closing) return;
@@ -177,51 +212,58 @@ class WindowsRuntimeBinding {
     }
   }
 
+  Duration _remainingEndSessionBudget() {
+    final watch = _endSessionWatch;
+    if (watch == null) return _endSessionDrainBudget;
+    return _endSessionDrainBudget - watch.elapsed;
+  }
+
+  Future<bool> _drain(Future<void> work) async {
+    var done = false;
+    final tracked = work.whenComplete(() => done = true);
+    if (!_endingSession) {
+      await Future.any<void>([tracked, _endSessionSignal.future]);
+      if (done) return true;
+    }
+    final remaining = _remainingEndSessionBudget();
+    if (remaining <= Duration.zero) return false;
+    var timedOut = false;
+    await tracked.timeout(
+      remaining,
+      onTimeout: () {
+        timedOut = true;
+      },
+    );
+    return !timedOut;
+  }
+
   Future<void> _saveAndDispose({required bool closeWindow}) async {
-    final drainDeadline = _endingSession ? (Stopwatch()..start()) : null;
     final initialization = _initialization;
     if (initialization != null) {
       // The bootstrap caller receives the error; shutdown still drains its work.
-      try {
-        if (drainDeadline != null) {
-          final remaining = _endSessionDrainBudget - drainDeadline.elapsed;
-          if (remaining > Duration.zero) {
-            await initialization.timeout(remaining, onTimeout: () {});
-          }
-        } else {
+      await _drain(() async {
+        try {
           await initialization;
+        } catch (_) {
+          // Initialization errors are reported by AppBootstrapController;
+          // cleanup must still release the partially created runtime.
         }
-      } catch (_) {
-        // Initialization errors are reported by AppBootstrapController; cleanup
-        // must still release the partially created runtime.
-      }
+      }());
     }
     while (_inFlightActions.isNotEmpty) {
       final batch = _inFlightActions.toList();
-      final waitBatch = Future.wait<void>(
-        batch.map<Future<void>>((action) async {
-          try {
-            await action;
-          } catch (_) {
-            // Action errors are returned to their caller; shutdown still drains.
-          }
-        }),
-      );
-      if (drainDeadline != null) {
-        final remaining = _endSessionDrainBudget - drainDeadline.elapsed;
-        if (remaining <= Duration.zero) break;
-        var timedOut = false;
-        await waitBatch.timeout(
-          remaining,
-          onTimeout: () {
-            timedOut = true;
-            return const <void>[];
-          },
+      final finished = await _drain(() async {
+        await Future.wait<void>(
+          batch.map<Future<void>>((action) async {
+            try {
+              await action;
+            } catch (_) {
+              // Action errors are returned to their caller; shutdown still drains.
+            }
+          }),
         );
-        if (timedOut) break;
-      } else {
-        await waitBatch;
-      }
+      }());
+      if (!finished) break;
     }
     Object? firstError;
     StackTrace? firstStack;
@@ -241,13 +283,12 @@ class WindowsRuntimeBinding {
       ]);
     }
     if (_runtime != null) {
-      await attempt(() {
-        final runtime = _runtime!;
-        if (runtime is AppLifecycleBinding) {
-          return runtime.dispose(fastShutdown: _endingSession);
-        }
-        return runtime.dispose();
-      });
+      _disposingRuntime = true;
+      try {
+        await attempt(() => _runtime!.dispose(fastShutdown: _endingSession));
+      } finally {
+        _disposingRuntime = false;
+      }
     }
     // Windows needs the channel reply before WM_ENDSESSION returns.
     if (closeWindow && !_endingSession) await attempt(_desktop.exit);

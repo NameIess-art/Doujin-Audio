@@ -122,11 +122,11 @@ private class AndroidNativePlaybackStatePersistenceEnvironment(
     }
 
     override fun shutdown() {
-        // The process-scoped persistence executor continues draining queued writes asynchronously.
+        // The process-scoped persistence executor stays alive across service restarts.
     }
 
     override fun awaitTermination(timeoutMs: Long): Boolean =
-        NativePlaybackStateStore.awaitPendingPersistenceForTest(timeoutMs)
+        NativePlaybackStateStore.awaitPendingPersistence(timeoutMs)
 }
 
 internal class NativePlaybackStatePersistenceCoordinator(
@@ -319,8 +319,10 @@ internal class NativePlaybackStatePersistenceCoordinator(
         environment.shutdown()
     }
 
-    fun awaitPendingForTest(timeoutMs: Long = 10_000L): Boolean =
-        environment.awaitTermination(timeoutMs)
+    fun flush(onFlushed: () -> Unit) {
+        persistNow()
+        environment.execute { environment.postDelayed(Runnable(onFlushed), 0L) }
+    }
 
     fun awaitTermination(timeoutMs: Long = 10_000L): Boolean =
         environment.awaitTermination(timeoutMs)

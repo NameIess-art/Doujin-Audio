@@ -62,7 +62,6 @@ open class MainActivity : FlutterFragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         applyStartupWindowTheme()
-        applyPreferredHighRefreshRate()
         setupSplashScreenExitAnimation()
         if (BuildConfig.SCREENSHOT_MODE) {
             // Flutter restores edge-to-edge after page transitions and keyboard
@@ -98,35 +97,6 @@ open class MainActivity : FlutterFragmentActivity() {
         // Forward real pressure levels so bounded caches can still be freed.
         if (level == ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) return
         super.onTrimMemory(level)
-    }
-
-    private fun applyPreferredHighRefreshRate() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
-        try {
-            val activeDisplay = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                display
-            } else {
-                @Suppress("DEPRECATION")
-                windowManager.defaultDisplay
-            } ?: return
-            val currentMode = activeDisplay.mode ?: return
-            val supportedModes = activeDisplay.supportedModes ?: return
-            val bestMode = supportedModes
-                .filter {
-                    it.physicalWidth == currentMode.physicalWidth &&
-                        it.physicalHeight == currentMode.physicalHeight
-                }
-                .maxByOrNull { it.refreshRate }
-                ?: return
-            if (bestMode.modeId != currentMode.modeId &&
-                bestMode.refreshRate > currentMode.refreshRate
-            ) {
-                val params = window.attributes
-                params.preferredDisplayModeId = bestMode.modeId
-                window.attributes = params
-            }
-        } catch (_: Throwable) {
-        }
     }
 
     private fun applyStartupWindowTheme() {

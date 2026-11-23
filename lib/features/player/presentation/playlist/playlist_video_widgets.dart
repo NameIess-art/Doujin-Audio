@@ -764,10 +764,10 @@ class _SessionVideoFullscreenPageState
   ) {
     final inlineTimecodes =
         MediaQuery.orientationOf(context) == Orientation.landscape;
-    final textHeight = MediaQuery.textScalerOf(context).scale(13) * 1.1;
-    final timelineHeight = inlineTimecodes
-        ? max(20.0, textHeight)
-        : 20.0 + max(20.0, textHeight);
+    final timelineHeight = SessionProgressBar.preferredHeight(
+      context,
+      inlineTimecodes: inlineTimecodes,
+    );
     return timelineHeight +
         _controlRowSpacing +
         _bottomControlsHeight(stackVolumeControls) +

@@ -76,9 +76,16 @@ final class _ScopeRevisionNotifier extends ValueNotifier<int> {
   }
 
   @override
+  void addListener(VoidCallback listener) {
+    if (_disposed) return;
+    super.addListener(listener);
+  }
+
+  @override
   void removeListener(VoidCallback listener) {
+    if (_disposed) return;
     super.removeListener(listener);
-    if (!_disposed && !hasListeners) {
+    if (!hasListeners) {
       _disposed = true;
       _onEmpty(this);
       super.dispose();
@@ -90,6 +97,38 @@ final class _ScopeRevisionNotifier extends ValueNotifier<int> {
     _disposed = true;
     super.dispose();
   }
+}
+
+final class _ScopeRevisionHandle implements ValueListenable<int> {
+  const _ScopeRevisionHandle(this._service, this._key);
+
+  final CoverArtworkCacheService _service;
+  final String _key;
+
+  @override
+  int get value => _service._scopeNotifiers[_key]?.value ?? 0;
+
+  @override
+  void addListener(VoidCallback listener) {
+    if (_service._disposed) return;
+    _service._ensureScopeNotifier(_key).addListener(listener);
+  }
+
+  @override
+  void removeListener(VoidCallback listener) {
+    _service._scopeNotifiers[_key]?.removeListener(listener);
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is _ScopeRevisionHandle &&
+          identical(other._service, _service) &&
+          _coverIdentityEquals(other._key, _key);
+
+  @override
+  int get hashCode =>
+      Object.hash(identityHashCode(_service), _coverIdentityHashCode(_key));
 }
 
 class CoverArtworkCacheService {
@@ -181,9 +220,6 @@ class CoverArtworkCacheService {
   final Map<String, String> _folderCoverSelections = _coverKeyMap();
   final Map<String, int> _coverKeyRevisions = _coverKeyMap();
   final Map<String, _ScopeRevisionNotifier> _scopeNotifiers = _coverKeyMap();
-  static final ValueNotifier<int> _disposedScopeNotifier = ValueNotifier<int>(
-    0,
-  );
   Future<void>? _folderCoverSelectionsLoadFuture;
   int _generation = 0;
   int _cacheEpoch = 0;
@@ -206,11 +242,12 @@ class CoverArtworkCacheService {
     return (epoch: _cacheEpoch, revision: _coverKeyRevision(key));
   }
 
-  /// Returns a lazily allocated per-scope notifier that automatically removes
-  /// and disposes itself once its last listener unsubscribes.
-  ValueListenable<int> scopeNotifier(String scope) {
-    if (_disposed) return _disposedScopeNotifier;
-    final key = _scopeKeyFor(scope);
+  /// Returns a lightweight per-scope handle whose underlying notifier is only
+  /// allocated while at least one listener is attached.
+  ValueListenable<int> scopeNotifier(String scope) =>
+      _ScopeRevisionHandle(this, _scopeKeyFor(scope));
+
+  _ScopeRevisionNotifier _ensureScopeNotifier(String key) {
     return _scopeNotifiers.putIfAbsent(
       key,
       () => _ScopeRevisionNotifier(
@@ -1241,13 +1278,6 @@ class CoverArtworkCacheService {
     _cacheEpoch++;
     _artworkRepairs.clear();
     _generation++;
-    if (_scopeNotifiers.isNotEmpty) {
-      final activeNotifiers = _scopeNotifiers.values.toList(growable: false);
-      for (final notifier in activeNotifiers) {
-        notifier.bump();
-      }
-    }
-    _generationSlice.update(_generation);
     _coverKeyRevisions.clear();
     _sourceResolver.invalidateAll();
     _folderCoverFutures.clear();
@@ -1260,6 +1290,13 @@ class CoverArtworkCacheService {
     _remoteCovers.invalidateAll();
     _manualCoverPathValidityCache.clear();
     _manualCoverValidationFutures.clear();
+    if (_scopeNotifiers.isNotEmpty) {
+      final activeNotifiers = _scopeNotifiers.values.toList(growable: false);
+      for (final notifier in activeNotifiers) {
+        notifier.bump();
+      }
+    }
+    _generationSlice.update(_generation);
   }
 
   int _coverKeyRevision(String key) => _coverKeyRevisions[key] ?? 0;

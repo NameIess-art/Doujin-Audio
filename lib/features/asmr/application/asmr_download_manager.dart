@@ -875,12 +875,14 @@ class AsmrDownloadManager {
   @visibleForTesting
   Future<void> debugRunStructuralPersistenceForTesting() async {
     await initialize();
+    // ignore: invalid_use_of_visible_for_testing_member
     await _store.runStructuralPersistenceForTesting();
   }
 
   @visibleForTesting
   Future<void> debugRunProgressCheckpointForTesting() async {
     await initialize();
+    // ignore: invalid_use_of_visible_for_testing_member
     await _store.runProgressCheckpointForTesting();
   }
 

@@ -7,7 +7,7 @@ abstract interface class AppRuntimeLifecycle {
 
   Future<void> resumeForeground();
 
-  Future<void> dispose();
+  Future<void> dispose({bool fastShutdown = false});
 
   Future<void> handleMemoryPressure() => Future<void>.value();
 }

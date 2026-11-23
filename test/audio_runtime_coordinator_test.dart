@@ -79,6 +79,40 @@ void main() {
       await shutdown;
     },
   );
+
+  test(
+    'OS shutdown discards a late foreground snapshot after disposal',
+    () async {
+      final repository = _DelayedSnapshotRepository()..delaySnapshot = false;
+      final released = Completer<void>();
+      final graph = createTestRuntimeGraph(
+        nativePlaybackRepository: repository,
+        disposeSecondaryData: released.complete,
+      );
+      final runtime = graph.runtime;
+      await runtime.start();
+      repository.delaySnapshot = true;
+      final foreground = runtime.resumeForeground();
+      await repository.started.future;
+
+      final ordinaryExit = runtime.dispose();
+      final osExit = runtime.dispose(fastShutdown: true);
+      expect(osExit, same(ordinaryExit));
+      await osExit.timeout(const Duration(seconds: 2));
+      expect(released.isCompleted, isTrue);
+
+      repository.reply.complete(
+        NativeSuccess(
+          NativePlaybackBundleSnapshot(
+            sessions: [
+              _snapshot('late').copyWith(retainedUris: ['content://media/42']),
+            ],
+          ),
+        ),
+      );
+      await foreground;
+    },
+  );
   for (final fail in [false, true]) {
     test(
       'startup shares its Future and shutdown drains it (failure: $fail)',
@@ -453,9 +487,15 @@ void main() {
 class _DelayedSnapshotRepository extends NativePlaybackRepository {
   final started = Completer<void>();
   final reply = Completer<NativeResult<NativePlaybackBundleSnapshot>>();
+  bool delaySnapshot = true;
 
   @override
   Future<NativeResult<NativePlaybackBundleSnapshot>> snapshot() {
+    if (!delaySnapshot) {
+      return Future.value(
+        NativeSuccess(NativePlaybackBundleSnapshot(sessions: [])),
+      );
+    }
     started.complete();
     return reply.future;
   }

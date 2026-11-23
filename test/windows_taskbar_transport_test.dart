@@ -203,7 +203,7 @@ final class _NoopRuntime implements AppRuntimeLifecycle {
   @override
   Future<void> resumeForeground() async {}
   @override
-  Future<void> dispose() async {}
+  Future<void> dispose({bool fastShutdown = false}) async {}
   @override
   Future<void> handleMemoryPressure() async {}
 }

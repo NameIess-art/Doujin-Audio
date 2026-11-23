@@ -27,8 +27,9 @@ abstract final class PlaylistBatchActions {
     final sessionIds = selectedSessionIds.toList(growable: false);
     for (final id in sessionIds) {
       final snapshot = playback.sessionSnapshotById(id);
-      if (snapshot != null && !snapshot.playbackRequested) {
-        await playback.toggleSessionPlayPause(id);
+      if (snapshot != null &&
+          (snapshot.playbackError != null || !snapshot.playbackRequested)) {
+        await playback.resumeSession(id);
       }
     }
   }
@@ -45,8 +46,13 @@ abstract final class PlaylistBatchActions {
     final sessionIds = selectedSessionIds.toList(growable: false);
     for (final id in sessionIds) {
       final snapshot = playback.sessionSnapshotById(id);
-      if (snapshot != null && snapshot.playbackRequested) {
-        await playback.toggleSessionPlayPause(id);
+      if (snapshot != null &&
+          snapshot.playbackError == null &&
+          snapshot.playbackRequested) {
+        final session = playback.sessionById(id);
+        if (session != null && session.currentTrackPath.isNotEmpty) {
+          await playback.pauseSessionForResume(session);
+        }
       }
     }
   }

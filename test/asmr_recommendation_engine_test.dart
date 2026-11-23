@@ -562,6 +562,48 @@ void main() {
       expect(asyncResult.map((w) => w.id), [5]);
     },
   );
+
+  test(
+    'rankAsync reflects in-place mutations of caller-owned lists with unchanged length',
+    () async {
+      final candidates = <AsmrWork>[
+        work(id: 1, title: 'Work 1', sourceId: 'RJ111111', tags: ['a']),
+        work(id: 2, title: 'Work 2', sourceId: 'RJ222222', tags: ['a']),
+        work(id: 3, title: 'Work 3', sourceId: 'RJ333333', tags: ['a']),
+      ];
+      final localTracks = <MusicTrack>[
+        track(groupSubtitle: 'RJ111111', tags: const ['a']),
+      ];
+      final favorites = <AsmrWork>[candidates[0]];
+      const weights = <String, double>{'a': 1.0};
+
+      final first = await engine.rankAsync(
+        candidates: candidates,
+        localTracks: localTracks,
+        favoriteWorks: favorites,
+        historyWorks: const <AsmrWork>[],
+        tagWeights: weights,
+        voiceActorWeights: const <String, double>{},
+        circleWeights: const <String, double>{},
+      );
+      expect(first.map((w) => w.id), [2, 3]);
+
+      // Mutate in place without changing list identity or length.
+      localTracks[0] = track(groupSubtitle: 'RJ222222', tags: const ['a']);
+      favorites[0] = candidates[2];
+
+      final second = await engine.rankAsync(
+        candidates: candidates,
+        localTracks: localTracks,
+        favoriteWorks: favorites,
+        historyWorks: const <AsmrWork>[],
+        tagWeights: weights,
+        voiceActorWeights: const <String, double>{},
+        circleWeights: const <String, double>{},
+      );
+      expect(second.map((w) => w.id), [1]);
+    },
+  );
 }
 
 AsmrWork work({

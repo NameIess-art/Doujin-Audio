@@ -927,12 +927,12 @@ void main() {
     final titleSurface = tester.widget<Material>(
       find.descendant(of: titleBar, matching: find.byType(Material)).first,
     );
-    final sidebar = tester.widget<AnimatedContainer>(
+    final sidebar = tester.widget<Container>(
       find.ancestor(
         of: find.byType(NavigationRail),
         matching: find.byWidgetPredicate(
           (widget) =>
-              widget is AnimatedContainer && widget.key == const ValueKey(true),
+              widget is Container && widget.key == const ValueKey(true),
         ),
       ),
     );
@@ -1318,6 +1318,9 @@ void main() {
     _setLogicalTestViewSize(tester, const Size(390, 800));
     await _pumpAppShell(tester);
     final rebuilds = <String, int>{};
+    const libraryDestinationKey = ValueKey<String>(
+      'main_destination_ink_music_library',
+    );
     final previous = debugOnRebuildDirtyWidget;
     addTearDown(() => debugOnRebuildDirtyWidget = previous);
     debugOnRebuildDirtyWidget = (element, builtOnce) {
@@ -1326,35 +1329,52 @@ void main() {
           null) {
         return;
       }
-      final type = element.widget.runtimeType.toString();
+      // The tapped destination legitimately animates its press tint even while
+      // the dock is collapsing. Count it separately from untouched icons.
+      final isDestinationPressIcon = element.widget is Icon &&
+          element.findAncestorWidgetOfExactType<InkResponse>()?.key ==
+              libraryDestinationKey;
+      final type = isDestinationPressIcon
+          ? 'DestinationPressIcon'
+          : element.widget.runtimeType.toString();
       rebuilds.update(type, (count) => count + 1, ifAbsent: () => 1);
     };
     for (final expanding in [true, false]) {
       rebuilds.clear();
+      final lateRebuildFrames = <String, int>{};
       await tester.tap(
         find.byKey(
           expanding
               ? const ValueKey<String>(
                   'active_session_card_orientation_session',
                 )
-              : const ValueKey<String>('main_destination_ink_music_library'),
+              : libraryDestinationKey,
         ),
       );
       await tester.pump();
       for (var frame = 0; frame < 22; frame++) {
         if (frame == 11) {
           expect(
-            rebuilds['Icon'] ?? 0,
+            (rebuilds['Icon'] ?? 0) + (rebuilds['DestinationPressIcon'] ?? 0),
             lessThanOrEqualTo(18),
             reason:
                 'Icon rebuilt excessively during tap tint / branch change (expanding: $expanding)',
           );
-          rebuilds['Icon'] = 0;
         }
+        if (frame >= 11) rebuilds.clear();
         await tester.pump(const Duration(milliseconds: 16));
+        if (frame >= 11) {
+          for (final type in rebuilds.keys) {
+            lateRebuildFrames.update(
+              type,
+              (count) => count + 1,
+              ifAbsent: () => 1,
+            );
+          }
+        }
       }
-      // After the tapped destination's release tint finishes (160 ms), dock
-      // motion must not rebuild icons or static playback subtree every frame.
+      // Dock motion must not rebuild untouched icons or the static playback
+      // subtree frame by frame.
       for (final type in [
         'Icon',
         'PageView',
@@ -1363,9 +1383,9 @@ void main() {
         '_ActiveSessionTitleSubtitle',
       ]) {
         expect(
-          rebuilds[type] ?? 0,
-          lessThanOrEqualTo(8),
-          reason: '$type rebuilt on animation frames (expanding: $expanding)',
+          lateRebuildFrames[type] ?? 0,
+          lessThanOrEqualTo(2),
+          reason: '$type rebuilt across animation frames (expanding: $expanding)',
         );
       }
     }
@@ -1972,6 +1992,7 @@ void main() {
     _setLogicalTestViewSize(tester, const Size(390, 820));
     await _pumpAppShell(tester);
     final card = find.byKey(const ValueKey('mobile_dock_playback'));
+    final surface = find.byKey(const ValueKey('mobile_bottom_capsule_surface'));
     final cover = find.byKey(
       const ValueKey('active_session_cover_orientation_session'),
     ).hitTestable();
@@ -1982,12 +2003,17 @@ void main() {
         const ValueKey('active_session_card_orientation_session'),
       ),
     );
+    final playButton = find.descendant(
+      of: visibleCard,
+      matching: find.byType(IconButton),
+    );
     final textViewport = find.descendant(
       of: visibleCard,
       matching: find.byKey(const ValueKey('active_session_title_overflow_box')),
     );
     final coverElement = tester.element(cover);
     final inline = tester.getRect(card);
+    final surfaceRight = tester.getRect(surface).right;
     final maskTop = tester.getRect(mask).top;
     Future<void> openTab(String destination) async {
       await tester.tap(find.byKey(ValueKey('main_destination_$destination')));
@@ -2034,6 +2060,14 @@ void main() {
         expect((current.top - previous.top).abs(), lessThan(4));
         expect(tester.element(cover), same(coverElement));
         expect(tester.getRect(cover).left, closeTo(current.left + 4, 0.01));
+        if (raising || current.width > inline.width) {
+          // The collapsed clip hides the play button completely.
+          expect(
+            tester.getRect(playButton).right,
+            closeTo(surfaceRight - 6, 0.01),
+            reason: 'raising=$raising, frame=$frame, card=$current',
+          );
+        }
         expect(
           tester.getRect(mask).top - maskTop,
           closeTo(current.top - inline.top, 0.01),
@@ -3362,7 +3396,7 @@ void main() {
         matching: find.text('Fade search work', findRichText: true),
       );
       await pumpUntilFound(tester, result);
-      await pumpUntilUiIdle(tester);
+      await _waitForAppShellInteractionIdle(tester);
 
       final card = find.byKey(const ValueKey('routed_playback_dock'));
       double opacity() => tester
@@ -3391,7 +3425,7 @@ void main() {
       await pumpUntilNotFound(tester, card);
       expect(card, findsNothing);
       expect(result, findsWidgets);
-      await pumpUntilUiIdle(tester);
+      await _waitForAppShellInteractionIdle(tester);
       await tester.pumpWidget(const SizedBox.shrink());
     },
     variant: TargetPlatformVariant.only(TargetPlatform.android),
@@ -5877,18 +5911,19 @@ void main() {
     expect(expandedRail.extended, isTrue);
     expect(expandedRail.minWidth, 64);
     expect(expandedRail.minExtendedWidth, 244);
-    final animatedShell = find.ancestor(
+    final sidebarShell = find.ancestor(
       of: navigationRail,
-      matching: find.byType(AnimatedContainer),
+      matching: find.byWidgetPredicate(
+        (widget) => widget is Container && widget.key == const ValueKey(true),
+      ),
     );
-    expect(animatedShell, findsOneWidget);
+    expect(sidebarShell, findsOneWidget);
     expect(
-      tester.widget<AnimatedContainer>(animatedShell).duration,
-      Duration.zero,
-    );
-    expect(
-      tester.widget<AnimatedContainer>(animatedShell).curve,
-      kAppSpringCurve,
+      find.ancestor(
+        of: navigationRail,
+        matching: find.byType(AnimatedContainer),
+      ),
+      findsNothing,
     );
     expect(
       tester
@@ -7009,12 +7044,8 @@ void main() {
       BoxFit.cover,
     );
     expect(
-      tester
-          .widget<ClipRRect>(
-            find
-                .byKey(const ValueKey('active_session_card_asmr_error_session'))
-                .first,
-          )
+      (tester.widget<Ink>(inSessionCard(find.byType(Ink)).first).decoration
+              as BoxDecoration)
           .borderRadius,
       BorderRadius.circular(LibraryLikeCardMetrics.coverRadius + 4),
     );
@@ -7610,7 +7641,7 @@ void main() {
     expect(titleColor, Colors.white);
     expect(forwardColor, isNot(closeColor));
     expect(closeColor, Colors.white);
-    expect(timeColor.a, closeTo(0.72, 0.001));
+    expect(timeColor.a, closeTo(0.82, 0.001));
     expect(secondaryColor, timeColor);
 
     await _settleSessionDetailAsyncWork(tester);
@@ -9158,7 +9189,9 @@ Future<void> _waitForSearchRoute(WidgetTester tester) async {
     if (page.evaluate().isEmpty) continue;
     final route = ModalRoute.of(tester.element(page));
     if (route?.animation?.status == AnimationStatus.completed) {
-      await pumpUntilUiIdle(tester);
+      // The page behind the search route may have commits queued until it is
+      // visible again. Only the current route's transition needs to be idle.
+      await _waitForAppShellInteractionIdle(tester);
       return;
     }
   }

@@ -31,23 +31,16 @@ internal class NativePlaybackUsageCheckpoint(
 
     fun update() = ledger.update(items())
 
-    fun read(): List<Map<String, Any?>> {
+    fun readAsync(complete: (Result<List<Map<String, Any?>>>) -> Unit) {
         update()
-        return ledger.read()
-    }
-
-    fun readAsync(complete: (List<Map<String, Any?>>) -> Unit) {
-        val currentItems = items()
-        ledger.readAsync(currentItems) { batches ->
-            handler.post { complete(batches) }
+        ledger.readAsync { result ->
+            handler.post { complete(result) }
         }
     }
 
-    fun acknowledge(ids: Set<String>) = ledger.acknowledge(ids)
-
-    fun acknowledgeAsync(ids: Set<String>, complete: () -> Unit) {
-        ledger.acknowledgeAsync(ids) {
-            handler.post(complete)
+    fun acknowledgeAsync(ids: Set<String>, complete: (Result<Unit>) -> Unit) {
+        ledger.acknowledgeAsync(ids) { result ->
+            handler.post { complete(result) }
         }
     }
 
@@ -253,13 +246,18 @@ internal class NativePlaybackUsageLedger(
         }
     }
 
-    fun readAsync(
-        currentItems: List<Map<String, Any?>>? = null,
-        onComplete: (List<Map<String, Any?>>) -> Unit
-    ) {
-        writer.execute {
-            if (currentItems != null) update(currentItems)
-            onComplete(read())
+    fun readAsync(onComplete: (Result<List<Map<String, Any?>>>) -> Unit) {
+        try {
+            writer.execute {
+                val result = try {
+                    Result.success(read())
+                } catch (error: Exception) {
+                    Result.failure(error)
+                }
+                onComplete(result)
+            }
+        } catch (error: Exception) {
+            onComplete(Result.failure(error))
         }
     }
 
@@ -272,11 +270,20 @@ internal class NativePlaybackUsageLedger(
 
     fun acknowledgeAsync(
         ids: Set<String>,
-        onComplete: () -> Unit
+        onComplete: (Result<Unit>) -> Unit
     ) {
-        writer.execute {
-            acknowledge(ids)
-            onComplete()
+        try {
+            writer.execute {
+                val result = try {
+                    acknowledge(ids)
+                    Result.success(Unit)
+                } catch (error: Exception) {
+                    Result.failure(error)
+                }
+                onComplete(result)
+            }
+        } catch (error: Exception) {
+            onComplete(Result.failure(error))
         }
     }
 

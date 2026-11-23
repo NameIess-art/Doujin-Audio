@@ -626,11 +626,7 @@ class LibrarySnapshotCacheService {
     _cachedTree = const <LibraryNode>[];
     _cachedTreeRevision = -1;
     _cachedLeafFolderCount = 0;
-    _treeFuture = null;
-    _treeFutureRevision = -1;
-    _treeCommitCallbacks.clear();
     _categorySnapshot = null;
-    _categoryRequest = null;
     _pendingCategoryDetails.clear();
     while (_folderTrees.length > 4) {
       _folderTrees.remove(_folderTrees.keys.first);

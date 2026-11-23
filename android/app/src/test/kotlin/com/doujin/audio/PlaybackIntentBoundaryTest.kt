@@ -5,6 +5,7 @@ import com.doujin.audio.player.session.StoredPlaybackTimerRuntimeState
 
 import android.app.AlarmManager
 import android.content.Intent
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -19,13 +20,13 @@ class PlaybackIntentBoundaryTest {
     }
 
     @Test
-    fun `timer delivery requires a matching persisted deadline`() {
+    fun `timer delivery uses the monotonic countdown deadline when available`() {
         val timerState = StoredPlaybackTimerRuntimeState(
             timerModeIndex = 0,
             durationMs = 60_000L,
             waitingForPlayback = false,
             timerEndsAtWallClockMs = 1_700_000_000_000L,
-            timerEndsElapsedRealtimeMs = null,
+            timerEndsElapsedRealtimeMs = 60_000L,
             autoResumeEnabled = false,
             autoResumeHour = 7,
             autoResumeMinute = 0,
@@ -34,22 +35,26 @@ class PlaybackIntentBoundaryTest {
             generation = 3
         )
         assertTrue(
-            hasScheduledPlaybackTimerRuntime(
+            isPlaybackTimerDue(
                 PlaybackTimerAlarmScheduler.actionTimerExpired,
-                timerState
+                timerState, elapsedNow = 60_000L, wallNow = 1_699_999_999_999L
             )
         )
         assertFalse(
-            hasScheduledPlaybackTimerRuntime(
+            isPlaybackTimerDue(
                 PlaybackTimerAlarmScheduler.actionTimerExpired,
-                null
+                timerState, elapsedNow = 59_999L, wallNow = 1_700_000_000_000L
             )
         )
         assertFalse(
-            hasScheduledPlaybackTimerRuntime(
+            isPlaybackTimerDue(
                 PlaybackTimerAlarmScheduler.actionAutoResume,
-                timerState
+                timerState, elapsedNow = 60_000L, wallNow = 1_700_000_000_000L
             )
+        )
+        assertEquals(
+            1_700_000_010_000L,
+            timerState.countdownDeadlineOnWallClock(elapsedNow = 50_000L, wallNow = 1_700_000_000_000L)
         )
     }
 

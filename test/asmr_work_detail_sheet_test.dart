@@ -1175,6 +1175,8 @@ void main() {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
+      // The fixture's MaterialApp uses the default English locale.
+      await fixture.languageProvider.setLanguage(AppLanguage.en);
       final copied = <String>[];
       tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
         SystemChannels.platform,

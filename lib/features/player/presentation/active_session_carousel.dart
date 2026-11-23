@@ -607,7 +607,6 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
         ),
       ),
     );
-    final positionIndicator = buildPositionIndicator();
     return SizedBox(
       height: dockPresentation
           ? kActiveSessionCarouselDockHeight
@@ -636,9 +635,11 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
                   start: 12,
                   end: 12,
                   bottom: 7,
-                  child: widget.retainDockPages && indicatorOpacity < 1
-                      ? buildPositionIndicator(opacity: indicatorOpacity)
-                      : positionIndicator,
+                  child: buildPositionIndicator(
+                    opacity: widget.retainDockPages && indicatorOpacity < 1
+                        ? indicatorOpacity
+                        : 1.0,
+                  ),
                 ),
             ],
           );

@@ -58,6 +58,8 @@ final workTextServiceProvider = Provider<WorkTextService>((ref) {
     discoverImagesWithRefresh: (folder, {required refresh}) =>
         library.discoverCoverImageReferencesInFolder(folder, refresh: refresh),
     combineWindowsLocalDiscovery: true,
+    onCombinedImagesRefreshed: (folder) =>
+        library.coverArtworkCacheService.invalidateFolder(folder),
   );
   var lastStructureRevision = library.structureRevision;
   final subscription = library.states.listen((state) {

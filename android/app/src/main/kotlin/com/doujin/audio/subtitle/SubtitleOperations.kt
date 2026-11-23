@@ -297,7 +297,7 @@ internal class SubtitleOperations(private val context: Context, private val stor
             return existing.uri.toString()
         }
         if (sourcePath != null && matching.isNotEmpty() && !overwrite) throw SubtitleExistsException()
-        val saved = storage.writeFileBytesToDocumentFolder(folder, existing?.name ?: name, bytes, "application/octet-stream") {
+        val saved = storage.writeFileBytesToDocumentFolder(folder, existing?.name ?: name, bytes) {
             sourcePath == null || sameDocument(sourcePath, it) || deleteSource(sourcePath)
         }
             ?: throw IOException("Cannot save subtitle")

@@ -75,6 +75,7 @@ class LibraryService {
   int libraryBatchDepth = 0;
   bool libraryBatchChanged = false;
   int libraryDerivedGeneration = 0;
+  int catalogWriteGeneration = 0;
   final List<MusicTrack> libraryBatchPersistTracks = <MusicTrack>[];
   final Map<String, LibraryEntry> libraryBatchPersistEntriesByKey =
       <String, LibraryEntry>{};
@@ -84,8 +85,9 @@ class LibraryService {
     const LibraryState(),
   );
 
-  void markStructureChanged() {
+  void markStructureChanged({bool catalogMutation = true}) {
     libraryDerivedGeneration++;
+    if (catalogMutation) catalogWriteGeneration++;
     if (libraryBatchDepth > 0) {
       libraryBatchChanged = true;
       return;
@@ -156,6 +158,7 @@ class LibraryService {
       ..addAll(folders);
     _watchedFoldersSnapshot = null;
     _rootIndexGeneration = -1;
+    catalogWriteGeneration++;
   }
 
   bool addWatchedFolder(String folderPath, {VoidCallback? onPersist}) {
@@ -891,7 +894,9 @@ class LibraryService {
   }
 
   void replaceLibraryEntries(Iterable<LibraryEntry> entries) {
+    var wrote = false;
     for (final entry in entries) {
+      wrote = true;
       final normalizedLibraryPath = PathMatcher.normalize(entry.libraryPath);
       final normalizedPath = PathMatcher.normalize(entry.path);
       libraryEntriesByLibrary.putIfAbsent(
@@ -900,6 +905,7 @@ class LibraryService {
       )[normalizedPath] = entry
           .copyWith();
     }
+    if (wrote) catalogWriteGeneration++;
     // Library entries back the edit/exclusion metadata tree, not the main
     // audio library tree. Refresh scans can replace many entry rows while the
     // visible library content is still unchanged, so avoid invalidating the
@@ -1018,6 +1024,7 @@ class LibraryService {
     });
 
     if (removedPaths.isNotEmpty) {
+      catalogWriteGeneration++;
       _removeExclusionsWithinRemovedPaths(normalizedLibraryPath, removedPaths);
     }
 
@@ -1039,6 +1046,7 @@ class LibraryService {
     }
 
     if (removedPaths.isNotEmpty) {
+      catalogWriteGeneration++;
       _removeExclusionsWithinRemovedPaths(normalizedLibraryPath, removedPaths);
     }
 
@@ -1318,9 +1326,8 @@ class LibraryService {
   }) {
     var didChangeGroupOrder = false;
     var didReplaceGroup = false;
-    final changedTracks = <MusicTrack>[];
+    final latestChangedByPath = createPathIndex<MusicTrack>();
     final affectedGroups = <String>{};
-    final upsertedByGroup = <String, List<MusicTrack>>{};
     final replacedPaths = createPathSet();
     final hadExistingTracks = library.isNotEmpty;
 
@@ -1367,18 +1374,15 @@ class LibraryService {
         }
       }
       libraryByPath[nextTrack.path] = nextTrack;
-      changedTracks.add(nextTrack);
+      latestChangedByPath[nextTrack.path] = nextTrack;
       affectedGroups.add(nextTrack.groupKey);
-      upsertedByGroup
-          .putIfAbsent(nextTrack.groupKey, () => <MusicTrack>[])
-          .add(nextTrack);
       if (groupOrderSet.add(nextTrack.groupKey)) {
         groupOrder.add(nextTrack.groupKey);
         didChangeGroupOrder = true;
       }
     }
 
-    if (changedTracks.isEmpty) {
+    if (latestChangedByPath.isEmpty) {
       return (
         tracks: const <MusicTrack>[],
         didChangeGroupOrder: false,
@@ -1386,6 +1390,7 @@ class LibraryService {
         batched: false,
       );
     }
+    final changedTracks = latestChangedByPath.values.toList(growable: false);
     if (libraryBatchDepth > 0) {
       libraryBatchChanged = true;
       if (persist) libraryBatchPersistTracks.addAll(changedTracks);
@@ -1400,6 +1405,12 @@ class LibraryService {
       rebuildLibraryIndexes();
       syncGroupOrderFromLibrary();
     } else {
+      final upsertedByGroup = <String, List<MusicTrack>>{};
+      for (final track in changedTracks) {
+        upsertedByGroup
+            .putIfAbsent(track.groupKey, () => <MusicTrack>[])
+            .add(track);
+      }
       _updateTracksByGroupIncremental(
         affectedGroups: affectedGroups,
         upsertedByGroup: upsertedByGroup,

@@ -55,6 +55,30 @@ class NativePlaybackBridgeTest {
     }
 
     @Test
+    fun `clearing playback stops the service only after the database writer drains`() {
+        val service = Robolectric.buildService(NativePlaybackService::class.java).get()
+        val writerEntered = CountDownLatch(1)
+        val releaseWriter = CountDownLatch(1)
+        NativePlaybackStateStore.executeOnPersistenceExecutor {
+            writerEntered.countDown()
+            releaseWriter.await(5, TimeUnit.SECONDS)
+        }
+        try {
+            assertTrue(writerEntered.await(5, TimeUnit.SECONDS))
+            assertEquals(true, service.clearAll()["ok"])
+            assertFalse(shadowOf(service).isStoppedBySelf)
+
+            releaseWriter.countDown()
+            assertTrue(NativePlaybackStateStore.awaitPendingPersistence())
+            shadowOf(Looper.getMainLooper()).idle()
+            assertTrue(shadowOf(service).isStoppedBySelf)
+        } finally {
+            releaseWriter.countDown()
+            assertTrue(PlaybackTimerAlarmScheduler.awaitPendingForTest())
+        }
+    }
+
+    @Test
     fun `pending service call catches unexpected exceptions and balances command delivery`() {
         val service = Robolectric.buildService(NativePlaybackService::class.java).get()
         ReflectionHelpers.setStaticField(NativePlaybackService::class.java, "instance", service)

@@ -45,7 +45,7 @@ void main() {
     final repository = _RestoredLibraryRepository();
     final facade = LibraryFacade.create(databaseRepository: repository);
     addTearDown(facade.dispose);
-    facade.beginLibraryBatch();
+    await facade.beginLibraryBatch();
     facade.addWatchedLibrary('/library', notify: false);
     for (var index = 0; index < 500; index++) {
       facade.addWatchedFolder('/library/$index', notify: false);
@@ -70,13 +70,13 @@ void main() {
       final repository = _RestoredLibraryRepository()..rejectCommit = true;
       final facade = LibraryFacade.create(databaseRepository: repository);
       addTearDown(facade.dispose);
-      facade.beginLibraryBatch();
+      await facade.beginLibraryBatch();
       facade.addWatchedLibrary('/library', notify: false);
       await expectLater(facade.endLibraryBatch(), throwsStateError);
       expect(facade.watchedLibraries, isEmpty);
       expect(repository.settings, isEmpty);
       repository.rejectCommit = false;
-      facade.beginLibraryBatch();
+      await facade.beginLibraryBatch();
       facade.addWatchedLibrary('/library', notify: false);
       await facade.endLibraryBatch();
       expect(facade.watchedLibraries, ['/library']);
@@ -103,7 +103,7 @@ void main() {
         repository.lastCatalogSettings?.keys,
         unorderedEquals(['group_order_v1', 'watched_folders_v1']),
       );
-      first.beginLibraryBatch();
+      await first.beginLibraryBatch();
       first.removeWatchedFolder('/old');
       first.addWatchedFolder('/new');
       await first.endLibraryBatch();
@@ -279,7 +279,7 @@ void main() {
         original,
       ], persist: false);
       final entries = facade.libraryEntriesForLibrary('/existing');
-      facade.beginLibraryBatch();
+      await facade.beginLibraryBatch();
       facade.addOrReplaceTracks([original.copyWith(isFavorite: true)]);
       facade.removeTracksByPath([original.path]);
       facade.removeLibraryEntriesByPaths(
@@ -299,7 +299,7 @@ void main() {
         entries.map((entry) => entry.path),
       );
       repository.rejectCommit = false;
-      facade.beginLibraryBatch();
+      await facade.beginLibraryBatch();
       facade.removeTracksByPath([original.path]);
       expect(removedNotifications, isEmpty);
       await facade.endLibraryBatch();

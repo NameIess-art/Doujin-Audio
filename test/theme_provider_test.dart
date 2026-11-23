@@ -1204,6 +1204,82 @@ void main() {
       expect(provider.themeMode, ThemeMode.system);
     },
   );
+
+  test(
+    'setPureBlackTheme notifies listeners in light mode on change and rollback',
+    () async {
+      var shouldPersist = true;
+      final provider = ThemeProvider(
+        loadPersistedState: false,
+        preferenceWriter: (_, _) async => shouldPersist,
+      );
+      addTearDown(provider.dispose);
+
+      expect(await provider.setThemeMode(ThemeMode.light), isTrue);
+      var notifications = 0;
+      provider.addListener(() => notifications++);
+
+      expect(await provider.setPureBlackTheme(true), isTrue);
+      expect(provider.pureBlackTheme, isTrue);
+      expect(notifications, 1);
+
+      shouldPersist = false;
+      expect(await provider.setPureBlackTheme(false), isFalse);
+      expect(provider.pureBlackTheme, isTrue);
+      // One notification for optimistic update, one for rollback.
+      expect(notifications, 3);
+    },
+  );
+
+  test(
+    'overlapping reloadPersistedState calls discard stale reload',
+    () async {
+      SharedPreferences.setMockInitialValues({'themeMode': 'light'});
+      await AppPreferences.init();
+      final gates = <Completer<bool>>[];
+      final provider = ThemeProvider(
+        preferenceWriter: (_, _) {
+          final gate = Completer<bool>();
+          gates.add(gate);
+          return gate.future;
+        },
+      );
+      addTearDown(provider.dispose);
+      expect(provider.themeMode, ThemeMode.light);
+
+      // Start write1 and reload1 awaiting write1.
+      final write1 = provider.setThemeMode(ThemeMode.dark);
+      await Future<void>.delayed(Duration.zero);
+      expect(gates, hasLength(1));
+      final reload1 = provider.reloadPersistedState();
+
+      // Queue write2 and a newer reload2 before write1 completes.
+      final write2 = provider.setThemeMode(ThemeMode.system);
+      SharedPreferences.setMockInitialValues({'themeMode': 'light'});
+      await AppPreferences.init();
+      final reload2 = provider.reloadPersistedState();
+
+      // Complete write1; reload1 resumes with stale generation and must NOT
+      // overwrite the current state or notify.
+      var notifications = 0;
+      provider.addListener(() => notifications++);
+      gates[0].complete(true);
+      await write1;
+      await reload1;
+      expect(notifications, 0);
+      expect(provider.themeMode, ThemeMode.system);
+
+      // Now update storage for reload2 and complete write2.
+      SharedPreferences.setMockInitialValues({'themeMode': 'dark'});
+      await AppPreferences.init();
+      await Future<void>.delayed(Duration.zero);
+      expect(gates, hasLength(2));
+      gates[1].complete(true);
+      await Future.wait([write2, reload2]);
+      expect(provider.themeMode, ThemeMode.dark);
+      expect(notifications, 1);
+    },
+  );
 }
 
 double _contrastRatio(Color foreground, Color background) {

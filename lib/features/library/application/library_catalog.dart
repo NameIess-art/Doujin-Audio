@@ -38,9 +38,9 @@ abstract interface class LibraryCatalogWriter {
     int? processed,
     int? total,
   });
-  void beginLibraryBatch({bool snapshotAllEntries = true});
+  Future<void> beginLibraryBatch({bool snapshotAllEntries = true});
   Future<void> endLibraryBatch();
-  void beginStagedLibraryRefresh();
+  Future<void> beginStagedLibraryRefresh();
   Future<void> finishStagedLibraryRefresh({bool commit = true});
   int applyStagedLibraryRefreshChunk({
     required String sourceFolderPath,

@@ -133,7 +133,7 @@ class PowerPlatformService implements PowerPlatformGateway {
     if (!_isAndroid) return true;
     return _invokeBool(
       PowerMethod.isIgnoringBatteryOptimizations,
-      missingPluginDefault: true,
+      missingPluginDefault: errorDefault,
       errorDefault: errorDefault,
     );
   }
@@ -178,8 +178,8 @@ class PowerPlatformService implements PowerPlatformGateway {
     if (!_isAndroid) return true;
     return _invokeBool(
       PowerMethod.canScheduleExactAlarms,
-      missingPluginDefault: true,
-      errorDefault: true,
+      missingPluginDefault: false,
+      errorDefault: false,
     );
   }
 

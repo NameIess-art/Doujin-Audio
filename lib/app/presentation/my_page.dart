@@ -97,7 +97,7 @@ class _MyPageState extends ConsumerState<MyPage>
     }
     if (oldWidget.activeTabIndexListenable != widget.activeTabIndexListenable ||
         oldWidget.tabIndex != widget.tabIndex) {
-      _handleActiveTabChanged();
+      _applyActiveState(_isTabActive);
     }
   }
 
@@ -112,15 +112,21 @@ class _MyPageState extends ConsumerState<MyPage>
     );
   }
 
-  void _handleActiveTabChanged() {
-    final nextActive = _isTabActive;
-    if (nextActive == _isActive) return;
-    if (nextActive) {
+  bool _applyActiveState(bool nextActive) {
+    if (nextActive == _isActive) return false;
+    if (!nextActive) {
       _cachedActivity = ref.read(listeningActivityProvider);
     }
-    setState(() => _isActive = nextActive);
+    _isActive = nextActive;
     if (nextActive) {
       _scheduleActivityRefresh();
+    }
+    return true;
+  }
+
+  void _handleActiveTabChanged() {
+    if (_applyActiveState(_isTabActive)) {
+      setState(() {});
     }
   }
 
@@ -626,9 +632,6 @@ class _MyPageState extends ConsumerState<MyPage>
                   : _selectListeningChart(
                       _cachedActivity ?? ref.read(listeningActivityProvider),
                     ));
-        if (!skeleton && _isActive) {
-          _cachedActivity = ref.read(listeningActivityProvider);
-        }
         final style =
             ref.watch(
               settingsStateProvider.select(
@@ -733,11 +736,6 @@ class _MyPageState extends ConsumerState<MyPage>
                                   _cachedActivity ??
                                       ref.read(listeningActivityProvider),
                                 );
-                          if (_isActive) {
-                            _cachedActivity = ref.read(
-                              listeningActivityProvider,
-                            );
-                          }
                           if (historyState.hasValue) {
                             final history = historyState.history!;
                             return history.isEmpty

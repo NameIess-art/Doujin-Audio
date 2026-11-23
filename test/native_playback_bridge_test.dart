@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/features/player/domain/audio_effects.dart';
@@ -530,8 +532,14 @@ void main() {
     () async {
       const eventsChannel = EventChannel(NativePlaybackChannel.eventName);
       final eventSinks = <MockStreamHandlerEventSink>[];
+      final firstListen = Completer<void>();
+      final reconnected = Completer<void>();
       var listenCount = 0;
       var cancelAttempts = 0;
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockStreamHandler(eventsChannel, null),
+      );
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockStreamHandler(
             eventsChannel,
@@ -539,6 +547,11 @@ void main() {
               onListen: (_, events) {
                 listenCount++;
                 eventSinks.add(events);
+                if (listenCount == 1 && !firstListen.isCompleted) {
+                  firstListen.complete();
+                } else if (listenCount == 2 && !reconnected.isCompleted) {
+                  reconnected.complete();
+                }
               },
               onCancel: (_) {
                 cancelAttempts++;
@@ -553,11 +566,11 @@ void main() {
 
       try {
         bridge.startListening();
-        await Future<void>.delayed(Duration.zero);
+        await firstListen.future.timeout(const Duration(seconds: 2));
         expect(listenCount, 1);
 
         eventSinks[0].error(code: 'disconnect');
-        await Future<void>.delayed(const Duration(milliseconds: 300));
+        await reconnected.future.timeout(const Duration(seconds: 2));
         expect(listenCount, 2);
       } finally {
         await bridge.stopListening();

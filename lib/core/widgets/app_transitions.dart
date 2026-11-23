@@ -1796,6 +1796,14 @@ class _AnimatedTreeRevealState extends State<AnimatedTreeReveal>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _controller?.value = widget.visible ? 1.0 : 0.0;
+    }
+  }
+
+  @override
   void didUpdateWidget(covariant AnimatedTreeReveal oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.visible != oldWidget.visible) {
@@ -1821,48 +1829,35 @@ class _AnimatedTreeRevealState extends State<AnimatedTreeReveal>
     super.dispose();
   }
 
-  Widget _buildCollapsedPlaceholder(Widget child) => IgnorePointer(
-    child: ClipRect(
-      child: Align(
-        alignment: Alignment.topCenter,
-        heightFactor: 0.2,
-        child: Opacity(opacity: 0, child: child),
-      ),
-    ),
-  );
-
   @override
   Widget build(BuildContext context) {
-    if (MediaQuery.disableAnimationsOf(context)) {
-      return widget.visible ? widget.child : const SizedBox.shrink();
-    }
-    final curved = _curved;
-    if (curved == null) {
-      return widget.visible
-          ? widget.child
-          : _buildCollapsedPlaceholder(widget.child);
-    }
+    final disableAnimations = MediaQuery.disableAnimationsOf(context);
+    final Animation<double> animation = disableAnimations
+        ? (widget.visible
+              ? kAlwaysCompleteAnimation
+              : kAlwaysDismissedAnimation)
+        : (_curved ??
+              (widget.visible
+                  ? kAlwaysCompleteAnimation
+                  : kAlwaysDismissedAnimation));
     return AnimatedBuilder(
-      animation: curved,
-      child: widget.child,
+      animation: animation,
+      child: FadeTransition(opacity: animation, child: widget.child),
       builder: (context, child) {
-        final value = curved.value;
-        if (value >= 1.0 && widget.visible) {
-          return child!;
-        }
-        if (value <= 0.0 && !widget.visible) {
-          return _buildCollapsedPlaceholder(child!);
-        }
+        final value = animation.value;
         // A non-zero extent keeps lazy lists from building every descendant
         // while the newly inserted rows are still visually collapsed.
-        final heightFactor = 0.2 + (0.8 * value);
+        final heightFactor = disableAnimations
+            ? (widget.visible ? 1.0 : 0.0)
+            : 0.2 + (0.8 * value);
         return IgnorePointer(
           ignoring: !widget.visible,
           child: ClipRect(
+            clipBehavior: heightFactor < 1.0 ? Clip.hardEdge : Clip.none,
             child: Align(
               alignment: Alignment.topCenter,
               heightFactor: heightFactor,
-              child: FadeTransition(opacity: curved, child: child),
+              child: child,
             ),
           ),
         );

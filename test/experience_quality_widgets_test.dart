@@ -663,7 +663,13 @@ void main() {
       final tagsStyle = tester.widget<Text>(find.text('#ASMR   #Sleep')).style!;
       expect(
         tagsStyle.color,
-        Color.lerp(circleStyle.color, dateStyle.color, 0.5),
+        Color.lerp(
+          circleStyle.color,
+          Theme.of(
+            tester.element(find.text('Circle')),
+          ).colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+          0.5,
+        ),
       );
       expect(dateStyle.fontSize, 11);
       expect(ratingStyle.fontSize, 11);
@@ -1464,7 +1470,9 @@ void main() {
         tester.widget<Text>(find.text('#ASMR')).style!.color,
         Color.lerp(
           tester.widget<Text>(find.text('Studio')).style!.color,
-          tester.widget<Text>(find.text('2026-10-09')).style!.color,
+          Theme.of(
+            tester.element(find.text('Studio')),
+          ).colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
           0.5,
         ),
       );
@@ -1579,8 +1587,9 @@ void main() {
       expect(tester.getSize(checkmarkFinder), const Size(22.0, 22.0));
       final container = tester.widget<Container>(checkmarkFinder);
       final decoration = container.decoration as BoxDecoration;
+      final tokens = AppDesignTokens.of(tester.element(checkmarkFinder));
       expect(decoration.shape, BoxShape.circle);
-      expect(decoration.color, const Color(0xFF4CAF50));
+      expect(decoration.color, tokens.success);
       expect(decoration.border?.top.width, 2.0);
       final icon = tester.widget<Icon>(
         find.descendant(
@@ -1588,7 +1597,7 @@ void main() {
           matching: find.byIcon(Icons.check_rounded),
         ),
       );
-      expect(icon.color, Colors.white);
+      expect(icon.color, tokens.onSuccess);
       expect(icon.size, 14);
 
       // Verify mid-animation opacity

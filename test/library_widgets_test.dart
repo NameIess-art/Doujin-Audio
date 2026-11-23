@@ -216,10 +216,11 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     // SQLite completions need real I/O and the widget test's microtask queue.
     var drained = false;
+    var removalFailures = 0;
     final drain = fixture.undoableRemovalService
         .commitPending()
         .then((failures) {
-          expect(failures, 0);
+          removalFailures = failures;
           return fixture.runtimeGraph.library.detailCacheService
               .suspendAndWait();
         })
@@ -234,6 +235,7 @@ void main() {
     }
     expect(drained, isTrue);
     await drain;
+    expect(removalFailures, 0);
   }
 
   setUp(UiInteractionCoordinator.instance.resetForTest);
@@ -1469,7 +1471,7 @@ void main() {
         matching: find.ancestor(
           of: find.text('Batch track 0', skipOffstage: false),
           matching: find.byType(FadeTransition, skipOffstage: false),
-        ),
+        ).first,
         skipOffstage: false,
       );
       expect(tester.widget<FadeTransition>(rowFade()).opacity.value, 0);

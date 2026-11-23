@@ -19,7 +19,6 @@ import '../../../core/widgets/animated_reorder.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/library_like_cards.dart';
 import '../../../core/widgets/operation_feedback.dart';
-import '../../../core/widgets/scroll_activity_gate.dart';
 import '../../../core/widgets/scroll_to_top_list.dart';
 
 import 'library_tab_ui_helpers.dart';
@@ -821,6 +820,13 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
     _removalKeys.removeWhere(
       (key) => !_itemIndexById.containsKey(PathMatcher.equivalenceKey(key.id)),
     );
+    _itemKeys.removeWhere((id, key) {
+      if (_removingItemIds.contains(id) || key.currentContext != null) {
+        return false;
+      }
+      _itemKeyIndices.remove(key);
+      return true;
+    });
     // Riverpod pauses a hidden row's watch subscriptions with TickerMode. Keep
     // removal streams live through undo so a stale reverse cannot finish first
     // on resume, and retain committed state until the tree removes the row.
@@ -913,29 +919,11 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
         treeItem = FadeTransition(opacity: opacity, child: treeItem);
       }
       final id = _visibleItemIds[index];
-      // The sliver changes when expanding/removing rows. Keep settled rows'
-      // State across sliver switches using lifecycle-released GlobalKeys, while
-      // fast-scrolling rows use lightweight ValueKeys to avoid churn.
-      final existingGlobalKey = _itemKeys[id];
-      final fastScrolling = ScrollActivityGate.isFastScrollingWithoutDependencyOf(
-        context,
-      );
-      final GlobalKey? leasedGlobalKey;
-      final Key itemKey;
-      if (existingGlobalKey != null) {
-        leasedGlobalKey = existingGlobalKey;
-        itemKey = existingGlobalKey;
-        _itemKeyIndices[existingGlobalKey] = index;
-      } else if (fastScrolling) {
-        leasedGlobalKey = null;
-        itemKey = ValueKey<String>(id);
-      } else {
-        final allocated = GlobalKey();
-        _itemKeys[id] = allocated;
-        _itemKeyIndices[allocated] = index;
-        leasedGlobalKey = allocated;
-        itemKey = allocated;
-      }
+      // The sliver changes when expanding/removing rows. Keep every mounted
+      // row on a consistent lifecycle-released GlobalKey so settling after a
+      // fast scroll never swaps key types and rebuilds row state.
+      final itemKey = _itemKeys.putIfAbsent(id, GlobalKey.new);
+      _itemKeyIndices[itemKey] = index;
       final rowContent = BrowseAnchor(
         id: id,
         child: item.depth == 0
@@ -950,13 +938,10 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
       return AnimatedReorderItem(
         key: itemKey,
         id: id,
-        child: switch (leasedGlobalKey) {
-          final key? => _RowGlobalKeyLease(
-            onDispose: () => _releaseItemKey(id, key),
-            child: rowContent,
-          ),
-          null => rowContent,
-        },
+        child: _RowGlobalKeyLease(
+          onDispose: () => _releaseItemKey(id, itemKey),
+          child: rowContent,
+        ),
       );
     }
 
@@ -1058,12 +1043,7 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             itemCount: rowCount,
             findChildIndexCallback: columnCount == 1
-                ? (key) {
-                    if (key is ValueKey<String>) {
-                      return _itemIndexById[key.value];
-                    }
-                    return _itemKeyIndices[key];
-                  }
+                ? (key) => _itemKeyIndices[key]
                 : null,
             itemBuilder: (context, rowIndex) {
               if (columnCount == 1) {

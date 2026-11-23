@@ -650,9 +650,9 @@ void main() {
         service.calls.last.texts.toSet().intersection(first.texts.toSet()),
         isEmpty,
       );
-      service.calls.last.complete();
-      await _batch(tester);
-      expect(find.text('zh-CN:Track 79'), findsOneWidget);
+      final last = service.calls.last;
+      last.complete();
+      await pumpUntilFound(tester, find.text('${last.target}:Track 79'));
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );

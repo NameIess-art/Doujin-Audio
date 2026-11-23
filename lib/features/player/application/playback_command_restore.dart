@@ -24,14 +24,12 @@ extension PlaybackCommandRestore on PlaybackCommandCoordinator {
     }
   }
 
-  Future<void> _reconcileNativeRuntime() async {
-    await _applyNativeRuntimeSnapshot(syncUi: true);
-  }
-
   Future<NativePlaybackBundleSnapshot?> _applyNativeRuntimeSnapshot({
     required bool syncUi,
+    bool Function()? canApply,
   }) async {
     final response = await _nativePlaybackRepository.snapshot();
+    if (canApply?.call() == false) return null;
     final bundle = response.valueOrNull;
     if (bundle == null) {
       AppLogService.warning(
@@ -62,7 +60,12 @@ extension PlaybackCommandRestore on PlaybackCommandCoordinator {
       final session = _sessions[snapshot.sessionId]!;
       if (session.queueLoadingRequired ||
           _nativeSnapshotsWaitingForQueue.containsKey(session)) {
-        await _applyNativeSnapshotAfterQueueLoad(session, playbackSnapshot);
+        await _applyNativeSnapshotAfterQueueLoad(
+          session,
+          playbackSnapshot,
+          canApply: canApply,
+        );
+        if (canApply?.call() == false) return null;
       } else {
         _handleNativePlaybackSnapshot(playbackSnapshot);
       }
@@ -82,13 +85,14 @@ extension PlaybackCommandRestore on PlaybackCommandCoordinator {
 
   Future<void> _applyNativeSnapshotAfterQueueLoad(
     PlaybackSession session,
-    NativePlaybackSnapshot snapshot,
-  ) async {
+    NativePlaybackSnapshot snapshot, {
+    bool Function()? canApply,
+  }) async {
     final pending = _nativeSnapshotsWaitingForQueue.containsKey(session);
     _nativeSnapshotsWaitingForQueue[session] = snapshot;
     try {
       final loaded = await _playbackFacade.ensureSessionQueueLoaded(session.id);
-      if (loaded && !pending) {
+      if (loaded && !pending && canApply?.call() != false) {
         final latest = _nativeSnapshotsWaitingForQueue.remove(session);
         if (latest != null) _handleNativePlaybackSnapshot(latest);
       }

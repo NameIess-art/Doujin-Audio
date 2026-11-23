@@ -22,7 +22,7 @@ internal class VolumeBalanceAudioProcessor : BaseAudioProcessor() {
         val isActive: Boolean
             get() = shouldProcessVolumeBalance(panning) ||
                 channelSwapEnabled ||
-                (shouldProcessFrontBack(frontBack) && spatialResponses != null)
+                spatialResponses != null
     }
 
     @Volatile

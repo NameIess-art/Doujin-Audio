@@ -321,7 +321,7 @@ final class LibraryMutationCoordinator {
         .where((entry) => entry.isTrack)
         .map((entry) => entry.path)
         .toList();
-    _catalogWrites.beginLibraryBatch(snapshotAllEntries: false);
+    await _catalogWrites.beginLibraryBatch(snapshotAllEntries: false);
     _catalogWrites.rememberBatchEntriesForLibrary(normalizedLibraryPath);
     final removal = _service.removeLibrary(normalizedLibraryPath);
     final removedTrackPaths = <String>{
@@ -517,7 +517,11 @@ final class LibraryMutationCoordinator {
     if (!_service.isLibraryFolderExplicitlyExcluded(libraryPath, folderPath)) {
       return;
     }
-    _catalogWrites.beginLibraryBatch(snapshotAllEntries: false);
+    await _catalogWrites.beginLibraryBatch(snapshotAllEntries: false);
+    if (!_service.isLibraryFolderExplicitlyExcluded(libraryPath, folderPath)) {
+      await _catalogWrites.endLibraryBatch();
+      return;
+    }
     _catalogWrites.removeTracksMatching(
       (track) =>
           PathMatcher.isWithinOrEqual(track.path, folderPath) ||
@@ -537,7 +541,11 @@ final class LibraryMutationCoordinator {
     if (!_service.isLibraryTrackExplicitlyExcluded(libraryPath, trackPath)) {
       return;
     }
-    _catalogWrites.beginLibraryBatch(snapshotAllEntries: false);
+    await _catalogWrites.beginLibraryBatch(snapshotAllEntries: false);
+    if (!_service.isLibraryTrackExplicitlyExcluded(libraryPath, trackPath)) {
+      await _catalogWrites.endLibraryBatch();
+      return;
+    }
     _catalogWrites.removeTracksMatching(
       (track) => PathMatcher.equalsNormalized(track.path, trackPath),
       persist: !_service.watchedLibraries.any(
@@ -653,12 +661,14 @@ final class LibraryMutationCoordinator {
         else
           track,
     ];
+    await _catalogWrites.beginLibraryBatch(snapshotAllEntries: false);
     // All reads must finish before checking the current exclusion state.
     // Another track's read can overlap a new exclusion or removal of the root.
     if (!_service.watchedLibraries.any(
           (root) => PathMatcher.equalsNormalized(root, libraryPath),
         ) &&
         !_service.watchedFolders.contains(libraryPath)) {
+      await _catalogWrites.endLibraryBatch();
       return;
     }
     final active = restored.where((track) {
@@ -667,9 +677,7 @@ final class LibraryMutationCoordinator {
               entry != null) &&
           !_service.isLibraryPathExcluded(libraryPath, track.path);
     }).toList();
-    if (active.isEmpty) return;
-    _catalogWrites.beginLibraryBatch(snapshotAllEntries: false);
-    _catalogWrites.addOrReplaceTracks(active);
+    if (active.isNotEmpty) _catalogWrites.addOrReplaceTracks(active);
     await _catalogWrites.endLibraryBatch();
   }
 

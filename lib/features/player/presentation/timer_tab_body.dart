@@ -6,7 +6,7 @@ extension _TimerTabBody on _TimerTabState {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final timer = ref.read(timerFacadeProvider);
     final timerSlice = ref.watch(timerConfigurationUiProvider);
-    _syncDraftFromState(timerSlice);
+    _syncDraftFromState(timerSlice, timer);
     final cs = Theme.of(context).colorScheme;
     final timerConfigured = timerSlice.duration != null;
     final timerActive = timerSlice.active;
@@ -85,23 +85,23 @@ extension _TimerTabBody on _TimerTabState {
             );
           }
 
-          final resolvedStatus =
-              status ??
-              const _TimerReliabilityStatus(
-                exactAlarmsEnabled: true,
-                backgroundRunAllowed: true,
-              );
-          final toneColor = resolvedStatus.isStronglyReliable
-              ? cs.primary
-              : cs.error;
-          final summary = resolvedStatus.isStronglyReliable
+          if (status == null) {
+            return OperationStatusBanner(
+              label: i18n.tr('operation_failed_retry'),
+              tone: OperationStatusTone.error,
+              onRetry: _refreshReliabilityStatus,
+              retryTooltip: i18n.tr('retry'),
+            );
+          }
+          final toneColor = status.isStronglyReliable ? cs.primary : cs.error;
+          final summary = status.isStronglyReliable
               ? i18n.tr('timer_reliability_ready')
               : i18n.tr('timer_reliability_missing');
           final detail = [
-            resolvedStatus.exactAlarmsEnabled
+            status.exactAlarmsEnabled
                 ? i18n.tr('exact_alarm_permission_ready')
                 : i18n.tr('exact_alarm_permission_missing'),
-            resolvedStatus.backgroundRunAllowed
+            status.backgroundRunAllowed
                 ? i18n.tr('allow_background_run_ready')
                 : i18n.tr('allow_background_run_subtitle'),
           ].join('\n');
@@ -115,7 +115,7 @@ extension _TimerTabBody on _TimerTabState {
                   Row(
                     children: [
                       Icon(
-                        resolvedStatus.isStronglyReliable
+                        status.isStronglyReliable
                             ? Icons.verified_user_rounded
                             : Icons.gpp_maybe_rounded,
                         color: toneColor,
@@ -132,20 +132,20 @@ extension _TimerTabBody on _TimerTabState {
                   ),
                   const SizedBox(height: 10),
                   Text(detail, style: Theme.of(context).textTheme.bodySmall),
-                  if (!resolvedStatus.isStronglyReliable) ...[
+                  if (!status.isStronglyReliable) ...[
                     const SizedBox(height: 12),
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
                       children: [
-                        if (!resolvedStatus.exactAlarmsEnabled)
+                        if (!status.exactAlarmsEnabled)
                           AppPillButton.outlined(
                             onPressed: () {
                               unawaited(_openExactAlarmSettings());
                             },
                             child: Text(i18n.tr('open_exact_alarm_settings')),
                           ),
-                        if (!resolvedStatus.backgroundRunAllowed)
+                        if (!status.backgroundRunAllowed)
                           AppPillButton.outlined(
                             onPressed: () {
                               unawaited(_openBackgroundRunSettings());
@@ -183,10 +183,7 @@ extension _TimerTabBody on _TimerTabState {
             _hours = h;
             _minutes = m;
             _seconds = s;
-            final nextDuration = _pickedDuration;
-            if (nextDuration > Duration.zero) {
-              timer.setTimerDraft(_selectedMode, nextDuration);
-            }
+            _commitLocalDraft(timer, _selectedMode, _pickedDuration);
           }),
         ),
         SizedBox(height: compactMode ? 8 : 14),
@@ -233,7 +230,11 @@ extension _TimerTabBody on _TimerTabState {
                           _hours = nextHours;
                           _minutes = nextMinutes;
                           _seconds = 0;
-                          timer.setTimerDraft(_selectedMode, presetDuration);
+                          _commitLocalDraft(
+                            timer,
+                            _selectedMode,
+                            presetDuration,
+                          );
                         });
                       },
                       child: Padding(
@@ -276,11 +277,9 @@ extension _TimerTabBody on _TimerTabState {
                 AppInteractionFeedbackType.selection,
               );
             }
-            if (_pickedDuration > Duration.zero) {
-              timer.setTimerDraft(mode, _pickedDuration);
-            }
             _setLocalState(() {
               _selectedMode = mode;
+              _commitLocalDraft(timer, mode, _pickedDuration);
             });
           },
         ),

@@ -162,7 +162,6 @@ void SubtitleWindow::Show(bool visible) {
     if (!window_) return;
     ShowWindow(window_, SW_HIDE);
     hovered_ = false;
-    surface_uploaded_ = false;
     ReleaseSurface();
     std::vector<DWORD>().swap(background_pixels_);
     background_dirty_ = true;
@@ -362,14 +361,6 @@ bool SubtitleWindow::EnsureSurface(HDC screen, int width, int rows) {
   }
   surface_width_ = width;
   surface_rows_ = rows;
-  if (!resizing_) {
-    const size_t pixel_count = static_cast<size_t>(width) * rows;
-    if (background_pixels_.capacity() > pixel_count * 4) {
-      std::vector<DWORD>(pixel_count).swap(background_pixels_);
-    } else {
-      background_pixels_.resize(pixel_count);
-    }
-  }
   background_dirty_ = content_dirty_ = true;
   return true;
 }

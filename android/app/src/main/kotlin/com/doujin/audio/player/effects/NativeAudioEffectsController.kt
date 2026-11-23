@@ -87,6 +87,9 @@ internal class NativeAudioEffectsController(
     }
 
     private fun syncProcessors() {
+        // Keep the processor active once spatial responses have been loaded for this
+        // player so dragging frontBack through or back to 0 fades smoothly to dry
+        // audio instead of triggering a player reprepare.
         volumeBalanceAudioProcessor.controls = VolumeBalanceAudioProcessor.Controls(
             panning = panning,
             channelSwapEnabled = channelSwapEnabled,

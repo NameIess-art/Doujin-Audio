@@ -412,6 +412,49 @@ void main() {
   });
 
   testWidgets(
+    'timer permission check failure offers a retry instead of readiness',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      fixture.timer.configureTimer(
+        TimerMode.manual,
+        const Duration(minutes: 30),
+      );
+      final pending = Completer<bool>();
+      final permissions = _CountingPermissionStatusService()
+        ..nextResult = pending.future;
+      await tester.pumpWidget(
+        fixture.build(
+          const TimerTab(showHeader: false),
+          overrides: [
+            permissionStatusServiceProvider.overrideWithValue(permissions),
+          ],
+        ),
+      );
+      await tester.pump();
+      pending.completeError(StateError('Permission check failed'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(fixture.languageProvider.tr('timer_reliability_ready')),
+        findsNothing,
+      );
+      expect(
+        find.text(fixture.languageProvider.tr('operation_failed_retry')),
+        findsOneWidget,
+      );
+
+      permissions.nextResult = null;
+      await tester.tap(find.byTooltip(fixture.languageProvider.tr('retry')));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(fixture.languageProvider.tr('timer_reliability_ready')),
+        findsOneWidget,
+      );
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.android),
+  );
+
+  testWidgets(
     'reduced motion timer wheels apply draft changes without scrolling frames',
     (tester) async {
       tester.binding.platformDispatcher.accessibilityFeaturesTestValue =
@@ -520,6 +563,36 @@ void main() {
       TargetPlatform.android,
       TargetPlatform.windows,
     }),
+  );
+
+  testWidgets(
+    'compact timer entry fits a 320 logical pixel Android screen',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(320, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      await tester.pumpWidget(
+        fixture.build(
+          Builder(
+            builder: (context) => Scaffold(
+              body: TextButton(
+                onPressed: () => showTimerSettingsPanel(
+                  context,
+                  initialCompactDetail: false,
+                ),
+                child: const Text('Open timer'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open timer'));
+      await tester.pumpAndSettle();
+      expect(find.byType(TimerTab), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.android),
   );
 
   testWidgets(
@@ -816,16 +889,53 @@ void main() {
       expect(hourController.selectedItem % 13, 12);
 
       // Scrolling down to 00:00:00 keeps the wheel at zero instead of snapping back to 00:30:00.
-      fixture.timer.setTimerDraft(
-        TimerMode.manual,
-        const Duration(minutes: 1),
-      );
+      fixture.timer.setTimerDraft(TimerMode.manual, const Duration(minutes: 1));
       await tester.pumpAndSettle();
       final minuteWheel = find.byType(ListWheelScrollView).at(1);
       final minuteController =
           tester.widget<ListWheelScrollView>(minuteWheel).controller!
               as FixedExtentScrollController;
       expect(minuteController.selectedItem % 60, 1);
+      minuteController.jumpToItem(minuteController.selectedItem - 1);
+      await tester.pumpAndSettle();
+
+      expect(minuteController.selectedItem % 60, 0);
+      expect(
+        find.text(fixture.languageProvider.tr('set_duration_first')),
+        findsOneWidget,
+      );
+      expect(
+        tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+        isNull,
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'rapid wheel edits to 00:00:00 are not snapped back by lagging draft stream events',
+    (tester) async {
+      tester.binding.platformDispatcher.accessibilityFeaturesTestValue =
+          const FakeAccessibilityFeatures(disableAnimations: true);
+      addTearDown(
+        tester.binding.platformDispatcher.clearAccessibilityFeaturesTestValue,
+      );
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      fixture.timer.setTimerDraft(TimerMode.manual, const Duration(minutes: 2));
+      await tester.pumpWidget(
+        fixture.build(const TimerTab(showHeader: false, compactOnly: true)),
+      );
+      await tester.pumpAndSettle();
+
+      final minuteWheel = find.byType(ListWheelScrollView).at(1);
+      final minuteController =
+          tester.widget<ListWheelScrollView>(minuteWheel).controller!
+              as FixedExtentScrollController;
+      expect(minuteController.selectedItem % 60, 2);
+
+      // Step 2m -> 1m -> 0m in quick succession before async stream events flush.
+      minuteController.jumpToItem(minuteController.selectedItem - 1);
       minuteController.jumpToItem(minuteController.selectedItem - 1);
       await tester.pumpAndSettle();
 

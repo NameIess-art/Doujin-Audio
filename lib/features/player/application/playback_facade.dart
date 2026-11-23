@@ -1036,10 +1036,10 @@ final class PlaybackFacade {
       ).configurePersistence(enabled: enabled);
   Future<void> loadPersistedState() =>
       PlaybackSessionPersistenceCoordinator(this).loadPersistedState();
-  Future<void> removeMissingTemporarySessions() =>
+  Future<void> removeMissingTemporarySessions({bool Function()? canApply}) =>
       PlaybackSessionPersistenceCoordinator(
         this,
-      ).removeMissingTemporarySessions();
+      ).removeMissingTemporarySessions(canApply: canApply);
   Future<void> resetPersistedState() =>
       PlaybackSessionPersistenceCoordinator(this).resetPersistedState();
   Future<void> savePersistedState() =>

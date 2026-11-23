@@ -369,7 +369,7 @@ void main() {
     )..configurePersistence(enabled: false);
     facade.attachCoverArtworkCacheService(() => cache);
     addTearDown(facade.dispose);
-    facade.beginLibraryBatch();
+    await facade.beginLibraryBatch();
     for (var batch = 0; batch < 3; batch++) {
       facade.addOrReplaceTracks([
         for (var index = 0; index < 120; index++)
@@ -3508,6 +3508,45 @@ void main() {
     cache.trimMemory();
     expect(cache.manualCoverPathValidityCacheSize, 0);
   });
+
+  test(
+    'scopeNotifier tolerates removeListener after dispose and invalidateAll clears cache before notifying',
+    () async {
+      final root = await Directory.systemTemp.createTemp('cover_scope_rev_');
+      addTearDown(() async {
+        if (await root.exists()) await root.delete(recursive: true);
+      });
+      final cover = File('${root.path}${Platform.pathSeparator}cover.jpg');
+      await cover.writeAsBytes(const <int>[0xff, 0xd8, 0xff, 0xd9]);
+      final library = LibraryService()..addWatchedFolder(root.path);
+      addTearDown(library.dispose);
+      final cache = CoverArtworkCacheService(libraryService: library);
+
+      expect(await cache.futureForFolder(root.path), cover.path);
+      expect(cache.resolvedForFolder(root.path), cover.path);
+
+      // Obtaining a notifier without listening must not retain/leak anything.
+      final unused = cache.scopeNotifier('/unused/scope');
+      expect(unused.value, 0);
+
+      final listenable = cache.scopeNotifier(root.path);
+      String? resolvedDuringNotify;
+      var notifyCount = 0;
+      void listener() {
+        notifyCount++;
+        resolvedDuringNotify = cache.resolvedForFolder(root.path);
+      }
+
+      listenable.addListener(listener);
+      cache.invalidateAll();
+      expect(notifyCount, 1);
+      expect(resolvedDuringNotify, isNull);
+
+      await cache.dispose();
+      expect(() => listenable.removeListener(listener), returnsNormally);
+      expect(() => listenable.addListener(listener), returnsNormally);
+    },
+  );
 }
 
 Future<void> _waitForCoverRepair(bool Function() repaired) async {

@@ -17,6 +17,8 @@ import 'package:doujin_audio/features/player/application/playback_subtitle_servi
 import 'package:doujin_audio/features/player/domain/audio_effects.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/features/player/presentation/bedtime_canvas_page.dart';
+import 'package:doujin_audio/features/player/presentation/playback_position_ui_gate.dart';
+import 'package:doujin_audio/features/player/presentation/playlist_view_models.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_audio_features.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_batch_controller.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_list_view.dart';
@@ -379,7 +381,13 @@ Dialogue: 0,0:00:10.00,0:00:14.00,Default,,0,0,0,,Middle line
         await tester.pumpAndSettle();
 
         final sliderRect = tester.getRect(find.byType(Slider));
-        final gesture = await tester.startGesture(sliderRect.center);
+        expect(
+          sliderRect.height,
+          greaterThanOrEqualTo(kMinInteractiveDimension),
+        );
+        final gesture = await tester.startGesture(
+          Offset(sliderRect.center.dx, sliderRect.top + 5),
+        );
         await gesture.moveBy(const Offset(30, 0));
         await tester.pump();
         expect(SessionProgressBar.isInteracting, isTrue);
@@ -396,6 +404,7 @@ Dialogue: 0,0:00:10.00,0:00:14.00,Default,,0,0,0,,Middle line
         await tester.pump();
         expect(SessionProgressBar.isInteracting, isFalse);
       },
+      variant: TargetPlatformVariant.only(TargetPlatform.android),
     );
 
     testWidgets(
@@ -1343,7 +1352,9 @@ Dialogue: 0,0:00:10.00,0:00:14.00,Default,,0,0,0,,Middle line
         await tester.pump();
         gate.playGate = null;
         firstPlayGate.complete();
-        await tester.runAsync(() => playFuture.timeout(const Duration(seconds: 5)));
+        await tester.runAsync(
+          () => playFuture.timeout(const Duration(seconds: 5)),
+        );
         await tester.pump(const Duration(milliseconds: 500));
 
         expect(
@@ -1370,7 +1381,9 @@ Dialogue: 0,0:00:10.00,0:00:14.00,Default,,0,0,0,,Middle line
         await tester.pump();
         gate.pauseGate = null;
         firstPauseGate.complete();
-        await tester.runAsync(() => pauseFuture.timeout(const Duration(seconds: 5)));
+        await tester.runAsync(
+          () => pauseFuture.timeout(const Duration(seconds: 5)),
+        );
         await tester.pump(const Duration(milliseconds: 500));
 
         expect(
@@ -1381,6 +1394,281 @@ Dialogue: 0,0:00:10.00,0:00:14.00,Default,,0,0,0,,Middle line
           fixture.playback.sessionSnapshotById(session2.id)?.playbackRequested,
           isFalse,
         );
+      },
+    );
+
+    testWidgets(
+      'PlaylistBatchActions pauseSelected ignores errored sessions and playSelected retries them',
+      (tester) async {
+        final repo = _GatedPlaybackRepository();
+        final fixture = AppRuntimeWidgetTestFixture(
+          providedNativePlaybackRepository: repo,
+        );
+        addTearDown(fixture.dispose);
+        final tracks = [
+          for (var i = 1; i <= 3; i++)
+            testMusicTrack(
+              name: 'Batch Err $i',
+              path: '/music/batch_err_$i.mp3',
+              groupKey: '/music',
+              groupTitle: 'Music',
+            ),
+        ];
+        fixture.library.addTracks(tracks, persist: false);
+        final playingSession = fixture.playback.createTrackSession(tracks[0]);
+        final pausedSession = fixture.playback.createTrackSession(tracks[1]);
+        final erroredSession = fixture.playback.createTrackSession(tracks[2]);
+        addTearDown(playingSession.shutdown);
+        addTearDown(pausedSession.shutdown);
+        addTearDown(erroredSession.shutdown);
+
+        // Start playingSession cleanly, keep pausedSession paused, and mark erroredSession
+        // with playbackRequested=true and a playbackError.
+        playingSession
+          ..loadedPath = tracks[0].path
+          ..applyNativeSnapshot(
+            NativePlaybackSnapshot(
+              sessionId: playingSession.id,
+              playing: true,
+              playWhenReady: true,
+              processingState: 'ready',
+              position: Duration.zero,
+              bufferedPosition: Duration.zero,
+              volume: 1.0,
+              boostGain: 1.0,
+              channelSwapEnabled: false,
+            ),
+          );
+        erroredSession.applyNativeSnapshot(
+          NativePlaybackSnapshot(
+            sessionId: erroredSession.id,
+            playing: false,
+            playWhenReady: true,
+            processingState: 'idle',
+            position: Duration.zero,
+            bufferedPosition: Duration.zero,
+            volume: 1.0,
+            boostGain: 1.0,
+            channelSwapEnabled: false,
+            error: 'Source failed',
+          ),
+        );
+        fixture.playback
+          ..publishSessionState(playingSession.id)
+          ..publishSessionState(pausedSession.id)
+          ..publishSessionState(erroredSession.id);
+
+        late WidgetRef capturedRef;
+        await tester.pumpWidget(
+          fixture.build(
+            Consumer(
+              builder: (context, ref, _) {
+                capturedRef = ref;
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        );
+        await tester.pump();
+
+        // Batch pause must pause playingSession only, never retry erroredSession.
+        await tester.runAsync(
+          () => PlaylistBatchActions.pauseSelected(
+            ref: capturedRef,
+            selectedSessionIds: [
+              playingSession.id,
+              pausedSession.id,
+              erroredSession.id,
+            ],
+          ).timeout(const Duration(seconds: 5)),
+        );
+        await tester.pump();
+
+        expect(repo.pausedSessionIds, [playingSession.id]);
+        expect(repo.preparedSessionIds, isEmpty);
+        expect(repo.playedSessionIds, isEmpty);
+        expect(
+          fixture.playback
+              .sessionSnapshotById(playingSession.id)
+              ?.playbackRequested,
+          isFalse,
+        );
+        expect(
+          fixture.playback
+              .sessionSnapshotById(erroredSession.id)
+              ?.playbackError,
+          'Source failed',
+        );
+
+        // Batch play must resume both pausedSession and erroredSession.
+        await tester.runAsync(
+          () => PlaylistBatchActions.playSelected(
+            ref: capturedRef,
+            selectedSessionIds: [pausedSession.id, erroredSession.id],
+          ).timeout(const Duration(seconds: 5)),
+        );
+        await tester.pump();
+
+        expect(
+          repo.preparedSessionIds,
+          containsAll([pausedSession.id, erroredSession.id]),
+        );
+        expect(
+          fixture.playback
+              .sessionSnapshotById(pausedSession.id)
+              ?.playbackRequested,
+          isTrue,
+        );
+        expect(
+          fixture.playback
+              .sessionSnapshotById(erroredSession.id)
+              ?.playbackError,
+          isNull,
+        );
+      },
+    );
+
+    testWidgets(
+      'SessionProgressBar dispose defers onSeekCancel so parent setState does not throw',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        final track = testMusicTrack(
+          name: 'Dispose Seek',
+          path: '/music/dispose_seek.mp3',
+          groupKey: '/music',
+          groupTitle: 'Music',
+        );
+        fixture.library.addTracks([track], persist: false);
+        final session = fixture.playback.createTrackSession(track)
+          ..duration = const Duration(minutes: 5);
+        addTearDown(session.shutdown);
+        fixture.playback.publishSessionState(session.id);
+
+        final showBar = ValueNotifier<bool>(true);
+        addTearDown(showBar.dispose);
+        var cancelSetStates = 0;
+
+        await tester.pumpWidget(
+          fixture.build(
+            StatefulBuilder(
+              builder: (context, setState) => ValueListenableBuilder<bool>(
+                valueListenable: showBar,
+                builder: (context, visible, _) {
+                  if (!visible) return Text('cancelled:$cancelSetStates');
+                  return Center(
+                    child: SizedBox(
+                      width: 320,
+                      child: SessionProgressBar(
+                        session: fixture.playback.sessionSnapshotById(
+                          session.id,
+                        )!,
+                        playback: fixture.playback,
+                        onSeekCancel: () {
+                          setState(() => cancelSetStates++);
+                        },
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        final drag = await tester.startGesture(
+          tester.getCenter(find.byType(Slider)),
+        );
+        await drag.moveBy(const Offset(24, 0));
+        await tester.pump();
+
+        showBar.value = false;
+        await tester.pump();
+        await tester.pump();
+
+        expect(tester.takeException(), isNull);
+        expect(cancelSetStates, 1);
+        expect(find.text('cancelled:1'), findsOneWidget);
+        await drag.up();
+      },
+    );
+
+    testWidgets(
+      'PlaybackPositionUiGate alignToFrame honors minUpdateInterval on 120Hz frames',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        final track = testMusicTrack(
+          name: 'Gate Track',
+          path: '/music/gate.mp3',
+          groupKey: '/music',
+          groupTitle: 'Music',
+        );
+        fixture.library.addTracks([track], persist: false);
+        final session = fixture.playback.createTrackSession(track)
+          ..duration = const Duration(minutes: 5);
+        addTearDown(session.shutdown);
+
+        final gate = PlaybackPositionUiGate(
+          session: PlaybackSessionSnapshot.fromRuntime(session),
+          minUpdateInterval: const Duration(milliseconds: 16),
+          alignToFrame: true,
+        );
+        addTearDown(gate.dispose);
+        var notifications = 0;
+        gate.addListener(() => notifications++);
+
+        session.setOptimisticPosition(const Duration(seconds: 1));
+        await tester.pump();
+        expect(notifications, 1);
+
+        session.setOptimisticPosition(const Duration(seconds: 2));
+        await tester.pump(const Duration(milliseconds: 8));
+        expect(notifications, 1);
+
+        await tester.pump(const Duration(milliseconds: 8));
+        expect(notifications, 2);
+        expect(gate.value.position, const Duration(seconds: 2));
+      },
+    );
+
+    test(
+      'MainOverlayUiState equality and hashCode are symmetric across list implementations',
+      () {
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        final track = testMusicTrack(
+          name: 'Overlay Track',
+          path: '/music/overlay.mp3',
+          groupKey: '/music',
+          groupTitle: 'Music',
+        );
+        fixture.library.addTracks([track], persist: false);
+        final session = fixture.playback.createTrackSession(track);
+        addTearDown(session.shutdown);
+        final snap = PlaybackSessionSnapshot.fromRuntime(session);
+
+        final withOverlayList = MainOverlayUiState(
+          overlaySessions: PlaybackSessionOverlayList([snap]),
+          playingSessionCount: 1,
+          hasPlayingAudioSession: true,
+          activeSessionCount: 1,
+          isInitialized: true,
+          startupReady: true,
+        );
+        final withPlainList = MainOverlayUiState(
+          overlaySessions: [snap],
+          playingSessionCount: 1,
+          hasPlayingAudioSession: true,
+          activeSessionCount: 1,
+          isInitialized: true,
+          startupReady: true,
+        );
+
+        expect(withOverlayList == withPlainList, isTrue);
+        expect(withPlainList == withOverlayList, isTrue);
+        expect(withOverlayList.hashCode, withPlainList.hashCode);
       },
     );
   });
@@ -1428,6 +1716,9 @@ class _AcceptingPlaybackRepository extends NativePlaybackRepository {
 class _GatedPlaybackRepository extends NativePlaybackRepository {
   Completer<void>? playGate;
   Completer<void>? pauseGate;
+  final List<String> preparedSessionIds = <String>[];
+  final List<String> playedSessionIds = <String>[];
+  final List<String> pausedSessionIds = <String>[];
 
   @override
   void startListening() {}
@@ -1460,7 +1751,10 @@ class _GatedPlaybackRepository extends NativePlaybackRepository {
     bool deferPlayerCreation = false,
     bool isTemporary = false,
     bool reuseExistingQueue = false,
-  }) async => const NativeSuccess();
+  }) async {
+    preparedSessionIds.add(sessionId);
+    return const NativeSuccess();
+  }
 
   @override
   Future<NativeResult<NativePlaybackSnapshot>> play(
@@ -1468,6 +1762,7 @@ class _GatedPlaybackRepository extends NativePlaybackRepository {
     bool exclusive = false,
     int transportCommandId = 0,
   }) async {
+    playedSessionIds.add(sessionId);
     final gate = playGate;
     if (gate != null) await gate.future;
     return const NativeSuccess();
@@ -1478,6 +1773,7 @@ class _GatedPlaybackRepository extends NativePlaybackRepository {
     String sessionId, {
     int transportCommandId = 0,
   }) async {
+    pausedSessionIds.add(sessionId);
     final gate = pauseGate;
     if (gate != null) await gate.future;
     return const NativeSuccess();

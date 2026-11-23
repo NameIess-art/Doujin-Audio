@@ -10,6 +10,7 @@ import com.doujin.audio.player.session.NativePlaybackSession
 import com.doujin.audio.player.session.NativePlaybackSessionManager
 import com.doujin.audio.player.session.NativeMediaItemDescriptor
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -420,16 +421,22 @@ class NativePlaybackStatePersistenceCoordinatorTest {
     }
 
     @Test
-    fun `shutdown flushes asynchronously without blocking caller thread`() {
+    fun `idle shutdown callback runs on main only after queued persistence writes`() {
         val environment = FakeStatePersistenceEnvironment()
-        val coordinator = coordinator(environment, storedSessions = { listOf(storedSession(100L)) })
+        val snapshots = listOf(storedSession(100L))
+        val coordinator = coordinator(environment, storedSessions = { snapshots })
+        var readyToStop = false
 
-        coordinator.shutdown()
+        coordinator.flush { readyToStop = true }
 
-        assertTrue(environment.shutdownCalled)
+        assertFalse(readyToStop)
+        assertTrue(environment.savedSessions.isEmpty())
         assertTrue(environment.awaitTimeouts.isEmpty())
-        assertTrue(coordinator.awaitPendingForTest(5_000L))
-        assertEquals(listOf(5_000L), environment.awaitTimeouts)
+        environment.runBackgroundTasks()
+        assertEquals(listOf(snapshots), environment.savedSessions)
+        assertFalse(readyToStop)
+        environment.delayedTasks.keys.single().run()
+        assertTrue(readyToStop)
     }
 
     private fun coordinator(

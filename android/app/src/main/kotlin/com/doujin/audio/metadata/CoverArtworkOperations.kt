@@ -24,10 +24,16 @@ internal class CoverArtworkOperations(
     private val context: Context,
     private val storage: DocumentStorageOperations,
     private val metadata: MediaMetadataOperations,
-    private val clockMs: () -> Long = SystemClock::elapsedRealtime
+    private val clockMs: () -> Long = SystemClock::elapsedRealtime,
+    private val resolveLocalFilePath: (String) -> String? = storage::contentUriToFilePath
 ) {
     private val imageExtensions = setOf("jpg", "jpeg", "png", "webp", "bmp", "gif")
     private val preferredNames = listOf("cover", "folder", "front", "album", "artwork", "poster")
+
+    private data class ReadableLocalDirectory(
+        val dir: File,
+        val entries: Array<File>
+    )
 
     private data class SafFolderCacheKey(
         val folderUri: String,
@@ -49,15 +55,14 @@ internal class CoverArtworkOperations(
     fun resolve(trackPath: String, groupKey: String?, rootFolder: String?): String? {
         if (!rootFolder.isNullOrBlank()) {
             if (rootFolder.startsWith("content://")) {
-                val localRoot = readableLocalDirectory(storage.contentUriToFilePath(rootFolder))
+                val localRoot = readableLocalDirectory(resolveLocalFilePath(rootFolder))
                 if (localRoot != null) {
-                    val fileCover = preferredFile(localRoot.absolutePath)
+                    val fileCover = preferredFile(localRoot.dir.absolutePath, localRoot.entries)
                     if (fileCover != null) return fileCover
-                } else {
-                    val root = storage.resolveDocumentFileForFolderPath(rootFolder)
-                    val candidate = root?.let(::preferredDocument)
-                    if (candidate != null) return cacheCandidate(candidate)
                 }
+                val root = storage.resolveDocumentFileForFolderPath(rootFolder)
+                val candidate = root?.let(::preferredDocument)
+                if (candidate != null) return cacheCandidate(candidate)
             } else {
                 val fileCover = preferredFile(rootFolder)
                 if (fileCover != null) return fileCover
@@ -65,16 +70,15 @@ internal class CoverArtworkOperations(
         }
         if (trackPath.startsWith("content://") && !groupKey.isNullOrBlank()) {
             val localGroup = readableLocalDirectory(
-                if (groupKey.startsWith("content://")) storage.contentUriToFilePath(groupKey) else groupKey
+                if (groupKey.startsWith("content://")) resolveLocalFilePath(groupKey) else groupKey
             )
             if (localGroup != null) {
-                val fileCover = preferredFile(localGroup.absolutePath)
+                val fileCover = preferredFile(localGroup.dir.absolutePath, localGroup.entries)
                 if (fileCover != null) return fileCover
-            } else {
-                val root = storage.resolveDocumentFileForFolderPath(groupKey)
-                val candidate = root?.let(::preferredDocument)
-                if (candidate != null) return cacheCandidate(candidate)
             }
+            val root = storage.resolveDocumentFileForFolderPath(groupKey)
+            val candidate = root?.let(::preferredDocument)
+            if (candidate != null) return cacheCandidate(candidate)
         }
         return metadata.resolveEmbeddedCover(trackPath)
     }
@@ -92,10 +96,20 @@ internal class CoverArtworkOperations(
             else -> null
         }
         if (documentRoot != null) {
-            val localRootPath = storage.contentUriToFilePath(documentRoot)
-            val localRoot = readableLocalDirectory(localRootPath)
+            val localRoot = readableLocalDirectory(resolveLocalFilePath(documentRoot))
+            var localListSucceeded = false
             if (localRoot != null) {
-                return fileImages(localRoot.absolutePath, recursive, preferredOnly)
+                val localImages = try {
+                    fileImages(
+                        localRoot.dir.absolutePath,
+                        recursive,
+                        preferredOnly,
+                        localRoot.entries
+                    ).also { localListSucceeded = true }
+                } catch (_: IOException) {
+                    null
+                }
+                if (!localImages.isNullOrEmpty()) return localImages
             }
             val root = storage.resolveDocumentFileForFolderPath(documentRoot)
             if (root != null) {
@@ -115,18 +129,19 @@ internal class CoverArtworkOperations(
                     }
                 }
             }
-            if (localRootPath != null) return fileImages(localRootPath, recursive, preferredOnly)
+            if (localListSucceeded) return emptyList()
             throw IOException("Image directory is unavailable: $documentRoot")
         }
         if (!rootFolder.isNullOrBlank()) return fileImages(rootFolder, recursive, preferredOnly)
         return emptyList()
     }
 
-    private fun readableLocalDirectory(path: String?): File? {
+    private fun readableLocalDirectory(path: String?): ReadableLocalDirectory? {
         if (path.isNullOrBlank()) return null
         val dir = File(path)
         if (!dir.isDirectory || !dir.canRead()) return null
-        return dir.takeIf { it.listFiles() != null }
+        val entries = dir.listFiles() ?: return null
+        return ReadableLocalDirectory(dir, entries)
     }
 
     private fun cacheCandidate(candidate: DocumentCandidate): String? =
@@ -179,30 +194,44 @@ internal class CoverArtworkOperations(
         }
     }
 
-    private fun preferredFile(folderPath: String): String? {
+    private fun preferredFile(folderPath: String, prelistedEntries: Array<File>? = null): String? {
         val root = File(folderPath)
-        if (!root.isDirectory) return null
-        val rootTopPriority = root.listFiles()
-            ?.asSequence()
-            ?.filter { it.isFile && it.canRead() && isImage(it.name, null) && priority(it.name) < preferredNames.size }
-            ?.minWithOrNull(compareBy<File>({ priority(it.name) }, { it.absolutePath.lowercase(Locale.US) }))
-        val candidate = rootTopPriority ?: root.walkTopDown()
-            .filter { it.isFile && it.canRead() && isImage(it.name, null) }
+        if (prelistedEntries == null && !root.isDirectory) return null
+        val entries = prelistedEntries ?: root.listFiles() ?: return null
+        val rootTopPriority = entries
+            .asSequence()
+            .filter { it.isFile && it.canRead() && isImage(it.name, null) && priority(it.name) < preferredNames.size }
             .minWithOrNull(compareBy<File>({ priority(it.name) }, { it.absolutePath.lowercase(Locale.US) }))
-            ?: return null
+        if (rootTopPriority != null) return rootTopPriority.absolutePath
+        val candidate = if (entries.none { it.isDirectory }) {
+            entries.asSequence()
+                .filter { it.isFile && it.canRead() && isImage(it.name, null) }
+                .minWithOrNull(compareBy<File>({ priority(it.name) }, { it.absolutePath.lowercase(Locale.US) }))
+        } else {
+            root.walkTopDown()
+                .filter { it.isFile && it.canRead() && isImage(it.name, null) }
+                .minWithOrNull(compareBy<File>({ priority(it.name) }, { it.absolutePath.lowercase(Locale.US) }))
+        } ?: return null
         return candidate.absolutePath
     }
 
     private fun fileImages(
         folderPath: String,
         recursive: Boolean,
-        preferredOnly: Boolean
+        preferredOnly: Boolean,
+        prelistedEntries: Array<File>? = null
     ): List<Map<String, String>> {
         val root = File(folderPath)
-        if (!root.isDirectory || !root.canRead()) throw IOException("Image directory is unavailable: $folderPath")
-        val rootTopPriority = if (recursive && preferredOnly) {
-            val rootEntries = root.listFiles()
-                ?: throw IOException("Unable to list image directory: $folderPath")
+        if (prelistedEntries == null && (!root.isDirectory || !root.canRead())) {
+            throw IOException("Image directory is unavailable: $folderPath")
+        }
+        val rootEntries = prelistedEntries
+            ?: if (!recursive || preferredOnly) {
+                root.listFiles() ?: throw IOException("Unable to list image directory: $folderPath")
+            } else {
+                null
+            }
+        val rootTopPriority = if (recursive && preferredOnly && rootEntries != null) {
             rootEntries.asSequence()
                 .filter { it.isFile && it.canRead() && isImage(it.name, null) && priority(it.name) < preferredNames.size }
                 .minWithOrNull(compareBy<File>({ priority(it.name) }, { it.absolutePath.lowercase(Locale.US) }))
@@ -212,8 +241,11 @@ internal class CoverArtworkOperations(
         val selected = if (rootTopPriority != null) {
             sequenceOf(rootTopPriority)
         } else {
-            val files = if (recursive) root.walkTopDown().onFail { _, error -> throw error }
-            else (root.listFiles() ?: throw IOException("Unable to list image directory: $folderPath")).asSequence()
+            val files = if (recursive && (rootEntries == null || rootEntries.any { it.isDirectory })) {
+                root.walkTopDown().onFail { _, error -> throw error }
+            } else {
+                (rootEntries ?: throw IOException("Unable to list image directory: $folderPath")).asSequence()
+            }
             files
                 .filter { it.isFile && it.canRead() && isImage(it.name, null) }
                 .sortedWith(compareBy<File>({ priority(it.name) }, { it.absolutePath.lowercase(Locale.US) }))

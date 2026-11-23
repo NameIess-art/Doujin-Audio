@@ -112,10 +112,9 @@ class WindowsMediaTools {
     );
   }
 
-  /// Parses header durations for a batch of media paths in a single background
-  /// isolate. Paths that cannot be parsed from headers are omitted or mapped to
-  /// `null` so callers can fall back to `ffprobe`.
-  Future<Map<String, Duration?>> readHeaderDurationsBatch(
+  /// Parses header durations in a single background isolate; unparsed paths are
+  /// omitted so callers fall back to `ffprobe`.
+  Future<Map<String, Duration>> readHeaderDurationsBatch(
     List<String> mediaPaths,
   ) async {
     final eligible = <(String, String)>[];
@@ -125,7 +124,7 @@ class WindowsMediaTools {
         eligible.add((mediaPath, extension));
       }
     }
-    if (eligible.isEmpty) return const <String, Duration?>{};
+    if (eligible.isEmpty) return const <String, Duration>{};
     if (IOOverrides.current != null) {
       return _readHeaderDurationsBatch(eligible);
     }
@@ -211,10 +210,10 @@ class WindowsMediaTools {
   }
 }
 
-Future<Map<String, Duration?>> _readHeaderDurationsBatch(
+Future<Map<String, Duration>> _readHeaderDurationsBatch(
   List<(String, String)> items,
 ) async {
-  final results = <String, Duration?>{};
+  final results = <String, Duration>{};
   for (final (mediaPath, extension) in items) {
     final parsed = await _readHeaderDuration(mediaPath, extension);
     if (parsed != null && parsed > Duration.zero) {
@@ -302,6 +301,7 @@ const List<int> _mp3Mpeg2Layer3Bitrates = <int>[
   int samplesPerFrame,
   int frameLength,
   int channelMode,
+  bool hasCrc,
 })?
 _tryParseMp3Layer3Frame(Uint8List data, int pos) {
   if (pos + 4 > data.length) return null;
@@ -312,6 +312,7 @@ _tryParseMp3Layer3Frame(Uint8List data, int pos) {
   final layerId = (b1 >> 1) & 0x03;
   // Restrict to MPEG 1 / 2 / 2.5 Layer III; other layers defer to ffprobe.
   if (versionId == 1 || layerId != 1) return null;
+  final hasCrc = (b1 & 0x01) == 0;
   final b2 = data[pos + 2];
   final bitrateIndex = (b2 >> 4) & 0x0F;
   final sampleRateIndex = (b2 >> 2) & 0x03;
@@ -340,6 +341,7 @@ _tryParseMp3Layer3Frame(Uint8List data, int pos) {
     samplesPerFrame: samplesPerFrame,
     frameLength: frameLength,
     channelMode: channelMode,
+    hasCrc: hasCrc,
   );
 }
 
@@ -426,36 +428,45 @@ Future<Duration?> _parseMp3Duration(
     final sideInfoSize = first.versionId == 3
         ? (isMono ? 17 : 32)
         : (isMono ? 9 : 17);
-    final xingOffset = i + 4 + sideInfoSize;
-    if (xingOffset + 12 <= buf.length &&
-        xingOffset + 12 <= i + first.frameLength) {
-      final isXing =
-          buf[xingOffset] == 0x58 &&
-          buf[xingOffset + 1] == 0x69 &&
-          buf[xingOffset + 2] == 0x6E &&
-          buf[xingOffset + 3] == 0x67;
-      final isInfo =
-          buf[xingOffset] == 0x49 &&
-          buf[xingOffset + 1] == 0x6E &&
-          buf[xingOffset + 2] == 0x66 &&
-          buf[xingOffset + 3] == 0x6F;
-      if (isXing || isInfo) {
-        final flags = bd.getUint32(xingOffset + 4);
-        if ((flags & 0x01) != 0) {
-          final totalFrames = bd.getUint32(xingOffset + 8);
-          if (totalFrames > 0) {
-            final micros =
-                (totalFrames *
-                        first.samplesPerFrame /
-                        first.sampleRate *
-                        Duration.microsecondsPerSecond)
-                    .round();
-            return micros > 0 ? Duration(microseconds: micros) : null;
-          }
-        }
-        // Xing/Info header without frame count: defer to ffprobe.
+    final frameEnd = i + first.frameLength;
+    int? matchXingOffset(int candidate) {
+      if (candidate + 12 > buf.length || candidate + 12 > frameEnd) {
         return null;
       }
+      final isXing =
+          buf[candidate] == 0x58 &&
+          buf[candidate + 1] == 0x69 &&
+          buf[candidate + 2] == 0x6E &&
+          buf[candidate + 3] == 0x67;
+      final isInfo =
+          buf[candidate] == 0x49 &&
+          buf[candidate + 1] == 0x6E &&
+          buf[candidate + 2] == 0x66 &&
+          buf[candidate + 3] == 0x6F;
+      return (isXing || isInfo) ? candidate : null;
+    }
+
+    final noCrcXingOffset = i + 4 + sideInfoSize;
+    final xingOffset = first.hasCrc
+        ? (matchXingOffset(noCrcXingOffset + 2) ??
+              matchXingOffset(noCrcXingOffset))
+        : matchXingOffset(noCrcXingOffset);
+    if (xingOffset != null) {
+      final flags = bd.getUint32(xingOffset + 4);
+      if ((flags & 0x01) != 0) {
+        final totalFrames = bd.getUint32(xingOffset + 8);
+        if (totalFrames > 0) {
+          final micros =
+              (totalFrames *
+                      first.samplesPerFrame /
+                      first.sampleRate *
+                      Duration.microsecondsPerSecond)
+                  .round();
+          return micros > 0 ? Duration(microseconds: micros) : null;
+        }
+      }
+      // Xing/Info header without frame count: defer to ffprobe.
+      return null;
     }
 
     // 2. Check VBRI header inside the first frame (fixed offset 36).
@@ -514,6 +525,7 @@ Future<Duration?> _parseMp3Duration(
       final midPos = offset + i + (audioBytes >> 1);
       await raf.setPosition(midPos);
       final mid = await raf.read(4096);
+      var foundMidpointPair = false;
       for (var j = 0; j <= mid.length - 4; j++) {
         final f1 = _tryParseMp3Layer3Frame(mid, j);
         if (f1 == null ||
@@ -529,12 +541,14 @@ Future<Duration?> _parseMp3Duration(
             f2.sampleRate != first.sampleRate) {
           continue;
         }
+        foundMidpointPair = true;
         if (f1.bitrateKbps != first.bitrateKbps ||
             f2.bitrateKbps != first.bitrateKbps) {
           return null;
         }
         break;
       }
+      if (!foundMidpointPair) return null;
     }
 
     final micros =

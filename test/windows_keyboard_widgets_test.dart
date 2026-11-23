@@ -64,7 +64,12 @@ void main() {
       find.descendant(of: highlightedCard, matching: first),
       findsOneWidget,
     );
-    expect(highlightedCard, paints..rrect(color: tint));
+    expect(
+      highlightedCard,
+      paints
+        ..rrect()
+        ..rrect(color: tint),
+    );
 
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();

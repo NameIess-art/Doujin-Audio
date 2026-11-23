@@ -58,11 +58,6 @@ class SubtitleOverlayService : Service() {
         return false
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        ensureOverlayAttached()
-        return START_NOT_STICKY
-    }
-
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
         removeOverlayView()

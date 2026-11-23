@@ -19,17 +19,27 @@ internal fun isPlaybackTimerAlarmAction(action: String?): Boolean {
         action == PlaybackTimerAlarmProtocol.actionAutoResume
 }
 
-internal fun hasScheduledPlaybackTimerRuntime(
-    action: String,
-    runtimeState: StoredPlaybackTimerRuntimeState?
-): Boolean = when (action) {
-    PlaybackTimerAlarmProtocol.actionTimerExpired ->
-        runtimeState?.timerEndsAtWallClockMs != null
-    PlaybackTimerAlarmProtocol.actionAutoResume ->
-        runtimeState?.autoResumeAtMs != null
-    else -> false
+// Dart's countdown uses a wall-clock deadline. Project the native monotonic
+// deadline onto the current clock so a manual clock change does not expire it early.
+internal fun StoredPlaybackTimerRuntimeState.countdownDeadlineOnWallClock(
+    elapsedNow: Long,
+    wallNow: Long
+): Long? = timerEndsAtWallClockMs?.let { original ->
+    timerEndsElapsedRealtimeMs?.let { wallNow + (it - elapsedNow) } ?: original
 }
 
+internal fun isPlaybackTimerDue(
+    action: String,
+    state: StoredPlaybackTimerRuntimeState,
+    elapsedNow: Long,
+    wallNow: Long
+): Boolean = when (action) {
+    PlaybackTimerAlarmProtocol.actionTimerExpired ->
+        state.countdownDeadlineOnWallClock(elapsedNow, wallNow)?.let { it <= wallNow } == true
+    PlaybackTimerAlarmProtocol.actionAutoResume ->
+        state.autoResumeAtMs?.let { it <= wallNow } == true
+    else -> false
+}
 
 internal fun nextPlaybackTimerAutoResumeAttempt(
     currentAttempt: Int,

@@ -364,10 +364,14 @@ final class AsmrDownloadTaskStore {
     await _persistence.flushNow();
   }
 
+  @visibleForTesting
   Future<void> runStructuralPersistenceForTesting() =>
+      // ignore: invalid_use_of_visible_for_testing_member
       _persistence.runStructuralForTesting();
 
+  @visibleForTesting
   Future<void> runProgressCheckpointForTesting() =>
+      // ignore: invalid_use_of_visible_for_testing_member
       _persistence.runProgressCheckpointForTesting();
 
   Future<void> shutdown({Iterable<String> pauseWorkIds = const []}) =>

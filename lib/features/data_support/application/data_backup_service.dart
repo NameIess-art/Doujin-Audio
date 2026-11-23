@@ -549,14 +549,16 @@ class DataBackupService {
     final file = File(path.join(directory.path, 'journal.json'));
     final temporary = File('${file.path}.part');
     await temporary.writeAsString(jsonEncode(journal.toJson()), flush: true);
-    if (await file.exists()) await file.delete();
     await temporary.rename(file.path);
   }
 
   Future<PendingRestoreJournal?> _readJournal(Directory directory) async {
     final file = File(path.join(directory.path, 'journal.json'));
-    if (!await file.exists()) return null;
-    final json = jsonDecode(await file.readAsString());
+    // Older versions could stop after deleting the journal but before moving
+    // its already flushed replacement into place.
+    final source = await file.exists() ? file : File('${file.path}.part');
+    if (!await source.exists()) return null;
+    final json = jsonDecode(await source.readAsString());
     if (json is! Map) return null;
     final phase = json['phase'];
     final createdAt = DateTime.tryParse(json['createdAt']?.toString() ?? '');

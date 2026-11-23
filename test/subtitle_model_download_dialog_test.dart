@@ -297,4 +297,83 @@ void main() {
     expect(store.snapshot(spec).active, isFalse);
     expect(results, [null, null]);
   });
+
+  testWidgets(
+    'reopened dialog for an existing background download survives barrier tap and back dismissal',
+    (tester) async {
+      final language = AppLanguageProvider();
+      final store = _DownloadStore()..active = true;
+      final results = <bool?>[];
+      const spec = SubtitleModelSpec(
+        'model.gguf',
+        'https://example.com',
+        2 * 1048576,
+        'checksum',
+      );
+      const status = SubtitleModelStatus(
+        ready: false,
+        bytes: 2 * 1048576,
+        availableBytes: 4 * 1048576,
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(language),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: Builder(
+                builder: (context) => TextButton(
+                  onPressed: () async => results.add(
+                    await showAppDialog<bool>(
+                      context: context,
+                      builder: (_) => SubtitleModelDownloadDialog(
+                        store: store,
+                        spec: spec,
+                        status: status,
+                      ),
+                    ),
+                  ),
+                  child: const Text('Open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // Reopen while background download is active and dismiss via barrier tap.
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+      expect(find.byType(LinearProgressIndicator), findsOneWidget);
+
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pumpAndSettle();
+      expect(find.byType(SubtitleModelDownloadDialog), findsNothing);
+      expect(store.cancelCalls, 0);
+      expect(store.snapshot(spec).active, isTrue);
+      expect(results, [null]);
+
+      // Reopen again and dismiss via system back -> download still survives.
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.byType(SubtitleModelDownloadDialog), findsNothing);
+      expect(store.cancelCalls, 0);
+      expect(store.snapshot(spec).active, isTrue);
+      expect(results, [null, null]);
+
+      // Explicit cancel button still cancels the existing background download.
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('subtitle_model_cancel_download')),
+      );
+      await tester.pumpAndSettle();
+      expect(store.cancelCalls, 1);
+      expect(store.snapshot(spec).active, isFalse);
+      expect(results, [null, null, false]);
+    },
+  );
 }

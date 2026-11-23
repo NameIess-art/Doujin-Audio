@@ -128,7 +128,9 @@ internal class FileCacheVideoFrameResolver(
                 return null
             }
 
-            val bitmap = selectFrame(retriever, durationMs, frameSize) ?: return null
+            val bitmap = selectFrame(durationMs) { timestampUs, option ->
+                frameAtTime(retriever, timestampUs, option, frameSize)
+            } ?: return null
             try {
                 tempFile = File.createTempFile("video_frame_", ".tmp", coverCacheDir)
                 FileOutputStream(tempFile).use { output ->
@@ -170,12 +172,25 @@ internal class FileCacheVideoFrameResolver(
         }
     }
 
-    private fun selectFrame(
-        retriever: MediaMetadataRetriever,
+    internal fun selectFrame(
         durationMs: Long,
-        frameSize: VideoFrameSize
+        decodeFrame: (timestampUs: Long, option: Int) -> Bitmap?
     ): Bitmap? {
         var fallbackFrame: Bitmap? = null
+        fun tryCandidate(timestampUs: Long, option: Int): Bitmap? {
+            val frame = decodeFrame(timestampUs, option) ?: return null
+            if (!isBlankBitmap(frame)) {
+                fallbackFrame?.recycle()
+                return frame
+            }
+            if (fallbackFrame == null) {
+                fallbackFrame = frame
+            } else {
+                frame.recycle()
+            }
+            return null
+        }
+
         if (durationMs > 3000L) {
             val timestampsUs = longArrayOf(
                 durationMs * 300L,
@@ -183,39 +198,20 @@ internal class FileCacheVideoFrameResolver(
                 durationMs * 700L,
                 durationMs * 150L
             )
-            // Use keyframe seeks only to avoid decoding full GOPs on long videos.
+            // Use keyframe seeks first to avoid decoding full GOPs on long videos.
             for (timestampUs in timestampsUs) {
-                val frame = frameAtTime(
-                    retriever,
-                    timestampUs,
-                    MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
-                    frameSize
-                ) ?: continue
-                if (!isBlankBitmap(frame)) {
-                    fallbackFrame?.recycle()
-                    return frame
-                }
-                if (fallbackFrame == null) {
-                    fallbackFrame = frame
-                } else {
-                    frame.recycle()
-                }
+                tryCandidate(timestampUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)?.let { return it }
             }
         }
 
+        val fallbackTimestampsUs = longArrayOf(1_000_000L, 0L)
+        for (timestampUs in fallbackTimestampsUs) {
+            tryCandidate(timestampUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)?.let { return it }
+        }
+        for (timestampUs in fallbackTimestampsUs) {
+            tryCandidate(timestampUs, MediaMetadataRetriever.OPTION_CLOSEST)?.let { return it }
+        }
         return fallbackFrame
-            ?: frameAtTime(
-                retriever,
-                1_000_000L,
-                MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
-                frameSize
-            )
-            ?: frameAtTime(
-                retriever,
-                0L,
-                MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
-                frameSize
-            )
     }
 
     private fun frameAtTime(

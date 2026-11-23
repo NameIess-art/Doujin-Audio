@@ -1066,6 +1066,89 @@ void main() {
     expect(controller(tester).offset, greaterThan(0));
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'bar chart refreshes Y-axis max and bar heights on data and viewport updates',
+    (tester) async {
+      final maxLabel = find.byKey(const ValueKey('listening-chart-window-max'));
+      final day10 = DateTime(today.year, today.month, today.day - 10);
+      final yesterday = DateTime(today.year, today.month, today.day - 1);
+
+      // Start with a narrow viewport (7 visible days) where today and yesterday
+      // are both 10m, and an older off-viewport day (-10) has 2h.
+      await pumpChart(
+        tester,
+        width: 280,
+        reducedMotion: true,
+        days: [
+          ListeningDay(date: today, duration: const Duration(minutes: 10)),
+          ListeningDay(date: yesterday, duration: const Duration(minutes: 10)),
+          ListeningDay(date: day10, duration: const Duration(hours: 2)),
+        ],
+      );
+      expect(tester.widget<Text>(maxLabel).data, '10m');
+
+      double barHeightFor(DateTime day) {
+        final bar = find.descendant(
+          of: find.byKey(ValueKey(day)),
+          matching: find.byType(AnimatedContainer),
+        );
+        return tester.getSize(bar).height;
+      }
+
+      final initialYesterdayHeight = barHeightFor(yesterday);
+      expect(initialYesterdayHeight, closeTo(132, 0.1));
+
+      // Data update: today grows to 40m -> Y-axis max and yesterday's scaled
+      // bar height must update immediately without scrolling.
+      await pumpChart(
+        tester,
+        width: 280,
+        reducedMotion: true,
+        days: [
+          ListeningDay(date: today, duration: const Duration(minutes: 40)),
+          ListeningDay(date: yesterday, duration: const Duration(minutes: 10)),
+          ListeningDay(date: day10, duration: const Duration(hours: 2)),
+        ],
+      );
+      expect(tester.widget<Text>(maxLabel).data, '40m');
+      expect(barHeightFor(yesterday), closeTo(132 * 10 / 40, 0.1));
+
+      // Viewport update: widen to 720 (15 columns) so day -10 (2h) enters the
+      // visible window -> Y-axis max must refresh immediately to 2h.
+      await pumpChart(
+        tester,
+        width: 720,
+        reducedMotion: true,
+        days: [
+          ListeningDay(date: today, duration: const Duration(minutes: 40)),
+          ListeningDay(date: yesterday, duration: const Duration(minutes: 10)),
+          ListeningDay(date: day10, duration: const Duration(hours: 2)),
+        ],
+      );
+      expect(tester.widget<Text>(maxLabel).data, '2h');
+      expect(barHeightFor(today), closeTo(132 * 40 / 120, 0.1));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('heatmap cells expose Tooltip with period description', (
+    tester,
+  ) async {
+    await pumpChart(
+      tester,
+      style: ListeningChartStyle.heatmap,
+      days: [ListeningDay(date: today, duration: const Duration(minutes: 15))],
+    );
+    final cell = find.byKey(ValueKey(today));
+    final tooltip = tester.widget<Tooltip>(
+      find.ancestor(of: cell, matching: find.byType(Tooltip)).first,
+    );
+    expect(
+      tooltip.message,
+      contains(listeningDurationText(i18n, const Duration(minutes: 15))),
+    );
+  });
 }
 
 class _CountingDays extends ListBase<ListeningDay> {

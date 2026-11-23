@@ -583,10 +583,12 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
           continue;
         }
       }
-      final nativeQueue = await _nativePlaybackQueueFor(
+      final builtQueue = await _nativePlaybackQueueWithBaseKey(
         session,
         currentPath: target.resolvedPath,
       );
+      final nativeQueue = builtQueue.queue;
+      final builtBaseKey = builtQueue.baseKey;
       if (!_isSessionLoadCurrent(session, generation)) {
         return const _NativePreparationResult.failure(
           'Playback preparation was superseded.',
@@ -626,10 +628,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
         );
       }
       if (result.isOk) {
-        session.syncedNativeQueueBaseKey = Object.hash(
-          session.nativePlaybackQueueScopeCacheKey,
-          _libraryFacade.contentRevision,
-        );
+        session.syncedNativeQueueBaseKey = builtBaseKey;
         _playbackFacade.updateNativeSessionRetainedContentUris(
           session.id,
           <Object?>[
@@ -782,6 +781,15 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
   Future<List<Map<String, Object?>>> _nativePlaybackQueueFor(
     PlaybackSession session, {
     required String currentPath,
+  }) async => (await _nativePlaybackQueueWithBaseKey(
+    session,
+    currentPath: currentPath,
+  )).queue;
+
+  Future<({List<Map<String, Object?>> queue, int? baseKey})>
+  _nativePlaybackQueueWithBaseKey(
+    PlaybackSession session, {
+    required String currentPath,
   }) async {
     final logicalCurrentPath =
         _playbackFacade.originalPathForRetargeted(currentPath) ?? currentPath;
@@ -829,14 +837,18 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
     }
 
     while (true) {
-      if (!_isRegisteredSession(session)) return const [];
+      if (!_isRegisteredSession(session)) {
+        return (queue: const <Map<String, Object?>>[], baseKey: null);
+      }
       var scope = _playbackQueueScopeFor(
         session,
         currentPath: logicalCurrentPath,
         repositionCurrentIndex: false,
       );
       var paths = scope.paths;
-      if (paths.isEmpty) return const [];
+      if (paths.isEmpty) {
+        return (queue: const <Map<String, Object?>>[], baseKey: null);
+      }
       final hasRetargetedPaths = _playbackFacade.hasRetargetedPaths;
 
       if (!hasRetargetedPaths) {
@@ -848,12 +860,12 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
             if (_isRegisteredSession(session)) {
               _syncActivePlaybackCacheLease(session);
             }
-            return cached;
+            return (queue: cached, baseKey: baseKey);
           }
           final pending = session.nativePlaybackQueueFuture;
           if (pending != null) {
             final result = await pending;
-            if (result != null) return result;
+            if (result != null) return (queue: result, baseKey: baseKey);
             continue;
           }
         } else if (cached != null &&
@@ -863,7 +875,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
           if (_isRegisteredSession(session)) {
             _syncActivePlaybackCacheLease(session);
           }
-          return cached;
+          return (queue: cached, baseKey: baseKey);
         }
       }
 
@@ -875,7 +887,9 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
         if (hasRetargetedPaths) {
           final retargetRevisionBefore = _playbackFacade.retargetRevision;
           await _playbackFacade.validatePlaybackCachePaths(paths);
-          if (!_isRegisteredSession(session)) return const [];
+          if (!_isRegisteredSession(session)) {
+            return (queue: const <Map<String, Object?>>[], baseKey: null);
+          }
           if (_playbackFacade.retargetRevision != retargetRevisionBefore) {
             scope = _playbackQueueScopeFor(
               session,
@@ -883,7 +897,9 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
               repositionCurrentIndex: false,
             );
             paths = scope.paths;
-            if (paths.isEmpty) return const [];
+            if (paths.isEmpty) {
+              return (queue: const <Map<String, Object?>>[], baseKey: null);
+            }
           }
         }
         final baseKey = computeBaseKey();
@@ -894,12 +910,12 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
             if (_isRegisteredSession(session)) {
               _syncActivePlaybackCacheLease(session);
             }
-            return cached;
+            return (queue: cached, baseKey: baseKey);
           }
           final pending = session.nativePlaybackQueueFuture;
           if (pending != null) {
             final result = await pending;
-            if (result != null) return result;
+            if (result != null) return (queue: result, baseKey: baseKey);
             retryWithLatest = true;
           }
         } else if (cached != null &&
@@ -909,7 +925,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
           if (_isRegisteredSession(session)) {
             _syncActivePlaybackCacheLease(session);
           }
-          return cached;
+          return (queue: cached, baseKey: baseKey);
         }
         if (retryWithLatest) continue;
 
@@ -958,13 +974,14 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
           if (queue == null) {
             retryWithLatest = true;
           } else {
-            if (_isRegisteredSession(session) &&
+            final registered = _isRegisteredSession(session);
+            if (registered &&
                 session.nativePlaybackQueueCacheKey == cacheKey &&
                 identical(session.nativePlaybackQueueFuture, pending)) {
               session.nativePlaybackQueueCache = queue;
               _syncActivePlaybackCacheLease(session);
             }
-            return queue;
+            return (queue: queue, baseKey: registered ? baseKey : null);
           }
         } finally {
           if (identical(session.nativePlaybackQueueFuture, pending)) {

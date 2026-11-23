@@ -264,24 +264,6 @@ class LibraryOrganizer {
     PathRootIndex? watchedLibrariesIndex,
   }) {
     final normalizedFolder = PathMatcher.normalize(folderPath);
-    if (watchedLibrariesIndex != null || watchedFoldersIndex != null) {
-      final libraryRoot = watchedLibrariesIndex?.mostSpecificContaining(
-        normalizedFolder,
-      );
-      if (libraryRoot != null) {
-        return workScopeFolderPath(libraryRoot, normalizedFolder) ??
-            PathMatcher.normalize(libraryRoot);
-      }
-      final exactFolder = watchedFolderByPath?[normalizedFolder];
-      if (exactFolder != null) return exactFolder;
-      final watchedFolder = watchedFoldersIndex?.mostSpecificContaining(
-        normalizedFolder,
-      );
-      if (watchedFolder != null) {
-        return PathMatcher.normalize(watchedFolder);
-      }
-      return normalizedFolder;
-    }
     String? longestContainingRoot(Iterable<String> roots) {
       String? best;
       for (final root in roots) {
@@ -294,7 +276,9 @@ class LibraryOrganizer {
       return best;
     }
 
-    final libraryRoot = longestContainingRoot(watchedLibraries);
+    final libraryRoot = watchedLibrariesIndex != null
+        ? watchedLibrariesIndex.mostSpecificContaining(normalizedFolder)
+        : longestContainingRoot(watchedLibraries);
     if (libraryRoot != null) {
       return workScopeFolderPath(libraryRoot, normalizedFolder) ??
           PathMatcher.normalize(libraryRoot);
@@ -303,7 +287,9 @@ class LibraryOrganizer {
     final exactFolder = watchedFolderByPath?[normalizedFolder];
     if (exactFolder != null) return exactFolder;
 
-    final watchedFolder = longestContainingRoot(watchedFolders);
+    final watchedFolder = watchedFoldersIndex != null
+        ? watchedFoldersIndex.mostSpecificContaining(normalizedFolder)
+        : longestContainingRoot(watchedFolders);
     if (watchedFolder != null) {
       return PathMatcher.normalize(watchedFolder);
     }

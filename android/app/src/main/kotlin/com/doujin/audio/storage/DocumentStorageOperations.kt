@@ -271,11 +271,11 @@ internal class DocumentStorageOperations(
         mimeType: String?
     ): String? {
         val folder = resolveDocumentFileForFolderPath(folderPath) ?: return null
-        return writeFileBytesToDocumentFolder(folder.uri, name, bytes, mimeType)
+        return writeFileBytesToDocumentFolder(folder.uri, name, bytes)
     }
 
     internal fun writeFileBytesToDocumentFolder(
-        folderUri: Uri, name: String, bytes: ByteArray, @Suppress("UNUSED_PARAMETER") mimeType: String?,
+        folderUri: Uri, name: String, bytes: ByteArray,
         isValidCommitted: (String) -> Boolean = { true }
     ): String? {
         val saved = replaceSafDocumentInFolder(

@@ -17,6 +17,7 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.provider.Settings
 import android.view.WindowManager
 import androidx.annotation.RequiresApi
@@ -400,7 +401,9 @@ internal class PowerMethodHandler(
             "timerMode" to state.timerModeIndex,
             "timerDurationMs" to state.durationMs,
             "timerWaitingForPlayback" to state.waitingForPlayback,
-            "timerEndsAtWallClockMs" to state.timerEndsAtWallClockMs,
+            "timerEndsAtWallClockMs" to state.countdownDeadlineOnWallClock(
+                SystemClock.elapsedRealtime(), System.currentTimeMillis()
+            ),
             "timerEndsElapsedRealtimeMs" to state.timerEndsElapsedRealtimeMs,
             "stopAfterCurrentTrack" to state.stopAfterCurrentTrack,
             "autoResumeEnabled" to state.autoResumeEnabled,

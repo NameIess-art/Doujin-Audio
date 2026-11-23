@@ -31,6 +31,8 @@ internal class PlaybackTimerCommandDelivery(
     private val endCommandDelivery: () -> Unit,
     private val logInfo: (String) -> Unit,
     private val logWarn: (String, Throwable) -> Unit,
+    private val elapsedNow: () -> Long,
+    private val wallNow: () -> Long,
     private val loadRuntimeStateAsync: ((StoredPlaybackTimerRuntimeState?) -> Unit) -> Unit = { callback ->
         callback(loadRuntimeState())
     }
@@ -90,20 +92,19 @@ internal class PlaybackTimerCommandDelivery(
             )
             return
         }
-        loadRuntimeStateAsync { latestState ->
+        try {
+            // Use the live state on the service thread. An async read can be
+            // superseded before its main-thread reply is delivered.
+            val latestState = loadRuntimeState()
             if (!isCurrent(action, generation, latestState)) {
                 complete(PlaybackTimerAlarmProtocol.resultStale)
-                return@loadRuntimeStateAsync
+                return
             }
-            try {
-                logInfo("deliver_to_service_execute action=$action")
-                // The service completes this only after any asynchronous restore and
-                // generation validation. A queued action has not executed yet.
-                executeAction(action, latestState, generation, autoResumeAttempt, complete)
-            } catch (error: Throwable) {
-                logWarn("deliver_to_service_failed action=$action", error)
-                complete(PlaybackTimerAlarmProtocol.resultFailed)
-            }
+            logInfo("deliver_to_service_execute action=$action")
+            executeAction(action, latestState, generation, autoResumeAttempt, complete)
+        } catch (error: Throwable) {
+            logWarn("deliver_to_service_failed action=$action", error)
+            complete(PlaybackTimerAlarmProtocol.resultFailed)
         }
     }
 
@@ -111,6 +112,7 @@ internal class PlaybackTimerCommandDelivery(
         action: String,
         generation: Int?,
         runtime: StoredPlaybackTimerRuntimeState?
-    ): Boolean = hasScheduledPlaybackTimerRuntime(action, runtime) &&
-        (generation == null || runtime?.generation == generation)
+    ): Boolean = runtime != null &&
+        (generation == null || runtime.generation == generation) &&
+        isPlaybackTimerDue(action, runtime, elapsedNow(), wallNow())
 }

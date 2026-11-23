@@ -16,33 +16,20 @@ class LibraryScanRules {
     required Iterable<MusicTrack> tracks,
   }) {
     final normalizedFolderPath = PathMatcher.normalize(folderPath);
-    final existingRoots = PathRootIndex(<String>[
-      ...watchedFolders,
-      ...watchedLibraries,
-    ]);
-    if (existingRoots.mostSpecificContaining(normalizedFolderPath) != null) {
-      return true;
-    }
-    final folderIndex = PathRootIndex(<String>[normalizedFolderPath]);
     for (final value in watchedFolders) {
-      if (folderIndex.mostSpecificContaining(value) != null) return true;
+      if (pathsOverlap(value, normalizedFolderPath)) return true;
     }
     for (final value in watchedLibraries) {
-      if (folderIndex.mostSpecificContaining(value) != null) return true;
+      if (pathsOverlap(value, normalizedFolderPath)) return true;
     }
     final seenGroups = <String>{};
     for (final track in tracks) {
-      if (folderIndex.mostSpecificContaining(track.path) != null ||
-          PathMatcher.isWithinOrEqual(normalizedFolderPath, track.path)) {
+      if (pathsOverlap(track.path, normalizedFolderPath)) {
         return true;
       }
       if (track.groupKey != '__single_files__' &&
           seenGroups.add(track.groupKey) &&
-          (folderIndex.mostSpecificContaining(track.groupKey) != null ||
-              PathMatcher.isWithinOrEqual(
-                normalizedFolderPath,
-                track.groupKey,
-              ))) {
+          pathsOverlap(track.groupKey, normalizedFolderPath)) {
         return true;
       }
     }
@@ -111,7 +98,6 @@ class LibraryScanRules {
   }) {
     final normalizedFolderPath = PathMatcher.normalize(folderPath);
     final promotedIndex = PathRootIndex(promotedFolders);
-    final folderIndex = PathRootIndex(<String>[normalizedFolderPath]);
     final seenGroups = <String>{};
     for (final track in tracks) {
       final hasGroup = track.groupKey != '__single_files__';
@@ -122,17 +108,12 @@ class LibraryScanRules {
                   promotedIndex.mostSpecificContaining(track.groupKey) !=
                       null));
       if (belongsToPromotedFolder) continue;
-      if (folderIndex.mostSpecificContaining(track.path) != null ||
-          PathMatcher.isWithinOrEqual(normalizedFolderPath, track.path)) {
+      if (pathsOverlap(track.path, normalizedFolderPath)) {
         return true;
       }
       if (hasGroup &&
           seenGroups.add(track.groupKey) &&
-          (folderIndex.mostSpecificContaining(track.groupKey) != null ||
-              PathMatcher.isWithinOrEqual(
-                normalizedFolderPath,
-                track.groupKey,
-              ))) {
+          pathsOverlap(track.groupKey, normalizedFolderPath)) {
         return true;
       }
     }

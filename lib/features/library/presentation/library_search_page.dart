@@ -16,6 +16,8 @@ import '../../../core/widgets/app_search_page.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/windows_smooth_scroll_controller.dart';
+import '../../player/application/playback_subtitle_service.dart';
+import '../../player/presentation/playback_providers.dart';
 import '../../settings/presentation/settings_providers.dart';
 import '../application/library_facade.dart';
 import '../domain/audio_library_category.dart';
@@ -35,6 +37,8 @@ class LibrarySearchPage extends ConsumerStatefulWidget {
   ConsumerState<LibrarySearchPage> createState() => _LibrarySearchPageState();
 }
 
+typedef _SelectionTreeKey = (int, SearchFilters, int, int, int);
+
 class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
@@ -49,6 +53,9 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     keepScrollOffset: false,
   );
   final _searchIndex = LibrarySearchIndex();
+  PlaybackSubtitleService? _observedSubtitleService;
+  int? _observedAvailabilityRevision;
+  int _subtitleRevision = 0;
   SearchElements? _parsedDraftElements = emptySearchElements;
   String _canonicalDraftQuery = '';
   SearchElements? _parsedSubmittedElements;
@@ -58,7 +65,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   int _queryRevision = 0;
   bool _isSelectionMode = false;
   Set<String> _selectedLibraryPaths = const {};
-  List<LibraryNode> _searchSelectionTree = const [];
+  (_SelectionTreeKey, List<LibraryNode>)? _searchSelection;
   Future<AudioLibraryCategorySnapshot>? _categorySnapshotFuture;
   int? _categorySnapshotStructureRevision;
   int? _categorySnapshotDetailRevision;
@@ -94,10 +101,82 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   @override
   void initState() {
     super.initState();
+    _controller.addListener(_handleControllerChanged);
     HardwareKeyboard.instance.addHandler(_handleHardwareKey);
     if (widget.initialQuery.isEmpty) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _onSubmitted(legacySearchElements(widget.initialQuery));
+    });
+  }
+
+  void _handleControllerChanged() {
+    if (_controller.text != _draftQuery.value) return;
+    final composing = _controller.value.composing;
+    if (!composing.isValid || composing.isCollapsed) {
+      _syncSuggestionSelection();
+    }
+  }
+
+  void _handleSubtitlesChanged() {
+    final availabilityRevision = _observedSubtitleService?.availabilityRevision;
+    if (availabilityRevision == _observedAvailabilityRevision) return;
+    _observedAvailabilityRevision = availabilityRevision;
+    _searchIndex.invalidateSubtitleCache();
+    if (!mounted) return;
+    if (_submittedQuery != null && _filters.hasSubtitle != null) {
+      setState(() => _subtitleRevision++);
+    }
+  }
+
+  void _observeSubtitleService(PlaybackSubtitleService subtitles) {
+    if (identical(_observedSubtitleService, subtitles)) return;
+    final previous = _observedSubtitleService;
+    if (previous != null) {
+      previous.removeListener(_handleSubtitlesChanged);
+      _searchIndex.invalidateSubtitleCache();
+      _subtitleRevision++;
+    }
+    _observedSubtitleService = subtitles;
+    _observedAvailabilityRevision = subtitles.availabilityRevision;
+    subtitles.addListener(_handleSubtitlesChanged);
+  }
+
+  _SelectionTreeKey _selectionKey(LibraryFacade library) => (
+    _queryRevision,
+    _filters,
+    library.structureRevision,
+    library.detailCacheService.revision,
+    _filters.hasSubtitle == null ? 0 : _subtitleRevision,
+  );
+
+  List<LibraryNode> get _currentSearchTree {
+    final selection = _searchSelection;
+    if (_submittedQuery == null ||
+        selection == null ||
+        selection.$1 != _selectionKey(ref.read(libraryFacadeProvider))) {
+      return const [];
+    }
+    return selection.$2;
+  }
+
+  void _acceptSearchTree(_SelectionTreeKey key, List<LibraryNode> tree) {
+    if (_submittedQuery == null ||
+        key != _selectionKey(ref.read(libraryFacadeProvider))) {
+      return;
+    }
+    setState(() {
+      _searchSelection = (key, tree);
+      if (_selectedLibraryPaths.isNotEmpty) {
+        _selectedLibraryPaths = {
+          for (final node in tree)
+            if (isSelectableLibraryNode(node) &&
+                _selectedLibraryPaths.contains(
+                  selectionKeyForLibraryNode(node),
+                ))
+              selectionKeyForLibraryNode(node),
+        };
+        if (_selectedLibraryPaths.isEmpty) _isSelectionMode = false;
+      }
     });
   }
 
@@ -128,7 +207,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
       _submittedQuery = null;
       _parsedSubmittedElements = null;
       _queryRevision++;
-      _searchSelectionTree = const [];
+      _searchSelection = null;
       _clearSelection();
     });
   }
@@ -173,7 +252,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
       _submittedQuery = query;
       _parsedSubmittedElements = query.isEmpty ? null : parsed;
       _queryRevision++;
-      _searchSelectionTree = const [];
+      _searchSelection = null;
       _clearSelection();
     });
     if (_resultsScrollController.hasClients) {
@@ -232,7 +311,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
 
   void _toggleSelectAllSearchResults() {
     final selectableKeys = <String>[
-      for (final node in _searchSelectionTree)
+      for (final node in _currentSearchTree)
         if (isSelectableLibraryNode(node)) selectionKeyForLibraryNode(node),
     ];
     if (selectableKeys.isEmpty) return;
@@ -253,7 +332,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
       if (_submittedQuery == '') {
         _submittedQuery = null;
         _parsedSubmittedElements = null;
-        _searchSelectionTree = const [];
+        _searchSelection = null;
       }
     });
   }
@@ -262,7 +341,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     setState(() {
       _submittedQuery = null;
       _parsedSubmittedElements = null;
-      _searchSelectionTree = const [];
+      _searchSelection = null;
       _clearSelection();
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -270,15 +349,12 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     });
   }
 
-  Future<List<LibraryBatchSelection>> _currentSelections() async =>
-      selectedLibraryNodeSelections(
-        _searchSelectionTree,
-        _selectedLibraryPaths,
-      );
+  List<LibraryBatchSelection> _currentSelections() =>
+      selectedLibraryNodeSelections(_currentSearchTree, _selectedLibraryPaths);
 
   Future<void> _addCurrentSelectionsToPlaylist() async {
-    final selections = await _currentSelections();
-    if (!mounted) return;
+    final selections = _currentSelections();
+    if (selections.isEmpty) return;
     await addLibraryBatchSelectionsToPlaylist(
       context: context,
       ref: ref,
@@ -288,8 +364,8 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   }
 
   Future<void> _completeCurrentSelectionsMetadata() async {
-    final selections = await _currentSelections();
-    if (!mounted) return;
+    final selections = _currentSelections();
+    if (selections.isEmpty) return;
     await completeLibraryBatchSelectionsMetadata(
       context: context,
       ref: ref,
@@ -299,8 +375,8 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   }
 
   Future<void> _toggleCurrentSelectionsPinned() async {
-    final selections = await _currentSelections();
-    if (!mounted || selections.isEmpty) return;
+    final selections = _currentSelections();
+    if (selections.isEmpty) return;
     unawaited(
       AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
     );
@@ -316,8 +392,8 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   }
 
   Future<void> _removeCurrentSelections() async {
-    final selections = await _currentSelections();
-    if (!mounted) return;
+    final selections = _currentSelections();
+    if (selections.isEmpty) return;
     await removeLibraryBatchSelections(
       context: context,
       ref: ref,
@@ -328,6 +404,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
 
   @override
   void dispose() {
+    _controller.removeListener(_handleControllerChanged);
     _controller.dispose();
     _focusNode.dispose();
     _draftQuery.dispose();
@@ -335,6 +412,8 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     _resultsScrollController.dispose();
     HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
     _suggestionsScrollController.dispose();
+    _observedSubtitleService?.removeListener(_handleSubtitlesChanged);
+    _observedSubtitleService = null;
     _searchIndex.dispose();
     super.dispose();
   }
@@ -344,6 +423,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final libraryFacade = ref.read(libraryFacadeProvider);
+    _observeSubtitleService(ref.watch(playbackSubtitleServiceProvider));
     ref.watch(libraryListUiProvider.select((state) => state.structureRevision));
     ref.watch(libraryDetailRevisionProvider);
     final structureRevision = libraryFacade.structureRevision;
@@ -356,6 +436,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
           )
         : AppSearchPageScaffold.controlsTopInset(context, hasCategories: false);
     final query = _submittedQuery;
+    final selectionKey = _selectionKey(libraryFacade);
     Widget scaffold = AppSearchPageScaffold<AudioLibraryCategoryType>(
       controller: _controller,
       focusNode: _focusNode,
@@ -402,13 +483,15 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
                   queryRevision: _queryRevision,
                   structureRevision: structureRevision,
                   detailRevision: detailRevision,
+                  subtitleRevision: _subtitleRevision,
                   scrollController: _resultsScrollController,
                   topPadding: topInset,
                   isSelectionMode: _isSelectionMode,
                   selectedPaths: _selectedLibraryPaths,
                   onEnterSelectionMode: _enterSelectionMode,
                   onToggleSelection: _toggleLibrarySelection,
-                  onTreeChanged: (tree) => _searchSelectionTree = tree,
+                  onTreeChanged: (tree) =>
+                      _acceptSearchTree(selectionKey, tree),
                   searchIndex: _searchIndex,
                   onClearFilters: _clearFilters,
                   onEditSearch: _editSearch,
@@ -599,11 +682,12 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
           ),
         )
         .toSet();
-    final selectableNodes = _searchSelectionTree
+    final selectionTree = _currentSearchTree;
+    final selectableNodes = selectionTree
         .where(isSelectableLibraryNode)
         .toList(growable: false);
     final selectedSelections = selectedLibraryNodeSelections(
-      _searchSelectionTree,
+      selectionTree,
       _selectedLibraryPaths,
     );
     final allSelected =
@@ -617,7 +701,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     return LibraryBatchSelectionHeader(
       keyPrefix: 'library_search',
       i18n: i18n,
-      selectedCount: _selectedLibraryPaths.length,
+      selectedCount: selectedSelections.length,
       allSelected: allSelected,
       onToggleSelectAll: selectableNodes.isEmpty
           ? null
@@ -630,16 +714,16 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
             }
           : null,
       isPinned: isAllPinned,
-      onAddToPlaylist: !coreReady || _selectedLibraryPaths.isEmpty
+      onAddToPlaylist: !coreReady || selectedSelections.isEmpty
           ? null
           : () => unawaited(_addCurrentSelectionsToPlaylist()),
-      onCompleteMetadata: _selectedLibraryPaths.isEmpty
+      onCompleteMetadata: selectedSelections.isEmpty
           ? null
           : () => unawaited(_completeCurrentSelectionsMetadata()),
-      onTogglePin: _selectedLibraryPaths.isEmpty
+      onTogglePin: selectedSelections.isEmpty
           ? null
           : () => unawaited(_toggleCurrentSelectionsPinned()),
-      onRemove: _selectedLibraryPaths.isEmpty
+      onRemove: selectedSelections.isEmpty
           ? null
           : () => unawaited(_removeCurrentSelections()),
       onExit: _exitSelectionMode,

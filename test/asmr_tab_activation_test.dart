@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:doujin_audio/core/app_language.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/library_like_cards.dart';
+import 'package:doujin_audio/core/widgets/app_search_suggestions.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/operation_feedback.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
@@ -754,4 +755,55 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   }, variant: platforms);
+
+  testWidgets(
+    'search suggestion selection syncs when IME composing collapses without text change',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      final controller = _SearchSuggestionsController(createTestAsmrServices())
+        ..suggestions = AsmrSearchSuggestions(
+          voiceActors: const ['Initial voice'],
+          tags: const ['耳舐め'],
+        );
+      addTearDown(fixture.dispose);
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        fixture.build(
+          const AsmrSearchPage(),
+          overrides: [
+            asmrLibraryControllerProvider.overrideWithValue(controller),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      AppSearchSuggestionSection tagSection() => tester.widget(
+        find.byKey(const ValueKey('asmr_search_tags')),
+      );
+
+      await tester.showKeyboard(find.byType(TextField));
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: '耳舐め',
+          selection: TextSelection.collapsed(offset: 3),
+          composing: TextRange(start: 0, end: 3),
+        ),
+      );
+      await tester.pump();
+      expect(tagSection().isSelected('耳舐め'), isFalse);
+
+      // Committing the IME candidate collapses composing without changing text.
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: '耳舐め',
+          selection: TextSelection.collapsed(offset: 3),
+        ),
+      );
+      await tester.pump();
+      expect(tagSection().isSelected('耳舐め'), isTrue);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: platforms,
+  );
 }

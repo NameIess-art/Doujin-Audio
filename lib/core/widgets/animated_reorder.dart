@@ -82,7 +82,8 @@ class _ReorderViewport extends SingleChildRenderObjectWidget {
 }
 
 class _RenderReorderViewport extends RenderProxyBox {
-  _RenderReorderViewport(this.controller, this._order);
+  _RenderReorderViewport(this.controller, List<Object> order)
+    : _order = List<Object>.of(order, growable: false);
 
   final AnimationController controller;
   List<Object> _order;
@@ -135,12 +136,6 @@ class _RenderReorderViewport extends RenderProxyBox {
   }
 
   void update(List<Object> order, bool enabled) {
-    if (identical(_order, order)) {
-      if (!enabled && (controller.value != 1 || _pending)) {
-        _settleImmediately();
-      }
-      return;
-    }
     if (!listEquals(_order, order)) {
       // Expanding a tree or adding/removing entries owns its own size motion.
       // Only changes to the relative order of surviving entries are reorders.
@@ -157,7 +152,7 @@ class _RenderReorderViewport extends RenderProxyBox {
           }
         }
       }
-      _order = order;
+      _order = List<Object>.of(order, growable: false);
       if (_pending) {
         markNeedsPaint();
         for (final item in _items) {
@@ -165,8 +160,6 @@ class _RenderReorderViewport extends RenderProxyBox {
         }
         controller.forward(from: 0);
       }
-    } else {
-      _order = order;
     }
     // A tab transition mutes this list even when no reorder is running.
     // Keep the retained rows paintable without invalidating every row.

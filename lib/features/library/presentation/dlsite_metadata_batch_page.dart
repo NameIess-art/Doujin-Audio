@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/widgets/app_buttons.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_styles.dart';
+import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../application/dlsite_metadata_batch_session.dart';
@@ -222,23 +223,38 @@ class _DlsiteMetadataBatchPageState
       await _load();
     } else if (session.appliedCount > 0) {
       final library = ref.read(libraryFacadeProvider);
-      final refreshed = await Future.wait(
-        _entries.map((entry) async {
-          final loaded = await library.loadAudioDetail(entry.target);
-          return AudioLibraryCategoryEntry(
-            target: entry.target,
-            title: entry.title,
-            path: entry.path,
-            isFolder: entry.isFolder,
-            detail: loaded.detail,
-            tracks: entry.tracks,
-          );
-        }),
-      );
-      if (!mounted) return;
-      setState(() {
-        _setEntries(refreshed);
-      });
+      try {
+        final loaded = await library.detailCacheService.loadMany(
+          _entries.map((entry) => entry.target),
+          isActive: () => mounted,
+        );
+        if (!mounted) return;
+        final refreshed = <AudioLibraryCategoryEntry>[
+          for (var index = 0; index < _entries.length; index++)
+            AudioLibraryCategoryEntry(
+              target: _entries[index].target,
+              title: _entries[index].title,
+              path: _entries[index].path,
+              isFolder: _entries[index].isFolder,
+              detail: loaded[index].detail,
+              tracks: _entries[index].tracks,
+            ),
+        ];
+        setState(() {
+          _error = null;
+          _setEntries(refreshed);
+        });
+      } catch (error, stackTrace) {
+        AppLogService.warning(
+          'batch_metadata_refresh_entries_failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        if (!mounted) return;
+        setState(() {
+          _error = error;
+        });
+      }
     }
   }
 

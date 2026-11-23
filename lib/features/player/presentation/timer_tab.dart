@@ -14,6 +14,7 @@ import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../app/theme/app_styles.dart';
+import '../application/audio_state_services.dart' show TimerStateSliceData;
 import '../application/timer_facade.dart';
 import '../domain/playback_mode.dart';
 import '../../settings/application/permission_status_service.dart';
@@ -27,6 +28,7 @@ import '../../../core/widgets/app_dialog.dart';
 import '../../../core/widgets/confirm_action_dialog.dart';
 import '../../../core/widgets/target_countdown_builder.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
+import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../../../core/widgets/windows_smooth_scroll_controller.dart';
@@ -51,7 +53,10 @@ Future<void> showTimerSettingsPanel(
     barrierLabel: i18n.tr('close'),
     maxHeight: kTimerCompactPanelHeight,
     mobileAlignment: Alignment.center,
-    mobileOuterPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+    mobileOuterPadding: const EdgeInsets.symmetric(
+      horizontal: 16,
+      vertical: 24,
+    ),
     builder: (_) => TimerTab(
       showHeader: false,
       useSafeArea: false,
@@ -90,6 +95,7 @@ class _TimerTabState extends ConsumerState<TimerTab>
   bool _showCompactDetail = false;
   bool _draftInitialized = false;
   String? _lastExternalDraftKey;
+  int _localDraftGeneration = 0;
   Future<_TimerReliabilityStatus>? _reliabilityStatusFuture;
   bool _reliabilityRefreshNeeded = true;
   late final String _reliabilityLoadKey =
@@ -156,12 +162,37 @@ class _TimerTabState extends ConsumerState<TimerTab>
   String _draftKey(TimerMode mode, Duration duration) =>
       '${mode.index}:${duration.inSeconds}';
 
-  void _syncDraftFromState(TimerConfigurationUiState state) {
+  String _facadeDraftKey(TimerStateSliceData state) {
+    final expired =
+        state.duration != null &&
+        !state.active &&
+        state.remaining != null &&
+        state.remaining! <= Duration.zero;
+    final duration = expired
+        ? state.draftDuration
+        : state.duration ?? state.remaining ?? state.draftDuration;
+    final mode = expired ? state.draftMode : (state.mode ?? state.draftMode);
+    return _draftKey(mode, duration);
+  }
+
+  void _commitLocalDraft(TimerFacade timer, TimerMode mode, Duration duration) {
+    _localDraftGeneration++;
+    if (duration > Duration.zero) {
+      _draftInitialized = true;
+      _lastExternalDraftKey = _draftKey(mode, duration);
+      timer.setTimerDraft(mode, duration);
+    }
+  }
+
+  void _syncDraftFromState(TimerConfigurationUiState state, TimerFacade timer) {
     final duration = state.selectedDuration;
     final mode = state.expired
         ? state.draftMode
         : (state.mode ?? state.draftMode);
     final key = _draftKey(mode, duration);
+    if (_draftInitialized && key != _facadeDraftKey(timer.state)) {
+      return;
+    }
     if (_draftInitialized && _lastExternalDraftKey == key) {
       return;
     }
@@ -176,8 +207,13 @@ class _TimerTabState extends ConsumerState<TimerTab>
         _selectedMode == mode) {
       return;
     }
+    final generation = _localDraftGeneration;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      if (!mounted ||
+          generation != _localDraftGeneration ||
+          _lastExternalDraftKey != key) {
+        return;
+      }
       setState(() {
         _hours = nextHours;
         _minutes = nextMinutes;
@@ -193,6 +229,9 @@ class _TimerTabState extends ConsumerState<TimerTab>
 
   void _onConfirm(TimerFacade timer) {
     if (_durationIsZero) return;
+    _localDraftGeneration++;
+    _draftInitialized = true;
+    _lastExternalDraftKey = _draftKey(_selectedMode, _pickedDuration);
     timer.configureTimer(_selectedMode, _pickedDuration);
     if (_selectedMode == TimerMode.manual) {
       timer.startCountdown();
@@ -221,7 +260,6 @@ class _TimerTabState extends ConsumerState<TimerTab>
   Future<bool> _isIgnoringBatteryOptimizations() async {
     return _permissionStatusService.isGranted(
       PermissionCapability.backgroundRun,
-      errorDefault: true,
     );
   }
 

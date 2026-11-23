@@ -92,12 +92,56 @@ class CoverArtworkSafDiscoveryTest {
         assertFalse(provider.directories.contains("alt/sub"))
     }
 
-    private fun setup(extraFiles: List<String> = emptyList()): Pair<CoverArtworkOperations, ImagesProvider> {
+    @Test
+    fun `when local directory is readable but hides images under scoped storage then resolve and discover fall back to SAF`() {
+        val emptyLocalDir = temporary.newFolder("scoped_empty")
+        val (artwork, provider) = setup(resolveLocalFilePath = { emptyLocalDir.absolutePath })
+
+        val resolved = artwork.resolve("content://covers.test/document/voice", "$root::work", "$root::work")
+        assertEquals("cover bytes", File(requireNotNull(resolved)).readText())
+        assertEquals(listOf("work/cover.jpg"), provider.opened)
+
+        provider.opened.clear()
+        val discovered = artwork.discover(root, null, "$root::work", recursive = false, preferredOnly = true)
+        assertEquals(1, discovered.size)
+        assertEquals("cover bytes", File(discovered.single().getValue("path")).readText())
+    }
+
+    @Test
+    fun `when local directory exposes images then resolve and discover use local files without querying SAF`() {
+        val localDir = temporary.newFolder("local_visible")
+        val localCover = File(localDir, "cover.jpg").apply { writeText("local cover") }
+        val (artwork, provider) = setup(resolveLocalFilePath = { localDir.absolutePath })
+
+        val resolved = artwork.resolve("content://covers.test/document/voice", "$root::work", "$root::work")
+        assertEquals(localCover.absolutePath, resolved)
+
+        val discovered = artwork.discover(root, null, "$root::work", recursive = false, preferredOnly = true)
+        assertEquals(1, discovered.size)
+        assertEquals(localCover.absolutePath, discovered.single()["path"])
+        assertEquals(emptyList<String>(), provider.directories)
+        assertEquals(emptyList<String>(), provider.opened)
+    }
+
+    private fun setup(
+        extraFiles: List<String> = emptyList(),
+        resolveLocalFilePath: ((String) -> String?)? = null
+    ): Pair<CoverArtworkOperations, ImagesProvider> {
         val context = RuntimeEnvironment.getApplication()
         val provider = ImagesProvider(temporary.newFolder(), extraFiles)
         registerTestDocumentProvider(context, "covers.test", provider)
         val storage = DocumentStorageOperations(context)
-        return CoverArtworkOperations(context, storage, MediaMetadataOperations(context, storage)) to provider
+        val artwork = if (resolveLocalFilePath != null) {
+            CoverArtworkOperations(
+                context = context,
+                storage = storage,
+                metadata = MediaMetadataOperations(context, storage),
+                resolveLocalFilePath = resolveLocalFilePath
+            )
+        } else {
+            CoverArtworkOperations(context, storage, MediaMetadataOperations(context, storage))
+        }
+        return artwork to provider
     }
 
     private companion object { const val root = "content://covers.test/tree/root" }

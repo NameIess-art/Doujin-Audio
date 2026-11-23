@@ -445,6 +445,68 @@ void main() {
     }
     expect(retainedCount, 2);
   });
+
+  test(
+    'loadDurationsIfSupported waits for in-flight writes before reading',
+    () async {
+      final target = AudioDetailTarget.libraryRootFolder('/library/work');
+      final key = AudioLibraryDetailKey.forTarget(target);
+      final saveGate = Completer<void>();
+      var fastQueryCalls = 0;
+      final repository = _FastQueryFakeAudioDetailRepository(
+        AudioDetail.empty(target),
+        onSave: () => saveGate.future,
+        onFastDurations: () => fastQueryCalls++,
+      );
+      final cache = AudioDetailCacheService(repository: repository);
+
+      final saveFuture = cache.save(
+        AudioDetail.empty(
+          target,
+        ).copyWith(workTitle: 'Work', duration: const Duration(minutes: 12)),
+      );
+      final durationsFuture = cache.loadDurationsIfSupported([target]);
+      await Future<void>.delayed(Duration.zero);
+
+      // Must serialize behind the pending save rather than bypassing it.
+      expect(fastQueryCalls, 0);
+
+      saveGate.complete();
+      await saveFuture;
+      final durations = await durationsFuture;
+      expect(durations, <String, Duration?>{key: const Duration(minutes: 12)});
+      expect(fastQueryCalls, 0);
+    },
+  );
+}
+
+final class _FastQueryFakeAudioDetailRepository
+    extends _FakeAudioDetailRepository {
+  _FastQueryFakeAudioDetailRepository(
+    super.detail, {
+    required this.onSave,
+    required this.onFastDurations,
+  });
+
+  final Future<void> Function() onSave;
+  final void Function() onFastDurations;
+
+  @override
+  bool get supportsFastQueries => true;
+
+  @override
+  Future<AudioDetailSaveResult> save(AudioDetail next) async {
+    await onSave();
+    return super.save(next);
+  }
+
+  @override
+  Future<Map<String, Duration?>?> loadDurationsIfSupported(
+    Iterable<AudioDetailTarget> targets,
+  ) async {
+    onFastDurations();
+    return <String, Duration?>{};
+  }
 }
 
 final class _FakeAudioDetailRepository implements AudioDetailRepository {

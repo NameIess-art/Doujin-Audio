@@ -61,6 +61,7 @@ final class LibraryCatalogWriteCoordinator {
     );
     return task;
   }
+
   void attachTrackRemovalHandler(void Function(List<String>) handler) {
     _trackRemovalHandler ??= handler;
   }
@@ -303,14 +304,22 @@ final class LibraryCatalogWriteCoordinator {
     }
   }
 
-  void beginLibraryBatch({bool snapshotAllEntries = true}) {
+  Future<void> beginLibraryBatch({bool snapshotAllEntries = true}) async {
+    // A new catalog snapshot must observe the preceding commit or rollback.
+    var pending = _batchCommitTail;
+    while (pending != null) {
+      await pending;
+      pending = _batchCommitTail;
+    }
     if (_service.libraryBatchDepth == 0) {
       _batchBefore = _LibraryBatchSnapshot(
         _service,
         snapshotAllEntries: snapshotAllEntries,
       );
       _service.libraryDerivedGeneration++;
-    } else if (snapshotAllEntries && _batchBefore?.snapshotAllEntries == false) {
+      _service.catalogWriteGeneration++;
+    } else if (snapshotAllEntries &&
+        _batchBefore?.snapshotAllEntries == false) {
       _batchBefore!.captureAllEntries(_service);
     }
     _service.libraryBatchDepth++;
@@ -361,8 +370,8 @@ final class LibraryCatalogWriteCoordinator {
     _batchExclusionsChanged = true;
   }
 
-  void beginStagedLibraryRefresh() {
-    beginLibraryBatch(snapshotAllEntries: false);
+  Future<void> beginStagedLibraryRefresh() async {
+    await beginLibraryBatch(snapshotAllEntries: false);
     _stagedRefresh = true;
   }
 
@@ -407,10 +416,13 @@ final class LibraryCatalogWriteCoordinator {
       removeWatchedFolder(folderPath, notify: false);
       _refreshFolderWrites[PathMatcher.normalize(folderPath)] = false;
     }
-    if (tracks.isNotEmpty || entryTracks.isNotEmpty || folderPaths.isNotEmpty) {
+    final tracksForEntries = entrySnapshot != null
+        ? entryTracks
+        : (entryTracks.isEmpty ? tracks : entryTracks);
+    if (tracksForEntries.isNotEmpty || folderPaths.isNotEmpty) {
       recordLibraryEntriesForTracks(
         libraryRoot,
-        entryTracks.isEmpty ? tracks : entryTracks,
+        tracksForEntries,
         folderPaths: folderPaths,
         persist: persist,
         exclusionMatcher: currentExclusions,
@@ -681,6 +693,7 @@ final class LibraryCatalogWriteCoordinator {
             removedTracks.isNotEmpty ||
             removedEntries.isNotEmpty);
     final resetGeneration = _batchResetGeneration;
+    final writeGeneration = _service.catalogWriteGeneration;
     _clearBatch();
     final commitFuture = shouldCommit
         ? _persistenceCoordinator.commitLibraryBatch(
@@ -697,7 +710,11 @@ final class LibraryCatalogWriteCoordinator {
           await commitFuture;
         }
       } catch (_) {
-        if (resetGeneration != _batchResetGeneration) rethrow;
+        if (resetGeneration != _batchResetGeneration ||
+            _service.libraryBatchDepth > 0 ||
+            writeGeneration != _service.catalogWriteGeneration) {
+          rethrow;
+        }
         final affected = diff?.affected ?? _affectedTracks(before);
         if (stagedRefresh) {
           _rollbackRefreshWrites(before, refreshRollback!);
@@ -800,6 +817,7 @@ final class LibraryCatalogWriteCoordinator {
 
   void resetPersistedState() {
     _batchResetGeneration++;
+    _service.catalogWriteGeneration++;
     _batchBefore = null;
     _service.libraryBatchDepth = 0;
     _clearBatch();
@@ -840,7 +858,7 @@ final class LibraryCatalogWriteCoordinator {
           ..tracksByGroup = Map<String, List<MusicTrack>>.of(
             snapshot.tracksByGroup,
           )
-          ..markStructureChanged();
+          ..markStructureChanged(catalogMutation: false);
         snapshotCacheService
           ..markStructureChanged()
           ..adoptCardSnapshot(snapshot.cardSnapshot);

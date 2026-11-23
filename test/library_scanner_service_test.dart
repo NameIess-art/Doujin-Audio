@@ -1000,7 +1000,7 @@ class _RefreshCatalog implements LibraryCatalog {
   bool isLibraryPathExcluded(String libraryPath, String entityPath) => false;
 
   @override
-  void beginStagedLibraryRefresh() {
+  Future<void> beginStagedLibraryRefresh() async {
     _stagedBefore = List<MusicTrack>.of(library);
     stagedBatchDepth++;
     stagedBatchBeginCount++;
@@ -1086,7 +1086,7 @@ class _RefreshCatalog implements LibraryCatalog {
   }
 
   @override
-  void beginLibraryBatch({bool snapshotAllEntries = true}) {
+  Future<void> beginLibraryBatch({bool snapshotAllEntries = true}) async {
     rollbackBatchDepth++;
     rollbackBatchBeginCount++;
   }
@@ -1283,7 +1283,7 @@ class _FailingBatchCatalog implements LibraryCatalog {
   }
 
   @override
-  void beginLibraryBatch({bool snapshotAllEntries = true}) {}
+  Future<void> beginLibraryBatch({bool snapshotAllEntries = true}) async {}
 
   @override
   void addTracks(List<MusicTrack> tracks, {bool persist = true}) {
@@ -1314,8 +1314,8 @@ class _CancelledFilesCatalog extends _RefreshCatalog {
   var addTracksCalls = 0;
 
   @override
-  void beginLibraryBatch({bool snapshotAllEntries = true}) {
-    super.beginLibraryBatch(snapshotAllEntries: snapshotAllEntries);
+  Future<void> beginLibraryBatch({bool snapshotAllEntries = true}) async {
+    await super.beginLibraryBatch(snapshotAllEntries: snapshotAllEntries);
     scheduleMicrotask(() {
       cancelled = true;
       isScanning = false;

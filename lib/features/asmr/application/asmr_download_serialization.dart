@@ -73,8 +73,17 @@ final class AsmrDownloadTaskPersistence {
   bool _directoryChecked = false;
   Directory? _directory;
   bool _persistenceReady;
+  int _snapshotGeneration = 0;
 
   Future<void> get pendingWrites => _persistenceTail;
+
+  int _nextSnapshotGeneration() {
+    final now = DateTime.now().microsecondsSinceEpoch;
+    _snapshotGeneration = now > _snapshotGeneration
+        ? now
+        : _snapshotGeneration + 1;
+    return _snapshotGeneration;
+  }
 
   void markReady({bool restoredFromFile = false}) {
     _persistenceReady = true;
@@ -197,12 +206,23 @@ final class AsmrDownloadTaskPersistence {
     if (restored.error != null) {
       Error.throwWithStackTrace(restored.error!, restored.stackTrace!);
     }
+    final tasksGeneration = restored.snapshotGeneration;
+    if (tasksGeneration != null && tasksGeneration > _snapshotGeneration) {
+      _snapshotGeneration = tasksGeneration;
+    }
     Map<String, AsmrDownloadProgressCheckpoint> progressOverlay = const {};
     if (progressPayload != null && progressPayload.isNotEmpty) {
       try {
-        progressOverlay = decodePersistedDownloadProgressCheckpoints(
+        final decodedProgress = decodePersistedDownloadProgressCheckpoints(
           progressPayload,
         );
+        final progressGeneration = decodedProgress.snapshotGeneration;
+        final generationMatches = tasksGeneration == null
+            ? (progressGeneration == null || progressGeneration == 0)
+            : progressGeneration == tasksGeneration;
+        if (generationMatches) {
+          progressOverlay = decodedProgress.progress;
+        }
       } catch (error, stackTrace) {
         AppLogService.warning(
           'asmr_download_progress_checkpoint_decode_failed',
@@ -214,12 +234,13 @@ final class AsmrDownloadTaskPersistence {
     if (migratedFromLegacy) {
       final dir = await _resolveDirectory();
       if (dir != null) {
-        await writeRawPersistedDownloadTasksFile(
+        await writePersistedDownloadTasksFile(
           filePath: path.join(dir.path, tasksFileName),
-          payload: raw,
+          progressFilePath: path.join(dir.path, progressFileName),
+          tasks: restored.tasks,
+          snapshotGeneration: _nextSnapshotGeneration(),
         );
-        _hasWrittenFullFileSnapshot = true;
-        fromFile = true;
+        fromFile = restored.tasks.isNotEmpty;
         await AppPreferences.remove(AppPreferences.asmrDownloadTasksKey);
       }
     }
@@ -242,13 +263,26 @@ final class AsmrDownloadTaskPersistence {
     AsmrDownloadProgressCheckpoint overlay,
   ) {
     final mergedFileBytes = Map<String, int>.from(task.fileDownloadedBytes);
+    var fileBytesDelta = 0;
     for (final entry in overlay.fileDownloadedBytes.entries) {
+      final fileTotal = task.fileTotalBytes[entry.key];
+      if (fileTotal == null || entry.value < 0) continue;
+      final clampedValue = fileTotal > 0 && entry.value > fileTotal
+          ? fileTotal
+          : entry.value;
       final current = mergedFileBytes[entry.key] ?? 0;
-      if (entry.value > current) mergedFileBytes[entry.key] = entry.value;
+      if (clampedValue > current) {
+        fileBytesDelta += clampedValue - current;
+        mergedFileBytes[entry.key] = clampedValue;
+      }
     }
     var mergedBytes = overlay.downloadedBytes > task.downloadedBytes
         ? overlay.downloadedBytes
         : task.downloadedBytes;
+    if (overlay.fileDownloadedBytes.isNotEmpty) {
+      final maxFromFiles = task.downloadedBytes + fileBytesDelta;
+      if (mergedBytes > maxFromFiles) mergedBytes = maxFromFiles;
+    }
     if (task.totalBytes > 0 &&
         !task.hasUnknownFileSizes &&
         mergedBytes > task.totalBytes) {
@@ -289,6 +323,7 @@ final class AsmrDownloadTaskPersistence {
     return persistNow();
   }
 
+  @visibleForTesting
   Future<void> runStructuralForTesting() async {
     _deferredPersistenceTimer?.cancel();
     _deferredPersistenceTimer = null;
@@ -297,6 +332,7 @@ final class AsmrDownloadTaskPersistence {
     await _persistenceTail;
   }
 
+  @visibleForTesting
   Future<void> runProgressCheckpointForTesting() async {
     _progressCheckpointTimer?.cancel();
     _progressCheckpointTimer = null;
@@ -344,6 +380,7 @@ final class AsmrDownloadTaskPersistence {
         await writePersistedDownloadProgressFile(
           progressFilePath: path.join(dir.path, progressFileName),
           progress: progress,
+          snapshotGeneration: _snapshotGeneration,
         );
         return;
       }
@@ -360,10 +397,12 @@ final class AsmrDownloadTaskPersistence {
       _writingFileMetadata = fileMetadata;
       try {
         if (dir != null) {
+          final snapshotGeneration = _nextSnapshotGeneration();
           await writePersistedDownloadTasksFile(
             filePath: path.join(dir.path, tasksFileName),
             progressFilePath: path.join(dir.path, progressFileName),
             tasks: tasks,
+            snapshotGeneration: snapshotGeneration,
           );
           _hasWrittenFullFileSnapshot = true;
         } else {
@@ -410,9 +449,11 @@ final class AsmrDownloadTaskPersistence {
 }
 
 String encodePersistedDownloadProgressCheckpoints(
-  Map<String, AsmrDownloadProgressCheckpoint> progress,
-) => jsonEncode(<String, Object?>{
+  Map<String, AsmrDownloadProgressCheckpoint> progress, {
+  int? snapshotGeneration,
+}) => jsonEncode(<String, Object?>{
   'version': 1,
+  'snapshotGeneration': ?snapshotGeneration,
   'progress': <String, Object?>{
     for (final entry in progress.entries)
       entry.key: <String, Object?>{
@@ -422,11 +463,24 @@ String encodePersistedDownloadProgressCheckpoints(
   },
 });
 
-Map<String, AsmrDownloadProgressCheckpoint>
+({
+  int? snapshotGeneration,
+  Map<String, AsmrDownloadProgressCheckpoint> progress,
+})
 decodePersistedDownloadProgressCheckpoints(String payload) {
   final decoded = jsonDecode(payload);
   if (decoded is! Map || decoded['progress'] is! Map) {
     throw const FormatException('Invalid download progress checkpoint record.');
+  }
+  int? snapshotGeneration;
+  if (decoded.containsKey('snapshotGeneration')) {
+    final rawGeneration = decoded['snapshotGeneration'];
+    if (rawGeneration is! int || rawGeneration < 0) {
+      throw const FormatException(
+        'Invalid download progress snapshot generation.',
+      );
+    }
+    snapshotGeneration = rawGeneration;
   }
   final result = <String, AsmrDownloadProgressCheckpoint>{};
   for (final entry in (decoded['progress'] as Map).entries) {
@@ -437,44 +491,67 @@ decodePersistedDownloadProgressCheckpoints(String payload) {
       fileDownloadedBytes: _jsonIntMap(map['fileDownloadedBytes']),
     );
   }
-  return result;
+  return (snapshotGeneration: snapshotGeneration, progress: result);
 }
 
 Future<void> writePersistedDownloadTasksFile({
   required String filePath,
   required String progressFilePath,
   required List<PersistedDownloadTask> tasks,
-}) => Isolate.run(() {
-  if (tasks.isEmpty) {
-    _deleteIfExistsSync(filePath);
-    _deleteIfExistsSync('$filePath.tmp');
-    _deleteIfExistsSync(progressFilePath);
-    _deleteIfExistsSync('$progressFilePath.tmp');
-    return;
-  }
-  final payload = encodePersistedDownloadTasks(tasks);
-  _writeFileAtomicallySync(filePath, payload);
-  _deleteIfExistsSync(progressFilePath);
-  _deleteIfExistsSync('$progressFilePath.tmp');
-});
+  int? snapshotGeneration,
+}) async {
+  final cleanupErrors = await Isolate.run(() {
+    final errors = <({String error, String stackTrace})>[];
+    void tryDelete(String targetPath) {
+      try {
+        _deleteIfExistsSync(targetPath);
+      } catch (error, stackTrace) {
+        errors.add((
+          error: error.toString(),
+          stackTrace: stackTrace.toString(),
+        ));
+      }
+    }
 
-Future<void> writeRawPersistedDownloadTasksFile({
-  required String filePath,
-  required String payload,
-}) => Isolate.run(() {
-  _writeFileAtomicallySync(filePath, payload);
-});
+    if (tasks.isEmpty) {
+      _deleteIfExistsSync(filePath);
+      tryDelete('$filePath.tmp');
+      tryDelete(progressFilePath);
+      tryDelete('$progressFilePath.tmp');
+      return errors;
+    }
+    final payload = encodePersistedDownloadTasks(
+      tasks,
+      snapshotGeneration: snapshotGeneration,
+    );
+    _writeFileAtomicallySync(filePath, payload);
+    tryDelete(progressFilePath);
+    tryDelete('$progressFilePath.tmp');
+    return errors;
+  });
+  for (final failure in cleanupErrors) {
+    AppLogService.warning(
+      'asmr_download_progress_checkpoint_cleanup_failed',
+      error: failure.error,
+      stackTrace: StackTrace.fromString(failure.stackTrace),
+    );
+  }
+}
 
 Future<void> writePersistedDownloadProgressFile({
   required String progressFilePath,
   required Map<String, AsmrDownloadProgressCheckpoint> progress,
+  int? snapshotGeneration,
 }) => Isolate.run(() {
   if (progress.isEmpty) {
     _deleteIfExistsSync(progressFilePath);
     _deleteIfExistsSync('$progressFilePath.tmp');
     return;
   }
-  final payload = encodePersistedDownloadProgressCheckpoints(progress);
+  final payload = encodePersistedDownloadProgressCheckpoints(
+    progress,
+    snapshotGeneration: snapshotGeneration,
+  );
   _writeFileAtomicallySync(progressFilePath, payload);
 });
 
@@ -493,27 +570,40 @@ void _deleteIfExistsSync(String filePath) {
   }
 }
 
-String encodePersistedDownloadTasks(List<PersistedDownloadTask> tasks) =>
-    jsonEncode(<String, Object?>{
-      'version': 3,
-      'tasks': tasks
-          .map(
-            (snapshot) => downloadTaskToJson(
-              snapshot.task,
-              createdOutputPaths: snapshot.createdOutputPaths,
-              createdJsonDocuments: snapshot.createdJsonDocuments,
-            ),
-          )
-          .toList(growable: false),
-    });
+String encodePersistedDownloadTasks(
+  List<PersistedDownloadTask> tasks, {
+  int? snapshotGeneration,
+}) => jsonEncode(<String, Object?>{
+  'version': 3,
+  'snapshotGeneration': ?snapshotGeneration,
+  'tasks': tasks
+      .map(
+        (snapshot) => downloadTaskToJson(
+          snapshot.task,
+          createdOutputPaths: snapshot.createdOutputPaths,
+          createdJsonDocuments: snapshot.createdJsonDocuments,
+        ),
+      )
+      .toList(growable: false),
+});
 
-({List<PersistedDownloadTask> tasks, Object? error, StackTrace? stackTrace})
+({
+  List<PersistedDownloadTask> tasks,
+  int? snapshotGeneration,
+  Object? error,
+  StackTrace? stackTrace,
+})
 decodePersistedDownloadTasks(String payload) {
   final tasks = <PersistedDownloadTask>[];
+  int? snapshotGeneration;
   try {
     final decoded = jsonDecode(payload);
     if (decoded is! Map || decoded['tasks'] is! List) {
       throw const FormatException('Invalid download task record.');
+    }
+    final rawGeneration = decoded['snapshotGeneration'];
+    if (rawGeneration is int && rawGeneration >= 0) {
+      snapshotGeneration = rawGeneration;
     }
     for (final value in decoded['tasks'] as List) {
       if (value is! Map) {
@@ -541,11 +631,21 @@ decodePersistedDownloadTasks(String payload) {
         ),
       );
     }
-    return (tasks: tasks, error: null, stackTrace: null);
+    return (
+      tasks: tasks,
+      snapshotGeneration: snapshotGeneration,
+      error: null,
+      stackTrace: null,
+    );
   } catch (error, stackTrace) {
     // Retain the decoded prefix for diagnostics; a restore must reject the error
     // before publishing or persisting a partial record.
-    return (tasks: tasks, error: error, stackTrace: stackTrace);
+    return (
+      tasks: tasks,
+      snapshotGeneration: snapshotGeneration,
+      error: error,
+      stackTrace: stackTrace,
+    );
   }
 }
 

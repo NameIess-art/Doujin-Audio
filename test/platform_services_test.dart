@@ -97,7 +97,7 @@ void main() {
         await service.isIgnoringBatteryOptimizations(errorDefault: true),
         isTrue,
       );
-      expect(await service.canScheduleExactAlarms(), isTrue);
+      expect(await service.canScheduleExactAlarms(), isFalse);
       expect(await service.openExactAlarmSettings(), isFalse);
       expect(
         await service.executeAutoResumeNow(3),
@@ -105,6 +105,19 @@ void main() {
       );
       expect(await service.getNativeTimerRuntimeState(), isNull);
     });
+
+    test(
+      'never reports Android timer permissions ready without the channel',
+      () async {
+        final service = PowerPlatformService(
+          channel: channel,
+          isAndroidOverride: true,
+        );
+
+        expect(await service.isIgnoringBatteryOptimizations(), isFalse);
+        expect(await service.canScheduleExactAlarms(), isFalse);
+      },
+    );
 
     test('decodes native timer runtime map', () async {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger

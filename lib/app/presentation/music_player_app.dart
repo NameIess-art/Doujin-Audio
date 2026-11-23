@@ -502,16 +502,19 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
                 final isWindows =
                     defaultTargetPlatform == TargetPlatform.windows;
                 final navigatorContent = isWindows
-                    ? (!reduceAnimations
-                          ? routedContent
-                          : Builder(
-                              builder: (context) => MediaQuery(
-                                data: MediaQuery.of(
-                                  context,
-                                ).copyWith(disableAnimations: true),
-                                child: routedContent,
-                              ),
-                            ))
+                    ? Builder(
+                        builder: (context) {
+                          final mediaQuery = MediaQuery.of(context);
+                          return MediaQuery(
+                            data: mediaQuery.copyWith(
+                              disableAnimations:
+                                  disableAnimations ||
+                                  mediaQuery.disableAnimations,
+                            ),
+                            child: routedContent,
+                          );
+                        },
+                      )
                     : Builder(
                         builder: (context) {
                           final mediaQuery = MediaQuery.of(context);

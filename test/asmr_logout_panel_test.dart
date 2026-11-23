@@ -62,13 +62,18 @@ void main() {
       expect(tester.widget<TextField>(fields.last).obscureText, isTrue);
       expect(tester.widget<AppEditPanelForm>(form).onSubmit, isNull);
 
+      await tester.enterText(fields.first, '   ');
+      await tester.enterText(fields.last, 'secret');
+      await tester.pump();
+      expect(tester.widget<AppEditPanelForm>(form).onSubmit, isNull);
+
       await tester.enterText(fields.first, '  alice  ');
       await tester.enterText(fields.last, 'secret');
       await tester.pump();
       expect(tester.widget<AppEditPanelForm>(form).onSubmit, isNotNull);
       await tester.testTextInput.receiveAction(TextInputAction.done);
       await tester.pump();
-      expect(controller.loginAttempt, ('alice', 'secret'));
+      expect(controller.loginAttempt, ('  alice  ', 'secret'));
       expect(tester.widget<AppEditPanelForm>(form).onCancel, isNull);
       expect(tester.widget<AppEditPanelForm>(form).onSubmit, isNull);
       expect(tester.widget<TextField>(fields.last).enabled, isFalse);

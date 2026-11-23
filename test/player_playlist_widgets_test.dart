@@ -5215,19 +5215,21 @@ void main() {
       expect(labelsAfterFirst[1].start, const Duration(seconds: 18));
       expect(labelsAfterFirst[1].end, const Duration(seconds: 42));
 
-      var backupFinished = false;
-      unawaited(
-        fixture.library.detailCacheService.waitForPendingOperations().then(
-          (_) => backupFinished = true,
-        ),
-      );
-      for (var attempt = 0; !backupFinished && attempt < 100; attempt++) {
-        await tester.pump();
-        await tester.runAsync(
-          () => Future<void>.delayed(const Duration(milliseconds: 10)),
-        );
+      Future<void> drainAsyncFuture(Future<Object?> future) async {
+        var finished = false;
+        unawaited(future.whenComplete(() => finished = true));
+        for (var attempt = 0; !finished && attempt < 100; attempt++) {
+          await tester.pump(const Duration(milliseconds: 10));
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+        }
+        expect(finished, isTrue);
       }
-      expect(backupFinished, isTrue);
+
+      await drainAsyncFuture(
+        fixture.library.detailCacheService.waitForPendingOperations(),
+      );
       await tester.pump();
 
       session.setOptimisticPosition(const Duration(seconds: 80));
@@ -5272,6 +5274,15 @@ void main() {
       expect(find.byType(OverlayPortal), findsWidgets);
       await gesture.up();
       await tester.pump(const Duration(seconds: 1));
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+      await drainAsyncFuture(
+        fixture.library.playbackCoverPathFutureForTrack(track),
+      );
+      await drainAsyncFuture(
+        fixture.library.detailCacheService.waitForPendingOperations(),
+      );
+      await tester.pump();
     },
   );
 

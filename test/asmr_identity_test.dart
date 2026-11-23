@@ -77,6 +77,38 @@ void main() {
     expect(legacy.workKey, 'code:RJ000123');
   });
 
+  test('legacy Japanese ASMR JSON preserves its catalog source', () {
+    const pageUrl = 'https://japaneseasmr.com/work/151961';
+    const legacy = {
+      'id': 151961,
+      'sourceId': 'RJ01741028',
+      'sourceType': 'jp-asmr',
+      'sourceUrl': pageUrl,
+    };
+    final legacyResource = work(151961, 'RJ01741028').resources.single;
+    final mislabeled = {...legacyResource.toJson(), 'pageUrl': pageUrl};
+    for (final json in [
+      legacy,
+      {
+        ...legacy,
+        'resources': [mislabeled],
+      },
+    ]) {
+      final restored = AsmrWork.fromJson(json);
+      expect(restored.resources.single.source, AsmrCatalogSource.japaneseAsmr);
+      expect(restored.workKey, 'code:RJ01741028');
+    }
+    final dual = AsmrWork.fromJson({
+      ...legacy,
+      'resources': [
+        mislabeled,
+        work(1741028, 'RJ01741028').resources.single.toJson(),
+      ],
+    });
+    expect(dual.resourceFor(AsmrCatalogSource.asmrOne)?.id, 1741028);
+    expect(dual.resourceFor(AsmrCatalogSource.japaneseAsmr)?.id, 151961);
+  });
+
   test(
     'identity remains stable across reads and resolves new resources on copy',
     () {
@@ -196,6 +228,86 @@ void main() {
     },
   );
   test(
+    'version 19 backup repairs Japanese ASMR resources and obsolete uploads',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'asmr_source_restore_',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final path = '${directory.path}/legacy.db';
+      final legacy = await databaseFactoryFfi.openDatabase(path);
+      await AppDatabase.createSchemaForTest(legacy);
+      const code = 'RJ01741028';
+      const workId = 151961;
+      const key = 'code:$code';
+      const pageUrl = 'https://japaneseasmr.com/work/151961';
+      await legacy.insert('asmr_works', {
+        'work_key': key,
+        'id': workId,
+        'source_id': code,
+        'source_type': 'jp-asmr',
+        'source_url': pageUrl,
+        'resources_json': jsonEncode([
+          {'source': 'asmrOne', 'id': workId, 'code': code, 'pageUrl': pageUrl},
+          work(1741028, code).resources.single.toJson(),
+        ]),
+      });
+      for (final list in ['favorites', 'history']) {
+        await legacy.insert('asmr_work_lists', {
+          'list_type': list,
+          'work_id': key,
+        });
+      }
+      final operations = [
+        ('historyListening', workId, code),
+        ('favoriteRemove', workId, code),
+        ('favoriteAdd', workId, 'RJ000004'),
+        ('favoriteAdd', 1741028, code),
+      ];
+      for (final (index, (type, id, source)) in operations.indexed) {
+        await legacy.insert('asmr_sync_operations', {
+          'type': type,
+          'work_id': id,
+          'source_id': source,
+          'created_at_ms': 42,
+          'sort_order': index,
+        });
+      }
+      await legacy.setVersion(19);
+      await legacy.close();
+
+      expect(
+        await AppDatabase.instance.validateAndMigrateRestoreCandidate(path),
+        19,
+      );
+      final migrated = await databaseFactoryFfi.openDatabase(path);
+      addTearDown(migrated.close);
+      final repository = SqliteAsmrRepository(
+        database: AppDatabase.test(migrated),
+      );
+      for (final list in ['favorites', 'history']) {
+        final entry = (await repository.loadWorkList(list)).single;
+        expect(entry.workKey, key);
+        expect(entry.resourceFor(AsmrCatalogSource.japaneseAsmr)?.id, workId);
+        expect(entry.resourceFor(AsmrCatalogSource.asmrOne)?.id, 1741028);
+      }
+      final persisted = (await migrated.query('asmr_works')).single;
+      final resources =
+          jsonDecode(persisted['resources_json'] as String) as List;
+      expect(resources.map((resource) => resource['source']), [
+        'japaneseAsmr',
+        'asmrOne',
+      ]);
+      expect(
+        (await repository.loadSyncOperations()).map(
+          (op) => (op.workId, op.sourceId),
+        ),
+        [(workId, 'RJ000004'), (1741028, code)],
+      );
+      expect(await migrated.getVersion(), AppDatabase.schemaVersion);
+    },
+  );
+  test(
     'restore validation accepts and migrates an actual version 14 backup',
     () async {
       final directory = await Directory.systemTemp.createTemp(
@@ -216,6 +328,24 @@ void main() {
         'work_id': 7,
         'sort_order': 0,
       });
+      await legacy.insert('asmr_works', {
+        'id': 8,
+        'title': 'Japanese ASMR',
+        'source_type': 'jp-asmr',
+      });
+      await legacy.insert('asmr_work_lists', {
+        'list_type': 'history',
+        'work_id': 8,
+      });
+      await legacy.insert('asmr_work_tags', {
+        'work_id': 8,
+        'tag': 'Retained tag',
+      });
+      await legacy.insert('asmr_sync_operations', {
+        'type': 'historyListening',
+        'work_id': 8,
+        'created_at_ms': 42,
+      });
       await legacy.setVersion(14);
       await legacy.close();
       final unused = await databaseFactoryFfi.openDatabase(
@@ -233,6 +363,10 @@ void main() {
         (await repository.loadWorkList('favorites')).single.workKey,
         'code:RJ000007',
       );
+      final history = (await repository.loadWorkList('history')).single;
+      expect(history.workKey, 'source:japaneseAsmr:8');
+      expect(history.tags, ['Retained tag']);
+      expect(await repository.loadSyncOperations(), isEmpty);
       expect(await migrated.getVersion(), AppDatabase.schemaVersion);
     },
   );

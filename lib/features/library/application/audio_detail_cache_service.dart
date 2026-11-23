@@ -392,77 +392,83 @@ class AudioDetailCacheService {
     }
   }
 
+  Future<void>? _readLoopFuture;
+
   void _scheduleReads() {
     if (_reading) return;
     _reading = true;
     // Collect the visible rows together, yielding to input before each batch.
-    unawaited(
-      Future<void>(() async {
-        try {
-          while (_pendingReads.isNotEmpty) {
-            final count = _pendingReads.length.clamp(0, 64);
-            final batch = List.generate(
-              count,
-              (_) => _pendingReads.removeFirst(),
-              growable: false,
-            );
-            final active = <_AudioDetailReadRequest>[];
-            for (final read in batch) {
-              // A fling can recycle rows while the preceding DB batch is busy.
-              // Keep shared or unscoped callers, but skip abandoned card reads.
-              if (read.epoch != _cacheEpoch || !read.isActive) {
-                read.cancelled = true;
-                _releaseLoadFuture(read);
-                read.result.completeError(
-                  const AudioDetailOperationCancelled(),
-                );
-              } else {
-                active.add(read);
-              }
-            }
-            if (active.isNotEmpty) {
-              try {
-                final results = await _repository.loadMany(
-                  active.map((read) => read.target),
-                );
-                for (var index = 0; index < active.length; index++) {
-                  final read = active[index];
-                  _releaseLoadFuture(read);
-                  if (read.epoch != _cacheEpoch) {
-                    read.result.completeError(
-                      const AudioDetailOperationCancelled(),
-                    );
-                  } else {
-                    final loaded = results[index];
-                    final resultKey = AudioLibraryDetailKey.forTarget(
-                      loaded.detail.target,
-                    );
-                    _storeResolved(resultKey, loaded);
-                    if (resultKey != read.key) {
-                      _storeResolved(read.key, loaded);
-                    }
-                    read.result.complete(loaded);
-                  }
-                }
-              } catch (error, stackTrace) {
-                for (final read in active) {
-                  _releaseLoadFuture(read);
-                  if (!read.result.isCompleted) {
-                    read.result.completeError(error, stackTrace);
-                  }
-                }
-              }
-            }
-            if (_pendingReads.isNotEmpty) {
-              await Future<void>.delayed(Duration.zero);
+    late final Future<void> loop;
+    loop = Future<void>(() async {
+      try {
+        while (_pendingReads.isNotEmpty) {
+          final count = _pendingReads.length.clamp(0, 64);
+          final batch = List.generate(
+            count,
+            (_) => _pendingReads.removeFirst(),
+            growable: false,
+          );
+          final active = <_AudioDetailReadRequest>[];
+          for (final read in batch) {
+            // A fling can recycle rows while the preceding DB batch is busy.
+            // Keep shared or unscoped callers, but skip abandoned card reads.
+            if (read.epoch != _cacheEpoch || !read.isActive) {
+              read.cancelled = true;
+              _releaseLoadFuture(read);
+              read.result.completeError(
+                const AudioDetailOperationCancelled(),
+              );
+            } else {
+              active.add(read);
             }
           }
-        } finally {
-          _reading = false;
-          if (_pendingReads.isNotEmpty) _scheduleReads();
+          if (active.isNotEmpty) {
+            try {
+              final results = await _repository.loadMany(
+                active.map((read) => read.target),
+              );
+              for (var index = 0; index < active.length; index++) {
+                final read = active[index];
+                _releaseLoadFuture(read);
+                if (read.epoch != _cacheEpoch) {
+                  read.result.completeError(
+                    const AudioDetailOperationCancelled(),
+                  );
+                } else {
+                  final loaded = results[index];
+                  final resultKey = AudioLibraryDetailKey.forTarget(
+                    loaded.detail.target,
+                  );
+                  _storeResolved(resultKey, loaded);
+                  if (resultKey != read.key) {
+                    _storeResolved(read.key, loaded);
+                  }
+                  read.result.complete(loaded);
+                }
+              }
+            } catch (error, stackTrace) {
+              for (final read in active) {
+                _releaseLoadFuture(read);
+                if (!read.result.isCompleted) {
+                  read.result.completeError(error, stackTrace);
+                }
+              }
+            }
+          }
+          if (_pendingReads.isNotEmpty) {
+            await Future<void>.delayed(Duration.zero);
+          }
         }
-      }),
-    );
+      } finally {
+        _reading = false;
+        if (identical(_readLoopFuture, loop)) {
+          _readLoopFuture = null;
+        }
+        if (_pendingReads.isNotEmpty) _scheduleReads();
+      }
+    });
+    _readLoopFuture = loop;
+    unawaited(loop);
   }
 
   Future<AudioDetailBackupImportResult> importBackupsMany(
@@ -742,17 +748,24 @@ class AudioDetailCacheService {
     }
   }
 
+  Future<void> _drainPendingOperations() async {
+    while (true) {
+      final pending = <Future<void>>[
+        ..._operationTails.values.toSet(),
+        ?_readLoopFuture,
+      ];
+      if (pending.isEmpty) return;
+      await Future.wait(pending);
+    }
+  }
+
   Future<void> suspendAndWait() async {
     _suspended = true;
     clear();
-    final pending = _operationTails.values.toSet().toList(growable: false);
-    if (pending.isNotEmpty) await Future.wait(pending);
+    await _drainPendingOperations();
   }
 
-  Future<void> waitForPendingOperations() async {
-    final pending = _operationTails.values.toSet().toList(growable: false);
-    if (pending.isNotEmpty) await Future.wait(pending);
-  }
+  Future<void> waitForPendingOperations() => _drainPendingOperations();
 
   void resume() {
     _suspended = false;

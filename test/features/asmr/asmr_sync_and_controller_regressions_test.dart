@@ -214,11 +214,14 @@ class _FakeAsmrApiService extends AsmrApiService {
 
   final Map<String, List<AsmrReviewRecord>> reviewsByFilter = {};
   final List<(int workId, String progress, String token)> putCalls = [];
+  final List<(String name, String password)> loginCalls = [];
   Completer<void>? fetchReviewsEntered;
   Completer<void>? fetchReviewsGate;
   Completer<void>? verifyTokenGate;
   Completer<void>? verifyTokenEntered;
   String? authFailureToken;
+  Object? checkSessionError;
+  bool returnEmptyCheckSessionUserName = false;
   int verifyCalls = 0;
 
   @override
@@ -227,6 +230,7 @@ class _FakeAsmrApiService extends AsmrApiService {
     required String password,
     AsmrRequestCancellationToken? cancellationToken,
   }) async {
+    loginCalls.add((name, password));
     return AsmrAuthSession(token: 'token-$name', userName: name);
   }
 
@@ -240,10 +244,15 @@ class _FakeAsmrApiService extends AsmrApiService {
     if (gate != null && !gate.isCompleted) {
       await gate.future;
     }
+    if (checkSessionError != null) {
+      throw checkSessionError!;
+    }
     if (token == authFailureToken) {
       throw const AsmrApiException('Unauthorized', statusCode: 401);
     }
-    final user = token.startsWith('token-') ? token.substring(6) : 'user';
+    final user = returnEmptyCheckSessionUserName
+        ? ''
+        : (token.startsWith('token-') ? token.substring(6) : 'user');
     return AsmrAuthSession(token: token, userName: user);
   }
 
@@ -657,6 +666,64 @@ void main() {
         catalog.worksFor(AsmrCategoryType.release).map((w) => w.id),
         [2201],
       );
+    },
+  );
+
+  test(
+    'ASMR login, session restore, and cache scope preserve leading and trailing spaces in usernames',
+    () async {
+      final repo = _InMemoryAsmrRepository();
+      final prefs = AsmrPreferencesStore(repository: repo);
+      final api = _FakeAsmrApiService();
+      addTearDown(api.close);
+      final tokenStore = _MemoryAsmrTokenStore();
+      final auth = AsmrAuthService(apiService: api, tokenStore: tokenStore);
+      final sync = AsmrAccountSyncService(
+        authService: auth,
+        apiService: api,
+        preferencesStore: prefs,
+      );
+      final controller = AsmrLibraryController(
+        preferencesStore: prefs,
+        remoteCatalogService: AsmrRemoteCatalogService(
+          apiService: api,
+          persistenceRepository: repo,
+        ),
+        accountSyncService: sync,
+        backgroundSyncDebounce: Duration.zero,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.initialize();
+      await controller.loginAsmrAccount('alice', 'secret');
+      final trimmedScope = controller.browseCacheScope;
+
+      await controller.loginAsmrAccount(' alice ', 'secret');
+
+      expect(api.loginCalls.last, (' alice ', 'secret'));
+      expect(tokenStore.credentials, {'name': ' alice ', 'password': 'secret'});
+      expect(controller.asmrAccountName, ' alice ');
+      expect(controller.authViewState.userName, ' alice ');
+      expect(controller.browseCacheScope, isNot(trimmedScope));
+
+      // Normal session restore preserves whitespace in userName.
+      expect((await auth.restoreSession())?.userName, ' alice ');
+
+      // Fallback to stored credentials when checkSession omits userName.
+      api.returnEmptyCheckSessionUserName = true;
+      expect((await auth.restoreSession())?.userName, ' alice ');
+      api.returnEmptyCheckSessionUserName = false;
+
+      // Offline cached-token fallback preserves whitespace in stored name.
+      api.checkSessionError = StateError('network unavailable');
+      expect((await auth.restoreSession())?.userName, ' alice ');
+      api.checkSessionError = null;
+
+      // Expired token auto-relogin sends exact stored username.
+      api.authFailureToken = tokenStore.token;
+      final relogged = await auth.restoreSession();
+      expect(relogged?.userName, ' alice ');
+      expect(api.loginCalls.last, (' alice ', 'secret'));
     },
   );
 }

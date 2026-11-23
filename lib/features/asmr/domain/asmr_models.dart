@@ -297,18 +297,63 @@ class AsmrWork {
   }) : voiceActors = immutableList(voiceActors),
        tags = immutableList(tags),
        tagIds = immutableList(tagIds),
-       resources = immutableList(
-         resources == null || resources.isEmpty
-             ? [
-                 AsmrWorkResource(
-                   source: AsmrCatalogSource.asmrOne,
-                   id: id,
-                   code: sourceId,
-                   pageUrl: sourceUrl,
-                 ),
-               ]
-             : resources,
+       resources = _resolveResources(
+         id,
+         sourceId,
+         sourceType,
+         sourceUrl,
+         resources,
        );
+
+  static List<AsmrWorkResource> _resolveResources(
+    int id,
+    String sourceId,
+    String sourceType,
+    String sourceUrl,
+    List<AsmrWorkResource>? resources,
+  ) {
+    final isJapanese = sourceType == 'jp-asmr';
+    if (resources == null || resources.isEmpty) {
+      return List.unmodifiable([
+        AsmrWorkResource(
+          source: isJapanese
+              ? AsmrCatalogSource.japaneseAsmr
+              : AsmrCatalogSource.asmrOne,
+          id: id,
+          code: sourceId,
+          pageUrl: sourceUrl,
+        ),
+      ]);
+    }
+    if (!isJapanese) return immutableList(resources);
+    final repaired = <AsmrWorkResource>[];
+    var hasJapaneseResource = resources.any(
+      (resource) =>
+          resource.source == AsmrCatalogSource.japaneseAsmr &&
+          resource.id == id,
+    );
+    for (final resource in resources) {
+      // Old track metadata can carry the same mislabeled resource as the database.
+      if (resource.source == AsmrCatalogSource.asmrOne &&
+          resource.id == id &&
+          resource.code == sourceId &&
+          resource.pageUrl == sourceUrl) {
+        if (hasJapaneseResource) continue;
+        repaired.add(
+          AsmrWorkResource(
+            source: AsmrCatalogSource.japaneseAsmr,
+            id: id,
+            code: sourceId,
+            pageUrl: sourceUrl,
+          ),
+        );
+        hasJapaneseResource = true;
+      } else {
+        repaired.add(resource);
+      }
+    }
+    return immutableList(repaired);
+  }
 
   final int id;
   final String title;

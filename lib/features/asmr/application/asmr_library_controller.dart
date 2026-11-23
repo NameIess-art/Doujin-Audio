@@ -721,8 +721,7 @@ class AsmrLibraryController extends ChangeNotifier
   int _contentEpoch = 0;
   int _runtimeCacheEpoch = 0;
   bool _disposed = false;
-  String get browseCacheScope =>
-      '${_authSession?.userName.trim() ?? ''}:${_contentLanguage.name}';
+  String get browseCacheScope => '$asmrAccountName:${_contentLanguage.name}';
 
   void beginSearchSession() => _catalog.beginSearchSession();
   void endSearchSession() => _catalog.endSearchSession();
@@ -848,7 +847,10 @@ class AsmrLibraryController extends ChangeNotifier
         session.userName.trim().isNotEmpty;
   }
 
-  String get asmrAccountName => _authSession?.userName.trim() ?? '';
+  String get asmrAccountName {
+    final name = _authSession?.userName ?? '';
+    return name.trim().isEmpty ? '' : name;
+  }
 
   bool isLoadingCategory(AsmrCategoryType category) =>
       _catalog.isLoading(category);

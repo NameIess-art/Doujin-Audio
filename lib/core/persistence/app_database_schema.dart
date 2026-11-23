@@ -160,6 +160,9 @@ Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     await _backfillQueuePathKeys(db);
     await _createQueuePathIndexes(db);
   }
+  if (oldVersion < 20 && newVersion >= 20) {
+    await _repairLegacyJapaneseAsmrResources(db);
+  }
 }
 
 Future<void> _createListeningTables(Database db) async {
@@ -785,4 +788,78 @@ Future<void> _migrateAsmrIdentity(Database db) async {
     }
   }
   await batch.commit(noResult: true);
+}
+
+Future<void> _repairLegacyJapaneseAsmrResources(Database db) async {
+  final works = await db.query(
+    'asmr_works',
+    columns: ['work_key', 'id', 'source_id', 'source_url', 'resources_json'],
+    where: "source_type = 'jp-asmr' AND resources_json IS NOT NULL",
+  );
+  for (final work in works) {
+    final id = work['id'];
+    final code = work['source_id'];
+    final pageUrl = work['source_url'];
+    final resources = (jsonDecode(work['resources_json'] as String) as List)
+        .cast<Map<String, dynamic>>();
+    // The v15 migration copied these three fields into an ASMR.ONE resource.
+    final mislabeled = resources
+        .where(
+          (resource) =>
+              resource['source'] == 'asmrOne' &&
+              resource['id'] == id &&
+              resource['code'] == code &&
+              resource['pageUrl'] == pageUrl,
+        )
+        .toSet();
+    if (mislabeled.isEmpty) continue;
+    final hasJapaneseResource = resources.any(
+      (resource) =>
+          resource['source'] == 'japaneseAsmr' && resource['id'] == id,
+    );
+    final repaired = [
+      for (final resource in resources)
+        if (!mislabeled.contains(resource))
+          resource
+        else if (!hasJapaneseResource)
+          {...resource, 'source': 'japaneseAsmr'},
+    ];
+    final workKey = work['work_key'];
+    await db.update(
+      'asmr_works',
+      {'resources_json': jsonEncode(repaired)},
+      where: 'work_key = ?',
+      whereArgs: [workKey],
+    );
+    final one = repaired.where((resource) => resource['source'] == 'asmrOne');
+    if (!one.any((resource) => resource['id'] == id)) {
+      await db.delete(
+        'asmr_sync_operations',
+        where: 'work_id = ? AND source_id = ?',
+        whereArgs: [id, code],
+      );
+    }
+    if (workKey != 'source:asmrOne:$id' || one.isNotEmpty) continue;
+    final newKey = 'source:japaneseAsmr:$id';
+    final updated = await db.update(
+      'asmr_works',
+      {'work_key': newKey},
+      where: 'work_key = ?',
+      whereArgs: [workKey],
+      conflictAlgorithm: ConflictAlgorithm.ignore,
+    );
+    if (updated == 0) continue;
+    for (final table in [
+      'asmr_work_lists',
+      'asmr_work_tags',
+      'asmr_work_voice_actors',
+    ]) {
+      await db.update(
+        table,
+        {'work_id': newKey},
+        where: 'work_id = ?',
+        whereArgs: [workKey],
+      );
+    }
+  }
 }

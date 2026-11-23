@@ -478,6 +478,38 @@ void main() {
       expect(fastQueryCalls, 0);
     },
   );
+
+  test(
+    'waitForPendingOperations awaits in-flight scheduled read batches',
+    () async {
+      final target = AudioDetailTarget.libraryRootFolder('/library/work');
+      final started = Completer<void>();
+      final release = Completer<void>();
+      final repository =
+          _FakeAudioDetailRepository(AudioDetail.empty(target))
+            ..beforeBatchLoad = (_) async {
+              started.complete();
+              await release.future;
+            };
+      final cache = AudioDetailCacheService(repository: repository);
+      addTearDown(cache.dispose);
+
+      final loadFuture = cache.load(target);
+      await started.future;
+
+      var drained = false;
+      final waitFuture = cache.waitForPendingOperations().then(
+        (_) => drained = true,
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(drained, isFalse);
+
+      release.complete();
+      await waitFuture;
+      expect(drained, isTrue);
+      await loadFuture;
+    },
+  );
 }
 
 final class _FastQueryFakeAudioDetailRepository

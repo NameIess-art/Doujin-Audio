@@ -138,9 +138,9 @@ class _AsmrAccountPanelState extends ConsumerState<_AsmrAccountPanel> {
     if (_submitting) {
       return;
     }
-    final account = _accountController.text.trim();
+    final account = _accountController.text;
     final password = _passwordController.text;
-    if (account.isEmpty || password.isEmpty) {
+    if (account.trim().isEmpty || password.isEmpty) {
       return;
     }
     setState(() => _submitting = true);

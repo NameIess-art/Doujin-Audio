@@ -1869,6 +1869,7 @@ void main() {
                 valueListenable: currentTrack,
                 builder: (_, path, _) => SubtitleMenuSheet(
                   session: _createSnapshot(trackPath: path),
+                  generationUnavailableReason: () => null,
                 ),
               ),
             ),

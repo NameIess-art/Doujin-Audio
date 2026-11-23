@@ -148,7 +148,7 @@ class AsmrAccountSyncService {
 
   Future<AsmrAccountSnapshot> login(String name, String password) {
     return _serialize(() async {
-      final session = await _authService.login(name.trim(), password);
+      final session = await _authService.login(name, password);
       _lastFullPullAt = null;
       _snapshot = _snapshot.copyWith(
         session: session,

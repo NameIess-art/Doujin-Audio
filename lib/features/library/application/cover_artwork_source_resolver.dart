@@ -366,6 +366,9 @@ final class CoverArtworkSourceResolver {
   bool get _supportsPlatformMediaLookup =>
       AppPlatform.isAndroid ||
       AppPlatform.isWindows ||
+      (!kIsWeb &&
+          (defaultTargetPlatform == TargetPlatform.android ||
+              defaultTargetPlatform == TargetPlatform.windows)) ||
       !identical(_fileCacheGateway, FileCachePlatformGateway.instance);
 
   bool get _supportsContentUriLookup =>

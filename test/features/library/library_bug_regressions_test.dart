@@ -459,10 +459,12 @@ void main() {
       );
       expect(savedCover, isNotNull);
 
-      // Trigger rename with mismatched casing on Windows.
+      // Trigger rename with mismatched casing on Windows (POSIX paths are case-sensitive).
       final renamed = await library.renameWorkEntryToName(
         libraryRootPath: workPath,
-        entryPath: oldCoverNormalized.toLowerCase(),
+        entryPath: Platform.isWindows
+            ? oldCoverNormalized.toLowerCase()
+            : oldCoverNormalized,
         targetName: 'poster',
         isMedia: false,
         isDirectory: false,
@@ -735,20 +737,25 @@ void main() {
   test(
     'H17 renaming single track with mismatched Windows casing succeeds without false conflict or SQLite crash',
     () async {
-      final tempDir = await Directory.systemTemp.createTemp('case_track_ren_');
-      addTearDown(() => tempDir.delete(recursive: true));
-      final workPath = PathMatcher.normalize(tempDir.path);
-      final file = File(path.join(workPath, 'TrackOne.mp3'))
-        ..writeAsBytesSync(const [1, 2, 3, 4]);
-      final storedPath = PathMatcher.normalize(file.path);
+      final windowsLibrary = LibraryFacade.create(
+        databaseRepository: repo,
+        entryEditorService: _FakeWindowsRenameEntryEditorService(),
+      )..configureCoverArtworkRuntime(
+        isActiveCoverKey: (_) => false,
+        onActiveCoverChanged: () {},
+      );
+      addTearDown(windowsLibrary.dispose);
 
-      library.configurePersistence(enabled: true);
-      library.addWatchedFolder(workPath);
-      library.addTracks([_track(storedPath, groupKey: workPath)]);
-      await library.flushPendingPersistence();
+      const workPath = r'C:\CaseTrackRen';
+      const storedPath = r'C:\CaseTrackRen\TrackOne.mp3';
 
-      // Rename passing lowercase entryPath while DB/memory stores mixed-case path.
-      final renamed = await library.renameWorkEntryToName(
+      windowsLibrary.configurePersistence(enabled: true);
+      windowsLibrary.addWatchedFolder(workPath);
+      windowsLibrary.addTracks([_track(storedPath, groupKey: workPath)]);
+      await windowsLibrary.flushPendingPersistence();
+
+      // Rename passing lowercase entryPath while DB/memory stores mixed-case Windows path.
+      final renamed = await windowsLibrary.renameWorkEntryToName(
         libraryRootPath: workPath,
         entryPath: storedPath.toLowerCase(),
         targetName: 'TrackRenamed',
@@ -756,10 +763,10 @@ void main() {
         isDirectory: false,
       );
       final expectedNewPath = PathMatcher.normalize(
-        path.join(workPath, 'TrackRenamed.mp3'),
+        path.windows.join(workPath, 'TrackRenamed.mp3'),
       );
       expect(PathMatcher.equalsNormalized(renamed, expectedNewPath), isTrue);
-      expect(library.trackByPath(expectedNewPath), isNotNull);
+      expect(windowsLibrary.trackByPath(expectedNewPath), isNotNull);
       expect(await repo.loadTrackDetail(renamed), isNotNull);
       expect(await repo.loadTrackDetail(storedPath), isNull);
     },
@@ -1257,4 +1264,26 @@ final class _StubDlsiteMetadataService extends DlsiteMetadataService {
     String rjCode, {
     AppLanguage language = AppLanguage.ja,
   }) async => metadata;
+}
+
+final class _FakeWindowsRenameEntryEditorService
+    extends LibraryEntryEditorService {
+  @override
+  Future<String?> renameEntry(
+    String entryPath,
+    String safeName, {
+    required bool isDirectory,
+    Future<void> Function(String oldPath, String newPath)? beforeLocalRename,
+  }) async {
+    final oldPath = PathMatcher.normalize(entryPath);
+    final newPath = isDirectory
+        ? path.windows.join(path.windows.dirname(oldPath), safeName)
+        : path.windows.join(
+            path.windows.dirname(oldPath),
+            '$safeName${path.windows.extension(oldPath)}',
+          );
+    if (oldPath == newPath) return oldPath;
+    await beforeLocalRename?.call(oldPath, newPath);
+    return newPath;
+  }
 }

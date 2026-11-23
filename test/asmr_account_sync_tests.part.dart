@@ -8,7 +8,7 @@ void registerAsmrAccountSyncTests({
   setUp(() => preferences = preferencesStore());
 
   test(
-    'Japanese ASMR favorites and history stay local across sync and logout',
+    'legacy Japanese ASMR favorites and history stay local across sync and logout',
     () async {
       await resetPrefs();
       final api = _FakeAsmrApiService();
@@ -21,16 +21,22 @@ void registerAsmrAccountSyncTests({
         preferencesStore: preferences,
       );
       await service.initialize();
-      final jp = _work(id: 1, title: 'Local Japanese ASMR').copyWith(
-        resources: [
-          const AsmrWorkResource(
-            source: AsmrCatalogSource.japaneseAsmr,
-            id: 1,
-            code: 'RJ000001',
-            pageUrl: 'https://example.com/jp/1',
-          ),
+      const pageUrl = 'https://japaneseasmr.com/work/1';
+      final jp = AsmrWork.fromJson({
+        'id': 1,
+        'title': 'Local Japanese ASMR',
+        'sourceId': 'RJ000001',
+        'sourceType': 'jp-asmr',
+        'sourceUrl': pageUrl,
+        'resources': [
+          {
+            'source': 'asmrOne',
+            'id': 1,
+            'code': 'RJ000001',
+            'pageUrl': pageUrl,
+          },
         ],
-      );
+      });
       await service.toggleFavorite(jp);
       await service.recordHistory(jp);
       expect(service.snapshot.pendingOperations, isEmpty);

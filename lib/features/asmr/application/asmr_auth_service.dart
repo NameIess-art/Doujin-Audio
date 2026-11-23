@@ -312,12 +312,12 @@ class AsmrAuthService {
     AsmrAuthSession session, {
     Map<String, String>? credentials,
   }) async {
-    final sessionName = session.userName.trim();
-    if (sessionName.isNotEmpty) {
-      return AsmrAuthSession(token: session.token, userName: sessionName);
+    if (session.userName.trim().isNotEmpty) {
+      return session;
     }
-    final credentialName = credentials?['name']?.trim();
-    final resolvedName = credentialName != null && credentialName.isNotEmpty
+    final credentialName = credentials?['name'];
+    final resolvedName =
+        credentialName != null && credentialName.trim().isNotEmpty
         ? credentialName
         : await _storedAccountName();
     return AsmrAuthSession(token: session.token, userName: resolvedName ?? '');
@@ -325,8 +325,8 @@ class AsmrAuthService {
 
   Future<String?> _storedAccountName() async {
     final creds = await _tokenStore.readCredentials();
-    final name = creds?['name']?.trim();
-    return name == null || name.isEmpty ? null : name;
+    final name = creds?['name'];
+    return name == null || name.trim().isEmpty ? null : name;
   }
 
   Future<AsmrAuthSession> login(String name, String password) async {

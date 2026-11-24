@@ -844,6 +844,9 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                                       key: const ValueKey(
                                         'asmr_filtered_clear_filters',
                                       ),
+                                      style: appTextButtonStyle(
+                                        scaleOnPress: true,
+                                      ),
                                       onPressed: widget.onClearFilters,
                                       icon: const Icon(
                                         Icons.filter_alt_off_rounded,

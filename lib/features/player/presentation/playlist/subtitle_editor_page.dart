@@ -456,6 +456,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
     showAppSnackBar(
       context,
       i18n.tr('subtitle_cue_deleted'),
+      isUndoAction: true,
       actionLabel: i18n.tr('undo'),
       onAction: () {
         if (!mounted || _saving || _cues == null) return;

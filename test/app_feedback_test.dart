@@ -749,10 +749,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 250));
       expect(tester.getRect(button), buttonRect);
-      expect(
-        tester.getRect(undo).width,
-        closeTo(restingRect.width * (isWindows ? 1.0 : 0.94), .01),
-      );
+      expect(tester.getRect(undo), restingRect);
       expect(undoColor(), isNot(restingColor));
       expect(undos, 0);
       await pointer.up();

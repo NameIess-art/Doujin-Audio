@@ -2301,10 +2301,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 150));
       expect(labelStyle('my_voice_interests').color, accent);
       expect(tester.getRect(voices), voiceBounds);
-      expect(
-        tester.getRect(voiceLabel).width,
-        closeTo(restingWidth * (isWindows ? 1.0 : 0.94), .01),
-      );
+      expect(tester.getRect(voiceLabel).width, closeTo(restingWidth, .01));
       await pointer.up();
       if (isWindows) await pointer.removePointer();
       await pumpUntilUiIdle(tester);

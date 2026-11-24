@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
+import 'package:doujin_audio/app/theme/theme_provider.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/media/dlsite_metadata.dart';
 import 'package:doujin_audio/core/widgets/file_tree_row.dart';
@@ -516,6 +517,8 @@ void main() {
   testWidgets(
     'batch results filter, confirm matched, retry failed, and confirm leave',
     (tester) async {
+      final theme = ThemeProvider(loadPersistedState: false);
+      addTearDown(theme.dispose);
       var failThird = true;
       final session = DlsiteMetadataBatchSession(
         entries: [resultEntry('001'), resultEntry('002'), resultEntry('003')],
@@ -539,6 +542,7 @@ void main() {
             ),
           ],
           child: MaterialApp(
+            theme: theme.lightTheme,
             home: Builder(
               builder: (context) => FilledButton(
                 onPressed: () => Navigator.of(context).push<void>(
@@ -556,11 +560,28 @@ void main() {
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
 
-      // Filter to Failed -> only item 2 visible
-      await tester.tap(
-        find.byKey(const ValueKey<String>('batch_metadata_filter_failed')),
+      final allFilter = find.byKey(
+        const ValueKey<String>('batch_metadata_filter_all'),
       );
+      final failedFilter = find.byKey(
+        const ValueKey<String>('batch_metadata_filter_failed'),
+      );
+      RawChip chipFor(Finder filter) => tester.widget<RawChip>(
+        find.descendant(of: filter, matching: find.byType(RawChip)),
+      );
+      final allSize = tester.getSize(allFilter);
+      final failedSize = tester.getSize(failedFilter);
+      expect(chipFor(allFilter).selected, isTrue);
+      expect(chipFor(allFilter).showCheckmark, isFalse);
+
+      // Filter to Failed -> only item 2 visible
+      await tester.tap(failedFilter);
       await tester.pumpAndSettle();
+      expect(chipFor(allFilter).selected, isFalse);
+      expect(chipFor(failedFilter).selected, isTrue);
+      expect(chipFor(failedFilter).showCheckmark, isFalse);
+      expect(tester.getSize(allFilter), allSize);
+      expect(tester.getSize(failedFilter), failedSize);
       expect(
         find.byKey(const ValueKey<String>('batch_metadata_result_2')),
         findsOneWidget,
@@ -578,9 +599,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Switch back to All and confirm all matched
-      await tester.tap(
-        find.byKey(const ValueKey<String>('batch_metadata_filter_all')),
-      );
+      await tester.tap(allFilter);
       await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const ValueKey<String>('batch_metadata_confirm_found')),
@@ -606,6 +625,10 @@ void main() {
         findsOneWidget,
       );
     },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 
   testWidgets('work picker toggles select all and deselect all', (tester) async {

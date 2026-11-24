@@ -600,35 +600,32 @@ class _ThemeColorPickerMenuState extends State<_ThemeColorPickerMenu> {
                                     ),
                                   ),
                                   const Spacer(),
-                                  AppSurfaceButtonShell(
-                                    enabled: true,
-                                    builder: (context, _) => FilledButton(
-                                      key: const ValueKey<String>(
-                                        'theme_color_custom_apply',
-                                      ),
-                                      onPressed: () => widget
-                                          .onCustomColorSelected(draftColor),
-                                      style: appSurfaceButtonStyle(
-                                        style: FilledButton.styleFrom(
-                                          minimumSize: const Size(72, 36),
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 14,
-                                          ),
-                                          backgroundColor: draftColor,
-                                          foregroundColor: draftOnColor,
-                                        ),
-                                        colorScheme: cs,
-                                        platform: theme.platform,
-                                        defaultBackgroundColor: draftColor,
-                                        animationDuration:
-                                            MediaQuery.disableAnimationsOf(
-                                              context,
-                                            )
-                                            ? Duration.zero
-                                            : const Duration(milliseconds: 130),
-                                      ),
-                                      child: Text(widget.i18n.tr('confirm')),
+                                  FilledButton(
+                                    key: const ValueKey<String>(
+                                      'theme_color_custom_apply',
                                     ),
+                                    onPressed: () => widget
+                                        .onCustomColorSelected(draftColor),
+                                    style: appSurfaceButtonStyle(
+                                      style: FilledButton.styleFrom(
+                                        minimumSize: const Size(72, 36),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 14,
+                                        ),
+                                        backgroundColor: draftColor,
+                                        foregroundColor: draftOnColor,
+                                      ),
+                                      colorScheme: cs,
+                                      platform: theme.platform,
+                                      defaultBackgroundColor: draftColor,
+                                      animationDuration:
+                                          MediaQuery.disableAnimationsOf(
+                                            context,
+                                          )
+                                          ? Duration.zero
+                                          : const Duration(milliseconds: 130),
+                                    ),
+                                    child: Text(widget.i18n.tr('confirm')),
                                   ),
                                 ],
                               ),

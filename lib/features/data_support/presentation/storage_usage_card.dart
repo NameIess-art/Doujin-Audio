@@ -95,10 +95,7 @@ class _StorageUsageCardState extends ConsumerState<StorageUsageCard> {
         final Widget card;
         final String phase;
         if (snapshot.hasData && snapshot.data!.isAvailable) {
-          card = _StorageUsageCard(
-            snapshot: snapshot.data!,
-            onRefresh: _reloadStorageUsage,
-          );
+          card = _StorageUsageCard(snapshot: snapshot.data!);
           phase = 'loaded';
         } else if (_storageUsageFuture == null ||
             snapshot.connectionState == ConnectionState.waiting) {
@@ -160,10 +157,9 @@ class _StorageUsageUnavailableCard extends StatelessWidget {
 }
 
 class _StorageUsageCard extends StatelessWidget {
-  const _StorageUsageCard({required this.snapshot, this.onRefresh});
+  const _StorageUsageCard({required this.snapshot});
 
   final StorageUsageSnapshot? snapshot;
-  final VoidCallback? onRefresh;
 
   @override
   Widget build(BuildContext context) {
@@ -273,16 +269,6 @@ class _StorageUsageCard extends StatelessWidget {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                if (isLoaded && onRefresh != null) ...[
-                  const SizedBox(width: 4),
-                  IconButton(
-                    key: const ValueKey('data-support-storage-refresh'),
-                    onPressed: onRefresh,
-                    tooltip: i18n.tr('refresh'),
-                    visualDensity: VisualDensity.compact,
-                    icon: const Icon(Icons.refresh_rounded, size: 20),
-                  ),
-                ],
               ],
             ),
             const SizedBox(height: 14),

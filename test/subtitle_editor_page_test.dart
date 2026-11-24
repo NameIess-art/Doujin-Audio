@@ -710,7 +710,7 @@ void main() {
   );
 
   testWidgets(
-    'left swipe can delete the final row and save empty subtitles',
+    'left swipe deletion shows a five-second undo countdown before saving empty subtitles',
     (tester) async {
       SharedPreferences.setMockInitialValues(<String, Object>{});
       final service = _RecordingSubtitleService(const [
@@ -726,6 +726,7 @@ void main() {
       await tester.tap(find.byTooltip('删除字幕'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
+      expect(find.text('撤销 (5s)'), findsOneWidget);
       final outgoingText = find.byKey(const ValueKey('subtitle_text_0'));
       expect(outgoingText, findsOneWidget);
       expect(outgoingText.hitTestable(), findsNothing);
@@ -733,7 +734,18 @@ void main() {
       await tester.pump();
       expect(tester.takeException(), isNull);
       expect(find.byType(TextField), findsNothing);
+
+      for (var seconds = 4; seconds >= 1; seconds--) {
+        await tester.pump(const Duration(seconds: 1));
+        expect(find.text('撤销 (${seconds}s)'), findsOneWidget);
+      }
+      final lastSecond = find.text('撤销 (1s)').hitTestable();
+      await tester.pump(const Duration(milliseconds: 900));
+      expect(lastSecond, findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(lastSecond, findsNothing);
       await tester.pumpAndSettle();
+      expect(find.textContaining('撤销 ('), findsNothing);
       expect(find.text('所有字幕已删除，保存后当前音频将不显示字幕'), findsOneWidget);
       await tester.tap(find.widgetWithIcon(IconButton, Icons.save_rounded));
       await tester.pump();
@@ -743,7 +755,7 @@ void main() {
   );
 
   testWidgets(
-    'Windows right-click menu offers insert and delete',
+    'Windows right-click deletion shows a five-second countdown and can be undone',
     (tester) async {
       SharedPreferences.setMockInitialValues(<String, Object>{});
       final service = _RecordingSubtitleService(const [
@@ -773,6 +785,13 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(SwipeRevealCard), findsOneWidget);
       expect(find.text('填写字幕文字'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 2));
+      final undo = find.text('撤销 (3s)');
+      expect(undo, findsOneWidget);
+      await tester.tap(undo);
+      await tester.pumpAndSettle();
+      expect(find.text('First'), findsOneWidget);
+      expect(find.byType(SwipeRevealCard), findsNWidgets(2));
     },
     variant: TargetPlatformVariant.only(TargetPlatform.windows),
   );
@@ -805,8 +824,9 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 200));
       expect(find.text('First'), findsNothing);
-      expect(find.text(language.tr('undo')), findsOneWidget);
-      await tester.tap(find.text(language.tr('undo')));
+      final undo = find.text('${language.tr('undo')} (5s)');
+      expect(undo, findsOneWidget);
+      await tester.tap(undo);
       await tester.pumpAndSettle();
       expect(find.text('First'), findsOneWidget);
       expect(find.byType(SwipeRevealCard), findsNWidgets(2));
@@ -909,12 +929,13 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 200));
       expect(saveButton().onPressed, isNotNull);
-      await tester.tap(find.text(language.tr('undo')));
+      final undo = find.text('${language.tr('undo')} (5s)');
+      await tester.tap(undo);
       await tester.pumpAndSettle();
       expect(find.text('First'), findsOneWidget);
       expect(saveButton().onPressed, isNull);
 
-      // Clean delete -> edit remaining cue before the 2s snackbar expires ->
+      // Clean delete -> edit remaining cue before the snackbar expires ->
       // undo restores cue while keeping dirty flag enabled.
       tester
           .widget<SwipeRevealCard>(find.byType(SwipeRevealCard).first)
@@ -931,8 +952,8 @@ void main() {
         ),
       );
       await tester.pump(const Duration(milliseconds: 250));
-      expect(find.text(language.tr('undo')), findsOneWidget);
-      await tester.tap(find.text(language.tr('undo')));
+      expect(undo, findsOneWidget);
+      await tester.tap(undo);
       await tester.pumpAndSettle();
       expect(find.text('First'), findsOneWidget);
       expect(find.text('Third edited'), findsOneWidget);

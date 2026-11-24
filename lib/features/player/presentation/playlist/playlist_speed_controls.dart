@@ -8,7 +8,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/theme/app_design_tokens.dart';
-import '../../../../core/widgets/app_buttons.dart';
 import '../../../../core/widgets/app_entry_ink_well.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/windows_smooth_scroll_controller.dart';
@@ -350,14 +349,11 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
           ),
         ),
         const SizedBox(height: 8),
-        AppSurfaceButtonShell(
-          enabled: (selectedSpeed - 1.0).abs() >= 0.001,
-          builder: (context, _) => FilledButton.tonal(
-            key: const ValueKey<String>('restore_playback_speed'),
-            style: sessionDetailResetButtonStyle(context),
-            onPressed: (selectedSpeed - 1.0).abs() < 0.001 ? null : _resetSpeed,
-            child: Text(i18n.tr('speed_reset')),
-          ),
+        FilledButton.tonal(
+          key: const ValueKey<String>('restore_playback_speed'),
+          style: sessionDetailResetButtonStyle(context),
+          onPressed: (selectedSpeed - 1.0).abs() < 0.001 ? null : _resetSpeed,
+          child: Text(i18n.tr('speed_reset')),
         ),
       ],
     );

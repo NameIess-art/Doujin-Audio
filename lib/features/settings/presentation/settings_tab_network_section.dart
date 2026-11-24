@@ -507,24 +507,21 @@ class _NetworkSettingsControlsState
           style: theme.textTheme.bodyMedium?.copyWith(color: color),
         ),
         const SizedBox(width: 8),
-        AppSurfaceButtonShell(
-          enabled: enabled,
-          builder: (context, _) => FilledButton.tonal(
-            style: appSurfaceButtonStyle(
-              style: FilledButton.styleFrom(
-                minimumSize: const Size(64, 40),
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-              ),
-              colorScheme: cs,
-              platform: theme.platform,
-              defaultBackgroundColor: cs.secondaryContainer,
-              animationDuration: MediaQuery.disableAnimationsOf(context)
-                  ? Duration.zero
-                  : const Duration(milliseconds: 130),
+        FilledButton.tonal(
+          style: appSurfaceButtonStyle(
+            style: FilledButton.styleFrom(
+              minimumSize: const Size(64, 40),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
             ),
-            onPressed: enabled ? () => _probe.test(key, uri) : null,
-            child: Text(i18n.tr('network_test')),
+            colorScheme: cs,
+            platform: theme.platform,
+            defaultBackgroundColor: cs.secondaryContainer,
+            animationDuration: MediaQuery.disableAnimationsOf(context)
+                ? Duration.zero
+                : const Duration(milliseconds: 130),
           ),
+          onPressed: enabled ? () => _probe.test(key, uri) : null,
+          child: Text(i18n.tr('network_test')),
         ),
       ],
     );

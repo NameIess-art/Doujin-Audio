@@ -756,9 +756,13 @@ Dialogue: 0,0:00:10.00,0:00:14.00,Default,,0,0,0,,Middle line
         expect(buttonRect.width, greaterThanOrEqualTo(44));
 
         // Seek button does not overlap centered focused cue in portrait.
-        final focusedCueRect = tester.getRect(
-          find.byKey(const ValueKey('subtitle_timeline_text_1')),
+        final focusedCue = find.byKey(const ValueKey('subtitle_timeline_text_1'));
+        final scale = tester.widget<AnimatedScale>(
+          find.ancestor(of: focusedCue, matching: find.byType(AnimatedScale)),
         );
+        final platform = Theme.of(tester.element(focusedCue)).platform;
+        expect(scale.scale, platform == TargetPlatform.android ? 1 : 1.03);
+        final focusedCueRect = tester.getRect(focusedCue);
         expect(buttonRect.overlaps(focusedCueRect), isFalse);
 
         // Tapping the centered focused cue while browsing seeks immediately.
@@ -766,6 +770,10 @@ Dialogue: 0,0:00:10.00,0:00:14.00,Default,,0,0,0,,Middle line
         await tester.pump();
         expect(seeks, [const Duration(seconds: 5)]);
       },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
     );
 
     test('P1-12: TimerFacade.extendCountdown supports positive and negative deltas safely', () {

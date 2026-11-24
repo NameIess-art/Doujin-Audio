@@ -1082,6 +1082,8 @@ class _TimelineSubtitleRowState extends State<_TimelineSubtitleRow> {
   Widget build(BuildContext context) {
     final isFocused = _isFocused;
     final canTapToSeek = isFocused && widget.isBrowsing;
+    final scaleFocusedCue =
+        isFocused && Theme.of(context).platform != TargetPlatform.android;
     return Semantics(
       selected: isFocused,
       button: !isFocused || canTapToSeek,
@@ -1109,7 +1111,7 @@ class _TimelineSubtitleRowState extends State<_TimelineSubtitleRow> {
                   alignment: widget.isLandscape
                       ? Alignment.centerLeft
                       : Alignment.center,
-                  scale: isFocused ? 1.03 : 1,
+                  scale: scaleFocusedCue ? 1.03 : 1,
                   duration: MediaQuery.disableAnimationsOf(context)
                       ? Duration.zero
                       : const Duration(milliseconds: 180),

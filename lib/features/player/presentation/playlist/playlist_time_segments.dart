@@ -420,37 +420,31 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
             Row(
               children: [
                 Expanded(
-                  child: AppSurfaceButtonShell(
-                    enabled: true,
-                    builder: (context, _) => FilledButton.tonal(
-                      style: sessionDetailResetButtonStyle(
-                        context,
-                        accent: loopActive ? cs.primary : cs.onSurfaceVariant,
+                  child: FilledButton.tonal(
+                    style: sessionDetailResetButtonStyle(
+                      context,
+                      accent: loopActive ? cs.primary : cs.onSurfaceVariant,
+                    ),
+                    onPressed: () => widget.onToggleLoop(selected),
+                    child: Text(
+                      i18n.tr(
+                        loopActive ? 'segment_stop_loop' : 'segment_loop',
                       ),
-                      onPressed: () => widget.onToggleLoop(selected),
-                      child: Text(
-                        i18n.tr(
-                          loopActive ? 'segment_stop_loop' : 'segment_loop',
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
+                      textAlign: TextAlign.center,
                     ),
                   ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: AppSurfaceButtonShell(
-                    enabled: true,
-                    builder: (context, _) => FilledButton.tonal(
-                      style: sessionDetailResetButtonStyle(
-                        context,
-                        accent: cs.error,
-                      ),
-                      onPressed: () => widget.onDelete(selected),
-                      child: Text(
-                        i18n.tr('remove'),
-                        textAlign: TextAlign.center,
-                      ),
+                  child: FilledButton.tonal(
+                    style: sessionDetailResetButtonStyle(
+                      context,
+                      accent: cs.error,
+                    ),
+                    onPressed: () => widget.onDelete(selected),
+                    child: Text(
+                      i18n.tr('remove'),
+                      textAlign: TextAlign.center,
                     ),
                   ),
                 ),
@@ -590,18 +584,15 @@ class SegmentTimeRow extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsetsDirectional.only(start: 8),
-            child: AppSurfaceButtonShell(
-              enabled: true,
-              builder: (context, _) => FilledButton.tonal(
-                style: sessionDetailResetButtonStyle(context).copyWith(
-                  minimumSize: const WidgetStatePropertyAll(Size(48, 36)),
-                  padding: const WidgetStatePropertyAll(
-                    EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  ),
+            child: FilledButton.tonal(
+              style: sessionDetailResetButtonStyle(context).copyWith(
+                minimumSize: const WidgetStatePropertyAll(Size(48, 36)),
+                padding: const WidgetStatePropertyAll(
+                  EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 ),
-                onPressed: onSet,
-                child: Text(label),
               ),
+              onPressed: onSet,
+              child: Text(label),
             ),
           ),
           Expanded(

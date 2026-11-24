@@ -26,6 +26,7 @@ void main() {
             child: Column(
               children: [
                 TextButton(onPressed: activate, child: const Text('Text')),
+                AppTextLink(label: 'Link', onTap: activate),
                 IconButton(onPressed: activate, icon: const Icon(Icons.add)),
                 AppPillButton(onPressed: activate, child: const Text('Pill')),
                 Builder(
@@ -47,23 +48,32 @@ void main() {
       ),
     );
 
-    for (final (target, pressedScale) in [
-      (find.text('Text'), 0.94),
-      (find.byIcon(Icons.add), 0.84),
-      (find.text('Pill'), 0.98),
+    for (final (target, pressedScale, highlightsText) in [
+      (find.text('Text'), 1.0, true),
+      (find.text('Link'), 1.0, true),
+      (find.byIcon(Icons.add), 0.84, false),
+      (find.text('Pill'), 1.0, false),
     ]) {
       final before = taps;
+      final restingColor = _glyphColor(tester, target);
       final gesture = await tester.startGesture(tester.getCenter(target));
       await tester.pump();
       expect(_scale(tester, target), pressedScale);
+      if (highlightsText) {
+        expect(_glyphColor(tester, target), isNot(restingColor));
+      }
       expect(taps, before);
       await gesture.up();
       await tester.pump();
       expect(taps, before + 1);
       expect(_scale(tester, target), pressedScale);
+      if (highlightsText) {
+        expect(_glyphColor(tester, target), isNot(restingColor));
+      }
       await tester.pump(const Duration(milliseconds: 60));
       await tester.pumpAndSettle();
       expect(_scale(tester, target), 1);
+      expect(_glyphColor(tester, target), restingColor);
     }
 
     final option = find.byType(ChoiceChip);
@@ -74,14 +84,17 @@ void main() {
     expect(_visibleInk(tester, option), isEmpty);
 
     final text = find.text('Text');
+    final restingColor = _glyphColor(tester, text);
     final cancelled = await tester.startGesture(tester.getCenter(text));
     await tester.pump();
-    expect(_scale(tester, text), 0.94);
+    expect(_scale(tester, text), 1.0);
+    expect(_glyphColor(tester, text), isNot(restingColor));
     await cancelled.moveBy(const Offset(0, -30));
     await tester.pumpAndSettle();
     expect(_scale(tester, text), 1);
+    expect(_glyphColor(tester, text), restingColor);
     await cancelled.up();
-    expect(taps, 3);
+    expect(taps, 4);
   });
 
   testWidgets('action targets use a hand cursor and text fields keep the caret', (
@@ -426,7 +439,8 @@ void main() {
                 );
               }
             } else if (key == textOnly) {
-              expect(_scale(tester, text!), isWindows ? 1 : 0.94);
+              expect(_scale(tester, text!), 1.0);
+              expect(_glyphColor(tester, text), isNot(restTextColor));
             }
             expect(tester.getRect(button), bounds);
             expect(_visibleInk(tester, button), isEmpty);
@@ -635,7 +649,7 @@ void main() {
             if (enabled) expectHighlightedContent();
             expect(
               _scale(tester, labelFinder),
-              enabled && !isWindows ? 0.98 : 1.0,
+              enabled && hasIcon && !isWindows ? 0.98 : 1.0,
             );
             expect(
               _visibleInk(tester, target),
@@ -1076,7 +1090,7 @@ void main() {
   );
 
   testWidgets(
-    'text tabs keep their selected surface and scale only the label',
+    'text tabs keep their selected surface and label size',
     (tester) async {
       final theme = ThemeProvider(loadPersistedState: false);
       addTearDown(theme.dispose);

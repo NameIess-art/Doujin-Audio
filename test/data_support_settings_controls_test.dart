@@ -635,10 +635,7 @@ void main() {
             .dy,
       ),
     );
-    expect(
-      find.byKey(const ValueKey('data-support-storage-refresh')),
-      findsOneWidget,
-    );
+    expect(find.byIcon(Icons.refresh_rounded), findsNothing);
   });
 
   testWidgets('storage overview reloads when cache clearing completes', (

@@ -413,7 +413,7 @@ void main() {
         expect(await capsulePixels(), idlePixels);
         expect(iconScale(), windows ? 1.0 : 0.84);
         expect(labelColor(), primary);
-        expect(labelScale(), windows ? 1.0 : 0.94);
+        expect(labelScale(), 1.0);
         expect(activePage.value, 0);
         await mouse.cancel();
         await tester.pumpAndSettle();

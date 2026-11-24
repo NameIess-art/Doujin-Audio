@@ -9,6 +9,7 @@ import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/presentation/app_settings_group_card.dart';
 import '../../../core/widgets/unified_dropdown.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
+import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../../app/state/subtitle_settings_provider.dart';
 
@@ -421,6 +422,7 @@ class _SubtitleWindowSettingsSheetState
                   );
                   return TextButton.icon(
                     key: const ValueKey('subtitle_reset_all_button'),
+                    style: appTextButtonStyle(scaleOnPress: true),
                     onPressed: hasCustomStyle ? _resetAllAppearance : null,
                     icon: const Icon(Icons.restart_alt_rounded, size: 18),
                     label: Text(i18n.tr('subtitle_reset_all')),

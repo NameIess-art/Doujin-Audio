@@ -149,7 +149,7 @@ resolveAppButtonIconFeedback({
   );
 }
 
-({double scale, double opacity, Color? color, Duration duration})
+({double? scale, double opacity, Color? color, Duration duration})
 resolveAppTextButtonFeedback({
   required BuildContext context,
   required bool pressed,
@@ -158,6 +158,7 @@ resolveAppTextButtonFeedback({
   Color? baseColor,
   Color? backgroundColor,
   Color? accentColor,
+  bool scaleOnPress = false,
 }) {
   final theme = Theme.of(context);
   final isWindows = theme.platform == TargetPlatform.windows;
@@ -174,8 +175,10 @@ resolveAppTextButtonFeedback({
       : baseColor == accent
       ? appAccentFeedbackColor(cs, accent)
       : accent;
+  final animateScale =
+      !isWindows && (theme.platform != TargetPlatform.android || scaleOnPress);
   return (
-    scale: !isWindows && !reduceMotion && isPressed ? 0.94 : 1.0,
+    scale: animateScale ? (!reduceMotion && isPressed ? 0.94 : 1.0) : null,
     opacity: reduceMotion && isPressed
         ? 0.72
         : reduceMotion && isHovered
@@ -332,6 +335,7 @@ Set<WidgetState> _restingStates(Set<WidgetState> states) =>
 ButtonStyle appTextButtonStyle({
   ButtonStyle? style,
   bool showPointerFeedback = true,
+  bool scaleOnPress = false,
 }) => appButtonStyle(style).copyWith(
   backgroundBuilder: showPointerFeedback
       ? _touchButtonLayer(style)
@@ -348,6 +352,7 @@ ButtonStyle appTextButtonStyle({
           pressed: states.contains(WidgetState.pressed),
           hovered: states.contains(WidgetState.hovered),
           enabled: !states.contains(WidgetState.disabled),
+          scaleOnPress: scaleOnPress,
           backgroundColor: style?.backgroundColor?.resolve(
             _restingStates(states),
           ),
@@ -421,6 +426,7 @@ ChipThemeData appChipTheme({
   required TargetPlatform platform,
   TextStyle? baseLabelStyle,
 }) => ChipThemeData(
+  showCheckmark: false,
   color: appChipColor(colorScheme: colorScheme, platform: platform),
   labelStyle: (baseLabelStyle ?? const TextStyle(fontSize: 14)).copyWith(
     color: WidgetStateColor.resolveWith(
@@ -474,7 +480,7 @@ class _AnimatedForegroundFeedback extends StatelessWidget {
     required this.child,
   });
 
-  final double scale;
+  final double? scale;
   final double opacity;
   final Color? color;
   final Color? baseColor;
@@ -510,12 +516,13 @@ class _AnimatedForegroundFeedback extends StatelessWidget {
         : child;
 
     final content = Opacity(opacity: opacity, child: tintedChild);
-    if (isWindows) return content;
+    final targetScale = scale;
+    if (isWindows || targetScale == null) return content;
 
     return TweenAnimationBuilder<double>(
-      tween: Tween(end: scale),
+      tween: Tween(end: targetScale),
       duration: duration,
-      curve: scale == 1.0 ? kAppSpringBackCurve : Curves.easeOutCubic,
+      curve: targetScale == 1.0 ? kAppSpringBackCurve : Curves.easeOutCubic,
       child: content,
       // Paint the glyph directly so glass toolbars can composite it while scaled.
       builder: (context, value, child) =>
@@ -575,6 +582,7 @@ class _TextButtonFeedback extends StatelessWidget {
     required this.pressed,
     required this.hovered,
     required this.enabled,
+    this.scaleOnPress = false,
     this.backgroundColor,
     this.accentColor,
     required this.child,
@@ -583,6 +591,7 @@ class _TextButtonFeedback extends StatelessWidget {
   final bool pressed;
   final bool hovered;
   final bool enabled;
+  final bool scaleOnPress;
   final Color? backgroundColor;
   final Color? accentColor;
   final Widget child;
@@ -599,6 +608,7 @@ class _TextButtonFeedback extends StatelessWidget {
       baseColor: baseColor,
       backgroundColor: backgroundColor,
       accentColor: accentColor,
+      scaleOnPress: scaleOnPress,
     );
     return _AnimatedForegroundFeedback(
       scale: feedback.scale,
@@ -1006,6 +1016,7 @@ class AppLabelledButton extends StatelessWidget {
         style: appTextButtonStyle(
           style: style,
           showPointerFeedback: showFeedback,
+          scaleOnPress: true,
         ),
         icon: icon,
         label: label,
@@ -1203,22 +1214,19 @@ class AppPillButton extends StatelessWidget {
           ? Duration.zero
           : const Duration(milliseconds: 130),
     );
-    return AppSurfaceButtonShell(
-      enabled: onPressed != null,
-      builder: (context, _) => _outlined
-          ? OutlinedButton(
-              onPressed: onPressed,
-              autofocus: autofocus,
-              style: feedbackStyle,
-              child: child,
-            )
-          : FilledButton(
-              onPressed: onPressed,
-              autofocus: autofocus,
-              style: feedbackStyle,
-              child: child,
-            ),
-    );
+    return _outlined
+        ? OutlinedButton(
+            onPressed: onPressed,
+            autofocus: autofocus,
+            style: feedbackStyle,
+            child: child,
+          )
+        : FilledButton(
+            onPressed: onPressed,
+            autofocus: autofocus,
+            style: feedbackStyle,
+            child: child,
+          );
   }
 }
 

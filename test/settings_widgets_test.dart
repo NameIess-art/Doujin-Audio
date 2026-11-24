@@ -1483,10 +1483,11 @@ void main() {
         find.descendant(of: field, matching: find.text(monoLabel)),
         findsOneWidget,
       );
-      final preview = tester.widget<Text>(
-        find.text(harness.languageProvider.tr('subtitle_preview_sample')),
+      final previewStyle = _renderedSubtitleStyle(
+        tester,
+        harness.languageProvider.tr('subtitle_preview_sample'),
       );
-      expect(preview.style?.fontFamily, 'monospace');
+      expect(previewStyle.fontFamily, 'monospace');
       final container = ProviderScope.containerOf(
         tester.element(field),
         listen: false,
@@ -1537,10 +1538,11 @@ void main() {
       await tester.testTextInput.receiveAction(TextInputAction.done);
       await tester.pumpAndSettle();
       expect(tester.widget<TextField>(field).controller!.text, '0');
-      final preview = tester.widget<Text>(
-        find.text(harness.languageProvider.tr('subtitle_preview_sample')),
+      final previewStyle = _renderedSubtitleStyle(
+        tester,
+        harness.languageProvider.tr('subtitle_preview_sample'),
       );
-      expect(preview.style?.color, const Color(0xFF00FFFF));
+      expect(previewStyle.color, const Color(0xFF00FFFF));
       final container = ProviderScope.containerOf(fieldContext, listen: false);
       await container
           .read(subtitleSettingsProvider.notifier)
@@ -1585,10 +1587,11 @@ void main() {
         await tester.pump();
         final fontSize = container.read(subtitleSettingsProvider).fontSize;
         expect(fontSize, isNot(16));
-        final preview = tester.widget<Text>(
-          find.text(harness.languageProvider.tr('subtitle_preview_sample')),
+        final previewStyle = _renderedSubtitleStyle(
+          tester,
+          harness.languageProvider.tr('subtitle_preview_sample'),
         );
-        expect(preview.style?.fontSize, fontSize);
+        expect(previewStyle.fontSize, fontSize);
         expect(preferences.getString('subtitle_font_size'), isNull);
 
         switch (finish) {
@@ -1661,15 +1664,18 @@ void main() {
           .height,
       greaterThanOrEqualTo(136),
     );
-    final previewText = tester.widget<Text>(
-      find.text(i18n.tr('subtitle_preview_sample')),
+    final previewStyle = _renderedSubtitleStyle(
+      tester,
+      i18n.tr('subtitle_preview_sample'),
     );
-    expect(previewText.style?.color, Colors.white);
-    expect(previewText.style?.fontWeight, FontWeight.normal);
-    final previewSurface = tester.widget<Container>(
-      find.byKey(const ValueKey<String>('subtitle_window_visual_surface')),
+    expect(previewStyle.color, Colors.white);
+    expect(previewStyle.fontWeight, FontWeight.normal);
+    final previewSurface = find.descendant(
+      of: find.byKey(const ValueKey<String>('subtitle_window_visual_surface')),
+      matching: find.byType(DecoratedBox),
     );
-    final previewDecoration = previewSurface.decoration! as BoxDecoration;
+    final previewDecoration =
+        tester.widget<DecoratedBox>(previewSurface).decoration as BoxDecoration;
     final previewRadius = previewDecoration.borderRadius! as BorderRadius;
     expect(previewRadius.topLeft.x, closeTo(19.2, 0.001));
     expect(
@@ -1715,9 +1721,12 @@ void main() {
         ),
       );
 
-      final text = tester.widget<Text>(find.text('Theme independent subtitle'));
-      expect(text.style?.color, Colors.white);
-      expect(text.style?.fontWeight, FontWeight.normal);
+      final style = _renderedSubtitleStyle(
+        tester,
+        'Theme independent subtitle',
+      );
+      expect(style.color, Colors.white);
+      expect(style.fontWeight, FontWeight.normal);
     }
   });
 
@@ -2570,6 +2579,14 @@ void main() {
     },
     variant: TargetPlatformVariant.only(TargetPlatform.windows),
   );
+}
+
+TextStyle _renderedSubtitleStyle(WidgetTester tester, String sample) {
+  final richText = find.descendant(
+    of: find.text(sample),
+    matching: find.byType(RichText),
+  );
+  return tester.widget<RichText>(richText).text.style!;
 }
 
 class _DeferredDestinationDownloadManager extends AsmrDownloadManager {

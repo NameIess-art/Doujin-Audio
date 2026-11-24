@@ -90,6 +90,16 @@ class TransportPlaybackControlPanel extends StatelessWidget {
                   axisAlignment: -1.0,
                   child: FadeTransition(opacity: animation, child: child),
                 ),
+          layoutBuilder: (currentChild, previousChildren) => Stack(
+            alignment: Alignment.center,
+            children: [
+              for (final child in previousChildren)
+                ExcludeFocus(
+                  child: ExcludeSemantics(child: IgnorePointer(child: child)),
+                ),
+              ?currentChild,
+            ],
+          ),
           child: (isLandscape || !segmentPanelExpanded)
               ? KeyedSubtree(
                   key: ValueKey('secondary_${session.id}'),

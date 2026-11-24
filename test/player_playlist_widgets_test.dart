@@ -987,10 +987,16 @@ void main() {
           content,
         );
         expect(TickerMode.valuesOf(tester.element(content)).enabled, isFalse);
+        final routeFade = find
+            .ancestor(of: content, matching: find.byType(FadeTransition))
+            .first;
+        double contentTopWithinRoute() =>
+            tester.getTopLeft(content).dy - tester.getTopLeft(routeFade).dy;
+
         await tester.pump(const Duration(milliseconds: 60));
-        final firstTop = tester.getTopLeft(content).dy;
+        final firstTop = contentTopWithinRoute();
         await tester.pump(const Duration(milliseconds: 60));
-        expect(tester.getTopLeft(content).dy, firstTop);
+        expect(contentTopWithinRoute(), closeTo(firstTop, 0.01));
         expect(TickerMode.valuesOf(tester.element(content)).enabled, isFalse);
         await tester.pumpAndSettle();
         expect(
@@ -2244,7 +2250,7 @@ void main() {
   );
 
   testWidgets(
-    'SessionProgressBar updates both timecode labels when hovering over progress track and restores on exit',
+    'SessionProgressBar previews the hovered time above the track without moving the timecodes',
     (tester) async {
       await tester.runAsync(() async {
         final timecodeFont = FontLoader('Outfit')
@@ -2308,9 +2314,15 @@ void main() {
       await gesture.moveTo(midPoint);
       await tester.pump();
 
-      // The remaining time loses its hour field without expanding the track.
-      expect(tester.widget<TimecodeLabel>(labels.first).text, '30:00');
-      expect(tester.widget<TimecodeLabel>(labels.last).text, '-30:00');
+      Finder hoverTime(String text) => find.descendant(
+        of: find.byType(CompositedTransformFollower),
+        matching: find.text(text),
+      );
+      final midPreview = hoverTime('30:00');
+      expect(midPreview, findsOneWidget);
+      expect(tester.getRect(midPreview).bottom, lessThan(sliderRect.center.dy));
+      expect(tester.widget<TimecodeLabel>(labels.first).text, '00:00');
+      expect(tester.widget<TimecodeLabel>(labels.last).text, '-01:00:00');
       expect(tester.getRect(sliderFinder), sliderRect);
       // Actual slider thumb value is still at 0
       expect(tester.widget<Slider>(sliderFinder).value, 0.0);
@@ -2322,19 +2334,20 @@ void main() {
       );
       await gesture.moveTo(threeQuarterPoint);
       await tester.pump();
-      expect(tester.widget<TimecodeLabel>(labels.first).text, '45:00');
-      expect(tester.widget<TimecodeLabel>(labels.last).text, '-15:00');
+      expect(hoverTime('45:00'), findsOneWidget);
+      expect(tester.widget<TimecodeLabel>(labels.first).text, '00:00');
       expect(tester.getRect(sliderFinder), sliderRect);
 
       session.setOptimisticPosition(const Duration(minutes: 1));
       await tester.pump(const Duration(milliseconds: 100));
-      expect(tester.widget<TimecodeLabel>(labels.first).text, '45:00');
+      expect(hoverTime('45:00'), findsOneWidget);
+      expect(tester.widget<TimecodeLabel>(labels.first).text, '01:00');
       expect(tester.getRect(sliderFinder), sliderRect);
 
       await gesture.moveTo(Offset(trackRight, sliderRect.center.dy));
       await tester.pump();
-      expect(tester.widget<TimecodeLabel>(labels.first).text, '01:00:00');
-      expect(tester.widget<TimecodeLabel>(labels.last).text, '-00:00');
+      expect(hoverTime('01:00:00'), findsOneWidget);
+      expect(tester.widget<TimecodeLabel>(labels.last).text, '-59:00');
       expect(tester.getRect(sliderFinder), sliderRect);
 
       // Exit progress bar area
@@ -2343,7 +2356,8 @@ void main() {
       );
       await tester.pump();
 
-      // Restores to actual playback progress
+      await tester.pumpAndSettle();
+      expect(hoverTime('01:00:00'), findsNothing);
       expect(tester.widget<TimecodeLabel>(labels.first).text, '01:00');
       expect(tester.widget<TimecodeLabel>(labels.last).text, '-59:00');
       expect(tester.getRect(sliderFinder), sliderRect);
@@ -2367,14 +2381,17 @@ void main() {
         final minutes = seconds ~/ 60;
         final secondsText = (seconds % 60).toString().padLeft(2, '0');
         expect(
-          tester.widget<TimecodeLabel>(labels.first).text,
-          '${minutes.toString().padLeft(2, '0')}:$secondsText',
+          hoverTime('${minutes.toString().padLeft(2, '0')}:$secondsText'),
+          findsOneWidget,
         );
+        expect(tester.widget<TimecodeLabel>(labels.first).text, '00:00');
         expect(tester.getRect(sliderFinder), minuteRect);
         for (final label in tester.widgetList<TimecodeLabel>(labels)) {
-          final paragraph = tester.renderObject<RenderParagraph>(
-            find.text(label.text),
-          );
+          final visibleText = find.descendant(
+            of: find.byWidget(label),
+            matching: find.text(label.text),
+          ).last;
+          final paragraph = tester.renderObject<RenderParagraph>(visibleText);
           if (paragraph.getMaxIntrinsicWidth(double.infinity) >
               paragraph.size.width) {
             clippedLabels.add(label.text);
@@ -5117,7 +5134,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip(i18n.tr('segment_add')));
-      await tester.pump();
+      await tester.pumpAndSettle();
 
       expect(
         tester.widget<TextField>(find.byType(TextField)).controller?.text,
@@ -5193,7 +5210,7 @@ void main() {
       );
 
       await tester.tap(find.byTooltip(i18n.tr('segment_add')));
-      await tester.pump();
+      await tester.pumpAndSettle();
       expect(
         tester.widget<TextField>(find.byType(TextField)).controller?.text,
         '标签4',
@@ -11010,7 +11027,7 @@ void main() {
     }),
   );
 
-  testWidgets('PlaylistSelectionIndicator enters quickly and fades out in 300ms', (
+  testWidgets('PlaylistSelectionIndicator enters quickly and fades out in 160ms', (
     tester,
   ) async {
     final checkmarkFinder = find.byKey(
@@ -11079,7 +11096,7 @@ void main() {
 
     // Mid reverse-animation: checkmark is still present and fading out
     await tester.pump();
-    await tester.pump(kAppFadeDuration ~/ 2);
+    await tester.pump(const Duration(milliseconds: 80));
     expect(checkmarkFinder, findsOneWidget);
     final fadeOutOpacity = tester
         .widget<FadeTransition>(fadeTransitionFinder)
@@ -11088,8 +11105,8 @@ void main() {
     expect(fadeOutOpacity, greaterThan(0.0));
     expect(fadeOutOpacity, lessThan(1.0));
 
-    // After remaining reverse duration, checkmark finishes fading out and is removed
-    await tester.pump(kAppFadeDuration ~/ 2 + const Duration(milliseconds: 25));
+    // Allow the final animation tick to remove the checkmark.
+    await tester.pump(const Duration(milliseconds: 85));
     expect(checkmarkFinder, findsNothing);
 
     // Verify reduced motion uses Duration.zero
@@ -11899,14 +11916,16 @@ void main() {
         );
         await tester.pump();
         expect(tester.widget<Text>(volumeLabel).data, '100%');
-        expect(tester.widget<TimecodeLabel>(times.first).text, '00:30');
-        expect(tester.widget<TimecodeLabel>(times.last).text, '-01:30');
+        expect(find.text('00:30'), findsOneWidget);
+        expect(tester.widget<TimecodeLabel>(times.first).text, '00:10');
+        expect(tester.widget<TimecodeLabel>(times.last).text, '-01:50');
         expect(tester.widget<Slider>(progress).value, 10000);
         await pointer.moveTo(
           Offset(trackLeft + trackWidth * .75, sliderRect.center.dy),
         );
         await tester.pump();
-        expect(tester.widget<TimecodeLabel>(times.first).text, '01:30');
+        expect(find.text('01:30'), findsOneWidget);
+        expect(tester.widget<TimecodeLabel>(times.first).text, '00:10');
         expect(tester.getRect(progress), sliderRect);
         await pointer.down(
           Offset(trackLeft + trackWidth * .75, sliderRect.center.dy),
@@ -16051,7 +16070,7 @@ void main() {
   );
 
   testWidgets(
-    'portrait session detail hides the capsule on the first feature panel frame',
+    'portrait session detail fades the capsule out without leaving it interactive',
     (tester) async {
       await _pumpSubtitleDetail(
         tester: tester,
@@ -16073,7 +16092,18 @@ void main() {
 
       await tester.tap(tuneButtonFinder);
       await tester.pump();
-      expect(secondaryControlsFinder, findsNothing);
+      expect(tuneButtonFinder.hitTestable(), findsNothing);
+      await tester.pump(const Duration(milliseconds: 110));
+      final capsuleFade = find
+          .ancestor(
+            of: secondaryControlsFinder,
+            matching: find.byType(FadeTransition),
+          )
+          .first;
+      expect(
+        tester.widget<FadeTransition>(capsuleFade).opacity.value,
+        inExclusiveRange(0, 1),
+      );
       await tester.pumpAndSettle();
 
       expect(find.byKey(const ValueKey('segments')), findsOneWidget);

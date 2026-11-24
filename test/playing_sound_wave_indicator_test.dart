@@ -136,6 +136,12 @@ void main() {
       }
       playing.value = false;
       await tester.pump();
+      expect(await barTops(), afterResume);
+      await tester.pump(const Duration(milliseconds: 90));
+      final dampingFrame = await barTops();
+      expect(dampingFrame, isNot(afterResume));
+      expect(dampingFrame, isNot([55, 20, 40, 65]));
+      await tester.pump(const Duration(milliseconds: 92));
       final idleFrame = await barTops();
       expect(idleFrame, [55, 20, 40, 65]);
       await tester.pump(const Duration(seconds: 1));

@@ -12,12 +12,14 @@ class SubtitleWindowPreviewCard extends StatelessWidget {
     required this.height,
     required this.title,
     required this.sampleText,
+    required this.animateChanges,
   });
 
   final SubtitleSettingsState settings;
   final double height;
   final String title;
   final String sampleText;
+  final bool animateChanges;
 
   @override
   Widget build(BuildContext context) {
@@ -103,6 +105,7 @@ class SubtitleWindowPreviewCard extends StatelessWidget {
                                 settings: settings,
                                 text: sampleText,
                                 maxTextWidth: availableTextWidth,
+                                animateChanges: animateChanges,
                                 fallbackBackgroundColor: Colors.black,
                               );
                             },

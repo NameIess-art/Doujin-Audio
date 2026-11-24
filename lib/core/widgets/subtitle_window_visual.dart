@@ -39,6 +39,7 @@ class SubtitleWindowVisual extends StatelessWidget {
     required this.settings,
     required this.text,
     required this.maxTextWidth,
+    this.animateChanges = true,
     this.padding = const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
     this.fallbackBackgroundColor,
   });
@@ -46,6 +47,7 @@ class SubtitleWindowVisual extends StatelessWidget {
   final SubtitleWindowVisualStyle settings;
   final String text;
   final double maxTextWidth;
+  final bool animateChanges;
   final EdgeInsetsGeometry padding;
   final Color? fallbackBackgroundColor;
 
@@ -62,10 +64,10 @@ class SubtitleWindowVisual extends StatelessWidget {
         ? settings.borderDepth * 4
         : 0.0;
 
-    final animDuration =
-        (MediaQuery.maybeDisableAnimationsOf(context) ?? false)
-        ? Duration.zero
-        : const Duration(milliseconds: 180);
+    final reducedMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    final animDuration = animateChanges && !reducedMotion
+        ? const Duration(milliseconds: 180)
+        : Duration.zero;
 
     return AnimatedContainer(
       key: const ValueKey<String>('subtitle_window_visual_surface'),

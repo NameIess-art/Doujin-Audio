@@ -238,6 +238,8 @@ class SubtitleSettingsNotifier extends Notifier<SubtitleSettingsState>
     }();
   }
 
+  bool get isEditingAppearance => _editingAppearance;
+
   void beginAppearanceEdit() => _editingAppearance = true;
 
   Future<void> endAppearanceEdit() {

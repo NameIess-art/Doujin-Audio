@@ -113,6 +113,8 @@ class _SubtitleWindowSettingsSheetState
         settings: ref.watch(subtitleSettingsProvider),
         title: i18n.tr('subtitle_window_preview'),
         sampleText: i18n.tr('subtitle_preview_sample'),
+        // While dragging a slider, the preview must track the current value.
+        animateChanges: !notifier.isEditingAppearance,
       ),
     );
     final controls = <Widget>[

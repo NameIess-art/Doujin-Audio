@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:doujin_audio/app/theme/app_design_tokens.dart';
+import 'package:doujin_audio/app/theme/app_styles.dart';
 import 'package:doujin_audio/core/widgets/app_edit_panel.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'support/asmr_controller_test_fixture.dart';
@@ -117,8 +119,18 @@ void main() {
         .descendant(of: panelSurface, matching: find.byType(Material))
         .first;
     final material = tester.widget<Material>(panelMaterial);
+    final materialContext = tester.element(panelMaterial);
     expect(material.color!.a, 1);
-    expect((material.shape! as RoundedRectangleBorder).side, BorderSide.none);
+    expect(
+      (material.shape! as RoundedRectangleBorder).side,
+      BorderSide(
+        color: appOverlayBorderColor(
+          Theme.of(materialContext).colorScheme,
+          AppDesignTokens.of(materialContext),
+          elevated: true,
+        ),
+      ),
+    );
     expect(
       find.ancestor(of: panelSurface, matching: find.byType(ScaleTransition)),
       findsOneWidget,

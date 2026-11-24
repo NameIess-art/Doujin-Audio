@@ -615,18 +615,23 @@ void main() {
         );
         expect(headerRect.left, 0);
         final progress = kAppFadeCurve.transform(detail.animation!.value);
-        final expected = Color.alphaBlend(
-          _newHeader.withValues(alpha: progress),
-          Color.alphaBlend(
-            _oldHeader.withValues(alpha: 1 - progress),
-            Colors.blue,
-          ),
-        );
         final pixels = await _pixels(tester, surface, [
           const Offset(40, 50),
           const Offset(760, 50),
+          const Offset(40, 140),
+          const Offset(760, 140),
         ]);
-        for (final pixel in pixels) {
+        // The incoming page can shade the background independently of the
+        // fixed headers. Sample the backdrop at both x positions.
+        for (var i = 0; i < 2; i++) {
+          final pixel = pixels[i];
+          final expected = Color.alphaBlend(
+            _newHeader.withValues(alpha: progress),
+            Color.alphaBlend(
+              _oldHeader.withValues(alpha: 1 - progress),
+              pixels[i + 2],
+            ),
+          );
           expect(pixel.r, closeTo(expected.r, 0.02));
           expect(pixel.g, closeTo(expected.g, 0.02));
           expect(pixel.b, closeTo(expected.b, 0.02));

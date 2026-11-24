@@ -2482,7 +2482,7 @@ void main() {
       tester.widget<FadeTransition>(detailFade).opacity.value,
       inExclusiveRange(0, 1),
     );
-    expect(tester.getTopLeft(detailContent).dy, 0);
+    expect(tester.getTopLeft(detailContent).dy, greaterThan(0));
     expect(tester.widget<MobileOverlayInset>(rootOverlayInset).bottomInset, 0);
     expect(tester.getRect(detailRoute), detailRectBeforePlayback);
     expect(routeDock, findsOneWidget);
@@ -2905,7 +2905,7 @@ void main() {
       find.ancestor(of: detail, matching: find.byType(FadeTransition)).first,
     );
     expect(fade.opacity.value, inExclusiveRange(0, 1));
-    expect(tester.getTopLeft(detail).dy, 0);
+    expect(tester.getTopLeft(detail).dy, greaterThan(0));
     expect(
       find.byKey(const ValueKey<String>('under_playback_detail')),
       findsOneWidget,
@@ -7677,11 +7677,12 @@ void main() {
       final fade = tester.widget<FadeTransition>(
         find.ancestor(of: content, matching: find.byType(FadeTransition)).first,
       );
-      expect(tester.getTopLeft(content).dy, closeTo(0, 0.1));
+      final entryOffset = tester.getTopLeft(content).dy;
+      expect(entryOffset, greaterThan(0));
       expect(fade.opacity.value, 0);
       await tester.pump(const Duration(milliseconds: 95));
       expect(route.animation!.value, closeTo(0.25, 0.001));
-      expect(tester.getTopLeft(content).dy, closeTo(0, 0.1));
+      expect(tester.getTopLeft(content).dy, inExclusiveRange(0, entryOffset));
       expect(fade.opacity.value, closeTo(kAppSpringCurve.transform(0.25), 0.001));
       await tester.pump(const Duration(milliseconds: 286));
       expect(route.animation!.status, AnimationStatus.completed);

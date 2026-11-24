@@ -1591,14 +1591,10 @@ void main() {
       expect(decoration.shape, BoxShape.circle);
       expect(decoration.color, tokens.success);
       expect(decoration.border?.top.width, 2.0);
-      final icon = tester.widget<Icon>(
-        find.descendant(
-          of: checkmarkFinder,
-          matching: find.byIcon(Icons.check_rounded),
-        ),
+      final strokeFinder = find.descendant(
+        of: checkmarkFinder,
+        matching: find.byType(CustomPaint),
       );
-      expect(icon.color, tokens.onSuccess);
-      expect(icon.size, 14);
 
       // Verify mid-animation opacity
       await tester.pump(kAppMotionFast ~/ 2);
@@ -1618,6 +1614,10 @@ void main() {
           .opacity
           .value;
       expect(fullOpacity, closeTo(1.0, 0.001));
+      expect(
+        tester.renderObject(strokeFinder),
+        paints..path(color: tokens.onSuccess, style: PaintingStyle.stroke),
+      );
 
       // Deselect
       await tester.pumpWidget(
@@ -1632,7 +1632,7 @@ void main() {
       );
 
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pump(const Duration(milliseconds: 80));
       expect(checkmarkFinder, findsOneWidget);
       final outgoingOpacity = tester
           .widget<FadeTransition>(fadeFinder)
@@ -1641,7 +1641,7 @@ void main() {
       expect(outgoingOpacity, greaterThan(0.0));
       expect(outgoingOpacity, lessThan(1.0));
 
-      await tester.pump(const Duration(milliseconds: 250));
+      await tester.pump(const Duration(milliseconds: 85));
       expect(checkmarkFinder, findsNothing);
     },
     variant: const TargetPlatformVariant({

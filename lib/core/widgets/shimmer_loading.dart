@@ -18,6 +18,8 @@ class ShimmerLoader extends StatefulWidget {
 class _ShimmerLoaderState extends State<ShimmerLoader>
     with SingleTickerProviderStateMixin {
   static const _highlightHalfWidth = 0.15;
+  static final Set<_ShimmerLoaderState> _activeLoaders =
+      <_ShimmerLoaderState>{};
 
   late AnimationController _controller;
   ValueListenable<bool>? _scrollActivity;
@@ -63,14 +65,28 @@ class _ShimmerLoaderState extends State<ShimmerLoader>
   void _syncAnimation() {
     final shouldRun = _animationAllowed && !(_scrollActivity?.value ?? false);
     if (shouldRun && !_controller.isAnimating) {
+      double? peerPhase;
+      for (final peer in _activeLoaders) {
+        if (!identical(peer, this) && peer._controller.isAnimating) {
+          peerPhase = peer._controller.value;
+          break;
+        }
+      }
+      _activeLoaders.add(this);
       _controller.repeat();
+      if (peerPhase != null && peerPhase != _controller.value) {
+        _controller.value = peerPhase;
+        _controller.repeat();
+      }
     } else if (!shouldRun && _controller.isAnimating) {
+      _activeLoaders.remove(this);
       _controller.stop();
     }
   }
 
   @override
   void dispose() {
+    _activeLoaders.remove(this);
     _scrollActivity?.removeListener(_syncAnimation);
     _controller.dispose();
     super.dispose();

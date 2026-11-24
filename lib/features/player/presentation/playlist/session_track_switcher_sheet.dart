@@ -41,7 +41,6 @@ class SessionTrackSwitcherSheet extends ConsumerStatefulWidget {
 class _SessionTrackSwitcherSheetState
     extends ConsumerState<SessionTrackSwitcherSheet>
     with SingleTickerProviderStateMixin {
-  static const double _estimatedHeaderHeight = 56.0;
   static const double _estimatedRowHeight = 52.0;
 
   late final ScrollController _scrollController =
@@ -69,9 +68,7 @@ class _SessionTrackSwitcherSheetState
     final position = _scrollController.position;
     final viewportExtent = position.viewportDimension;
     final targetOffset =
-        (_estimatedHeaderHeight +
-                selectedIndex * _estimatedRowHeight -
-                viewportExtent * 0.35)
+        (selectedIndex * _estimatedRowHeight - viewportExtent * 0.35)
             .clamp(0.0, position.maxScrollExtent);
     if (targetOffset > 0) {
       _scrollController.jumpTo(targetOffset);
@@ -159,24 +156,11 @@ class _SessionTrackSwitcherSheetState
     return ScrollActivityGate(
       child: ListView.builder(
         controller: _scrollController,
-        padding: AppBottomSheet.contentPadding,
-        itemCount: rows.length + 1,
-        findChildIndexCallback: (key) {
-          if (key == const ValueKey<String>('queue_switcher_header')) return 0;
-          final index = indices[(key as ValueKey<String>).value];
-          return index == null ? null : index + 1;
-        },
-        itemBuilder: (context, index) {
-          if (index == 0) {
-            return Padding(
-              key: const ValueKey<String>('queue_switcher_header'),
-              padding: const EdgeInsets.only(bottom: 6),
-              child: _QueueSheetHeader(count: widget.trackCount),
-            );
-          }
-          final rowIndex = index - 1;
-          return _buildRow(rows[rowIndex], rowIndex);
-        },
+        padding: AppBottomSheet.contentPadding.copyWith(top: 0),
+        itemCount: rows.length,
+        findChildIndexCallback: (key) =>
+            indices[(key as ValueKey<String>).value],
+        itemBuilder: (context, index) => _buildRow(rows[index], index),
       ),
     );
   }
@@ -192,7 +176,17 @@ class _SessionTrackSwitcherSheetState
         return SizedBox(
           width: double.infinity,
           height: height,
-          child: _buildContent(context),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                key: const ValueKey<String>('queue_switcher_header'),
+                padding: AppBottomSheet.contentPadding.copyWith(bottom: 6),
+                child: _QueueSheetHeader(count: widget.trackCount),
+              ),
+              Expanded(child: _buildContent(context)),
+            ],
+          ),
         );
       },
     );

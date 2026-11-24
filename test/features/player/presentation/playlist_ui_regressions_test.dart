@@ -755,15 +755,23 @@ Dialogue: 0,0:00:10.00,0:00:14.00,Default,,0,0,0,,Middle line
         expect(buttonRect.height, greaterThanOrEqualTo(44));
         expect(buttonRect.width, greaterThanOrEqualTo(44));
 
-        // Seek button does not overlap centered focused cue in portrait.
+        // Seek indicator row aligns vertically with the centered focused cue
+        // without overlapping the cue text in portrait.
         final focusedCue = find.byKey(const ValueKey('subtitle_timeline_text_1'));
+        final dashes = find.byKey(
+          const ValueKey('subtitle_timeline_seek_dashes'),
+        );
         final scale = tester.widget<AnimatedScale>(
           find.ancestor(of: focusedCue, matching: find.byType(AnimatedScale)),
         );
         final platform = Theme.of(tester.element(focusedCue)).platform;
         expect(scale.scale, platform == TargetPlatform.android ? 1 : 1.03);
         final focusedCueRect = tester.getRect(focusedCue);
+        final dashesRect = tester.getRect(dashes);
+        expect(buttonRect.center.dy, closeTo(focusedCueRect.center.dy, 0.5));
+        expect(dashesRect.center.dy, closeTo(focusedCueRect.center.dy, 0.5));
         expect(buttonRect.overlaps(focusedCueRect), isFalse);
+        expect(dashesRect.overlaps(focusedCueRect), isFalse);
 
         // Tapping the centered focused cue while browsing seeks immediately.
         await tester.tap(find.byKey(const ValueKey('subtitle_timeline_cue_1')));

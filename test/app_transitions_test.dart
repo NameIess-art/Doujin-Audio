@@ -2609,7 +2609,10 @@ void main() {
       final midHeader = tester.getRect(header);
       expect(find.byKey(const ValueKey('home-body')), findsOneWidget);
       expect(find.byKey(const ValueKey('home-header')), findsOneWidget);
-      expect(await pixelAt(0.1), const Color(0xfff44336));
+      final pushExposedHome = await pixelAt(0.1);
+      expect(pushExposedHome.r, inExclusiveRange(0.75, Colors.red.r));
+      expect(pushExposedHome.r, greaterThan(pushExposedHome.g * 2));
+      expect(pushExposedHome.r, greaterThan(pushExposedHome.b * 2));
       await expectOpaqueBodyPixel(0.9);
       expect(
         find.ancestor(of: header, matching: find.byType(Opacity)),
@@ -2646,13 +2649,17 @@ void main() {
       final popHeader = tester.getRect(header);
       expect(find.byKey(const ValueKey('home-body')), findsOneWidget);
       expect(find.byKey(const ValueKey('home-header')), findsOneWidget);
-      expect(await pixelAt(0.1), const Color(0xfff44336));
-      // The decelerating exit exposes most of the old page before its last frame.
-      expect(await pixelAt(0.9), const Color(0xfff44336));
+      for (final popExposedPos in [0.1, 0.9]) {
+        final popExposed = await pixelAt(popExposedPos);
+        expect(popExposed.r, inInclusiveRange(0.80, Colors.red.r));
+        expect(popExposed.r, greaterThan(popExposed.g * 2));
+        expect(popExposed.r, greaterThan(popExposed.b * 2));
+      }
       await expectOpaqueBodyPixel(0.99);
       expect(popBody.left, greaterThan(settledBody.left));
       expect(popHeader.left - settledHeader.left, closeTo(0, 0.01));
       await tester.pumpAndSettle();
+      expect(await pixelAt(0.1), const Color(0xfff44336));
     },
   );
 

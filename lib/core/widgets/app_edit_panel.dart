@@ -4,6 +4,7 @@ import '../../app/theme/app_design_tokens.dart';
 import '../../app/theme/app_styles.dart';
 import 'app_buttons.dart';
 import 'app_dialog.dart';
+import 'app_transitions.dart';
 import 'windows_smooth_scroll_controller.dart';
 import 'unified_popup_menu.dart';
 
@@ -104,7 +105,11 @@ class AppEditPanel extends StatelessWidget {
             ? editTop.clamp(0.0, usableHeight - inputHeight)
             : editTop;
 
-        return Padding(
+        final reducedMotion =
+            MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+        return AnimatedPadding(
+          duration: reducedMotion ? Duration.zero : kAppMotionFast,
+          curve: kAppSpringCurve,
           padding: EdgeInsets.only(top: top),
           child: Align(
             alignment: Alignment.topCenter,
@@ -144,7 +149,12 @@ class AppEditPanelSurface extends StatelessWidget {
       ),
       child: Material(
         color: appFloatingSurfaceColor(colors),
-        shape: RoundedRectangleBorder(borderRadius: radius),
+        shape: RoundedRectangleBorder(
+          borderRadius: radius,
+          side: BorderSide(
+            color: appOverlayBorderColor(colors, tokens, elevated: true),
+          ),
+        ),
         clipBehavior: Clip.antiAlias,
         child: child,
       ),

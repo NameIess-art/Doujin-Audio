@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -25,7 +26,42 @@ class DragOnlyScrollbar extends RawScrollbar {
 }
 
 class _DragOnlyScrollbarState extends RawScrollbarState<DragOnlyScrollbar> {
+  static const _expandDuration = Duration(milliseconds: 150);
+  static const double _hoverStripWidth = 14.0;
   final _states = <WidgetState>{};
+  AnimationController? _expandController;
+
+  AnimationController _ensureExpandController() {
+    return _expandController ??= AnimationController(
+      vsync: this,
+      duration: _expandDuration,
+      value: _states.isNotEmpty ? 1.0 : 0.0,
+    )..addListener(() {
+      if (mounted) updateScrollbarPainter();
+    });
+  }
+
+  void _syncExpandAnimation() {
+    final active = _states.isNotEmpty;
+    if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) {
+      _expandController?.value = active ? 1.0 : 0.0;
+      if (mounted) updateScrollbarPainter();
+      return;
+    }
+    final controller = _ensureExpandController();
+    if (active) {
+      controller.forward();
+    } else {
+      controller.reverse();
+    }
+  }
+
+  @override
+  void dispose() {
+    _expandController?.dispose();
+    _expandController = null;
+    super.dispose();
+  }
 
   // The default handler pages toward the pointer. Desktop navigation here is
   // limited to dragging the thumb, so intentionally omit that superclass action.
@@ -35,9 +71,16 @@ class _DragOnlyScrollbarState extends RawScrollbarState<DragOnlyScrollbar> {
 
   @override
   void handleThumbPressStart(Offset localPosition) {
+    final controller = widget.controller ?? PrimaryScrollController.maybeOf(context);
+    if (controller != null && controller.positions.length == 1) {
+      final position = controller.position;
+      if (position.isScrollingNotifier.value) {
+        position.jumpTo(position.pixels);
+      }
+    }
     super.handleThumbPressStart(localPosition);
     if (_states.add(WidgetState.dragged) && mounted) {
-      updateScrollbarPainter();
+      _syncExpandAnimation();
     }
   }
 
@@ -45,21 +88,30 @@ class _DragOnlyScrollbarState extends RawScrollbarState<DragOnlyScrollbar> {
   void handleThumbPressEnd(Offset localPosition, Velocity velocity) {
     super.handleThumbPressEnd(localPosition, velocity);
     if (_states.remove(WidgetState.dragged) && mounted) {
-      updateScrollbarPainter();
+      _syncExpandAnimation();
     }
   }
 
   @override
   void handleHover(PointerHoverEvent event) {
     super.handleHover(event);
-    final hovered = isPointerOverThumb(event.position, event.kind);
+    final box = context.findRenderObject() as RenderBox?;
+    final inHoverStrip = box != null &&
+        box.hasSize &&
+        (Directionality.of(context) == TextDirection.rtl
+            ? event.localPosition.dx <= _hoverStripWidth
+            : event.localPosition.dx >= box.size.width - _hoverStripWidth);
+    final hovered =
+        (inHoverStrip &&
+            isPointerOverScrollbar(event.position, event.kind, forHover: true)) ||
+        isPointerOverThumb(event.position, event.kind);
     if (hovered != _states.contains(WidgetState.hovered)) {
       if (hovered) {
         _states.add(WidgetState.hovered);
       } else {
         _states.remove(WidgetState.hovered);
       }
-      if (mounted) updateScrollbarPainter();
+      if (mounted) _syncExpandAnimation();
     }
   }
 
@@ -67,7 +119,7 @@ class _DragOnlyScrollbarState extends RawScrollbarState<DragOnlyScrollbar> {
   void handleHoverExit(PointerExitEvent event) {
     super.handleHoverExit(event);
     if (_states.remove(WidgetState.hovered) && mounted) {
-      updateScrollbarPainter();
+      _syncExpandAnimation();
     }
   }
 
@@ -84,11 +136,24 @@ class _DragOnlyScrollbarState extends RawScrollbarState<DragOnlyScrollbar> {
     final effectiveBottom = resolvedPadding?.bottom ??
         math.max(mediaPadding.bottom, bottomInset);
 
+    final fallbackColor = Theme.of(context).colorScheme.outline;
+    final restingColor =
+        theme.thumbColor?.resolve(const <WidgetState>{}) ?? fallbackColor;
+    final activeStates = _states.isEmpty
+        ? const <WidgetState>{WidgetState.hovered}
+        : _states;
+    final activeColor = theme.thumbColor?.resolve(activeStates) ?? fallbackColor;
+    final restingThickness =
+        theme.thickness?.resolve(const <WidgetState>{}) ?? 8.0;
+    final activeThickness = theme.thickness?.resolve(activeStates) ?? 8.0;
+    final rawT = _expandController?.value ?? (_states.isNotEmpty ? 1.0 : 0.0);
+    final easedT = Curves.easeOutCubic.transform(rawT.clamp(0.0, 1.0));
+
     scrollbarPainter
-      ..color =
-          theme.thumbColor?.resolve(_states) ??
-          Theme.of(context).colorScheme.outline
-      ..thickness = theme.thickness?.resolve(_states) ?? 8
+      ..color = Color.lerp(restingColor, activeColor, easedT) ?? activeColor
+      ..thickness =
+          lerpDouble(restingThickness, activeThickness, easedT) ??
+          activeThickness
       ..radius = theme.radius ?? const Radius.circular(AppRadius.small)
       ..crossAxisMargin = theme.crossAxisMargin ?? 0
       ..mainAxisMargin = theme.mainAxisMargin ?? 0

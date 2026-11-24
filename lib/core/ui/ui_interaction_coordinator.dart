@@ -60,6 +60,14 @@ class UiInteractionCoordinator extends ChangeNotifier {
     _syncPublishedState();
   }
 
+  /// Releases pointer/key absorption once a transition has settled into its
+  /// interactive tail while keeping route/commit guards active until finish.
+  void releaseNavigationInput(Object source) {
+    if (_inputLockSources.remove(source)) {
+      _syncPublishedState();
+    }
+  }
+
   void endNavigation(Object source) {
     _navigationSources.remove(source);
     _inputLockSources.remove(source);
@@ -460,11 +468,21 @@ class UiInteractionNavigatorObserver extends NavigatorObserver {
     }
 
     late final AnimationStatusListener listener;
+    void valueListener() {
+      final status = animation.status;
+      final value = animation.value;
+      if ((status == AnimationStatus.forward && value >= 0.76) ||
+          (status == AnimationStatus.reverse && value <= 0.24)) {
+        _coordinator.releaseNavigationInput(interaction.source);
+      }
+    }
+
     listener = (status) {
       if (status == AnimationStatus.forward ||
           status == AnimationStatus.reverse) {
         interaction.terminalGeneration++;
         _coordinator.beginNavigation(interaction.source);
+        valueListener();
         return;
       }
       if (terminalStatuses.contains(status)) {
@@ -472,7 +490,9 @@ class UiInteractionNavigatorObserver extends NavigatorObserver {
       }
     };
     interaction.listener = listener;
+    interaction.valueListener = valueListener;
     animation.addStatusListener(listener);
+    animation.addListener(valueListener);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!identical(_routeInteractions[route], interaction)) return;
@@ -512,6 +532,8 @@ class UiInteractionNavigatorObserver extends NavigatorObserver {
     if (interaction == null) return;
     final listener = interaction.listener;
     if (listener != null) route.animation?.removeStatusListener(listener);
+    final valueListener = interaction.valueListener;
+    if (valueListener != null) route.animation?.removeListener(valueListener);
     // Deterministic route completion already waited for its terminal frame.
     _coordinator.cancelNavigation(interaction.source);
   }
@@ -592,6 +614,10 @@ class UiInteractionNavigatorObserver extends NavigatorObserver {
       if (listener != null) {
         entry.key.animation?.removeStatusListener(listener);
       }
+      final valueListener = entry.value.valueListener;
+      if (valueListener != null) {
+        entry.key.animation?.removeListener(valueListener);
+      }
       _coordinator.cancelNavigation(entry.value.source);
     }
     _routeInteractions.clear();
@@ -611,5 +637,6 @@ class _NavigationPopEntry extends PopEntry<dynamic> {
 class _RouteInteraction {
   final Object source = Object();
   AnimationStatusListener? listener;
+  VoidCallback? valueListener;
   int terminalGeneration = 0;
 }

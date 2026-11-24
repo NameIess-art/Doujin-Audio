@@ -12,6 +12,7 @@ internal interface NativePlaybackForegroundHost {
 
     fun playbackSignature(): String?
     fun onActiveSync()
+    fun onSyncStateChanged() {}
 
     fun onIdleStop()
 
@@ -88,6 +89,7 @@ internal class NativePlaybackForegroundCoordinator(
             host.stopForeground(wasStarted = true)
             isStarted = false
             signature = null
+            host.onSyncStateChanged()
         }
     }
 
@@ -111,6 +113,7 @@ internal class NativePlaybackForegroundCoordinator(
     }
 
     fun sync() {
+        host.onSyncStateChanged()
         if (host.hasPlaybackToKeepAlive) {
             cancelIdleStop()
             if (startOrUpdate().playbackAllowed) {
@@ -173,12 +176,14 @@ internal class NativePlaybackForegroundCoordinator(
 
     fun startBootstrap(): NativePlaybackForegroundStartResult {
         if (isStarted) {
+            host.onSyncStateChanged()
             return NativePlaybackForegroundStartResult.ALREADY_STARTED
         }
         return try {
             host.startBootstrapForeground()
             isStarted = true
             signature = BOOTSTRAP_SIGNATURE
+            host.onSyncStateChanged()
             host.logInfo("start_bootstrap_foreground_success")
             NativePlaybackForegroundStartResult.STARTED
         } catch (error: Exception) {
@@ -217,6 +222,7 @@ internal class NativePlaybackForegroundCoordinator(
         host.stopForeground(wasStarted = isStarted)
         isStarted = false
         signature = null
+        host.onSyncStateChanged()
     }
 
     fun shutdown() {

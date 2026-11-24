@@ -107,7 +107,7 @@ class SubtitleOverlayService : Service() {
             fontFeatureSettings = "'tnum'"
             setTextColor(Color.WHITE)
             textSize = 16f
-            setPadding(dpInt(20f), dpInt(10f), dpInt(20f), dpInt(10f))
+            setPadding(dpInt(22f), dpInt(12f), dpInt(22f), dpInt(12f))
             gravity = Gravity.CENTER
             includeFontPadding = false
             
@@ -228,6 +228,10 @@ class SubtitleOverlayService : Service() {
             )
             if (appliedStyle == nextStyle) return@post
             view.textSize = fontSize
+            val borderExtraDp = if (borderDepth > 0f) borderDepth * 4f else 0f
+            val hPad = dpInt(20f + borderExtraDp)
+            val vPad = dpInt(10f + borderExtraDp)
+            view.setPadding(hPad, vPad, hPad, vPad)
             try {
                 view.setTextColor(Color.parseColor(textColor))
                 

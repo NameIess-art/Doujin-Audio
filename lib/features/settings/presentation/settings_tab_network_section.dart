@@ -291,121 +291,140 @@ class _NetworkSettingsControlsState
                       ),
                   ],
                 ),
-                if (_mode != AppProxyMode.system) ...[
-                  const SizedBox(height: 16),
-                  field(
-                    _host,
-                    'network_proxy_host',
-                    validate: _validateProxy,
-                    isInvalid: isHostInvalid,
-                  ),
-                  const SizedBox(height: 12),
-                  field(
-                    _port,
-                    'network_proxy_port',
-                    numeric: true,
-                    validate: _validateProxy,
-                    isInvalid: isPortInvalid,
-                  ),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(i18n.tr('network_proxy_authentication')),
-                    value: _authentication,
-                    onChanged: _saving
-                        ? null
-                        : (value) {
-                            unawaited(
-                              AppInteractionFeedback.trigger(
-                                AppInteractionFeedbackType.selection,
-                              ),
-                            );
-                            setState(() => _authentication = value);
-                          },
-                  ),
-                  if (_authentication) ...[
-                    field(
-                      _username,
-                      'network_proxy_username',
-                      validate: _validateProxy,
-                      isInvalid: isUsernameInvalid,
-                    ),
-                    const SizedBox(height: 12),
-                    field(
-                      _password,
-                      'network_proxy_password',
-                      secret: true,
-                      obscureText: _obscurePassword,
-                      suffixIcon: IconButton(
-                        onPressed: _saving
-                            ? null
-                            : () => setState(
-                                () => _obscurePassword = !_obscurePassword,
-                              ),
-                        tooltip: i18n.tr(
-                          _obscurePassword ? 'show_password' : 'hide_password',
-                        ),
-                        icon: Icon(
-                          _obscurePassword
-                              ? Icons.visibility_outlined
-                              : Icons.visibility_off_outlined,
-                        ),
+                AnimatedSectionReveal(
+                  visible: _mode != AppProxyMode.system,
+                  builder: (context) => Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const SizedBox(height: 16),
+                      field(
+                        _host,
+                        'network_proxy_host',
+                        validate: _validateProxy,
+                        isInvalid: isHostInvalid,
                       ),
-                      hint: route.proxyPasswordConfigured
-                          ? i18n.tr('network_password_keep')
-                          : null,
-                      validate: _validateProxy,
-                      isInvalid: isPasswordInvalid,
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                  ListenableBuilder(
-                    listenable: Listenable.merge([
-                      _host,
-                      _port,
-                      _username,
-                      _password,
-                    ]),
-                    builder: (context, _) {
-                      final hasUnsavedProxyChanges =
-                          _mode != route.proxyMode ||
-                          _host.text.trim() != route.proxyHost ||
-                          (int.tryParse(_port.text.trim()) ?? 0) !=
-                              route.proxyPort ||
-                          _authentication != route.proxyAuthenticationEnabled ||
-                          (_authentication &&
-                              (_username.text.trim() != route.proxyUsername ||
-                                  _password.text.isNotEmpty));
-                      if (!hasUnsavedProxyChanges) {
-                        return const SizedBox.shrink();
-                      }
-                      final tokens = AppDesignTokens.of(context);
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: Row(
+                      const SizedBox(height: 12),
+                      field(
+                        _port,
+                        'network_proxy_port',
+                        numeric: true,
+                        validate: _validateProxy,
+                        isInvalid: isPortInvalid,
+                      ),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(i18n.tr('network_proxy_authentication')),
+                        value: _authentication,
+                        onChanged: _saving
+                            ? null
+                            : (value) {
+                                unawaited(
+                                  AppInteractionFeedback.trigger(
+                                    AppInteractionFeedbackType.selection,
+                                  ),
+                                );
+                                setState(() => _authentication = value);
+                              },
+                      ),
+                      AnimatedSectionReveal(
+                        visible: _authentication,
+                        builder: (context) => Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            Icon(
-                              Icons.info_outline_rounded,
-                              size: 16,
-                              color: tokens.warning,
+                            field(
+                              _username,
+                              'network_proxy_username',
+                              validate: _validateProxy && _authentication,
+                              isInvalid: isUsernameInvalid,
                             ),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                i18n.tr('network_proxy_unsaved'),
-                                style: Theme.of(context).textTheme.bodySmall
-                                    ?.copyWith(color: tokens.warning),
+                            const SizedBox(height: 12),
+                            field(
+                              _password,
+                              'network_proxy_password',
+                              secret: true,
+                              obscureText: _obscurePassword,
+                              suffixIcon: IconButton(
+                                onPressed: _saving
+                                    ? null
+                                    : () => setState(
+                                        () => _obscurePassword =
+                                            !_obscurePassword,
+                                      ),
+                                tooltip: i18n.tr(
+                                  _obscurePassword
+                                      ? 'show_password'
+                                      : 'hide_password',
+                                ),
+                                icon: Icon(
+                                  _obscurePassword
+                                      ? Icons.visibility_outlined
+                                      : Icons.visibility_off_outlined,
+                                ),
                               ),
+                              hint: route.proxyPasswordConfigured
+                                  ? i18n.tr('network_password_keep')
+                                  : null,
+                              validate: _validateProxy && _authentication,
+                              isInvalid: isPasswordInvalid,
                             ),
+                            const SizedBox(height: 12),
                           ],
                         ),
-                      );
-                    },
+                      ),
+                      ListenableBuilder(
+                        listenable: Listenable.merge([
+                          _host,
+                          _port,
+                          _username,
+                          _password,
+                        ]),
+                        builder: (context, _) {
+                          final hasUnsavedProxyChanges =
+                              _mode != route.proxyMode ||
+                              _host.text.trim() != route.proxyHost ||
+                              (int.tryParse(_port.text.trim()) ?? 0) !=
+                                  route.proxyPort ||
+                              _authentication !=
+                                  route.proxyAuthenticationEnabled ||
+                              (_authentication &&
+                                  (_username.text.trim() !=
+                                          route.proxyUsername ||
+                                      _password.text.isNotEmpty));
+                          final tokens = AppDesignTokens.of(context);
+                          return AnimatedSectionReveal(
+                            visible: hasUnsavedProxyChanges,
+                            builder: (context) => Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.info_outline_rounded,
+                                    size: 16,
+                                    color: tokens.warning,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      i18n.tr('network_proxy_unsaved'),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(color: tokens.warning),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                      AppPillButton(
+                        onPressed: _saving ? null : _applyProxy,
+                        child: Text(i18n.tr('network_apply_proxy')),
+                      ),
+                    ],
                   ),
-                  AppPillButton(
-                    onPressed: _saving ? null : _applyProxy,
-                    child: Text(i18n.tr('network_apply_proxy')),
-                  ),
-                ],
+                ),
                 const SizedBox(height: 12),
                 Text(
                   '${i18n.tr('network_current_proxy')}: $currentProxy',

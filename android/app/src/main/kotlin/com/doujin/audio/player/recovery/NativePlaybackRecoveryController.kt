@@ -293,9 +293,11 @@ internal class NativePlaybackRecoveryController(
     private var triggering = false
     private var listening = false
     private var healthCheckScheduled = false
+    private var scheduledHealthCheckIntervalMs = -1L
     private val healthCheckTask = object : Runnable {
         override fun run() {
             healthCheckScheduled = false
+            scheduledHealthCheckIntervalMs = -1L
             trigger("scheduled_health_check")
             ensureHealthCheck()
         }
@@ -738,30 +740,43 @@ internal class NativePlaybackRecoveryController(
         host.onRecoveryTimedOut(sessionId)
     }
 
-    fun onScreenInteractiveChanged() {
+    fun onScreenInteractiveChanged() = rescheduleHealthCheckIfNeeded()
+
+    fun rescheduleHealthCheckIfNeeded() {
         if (!healthCheckScheduled || intended.isEmpty()) return
+        val nextIntervalMs = currentHealthCheckIntervalMs()
+        if (scheduledHealthCheckIntervalMs == nextIntervalMs) return
         environment.remove(healthCheckTask)
         healthCheckScheduled = false
+        scheduledHealthCheckIntervalMs = -1L
         ensureHealthCheck()
     }
 
     private fun currentHealthCheckIntervalMs(): Long {
         if (isScreenInteractive() || recoveries.isNotEmpty()) return healthCheckIntervalMs
-        val anyBuffering = intended.any { sessionId ->
-            host.session(sessionId)?.playerOrNull()?.playbackState == Player.STATE_BUFFERING
+        val anyUnsettled = intended.any { sessionId ->
+            val player = host.session(sessionId)?.playerOrNull()
+            player != null && (
+                player.playbackState != Player.STATE_READY ||
+                    !player.playWhenReady ||
+                    !player.isPlaying
+                )
         }
-        return if (anyBuffering) healthCheckIntervalMs else screenOffHealthCheckIntervalMs
+        return if (anyUnsettled) healthCheckIntervalMs else screenOffHealthCheckIntervalMs
     }
 
     private fun ensureHealthCheck() {
         if (healthCheckScheduled || intended.isEmpty()) return
+        val intervalMs = currentHealthCheckIntervalMs()
         healthCheckScheduled = true
-        environment.postDelayed(healthCheckTask, currentHealthCheckIntervalMs())
+        scheduledHealthCheckIntervalMs = intervalMs
+        environment.postDelayed(healthCheckTask, intervalMs)
     }
 
     private fun stopMonitoring() {
         environment.remove(healthCheckTask)
         healthCheckScheduled = false
+        scheduledHealthCheckIntervalMs = -1L
         if (listening) {
             listening = false
             environment.stopListening()

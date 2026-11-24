@@ -217,10 +217,12 @@ class _WheelScrollActivity extends DrivenScrollActivity {
 class _WheelScrollSimulation extends Simulation {
   _WheelScrollSimulation(this._from, this.target);
 
-  static const _seconds = 0.2;
-  static const _startingSlope = 1.35;
+  static const _baseSeconds = 0.2;
+  static const _maxRetargetSeconds = 0.25;
+  static const _startingSlope = 1.62;
   double _from;
   double target;
+  double _duration = _baseSeconds;
   double _initialSlope = _startingSlope;
   double _startTime = 0;
   double _lastSampleTime = 0;
@@ -237,15 +239,29 @@ class _WheelScrollSimulation extends Simulation {
       // Multiple wheel ticks arriving before the first motion frame accumulate
       // into the same launch from rest; keep full starting slope instead of
       // diluting it by the larger combined distance.
+      _duration = _baseSeconds;
       _initialSlope = _startingSlope;
       _sameFrameVelocity = null;
       return;
     }
     final incomingVelocity = _sameFrameVelocity ?? velocity;
     _sameFrameVelocity = incomingVelocity;
-    _initialSlope = incomingVelocity * distance > 0
-        ? (incomingVelocity * _seconds / distance).clamp(0.0, 3.0)
-        : _startingSlope;
+    if (incomingVelocity * distance > 0) {
+      // Slightly extend duration when rapid notches stack large remaining
+      // travel so cubic Hermite stays smooth without mid-step velocity pulsing,
+      // while keeping exact C1 velocity continuity at t = 0.
+      final absDistance = distance.abs();
+      final extra = ((absDistance - 80.0) / 320.0).clamp(0.0, 1.0);
+      _duration =
+          _baseSeconds + (_maxRetargetSeconds - _baseSeconds) * extra;
+      _initialSlope = (incomingVelocity * _duration / distance).clamp(
+        0.0,
+        3.0,
+      );
+    } else {
+      _duration = _baseSeconds;
+      _initialSlope = _startingSlope;
+    }
   }
 
   void shift(double offset) {
@@ -262,7 +278,7 @@ class _WheelScrollSimulation extends Simulation {
     }
     _lastSampleTime = time;
     if (isDone(time)) return target;
-    final t = (time - _startTime) / _seconds;
+    final t = (time - _startTime) / _duration;
     final remaining = 1 - t;
     final progress =
         t * t * (3 - 2 * t) + _initialSlope * t * remaining * remaining;
@@ -272,11 +288,11 @@ class _WheelScrollSimulation extends Simulation {
   @override
   double dx(double time) {
     if (isDone(time)) return 0;
-    final t = (time - _startTime) / _seconds;
+    final t = (time - _startTime) / _duration;
     final slope = (1 - t) * (6 * t + _initialSlope * (1 - 3 * t));
-    return (target - _from) * slope / _seconds;
+    return (target - _from) * slope / _duration;
   }
 
   @override
-  bool isDone(double time) => time >= _startTime + _seconds;
+  bool isDone(double time) => time >= _startTime + _duration;
 }

@@ -103,7 +103,8 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation>
     );
     _widthCurve = CurvedAnimation(
       parent: _widthController,
-      curve: Curves.easeInOut,
+      curve: kAppSpringCurve,
+      reverseCurve: Curves.easeInCubic,
     );
     _landscapeWidthAnimation = Tween<double>(
       begin: _landscapeCollapsedRailWidth,
@@ -114,7 +115,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation>
       end: _portraitExpandedWidth,
     ).animate(_widthCurve);
     _landscapeLabelOpacity = _widthCurve.drive(
-      CurveTween(curve: const Interval(0.0, 0.25)),
+      CurveTween(curve: const Interval(0.35, 1.0)),
     );
     _collapseController = AnimationController(
       vsync: this,

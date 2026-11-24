@@ -53,6 +53,15 @@ class NativePlaybackRecoveryControllerTest {
         playing.playbackState = Player.STATE_READY
         controller.onScreenInteractiveChanged()
         assertEquals(listOf(60_000L), environment.delays)
+
+        // Idle or unexpectedly paused while screen off tightens to 15s without resetting an active 15s timer.
+        playing.playbackState = Player.STATE_IDLE
+        controller.rescheduleHealthCheckIfNeeded()
+        val scheduledTask = environment.tasks.keys.single()
+        assertEquals(listOf(15_000L), environment.delays)
+        playing.playbackState = Player.STATE_BUFFERING
+        controller.rescheduleHealthCheckIfNeeded()
+        assertEquals(scheduledTask, environment.tasks.keys.single())
     }
 
     @Test

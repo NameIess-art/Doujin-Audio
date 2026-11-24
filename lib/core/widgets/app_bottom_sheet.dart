@@ -1,7 +1,9 @@
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 
 import '../../app/theme/app_styles.dart';
 import 'app_buttons.dart';
@@ -211,9 +213,36 @@ class _AppBottomSheetRoute<T> extends ModalBottomSheetRoute<T> {
       Animation<double>.fromValueListenable(_visibleOpacity);
   Animation<double>? _trackedAnimation;
   double _lastAnimationValue = 0;
+  VelocityTracker? _pointerVelocityTracker;
+  int? _trackedPointer;
+  double _releaseDownwardVelocity = 0;
+  double _lastSheetViewportHeight = 600;
 
   @override
   Curve get barrierCurve => kAppFadeCurve;
+
+  @override
+  Simulation? createSimulation({required bool forward}) {
+    if (!forward &&
+        controller != null &&
+        controller!.value > 0 &&
+        _releaseDownwardVelocity > 420 &&
+        _lastSheetViewportHeight > 0) {
+      final velocityPx = _releaseDownwardVelocity;
+      _releaseDownwardVelocity = 0;
+      final velocityFraction = (velocityPx / (_lastSheetViewportHeight * 0.6))
+          .clamp(0.8, 8.0);
+      return SpringSimulation(
+        SpringDescription.withDampingRatio(mass: 1.0, stiffness: 480.0),
+        controller!.value,
+        0.0,
+        -velocityFraction,
+        tolerance: const Tolerance(velocity: 0.01),
+      );
+    }
+    _releaseDownwardVelocity = 0;
+    return super.createSimulation(forward: forward);
+  }
 
   void _attachAnimation(Animation<double> animation) {
     if (identical(_trackedAnimation, animation)) return;
@@ -281,6 +310,7 @@ class _AppBottomSheetRoute<T> extends ModalBottomSheetRoute<T> {
     Animation<double> secondaryAnimation,
   ) {
     final size = MediaQuery.sizeOf(context);
+    _lastSheetViewportHeight = size.height;
     final isWindows = defaultTargetPlatform == TargetPlatform.windows;
     final constrainWidth = isWindows || size.width > size.height;
     final rawPage = super.buildPage(context, animation, secondaryAnimation);
@@ -297,7 +327,54 @@ class _AppBottomSheetRoute<T> extends ModalBottomSheetRoute<T> {
         : size.width;
     final constrainedPage = Align(
       alignment: Alignment.bottomCenter,
-      child: SizedBox(width: targetWidth, child: page),
+      child: SizedBox(
+        width: targetWidth,
+        child: Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerDown: enableDrag
+              ? (event) {
+                  _trackedPointer = event.pointer;
+                  _releaseDownwardVelocity = 0;
+                  _pointerVelocityTracker = VelocityTracker.withKind(event.kind)
+                    ..addPosition(event.timeStamp, event.position);
+                }
+              : null,
+          onPointerMove: enableDrag
+              ? (event) {
+                  if (event.pointer == _trackedPointer) {
+                    _pointerVelocityTracker?.addPosition(
+                      event.timeStamp,
+                      event.position,
+                    );
+                  }
+                }
+              : null,
+          onPointerUp: enableDrag
+              ? (event) {
+                  if (event.pointer == _trackedPointer) {
+                    _releaseDownwardVelocity =
+                        _pointerVelocityTracker
+                            ?.getVelocity()
+                            .pixelsPerSecond
+                            .dy ??
+                        0;
+                    _trackedPointer = null;
+                    _pointerVelocityTracker = null;
+                  }
+                }
+              : null,
+          onPointerCancel: enableDrag
+              ? (event) {
+                  if (event.pointer == _trackedPointer) {
+                    _releaseDownwardVelocity = 0;
+                    _trackedPointer = null;
+                    _pointerVelocityTracker = null;
+                  }
+                }
+              : null,
+          child: page,
+        ),
+      ),
     );
     _attachAnimation(animation);
     return FadeTransition(

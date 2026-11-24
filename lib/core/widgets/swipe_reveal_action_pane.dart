@@ -59,11 +59,15 @@ class SwipeRevealActionPane extends StatelessWidget {
   final ValueChanged<VoidCallback> onAction;
 
   static double _scaleForProgress(double value) {
-    final clamped = value.clamp(0.0, 1.0);
-    if (clamped <= 0) return 0.84;
-    if (clamped < 0.58) return 0.86 + (clamped * 0.12);
-    final t = ((clamped - 0.58) / 0.42).clamp(0.0, 1.0);
-    return 0.9296 + (1.0 - 0.9296) * Curves.easeOutCubic.transform(t);
+    if (value <= 0) return 0.82;
+    if (value <= 1.0) {
+      return 0.82 + 0.18 * Curves.easeOutCubic.transform(value);
+    }
+    return (1.0 + (value - 1.0) * 0.14).clamp(1.0, 1.05);
+  }
+
+  static double _opacityForProgress(double value) {
+    return Curves.easeOut.transform((value / 0.42).clamp(0.0, 1.0));
   }
 
   @override
@@ -224,8 +228,9 @@ class SwipeRevealActionPane extends StatelessWidget {
                   ? const SizedBox.shrink()
                   : liveAnimation != null
                   ? FadeTransition(
-                      opacity: liveAnimation.drive(
-                        CurveTween(curve: Curves.easeOutCubic),
+                      opacity: _ClampedCurveAnimation(
+                        parent: liveAnimation,
+                        curve: Curves.easeOutCubic,
                       ),
                       child: hintContent,
                     )
@@ -254,24 +259,28 @@ class SwipeRevealActionPane extends StatelessWidget {
                   ? AnimatedBuilder(
                       animation: liveAnimation,
                       child: buttonsContent,
-                      builder: (context, child) => Transform.scale(
-                        scale: _scaleForProgress(liveAnimation.value),
-                        child: child,
+                      builder: (context, child) => Opacity(
+                        opacity: _opacityForProgress(liveAnimation.value),
+                        child: Transform.scale(
+                          scale: _scaleForProgress(liveAnimation.value),
+                          child: child,
+                        ),
                       ),
                     )
-                  : AnimatedScale(
-                      scale: progress <= 0
-                          ? 0.84
-                          : (progress < 0.58 ? 0.86 + (progress * 0.12) : 1.0),
-                      duration: disableAnimations
-                          ? Duration.zero
-                          : (progress >= 0.58
-                                ? kAppMotionStandard
-                                : kAppMotionFast),
-                      curve: progress >= 0.58
-                          ? kAppSpringBackCurve
-                          : Curves.easeOutCubic,
-                      child: buttonsContent,
+                  : Opacity(
+                      opacity: _opacityForProgress(progress),
+                      child: AnimatedScale(
+                        scale: _scaleForProgress(progress),
+                        duration: disableAnimations
+                            ? Duration.zero
+                            : (progress >= 0.58
+                                  ? kAppMotionStandard
+                                  : kAppMotionFast),
+                        curve: progress >= 0.58
+                            ? kAppSpringBackCurve
+                            : Curves.easeOutCubic,
+                        child: buttonsContent,
+                      ),
                     ),
             ),
           ),
@@ -279,6 +288,18 @@ class SwipeRevealActionPane extends StatelessWidget {
       ),
     );
   }
+}
+
+class _ClampedCurveAnimation extends Animation<double>
+    with AnimationWithParentMixin<double> {
+  _ClampedCurveAnimation({required this.parent, required this.curve});
+
+  @override
+  final Animation<double> parent;
+  final Curve curve;
+
+  @override
+  double get value => curve.transform(parent.value.clamp(0.0, 1.0));
 }
 
 class SwipeRevealActionButton extends StatelessWidget {

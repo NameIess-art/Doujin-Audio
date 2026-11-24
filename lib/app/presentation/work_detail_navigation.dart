@@ -560,14 +560,31 @@ class WorkDetailPane extends StatelessWidget {
               if (isLandscape)
                 Positioned.fill(
                   child: IgnorePointer(
-                    child: CustomPaint(
-                      key: const ValueKey('content_pane_outline'),
-                      painter: _ContentPaneOutlinePainter(
-                        color: Theme.of(context).colorScheme.outlineVariant,
-                        sidebarWidth: sidebarWidth,
-                        detailWidth: navigation.isOpen ? paneWidth : 0,
-                        roundCorners: roundCorners,
-                      ),
+                    child: AnimatedBuilder(
+                      animation: navigation._coveringAnimation ??
+                          (navigation.isOpen
+                              ? kAlwaysCompleteAnimation
+                              : kAlwaysDismissedAnimation),
+                      builder: (context, _) {
+                        final anim = navigation._coveringAnimation;
+                        final rawProgress = !navigation.isOpen
+                            ? 0.0
+                            : (anim == null
+                                  ? 1.0
+                                  : kAppSpringCurve.transform(
+                                      anim.value.clamp(0.0, 1.0),
+                                    ));
+                        return CustomPaint(
+                          key: const ValueKey('content_pane_outline'),
+                          painter: _ContentPaneOutlinePainter(
+                            color: Theme.of(context).colorScheme.outlineVariant,
+                            sidebarWidth: sidebarWidth,
+                            detailWidth: navigation.isOpen ? paneWidth : 0,
+                            dividerOpacity: rawProgress,
+                            roundCorners: roundCorners,
+                          ),
+                        );
+                      },
                     ),
                   ),
                 ),
@@ -607,12 +624,14 @@ class _ContentPaneOutlinePainter extends CustomPainter {
     required this.color,
     required this.sidebarWidth,
     required this.detailWidth,
+    this.dividerOpacity = 1.0,
     required this.roundCorners,
   });
 
   final Color color;
   final double sidebarWidth;
   final double detailWidth;
+  final double dividerOpacity;
   final bool roundCorners;
 
   @override
@@ -636,9 +655,17 @@ class _ContentPaneOutlinePainter extends CustomPainter {
           ..lineTo(right, top),
         paint,
       );
-      if (detailWidth > 0) {
+      if (detailWidth > 0 && dividerOpacity > 0) {
         final divider = right - detailWidth;
-        canvas.drawLine(Offset(divider, top), Offset(divider, bottom), paint);
+        final dividerPaint = Paint()
+          ..color = color.withValues(alpha: color.a * dividerOpacity)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1;
+        canvas.drawLine(
+          Offset(divider, top),
+          Offset(divider, bottom),
+          dividerPaint,
+        );
       }
       return;
     }
@@ -703,5 +730,6 @@ class _ContentPaneOutlinePainter extends CustomPainter {
       color != oldDelegate.color ||
       sidebarWidth != oldDelegate.sidebarWidth ||
       detailWidth != oldDelegate.detailWidth ||
+      dividerOpacity != oldDelegate.dividerOpacity ||
       roundCorners != oldDelegate.roundCorners;
 }

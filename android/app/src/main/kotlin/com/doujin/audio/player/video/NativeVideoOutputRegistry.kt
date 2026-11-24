@@ -20,6 +20,7 @@ internal fun shouldRetainPausedVideoPlayer(
 }
 
 internal interface NativeVideoOutputBinding<P : Any> {
+    val isViewVisible: Boolean get() = true
     fun bindPlayer(player: P?)
     fun setKeepScreenOn(keepScreenOn: Boolean)
 }
@@ -35,8 +36,15 @@ internal class NativeVideoOutputRegistry<P : Any>(
     )
 
     private val entries = mutableMapOf<String, Entry<P>>()
+    private var screenInteractive: Boolean = true
 
     fun hasOutput(sessionId: String): Boolean = entries.containsKey(sessionId)
+
+    fun setScreenInteractive(interactive: Boolean) {
+        if (screenInteractive == interactive) return
+        screenInteractive = interactive
+        entries.keys.toList().forEach(::refreshSession)
+    }
 
     fun register(
         sessionId: String,
@@ -56,12 +64,13 @@ internal class NativeVideoOutputRegistry<P : Any>(
         ownerId: String
     ): Boolean {
         val entry = entries[sessionId]?.takeIf { it.ownerId == ownerId } ?: return false
-        val player = playerForSession(sessionId)
+        val canRender = screenInteractive && entry.output.isViewVisible
+        val player = if (canRender) playerForSession(sessionId) else null
         if (entry.player !== player) {
             entry.output.bindPlayer(player)
             entry.player = player
         }
-        entry.output.setKeepScreenOn(player?.let(shouldKeepScreenOn) == true)
+        entry.output.setKeepScreenOn(player != null && shouldKeepScreenOn(player))
         return true
     }
 

@@ -13,6 +13,7 @@ import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:flutter/foundation.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/widgets/app_bottom_sheet.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/app_edge_fade_mask.dart';
 import 'package:doujin_audio/core/widgets/page_header_inset.dart';
@@ -1248,6 +1249,25 @@ void main() {
   testWidgets(
     'WorkTextViewerPage reading options adjust font size, encoding, copy all, and file list',
     (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = defaultTargetPlatform == TargetPlatform.android
+          ? const Size(360, 770)
+          : const Size(1280, 800);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final copied = <String>[];
+      final messenger = tester.binding.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied.add((call.arguments as Map)['text'] as String);
+        }
+        return null;
+      });
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+      );
+
       SharedPreferences.setMockInitialValues(const <String, Object>{});
       final language = AppLanguageProvider();
       addTearDown(language.dispose);
@@ -1282,6 +1302,32 @@ void main() {
 
       await tester.tap(find.byKey(const ValueKey('work_text_options_button')));
       await tester.pumpAndSettle();
+      final sheet = find.byType(BottomSheet);
+      final header = find.byType(AppBottomSheetHeader);
+      expect(
+        tester.getTopLeft(header).dx - tester.getTopLeft(sheet).dx,
+        AppBottomSheet.contentPadding.left,
+      );
+
+      final initialSize = tester.view.physicalSize;
+      tester.view.physicalSize = Size(initialSize.width, 260);
+      await tester.pumpAndSettle();
+      final headerRect = tester.getRect(header);
+      final fontIncrease = find.byKey(const ValueKey('work_text_font_increase'));
+      final controlTop = tester.getTopLeft(fontIncrease).dy;
+      final scrollable = find.descendant(
+        of: sheet,
+        matching: find.byType(Scrollable),
+      );
+      final position = tester.state<ScrollableState>(scrollable).position;
+      expect(position.maxScrollExtent, greaterThan(0));
+      position.jumpTo(position.maxScrollExtent);
+      await tester.pumpAndSettle();
+      expect(tester.getRect(header), headerRect);
+      expect(tester.getTopLeft(fontIncrease).dy, lessThan(controlTop));
+      position.jumpTo(0);
+      tester.view.physicalSize = initialSize;
+      await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const ValueKey('work_text_font_increase')));
       await tester.pumpAndSettle();
@@ -1295,13 +1341,42 @@ void main() {
 
       await tester.tap(find.byKey(const ValueKey('work_text_options_button')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('work_text_file_list_action')));
+      await tester.tap(find.byKey(const ValueKey('work_text_copy_all_action')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('work_text_file_list_item_2')));
+      expect(copied, ['Line 1 content']);
+
+      await tester.tap(find.byKey(const ValueKey('work_text_options_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('work_text_file_list_action')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        tester.getTopLeft(header).dx - tester.getTopLeft(sheet).dx,
+        AppBottomSheet.contentPadding.left,
+      );
+      final selectedFile = find.byKey(
+        const ValueKey('work_text_file_list_item_0'),
+      );
+      expect(tester.getTopLeft(selectedFile).dx, tester.getTopLeft(header).dx);
+      expect(
+        find.descendant(
+          of: selectedFile,
+          matching: find.byIcon(Icons.check_circle_rounded),
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('work_text_file_list_item_2')),
+      );
       await tester.pumpAndSettle();
       expect(find.text('Line 3 content'), findsOneWidget);
       expect(find.text('3/3'), findsOneWidget);
     },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 }
 

@@ -42,7 +42,12 @@ class PlayingSoundWaveIndicator extends StatefulWidget {
 
 class _PlayingSoundWaveIndicatorState extends State<PlayingSoundWaveIndicator>
     with SingleTickerProviderStateMixin {
+  static const double _cycleSeconds = 22.0;
+  static const double _dampSpan = 0.18 / _cycleSeconds;
+
   late final AnimationController _controller;
+  final ValueNotifier<double> _energy = ValueNotifier<double>(1.0);
+  double? _dampingStartValue;
   ValueListenable<bool>? _scrollActivity;
   bool _tickerEnabled = false;
   bool _disableAnimations = false;
@@ -50,10 +55,25 @@ class _PlayingSoundWaveIndicatorState extends State<PlayingSoundWaveIndicator>
   @override
   void initState() {
     super.initState();
+    _energy.value = widget.isPlaying ? 1.0 : 0.0;
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 22),
-    );
+    )..addListener(_handleTick);
+  }
+
+  void _handleTick() {
+    final start = _dampingStartValue;
+    if (start == null) return;
+    var delta = _controller.value - start;
+    if (delta < 0) delta += 1.0;
+    if (delta >= _dampSpan) {
+      _dampingStartValue = null;
+      _energy.value = 0.0;
+      _controller.stop();
+    } else {
+      _energy.value = (1.0 - delta / _dampSpan).clamp(0.0, 1.0);
+    }
   }
 
   @override
@@ -72,15 +92,34 @@ class _PlayingSoundWaveIndicatorState extends State<PlayingSoundWaveIndicator>
   }
 
   void _syncAnimation() {
-    final animate =
-        widget.isPlaying &&
-        _tickerEnabled &&
-        !_disableAnimations &&
-        !(_scrollActivity?.value ?? false);
-    if (animate && !_controller.isAnimating) {
-      _controller.repeat();
-    } else if (!animate && _controller.isAnimating) {
-      _controller.stop();
+    final scrolling = _scrollActivity?.value ?? false;
+    final canAnimate = _tickerEnabled && !_disableAnimations && !scrolling;
+    if (widget.isPlaying && canAnimate) {
+      _dampingStartValue = null;
+      _energy.value = 1.0;
+      if (!_controller.isAnimating) {
+        _controller.repeat();
+      }
+      return;
+    }
+    if (!canAnimate) {
+      _dampingStartValue = null;
+      _energy.value = widget.isPlaying && !_disableAnimations ? 1.0 : 0.0;
+      if (_controller.isAnimating) {
+        _controller.stop();
+      }
+      return;
+    }
+    // Smoothly damp bar heights toward calm idle pose over 180ms using the
+    // single existing ticker when playback pauses while visible and stationary.
+    if (_energy.value > 0.0 && _controller.isAnimating) {
+      _dampingStartValue ??= _controller.value;
+    } else {
+      _dampingStartValue = null;
+      _energy.value = 0.0;
+      if (_controller.isAnimating) {
+        _controller.stop();
+      }
     }
   }
 
@@ -94,6 +133,7 @@ class _PlayingSoundWaveIndicatorState extends State<PlayingSoundWaveIndicator>
   void dispose() {
     _scrollActivity?.removeListener(_syncAnimation);
     _controller.dispose();
+    _energy.dispose();
     super.dispose();
   }
 
@@ -113,6 +153,7 @@ class _PlayingSoundWaveIndicatorState extends State<PlayingSoundWaveIndicator>
           size: Size(totalWidth, widget.size),
           painter: _SoundWavePainter(
             animation: _controller,
+            energy: _energy,
             color: effectiveColor,
             isPlaying: widget.isPlaying && !_disableAnimations,
             barCount: widget.barCount,
@@ -128,14 +169,16 @@ class _PlayingSoundWaveIndicatorState extends State<PlayingSoundWaveIndicator>
 class _SoundWavePainter extends CustomPainter {
   _SoundWavePainter({
     required this.animation,
+    required this.energy,
     required this.color,
     required this.isPlaying,
     required this.barCount,
     required this.barWidth,
     required this.barSpacing,
-  }) : super(repaint: animation);
+  }) : super(repaint: Listenable.merge([animation, energy]));
 
   final Animation<double> animation;
+  final ValueListenable<double> energy;
   final Color color;
   final bool isPlaying;
   final int barCount;
@@ -157,7 +200,8 @@ class _SoundWavePainter extends CustomPainter {
       ..style = PaintingStyle.fill;
 
     final radius = Radius.circular(barWidth / 2);
-    final t = isPlaying ? animation.value : 0.0;
+    final e = Curves.easeOutCubic.transform(energy.value.clamp(0.0, 1.0));
+    final t = e > 0 ? animation.value : 0.0;
 
     for (var i = 0; i < barCount; i++) {
       final cycles = _cycles[i % _cycles.length];
@@ -167,9 +211,10 @@ class _SoundWavePainter extends CustomPainter {
       final idleH = _idleHeights[i % _idleHeights.length];
 
       final double fraction;
-      if (isPlaying) {
+      if (e > 0) {
         final sinVal = math.sin((2 * math.pi * cycles * t) + phase);
-        fraction = minH + (maxH - minH) * ((sinVal + 1) / 2);
+        final waveH = minH + (maxH - minH) * ((sinVal + 1) / 2);
+        fraction = idleH + (waveH - idleH) * e;
       } else {
         fraction = idleH;
       }

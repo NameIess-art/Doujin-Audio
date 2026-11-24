@@ -23,7 +23,7 @@ List<Widget> _buildSettingsAppearanceSection({
       title: i18n.tr('settings_group_theme_layout'),
       children: [
         Consumer(
-          builder: (context, ref, _) {
+          builder: (tileContext, ref, _) {
             final themeMode = ref.watch(
               themeProviderInstanceProvider.select((t) => t.themeMode),
             );
@@ -36,14 +36,15 @@ List<Widget> _buildSettingsAppearanceSection({
               title: _settingsTitle(i18n.tr('dark_mode')),
               leading: _settingsIcon(Icons.dark_mode_rounded, cs.primary),
               trailing: _settingsDropdown<ThemeMode>(
-                context,
+                tileContext,
                 value: themeMode,
                 onChanged: (value) {
-                  if (value != null) {
+                  if (value != null && value != themeMode) {
                     unawaited(
                       _applyThemeChange(
-                        context: context,
+                        context: tileContext,
                         i18n: i18n,
+                        globalOrigin: _trailingSwitchOrigin(tileContext),
                         change: () => ref
                             .read(themeProviderInstanceProvider)
                             .setThemeMode(value),
@@ -64,9 +65,10 @@ List<Widget> _buildSettingsAppearanceSection({
             );
           },
         ),
-        if (Theme.of(context).brightness == Brightness.dark)
-          Consumer(
-            builder: (context, ref, _) {
+        AnimatedSectionReveal(
+          visible: Theme.of(context).brightness == Brightness.dark,
+          builder: (context) => Consumer(
+            builder: (tileContext, ref, _) {
               final pureBlack = ref.watch(
                 themeProviderInstanceProvider.select((t) => t.pureBlackTheme),
               );
@@ -82,8 +84,9 @@ List<Widget> _buildSettingsAppearanceSection({
                   );
                   unawaited(
                     _applyThemeChange(
-                      context: context,
+                      context: tileContext,
                       i18n: i18n,
+                      globalOrigin: _trailingSwitchOrigin(tileContext),
                       change: () => themeProvider.setPureBlackTheme(value),
                     ),
                   );
@@ -93,6 +96,7 @@ List<Widget> _buildSettingsAppearanceSection({
               );
             },
           ),
+        ),
         Consumer(
           builder: (context, ref, _) {
             final barGlassEnabled = ref.watch(
@@ -272,32 +276,35 @@ void _showThemeColorPicker({
       useSystemAccent: useSystemAccent,
       systemAccentColorListenable: systemAccentColorListenable,
       i18n: i18n,
-      onSelected: (value) {
+      onSelected: (value, origin) {
         Navigator.of(dialogContext).pop();
         unawaited(
           _applyThemeChange(
             context: context,
             i18n: i18n,
+            globalOrigin: origin,
             change: () => onSelected(value),
           ),
         );
       },
-      onCustomColorSelected: (value) {
+      onCustomColorSelected: (value, origin) {
         Navigator.of(dialogContext).pop();
         unawaited(
           _applyThemeChange(
             context: context,
             i18n: i18n,
+            globalOrigin: origin,
             change: () => onCustomColorSelected(value),
           ),
         );
       },
-      onSystemAccentSelected: () {
+      onSystemAccentSelected: (origin) {
         Navigator.of(dialogContext).pop();
         unawaited(
           _applyThemeChange(
             context: context,
             i18n: i18n,
+            globalOrigin: origin,
             change: () => onSystemAccentSelected(true),
           ),
         );
@@ -306,12 +313,31 @@ void _showThemeColorPicker({
   );
 }
 
+Offset? _widgetCenterGlobalOrigin(BuildContext context) {
+  final box = context.findRenderObject();
+  if (box is! RenderBox || !box.hasSize) return null;
+  return box.localToGlobal(box.size.center(Offset.zero));
+}
+
+Offset? _trailingSwitchOrigin(BuildContext context) {
+  final box = context.findRenderObject();
+  if (box is! RenderBox || !box.hasSize) return null;
+  final isRtl = Directionality.of(context) == TextDirection.rtl;
+  final dx = isRtl ? 32.0 : (box.size.width - 32.0).clamp(0.0, box.size.width);
+  return box.localToGlobal(Offset(dx, box.size.height / 2));
+}
+
 Future<void> _applyThemeChange({
   required BuildContext context,
   required AppLanguageProvider i18n,
   required Future<bool> Function() change,
+  Offset? globalOrigin,
 }) async {
-  final updated = await change();
+  final updated = await AppThemeRevealHost.run<bool>(
+    context: context,
+    globalOrigin: globalOrigin,
+    applyChange: change,
+  );
   if (updated || !context.mounted) return;
   showAppSnackBar(
     context,
@@ -388,9 +414,9 @@ class _ThemeColorPickerMenu extends StatefulWidget {
   final bool useSystemAccent;
   final ValueListenable<Color?> systemAccentColorListenable;
   final AppLanguageProvider i18n;
-  final ValueChanged<ThemeAccentPreset> onSelected;
-  final ValueChanged<Color> onCustomColorSelected;
-  final VoidCallback onSystemAccentSelected;
+  final void Function(ThemeAccentPreset preset, Offset? origin) onSelected;
+  final void Function(Color color, Offset? origin) onCustomColorSelected;
+  final void Function(Offset? origin) onSystemAccentSelected;
 
   @override
   State<_ThemeColorPickerMenu> createState() => _ThemeColorPickerMenuState();
@@ -470,32 +496,39 @@ class _ThemeColorPickerMenuState extends State<_ThemeColorPickerMenu> {
                     label: label,
                     child: Tooltip(
                       message: label,
-                      child: AppEntryInkWell(
-                        key: ValueKey<String>('theme_color_${preset.name}'),
-                        customBorder: const CircleBorder(),
-                        onTap: () => widget.onSelected(preset),
-                        child: Center(
-                          child: AnimatedContainer(
-                            duration: tokens.motionFast,
-                            width: 48,
-                            height: 48,
-                            decoration: BoxDecoration(
-                              color: color,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: isSelected
-                                    ? cs.onSurface
-                                    : cs.outlineVariant.withValues(alpha: 0.7),
-                                width: isSelected ? 3 : 1,
+                      child: Builder(
+                        builder: (swatchContext) => AppEntryInkWell(
+                          key: ValueKey<String>('theme_color_${preset.name}'),
+                          customBorder: const CircleBorder(),
+                          onTap: () => widget.onSelected(
+                            preset,
+                            _widgetCenterGlobalOrigin(swatchContext),
+                          ),
+                          child: Center(
+                            child: AnimatedContainer(
+                              duration: tokens.motionFast,
+                              width: 48,
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: color,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: isSelected
+                                      ? cs.onSurface
+                                      : cs.outlineVariant.withValues(
+                                          alpha: 0.7,
+                                        ),
+                                  width: isSelected ? 3 : 1,
+                                ),
                               ),
+                              child: isSelected
+                                  ? Icon(
+                                      Icons.check_rounded,
+                                      color: foreground,
+                                      size: 24,
+                                    )
+                                  : null,
                             ),
-                            child: isSelected
-                                ? Icon(
-                                    Icons.check_rounded,
-                                    color: foreground,
-                                    size: 24,
-                                  )
-                                : null,
                           ),
                         ),
                       ),
@@ -512,19 +545,23 @@ class _ThemeColorPickerMenuState extends State<_ThemeColorPickerMenu> {
               ),
               const SizedBox(height: 8),
               if (systemAccentColor != null) ...[
-                _ThemeColorOptionRow(
-                  key: const ValueKey<String>('theme_color_system_option'),
-                  label: widget.i18n.tr('theme_color_system'),
-                  previewColor: buildAppColorScheme(
-                    seedColor: systemAccentColor,
-                    brightness: theme.brightness,
-                    pureBlack: tokens.pureBlack,
-                    highContrast:
-                        tokens.highContrast ||
-                        MediaQuery.highContrastOf(context),
-                  ).primary,
-                  selected: hasSystemActive,
-                  onTap: widget.onSystemAccentSelected,
+                Builder(
+                  builder: (systemRowContext) => _ThemeColorOptionRow(
+                    key: const ValueKey<String>('theme_color_system_option'),
+                    label: widget.i18n.tr('theme_color_system'),
+                    previewColor: buildAppColorScheme(
+                      seedColor: systemAccentColor,
+                      brightness: theme.brightness,
+                      pureBlack: tokens.pureBlack,
+                      highContrast:
+                          tokens.highContrast ||
+                          MediaQuery.highContrastOf(context),
+                    ).primary,
+                    selected: hasSystemActive,
+                    onTap: () => widget.onSystemAccentSelected(
+                      _widgetCenterGlobalOrigin(systemRowContext),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 4),
               ],
@@ -556,111 +593,126 @@ class _ThemeColorPickerMenuState extends State<_ThemeColorPickerMenu> {
                         onTap: () =>
                             setState(() => _customExpanded = !_customExpanded),
                       ),
-                      if (_customExpanded) ...[
-                        const SizedBox(height: 8),
-                        Container(
-                          key: const ValueKey<String>(
-                            'theme_color_custom_editor',
-                          ),
-                          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                          decoration: BoxDecoration(
-                            color: cs.surfaceContainer,
-                            borderRadius: BorderRadius.circular(
-                              tokens.radiusCard,
+                      AnimatedSectionReveal(
+                        visible: _customExpanded,
+                        builder: (context) => Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Container(
+                            key: const ValueKey<String>(
+                              'theme_color_custom_editor',
                             ),
-                            border: Border.all(
-                              color: cs.outlineVariant.withValues(
-                                alpha: tokens.subtleBorderAlpha,
+                            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                            decoration: BoxDecoration(
+                              color: cs.surfaceContainer,
+                              borderRadius: BorderRadius.circular(
+                                tokens.radiusCard,
+                              ),
+                              border: Border.all(
+                                color: cs.outlineVariant.withValues(
+                                  alpha: tokens.subtleBorderAlpha,
+                                ),
                               ),
                             ),
-                          ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Row(
-                                children: [
-                                  Container(
-                                    width: 28,
-                                    height: 28,
-                                    decoration: BoxDecoration(
-                                      color: draftColor,
-                                      shape: BoxShape.circle,
-                                      border: Border.all(
-                                        color: cs.outlineVariant.withValues(
-                                          alpha: 0.7,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Row(
+                                  children: [
+                                    Container(
+                                      width: 28,
+                                      height: 28,
+                                      decoration: BoxDecoration(
+                                        color: draftColor,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: cs.outlineVariant.withValues(
+                                            alpha: 0.7,
+                                          ),
                                         ),
                                       ),
                                     ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Text(
-                                    hexCode,
-                                    style: theme.textTheme.labelLarge?.copyWith(
-                                      color: cs.onSurface,
+                                    const SizedBox(width: 10),
+                                    Text(
+                                      hexCode,
+                                      style: theme.textTheme.labelLarge
+                                          ?.copyWith(color: cs.onSurface),
                                     ),
-                                  ),
-                                  const Spacer(),
-                                  FilledButton(
-                                    key: const ValueKey<String>(
-                                      'theme_color_custom_apply',
-                                    ),
-                                    onPressed: () => widget
-                                        .onCustomColorSelected(draftColor),
-                                    style: appSurfaceButtonStyle(
-                                      style: FilledButton.styleFrom(
-                                        minimumSize: const Size(72, 36),
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 14,
+                                    const Spacer(),
+                                    Builder(
+                                      builder: (applyContext) => FilledButton(
+                                        key: const ValueKey<String>(
+                                          'theme_color_custom_apply',
                                         ),
-                                        backgroundColor: draftColor,
-                                        foregroundColor: draftOnColor,
+                                        onPressed: () =>
+                                            widget.onCustomColorSelected(
+                                              draftColor,
+                                              _widgetCenterGlobalOrigin(
+                                                applyContext,
+                                              ),
+                                            ),
+                                        style: appSurfaceButtonStyle(
+                                          style: FilledButton.styleFrom(
+                                            minimumSize: const Size(72, 36),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 14,
+                                            ),
+                                            backgroundColor: draftColor,
+                                            foregroundColor: draftOnColor,
+                                          ),
+                                          colorScheme: cs,
+                                          platform: theme.platform,
+                                          defaultBackgroundColor: draftColor,
+                                          animationDuration:
+                                              MediaQuery.disableAnimationsOf(
+                                                context,
+                                              )
+                                              ? Duration.zero
+                                              : const Duration(
+                                                  milliseconds: 130,
+                                                ),
+                                        ),
+                                        child: Text(widget.i18n.tr('confirm')),
                                       ),
-                                      colorScheme: cs,
-                                      platform: theme.platform,
-                                      defaultBackgroundColor: draftColor,
-                                      animationDuration:
-                                          MediaQuery.disableAnimationsOf(
-                                            context,
-                                          )
-                                          ? Duration.zero
-                                          : const Duration(milliseconds: 130),
                                     ),
-                                    child: Text(widget.i18n.tr('confirm')),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                _HslColorSliderRow(
+                                  label: widget.i18n.tr('theme_color_hue'),
+                                  value: draftHsl.hue,
+                                  min: 0,
+                                  max: 360,
+                                  activeColor: draftColor,
+                                  onChanged: (hue) =>
+                                      _draftHsl.value = draftHsl.withHue(hue),
+                                ),
+                                _HslColorSliderRow(
+                                  label: widget.i18n.tr(
+                                    'theme_color_saturation',
                                   ),
-                                ],
-                              ),
-                              const SizedBox(height: 6),
-                              _HslColorSliderRow(
-                                label: widget.i18n.tr('theme_color_hue'),
-                                value: draftHsl.hue,
-                                min: 0,
-                                max: 360,
-                                activeColor: draftColor,
-                                onChanged: (hue) =>
-                                    _draftHsl.value = draftHsl.withHue(hue),
-                              ),
-                              _HslColorSliderRow(
-                                label: widget.i18n.tr('theme_color_saturation'),
-                                value: draftHsl.saturation,
-                                min: 0.1,
-                                max: 1.0,
-                                activeColor: draftColor,
-                                onChanged: (sat) => _draftHsl.value = draftHsl
-                                    .withSaturation(sat),
-                              ),
-                              _HslColorSliderRow(
-                                label: widget.i18n.tr('theme_color_lightness'),
-                                value: draftHsl.lightness,
-                                min: 0.25,
-                                max: 0.85,
-                                activeColor: draftColor,
-                                onChanged: (light) => _draftHsl.value = draftHsl
-                                    .withLightness(light),
-                              ),
-                            ],
+                                  value: draftHsl.saturation,
+                                  min: 0.1,
+                                  max: 1.0,
+                                  activeColor: draftColor,
+                                  onChanged: (sat) => _draftHsl.value = draftHsl
+                                      .withSaturation(sat),
+                                ),
+                                _HslColorSliderRow(
+                                  label: widget.i18n.tr(
+                                    'theme_color_lightness',
+                                  ),
+                                  value: draftHsl.lightness,
+                                  min: 0.25,
+                                  max: 0.85,
+                                  activeColor: draftColor,
+                                  onChanged: (light) => _draftHsl.value =
+                                      draftHsl.withLightness(light),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ],
+                      ),
                     ],
                   );
                 },

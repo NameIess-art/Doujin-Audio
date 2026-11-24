@@ -14,7 +14,7 @@ class AppModalBackground extends StatefulWidget {
     required this.animation,
     this.scrimKey,
     this.curve = kAppSpringCurve,
-    this.reverseCurve = kAppSpringCurve,
+    this.reverseCurve = Curves.easeInCubic,
     this.blurReverseCurve = Curves.easeInQuad,
   });
 
@@ -299,6 +299,7 @@ class _AppOverlayPanelShell extends StatelessWidget {
                     context: context,
                     animation: animation,
                     beginScale: 0.88,
+                    alignment: isDesktop ? Alignment.center : mobileAlignment,
                     curve: kSecondaryOverlayConfig.curve,
                     reverseCurve: kSecondaryOverlayConfig.reverseCurve,
                     // Ink must paint inside the transition so tile backgrounds

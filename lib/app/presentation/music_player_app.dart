@@ -619,7 +619,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
                     : content;
                 return ValueListenableBuilder<bool>(
                   valueListenable: _appTickersEnabled,
-                  child: platformContent,
+                  child: AppThemeRevealHost(child: platformContent),
                   builder: (context, enabled, child) =>
                       TickerMode(enabled: enabled, child: child!),
                 );

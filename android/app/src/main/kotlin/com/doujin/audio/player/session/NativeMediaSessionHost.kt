@@ -95,7 +95,9 @@ internal class NativeMediaSessionHost(
         val nextPlayer = playbackSession?.playerOrNull()
         val existing = resources.currentSession
         if (nextPlayer == null) {
-            release("no_media_session_candidate")
+            if (!resources.isParkedOnBootstrap) {
+                release("no_media_session_candidate")
+            }
             return
         }
         if (existing == null) {
@@ -103,6 +105,23 @@ internal class NativeMediaSessionHost(
             return
         }
         attachPlayer(existing, nextPlayer, playbackSession)
+    }
+
+    fun parkIfAttached(player: ExoPlayer?, reason: String) {
+        if (!isAttachedTo(player)) return
+        try {
+            resources.parkToBootstrap(
+                createPlayer = { BootstrapPlaceholderPlayer(Looper.getMainLooper()) },
+                attachBootstrap = { session, placeholder ->
+                    logInfo("media_session_park reason=$reason", null)
+                    session.player = placeholder
+                },
+                releasePlayer = Player::release
+            )
+        } catch (error: Exception) {
+            logWarn("park_media_session_failed reason=$reason", error)
+            release(reason)
+        }
     }
 
     fun ensurePlayer(session: NativePlaybackSession): ExoPlayer {

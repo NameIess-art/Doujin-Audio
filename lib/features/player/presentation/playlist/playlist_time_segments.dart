@@ -365,93 +365,110 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
             ],
           ),
         ),
-        if (widget.showEditor) ...[
-          const SizedBox(height: 12),
-          TextField(
-            contextMenuBuilder: buildAppEditableTextMenu,
-            controller: widget.nameController,
-            textInputAction: TextInputAction.done,
-            decoration: InputDecoration(
-              labelText: i18n.tr('segment_name'),
-              hintText: i18n.tr('segment_name_hint'),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 10,
+        AnimatedSectionReveal(
+          visible: widget.showEditor,
+          builder: (context) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: 12),
+              TextField(
+                contextMenuBuilder: buildAppEditableTextMenu,
+                controller: widget.nameController,
+                textInputAction: TextInputAction.done,
+                decoration: InputDecoration(
+                  labelText: i18n.tr('segment_name'),
+                  hintText: i18n.tr('segment_name_hint'),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                ),
               ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              const gap = 10.0;
-              final width = constraints.maxWidth;
-              final textScale = MediaQuery.textScalerOf(context).scale(14) / 14;
-              final endpointWidth = width >= 320 * textScale
-                  ? (width - gap) / 2
-                  : width;
-              return Wrap(
-                spacing: gap,
-                runSpacing: gap,
-                children: [
-                  SizedBox(
-                    width: endpointWidth,
-                    child: SegmentTimeRow(
-                      label: i18n.tr('segment_start'),
-                      value: widget.draftStart,
-                      onSet: widget.onSetStart,
-                      onEdit: widget.onEditStart,
-                    ),
-                  ),
-                  SizedBox(
-                    width: endpointWidth,
-                    child: SegmentTimeRow(
-                      label: i18n.tr('segment_end'),
-                      value: widget.draftEnd,
-                      onSet: widget.onSetEnd,
-                      onEdit: widget.onEditEnd,
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-          if (selected != null) ...[
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: FilledButton.tonal(
-                    style: sessionDetailResetButtonStyle(
-                      context,
-                      accent: loopActive ? cs.primary : cs.onSurfaceVariant,
-                    ),
-                    onPressed: () => widget.onToggleLoop(selected),
-                    child: Text(
-                      i18n.tr(
-                        loopActive ? 'segment_stop_loop' : 'segment_loop',
+              const SizedBox(height: 12),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  const gap = 10.0;
+                  final width = constraints.maxWidth;
+                  final textScale =
+                      MediaQuery.textScalerOf(context).scale(14) / 14;
+                  final endpointWidth = width >= 320 * textScale
+                      ? (width - gap) / 2
+                      : width;
+                  return Wrap(
+                    spacing: gap,
+                    runSpacing: gap,
+                    children: [
+                      SizedBox(
+                        width: endpointWidth,
+                        child: SegmentTimeRow(
+                          label: i18n.tr('segment_start'),
+                          value: widget.draftStart,
+                          onSet: widget.onSetStart,
+                          onEdit: widget.onEditStart,
+                        ),
                       ),
-                      textAlign: TextAlign.center,
+                      SizedBox(
+                        width: endpointWidth,
+                        child: SegmentTimeRow(
+                          label: i18n.tr('segment_end'),
+                          value: widget.draftEnd,
+                          onSet: widget.onSetEnd,
+                          onEdit: widget.onEditEnd,
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+              AnimatedSectionReveal(
+                visible: selected != null,
+                builder: (context) {
+                  final activeSegment = selected!;
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: FilledButton.tonal(
+                            style: sessionDetailResetButtonStyle(
+                              context,
+                              accent: loopActive
+                                  ? cs.primary
+                                  : cs.onSurfaceVariant,
+                            ),
+                            onPressed: () => widget.onToggleLoop(activeSegment),
+                            child: Text(
+                              i18n.tr(
+                                loopActive
+                                    ? 'segment_stop_loop'
+                                    : 'segment_loop',
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: FilledButton.tonal(
+                            style: sessionDetailResetButtonStyle(
+                              context,
+                              accent: cs.error,
+                            ),
+                            onPressed: () => widget.onDelete(activeSegment),
+                            child: Text(
+                              i18n.tr('remove'),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: FilledButton.tonal(
-                    style: sessionDetailResetButtonStyle(
-                      context,
-                      accent: cs.error,
-                    ),
-                    onPressed: () => widget.onDelete(selected),
-                    child: Text(
-                      i18n.tr('remove'),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ],
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
       ],
     ).withWindowsSmoothScroll();
   }

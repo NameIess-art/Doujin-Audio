@@ -14,6 +14,7 @@ import '../../settings/application/settings_state.dart';
 import '../../../core/ui/visual_settings_providers.dart';
 import '../application/cover_artwork_cache_service.dart';
 import 'library_cover_ui_controller.dart';
+import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/library_like_cards.dart';
 import '../../../core/widgets/duration_overlay.dart';
@@ -505,20 +506,31 @@ class SingleAudioFileCardContent extends ConsumerWidget {
               title: '${translate(parts.source)}${parts.suffix}',
               lines: lines,
               trailingActions: trailingActions,
-              titleLeading: Padding(
+              titleLeading: AnimatedPadding(
+                duration: MediaQuery.disableAnimationsOf(context)
+                    ? Duration.zero
+                    : kAppMotionFast,
+                curve: kAppSpringCurve,
                 padding: EdgeInsets.only(right: isPinned ? AppSpacing.xs : 0),
-                child: SizedBox(
-                  width: isPinned ? 22 : 0,
-                  height: LibraryLikeCardMetrics.contentHeight / 5,
-                  child: OverflowBox(
-                    alignment: Alignment.centerLeft,
-                    minWidth: 22,
-                    maxWidth: 22,
-                    minHeight: 22,
-                    maxHeight: 22,
-                    child: LibraryPinnedIndicator(
-                      path: path,
-                      isPinned: isPinned,
+                child: AnimatedSize(
+                  duration: MediaQuery.disableAnimationsOf(context)
+                      ? Duration.zero
+                      : kAppMotionFast,
+                  curve: kAppSpringCurve,
+                  alignment: Alignment.centerLeft,
+                  child: SizedBox(
+                    width: isPinned ? 22 : 0,
+                    height: LibraryLikeCardMetrics.contentHeight / 5,
+                    child: OverflowBox(
+                      alignment: Alignment.centerLeft,
+                      minWidth: 22,
+                      maxWidth: 22,
+                      minHeight: 22,
+                      maxHeight: 22,
+                      child: LibraryPinnedIndicator(
+                        path: path,
+                        isPinned: isPinned,
+                      ),
                     ),
                   ),
                 ),

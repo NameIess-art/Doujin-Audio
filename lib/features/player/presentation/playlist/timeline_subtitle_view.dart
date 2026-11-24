@@ -11,18 +11,20 @@ import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../core/media/subtitle_parser.dart';
 import '../../../../core/media/time_text_formatters.dart';
 import '../../../../core/widgets/app_feedback.dart';
+import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/scroll_to_top_list.dart';
 import '../../../../core/widgets/windows_smooth_scroll_controller.dart';
 import 'playlist_shared_helpers.dart';
 
 class _DashedLinePainter extends CustomPainter {
-  const _DashedLinePainter({required this.color});
+  const _DashedLinePainter({required this.color, this.fadeOutRight = false});
 
   static const double _dashWidth = 4.0;
   static const double _dashSpace = 4.0;
   static const double _strokeWidth = 1.0;
 
   final Color color;
+  final bool fadeOutRight;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -31,7 +33,9 @@ class _DashedLinePainter extends CustomPainter {
       ..shader = ui.Gradient.linear(
         Offset.zero,
         Offset(size.width, 0),
-        <Color>[color.withValues(alpha: 0), color],
+        fadeOutRight
+            ? <Color>[color, color.withValues(alpha: 0)]
+            : <Color>[color.withValues(alpha: 0), color],
       )
       ..strokeWidth = _strokeWidth
       ..style = PaintingStyle.stroke;
@@ -46,7 +50,8 @@ class _DashedLinePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _DashedLinePainter oldDelegate) {
-    return oldDelegate.color != color;
+    return oldDelegate.color != color ||
+        oldDelegate.fadeOutRight != fadeOutRight;
   }
 }
 
@@ -82,7 +87,6 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
   static const double _textVerticalPadding = 6;
   static const Duration _returnDelay = Duration(seconds: 3);
   static const Duration _focusHapticInterval = Duration(milliseconds: 110);
-  static const Duration _smoothScrollDuration = Duration(milliseconds: 240);
 
   late final WindowsSmoothScrollController _scrollController;
   late final ValueNotifier<int> _focusedIndexNotifier;
@@ -410,12 +414,13 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
       return;
     }
     _isProgrammaticScroll = true;
+    final adaptiveMs = (210 + delta / 3.2).round().clamp(210, 320);
     unawaited(
       _scrollController
           .animateTo(
             targetOffset,
-            duration: _smoothScrollDuration,
-            curve: Curves.easeOutCubic,
+            duration: Duration(milliseconds: adaptiveMs),
+            curve: kAppSpringCurve,
           )
           .whenComplete(() {
             if (_scrollAnimationGen == gen) {
@@ -849,147 +854,189 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
                           return const SizedBox.shrink();
                         }
                         const seekBarHeight = 44.0;
-                        final focusedLocal = focusedIndex - _windowStart;
-                        final focusedExtent =
-                            focusedLocal >= 0 &&
-                                focusedLocal < _itemExtents.length
-                            ? _itemExtents[focusedLocal]
-                            : 36.0;
-                        final seekBarTop = widget.isLandscape
-                            ? max(0.0, (_viewportHeight - seekBarHeight) / 2)
-                            : min(
-                                max(0.0, _viewportHeight - seekBarHeight),
-                                (_viewportHeight + focusedExtent) / 2 + 2,
-                              );
+                        final seekBarTop = max(
+                          0.0,
+                          (_viewportHeight - seekBarHeight) / 2,
+                        );
+                        final cueTimeText = formatDurationCompact(
+                          widget.cues[focusedIndex].start,
+                        );
+                        final timeTextStyle = Theme.of(context)
+                            .textTheme
+                            .labelSmall
+                            ?.copyWith(
+                              color: cs.primary,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 11,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
+                            );
+                        final pillDecoration = BoxDecoration(
+                          color: isDark
+                              ? cs.surfaceContainerHighest.withValues(
+                                  alpha: 0.92,
+                                )
+                              : cs.surfaceContainerHighest.withValues(
+                                  alpha: 0.96,
+                                ),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: cs.primary.withValues(
+                              alpha: isDark ? 0.35 : 0.25,
+                            ),
+                            width: 0.8,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: cs.shadow.withValues(
+                                alpha: isDark ? 0.35 : 0.08,
+                              ),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        );
                         return Positioned(
-                          left: 12,
-                          right: widget.isLandscape ? 48 : 12,
+                          left: widget.isLandscape ? 12 : 6,
+                          right: widget.isLandscape ? 48 : 4,
                           top: seekBarTop,
                           height: seekBarHeight,
-                          child: Row(
-                            children: [
-                              if (widget.isLandscape) const Spacer(),
-                              SizedBox(
-                                key: const ValueKey(
-                                  'subtitle_timeline_seek_dashes',
-                                ),
-                                width: 36,
-                                child: IgnorePointer(
-                                  child: CustomPaint(
-                                    painter: _DashedLinePainter(
-                                      color: cs.primary.withValues(
-                                        alpha: isDark ? 0.6 : 0.45,
+                          child: TweenAnimationBuilder<double>(
+                            tween: Tween<double>(begin: 0.0, end: 1.0),
+                            duration: MediaQuery.disableAnimationsOf(context)
+                                ? Duration.zero
+                                : const Duration(milliseconds: 160),
+                            curve: Curves.easeOutCubic,
+                            builder: (context, opacity, child) =>
+                                opacity >= 0.999
+                                ? child!
+                                : Opacity(opacity: opacity, child: child),
+                            child: Row(
+                              children: [
+                                if (widget.isLandscape)
+                                  const Spacer()
+                                else ...[
+                                  IgnorePointer(
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 6,
+                                        vertical: 3,
+                                      ),
+                                      decoration: pillDecoration,
+                                      child: Text(
+                                        cueTimeText,
+                                        style: timeTextStyle,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 3),
+                                ],
+                                SizedBox(
+                                  key: const ValueKey(
+                                    'subtitle_timeline_seek_dashes',
+                                  ),
+                                  width: widget.isLandscape ? 36 : 12,
+                                  child: IgnorePointer(
+                                    child: CustomPaint(
+                                      painter: _DashedLinePainter(
+                                        color: cs.primary.withValues(
+                                          alpha: isDark ? 0.6 : 0.45,
+                                        ),
+                                        fadeOutRight: !widget.isLandscape,
                                       ),
                                     ),
                                   ),
                                 ),
-                              ),
-                              if (!widget.isLandscape) const Spacer(),
-                              Tooltip(
-                                message: i18n.tr('seek_to_subtitle'),
-                                child: Semantics(
-                                  button: true,
-                                  label: i18n.tr('seek_to_subtitle'),
-                                  child: Material(
-                                    color: Colors.transparent,
-                                    child: InkWell(
-                                      key: const ValueKey(
-                                        'subtitle_timeline_seek_button',
-                                      ),
-                                      borderRadius: BorderRadius.circular(999),
-                                      onTap: _seekToFocusedSubtitle,
-                                      child: ConstrainedBox(
-                                        constraints: const BoxConstraints(
-                                          minWidth: 44,
-                                          minHeight: 44,
+                                if (!widget.isLandscape) const Spacer(),
+                                Tooltip(
+                                  message: i18n.tr('seek_to_subtitle'),
+                                  child: Semantics(
+                                    button: true,
+                                    label: i18n.tr('seek_to_subtitle'),
+                                    child: Material(
+                                      color: Colors.transparent,
+                                      child: InkWell(
+                                        key: const ValueKey(
+                                          'subtitle_timeline_seek_button',
                                         ),
-                                        child: Center(
-                                          child: Container(
-                                            height: 36,
-                                            padding: const EdgeInsets.only(
-                                              left: 12,
-                                              right: 5,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: isDark
-                                                  ? cs.surfaceContainerHighest
-                                                        .withValues(alpha: 0.90)
-                                                  : cs.surfaceContainerHighest
-                                                        .withValues(
-                                                          alpha: 0.95,
+                                        borderRadius: BorderRadius.circular(
+                                          999,
+                                        ),
+                                        onTap: _seekToFocusedSubtitle,
+                                        child: ConstrainedBox(
+                                          constraints: const BoxConstraints(
+                                            minWidth: 44,
+                                            minHeight: 44,
+                                          ),
+                                          child: Center(
+                                            child: widget.isLandscape
+                                                ? Container(
+                                                    height: 32,
+                                                    padding:
+                                                        const EdgeInsets.only(
+                                                          left: 10,
+                                                          right: 4,
                                                         ),
-                                              borderRadius:
-                                                  BorderRadius.circular(999),
-                                              border: Border.all(
-                                                color: cs.primary.withValues(
-                                                  alpha: isDark ? 0.35 : 0.25,
-                                                ),
-                                                width: 0.8,
-                                              ),
-                                              boxShadow: [
-                                                BoxShadow(
-                                                  color: cs.shadow.withValues(
-                                                    alpha: isDark ? 0.35 : 0.08,
-                                                  ),
-                                                  blurRadius: 8,
-                                                  offset: const Offset(0, 2),
-                                                ),
-                                              ],
-                                            ),
-                                            child: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Text(
-                                                  formatDurationCompact(
-                                                    widget
-                                                        .cues[focusedIndex]
-                                                        .start,
-                                                  ),
-                                                  style: Theme.of(context)
-                                                      .textTheme
-                                                      .labelSmall
-                                                      ?.copyWith(
+                                                    decoration: pillDecoration,
+                                                    child: Row(
+                                                      mainAxisSize:
+                                                          MainAxisSize.min,
+                                                      children: [
+                                                        Text(
+                                                          cueTimeText,
+                                                          style: timeTextStyle,
+                                                        ),
+                                                        const SizedBox(
+                                                          width: 6,
+                                                        ),
+                                                        Container(
+                                                          width: 24,
+                                                          height: 24,
+                                                          decoration:
+                                                              BoxDecoration(
+                                                                shape: BoxShape
+                                                                    .circle,
+                                                                color:
+                                                                    cs.primary,
+                                                              ),
+                                                          child: Icon(
+                                                            Icons
+                                                                .play_arrow_rounded,
+                                                            color: cs.onPrimary,
+                                                            size: 16,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  )
+                                                : Container(
+                                                    width: 32,
+                                                    height: 32,
+                                                    decoration: pillDecoration,
+                                                    padding:
+                                                        const EdgeInsets.all(3),
+                                                    child: DecoratedBox(
+                                                      decoration: BoxDecoration(
+                                                        shape: BoxShape.circle,
                                                         color: cs.primary,
-                                                        fontWeight:
-                                                            FontWeight.w700,
-                                                        fontSize: 12,
                                                       ),
-                                                ),
-                                                const SizedBox(width: 6),
-                                                Container(
-                                                  width: 1,
-                                                  height: 14,
-                                                  color: cs.outlineVariant
-                                                      .withValues(
-                                                        alpha: isDark
-                                                            ? 0.35
-                                                            : 0.5,
+                                                      child: Icon(
+                                                        Icons
+                                                            .play_arrow_rounded,
+                                                        color: cs.onPrimary,
+                                                        size: 17,
                                                       ),
-                                                ),
-                                                const SizedBox(width: 5),
-                                                Container(
-                                                  width: 28,
-                                                  height: 28,
-                                                  decoration: BoxDecoration(
-                                                    shape: BoxShape.circle,
-                                                    color: cs.primary,
+                                                    ),
                                                   ),
-                                                  child: Icon(
-                                                    Icons.play_arrow_rounded,
-                                                    color: cs.onPrimary,
-                                                    size: 18,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
                                           ),
                                         ),
                                       ),
                                     ),
                                   ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         );
                       },
@@ -1106,7 +1153,10 @@ class _TimelineSubtitleRowState extends State<_TimelineSubtitleRow> {
                 widget.textHorizontalPadding,
                 widget.textVerticalPadding,
               ),
-              child: Center(
+              child: Align(
+                alignment: widget.isLandscape
+                    ? Alignment.centerLeft
+                    : Alignment.center,
                 child: AnimatedScale(
                   alignment: widget.isLandscape
                       ? Alignment.centerLeft
@@ -1115,19 +1165,16 @@ class _TimelineSubtitleRowState extends State<_TimelineSubtitleRow> {
                   duration: MediaQuery.disableAnimationsOf(context)
                       ? Duration.zero
                       : const Duration(milliseconds: 180),
-                  curve: Curves.easeOutCubic,
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: Text(
-                      widget.text,
-                      key: ValueKey('subtitle_timeline_text_${widget.index}'),
-                      textAlign: widget.isLandscape
-                          ? TextAlign.left
-                          : TextAlign.center,
-                      style: isFocused
-                          ? widget.focusedTextStyle
-                          : widget.unfocusedTextStyle,
-                    ),
+                  curve: kAppSpringCurve,
+                  child: Text(
+                    widget.text,
+                    key: ValueKey('subtitle_timeline_text_${widget.index}'),
+                    style: isFocused
+                        ? widget.focusedTextStyle
+                        : widget.unfocusedTextStyle,
+                    textAlign: widget.isLandscape
+                        ? TextAlign.left
+                        : TextAlign.center,
                   ),
                 ),
               ),

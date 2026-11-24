@@ -600,6 +600,9 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
     if (_status == GlassGlassRefreshIndicatorStatus.drag &&
         _positionController.value >= 1.0 / _kDragSizeFactorLimit) {
       _status = GlassGlassRefreshIndicatorStatus.armed;
+      unawaited(
+        AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+      );
       widget.onStatusChange?.call(_status);
     }
   }
@@ -635,6 +638,7 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
         await _positionController.animateTo(
           0.0,
           duration: _kIndicatorScaleDuration,
+          curve: kAppSpringCurve,
         );
       case GlassGlassRefreshIndicatorStatus.armed:
       case GlassGlassRefreshIndicatorStatus.drag:
@@ -668,6 +672,7 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
         .animateTo(
           1.0 / _kDragSizeFactorLimit,
           duration: _kIndicatorSnapDuration,
+          curve: kAppSpringCurve,
         )
         .then<void>((void value) {
           if (mounted && _status == GlassGlassRefreshIndicatorStatus.snap) {
@@ -799,13 +804,24 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
                     elevation: 0.0,
                   );
 
-                  final Widget materialIndicator = AppGlassSurface(
-                    enabled: AppDesignTokens.of(context).barGlassEnabled,
-                    backgroundColor:
-                        widget.backgroundColor ?? cs.surfaceContainerHigh,
-                    borderRadius: BorderRadius.circular(100),
-                    blurSigma: 4,
-                    child: innerIndicator,
+                  final tokens = AppDesignTokens.of(context);
+                  final Widget materialIndicator = DecoratedBox(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: cs.outlineVariant.withValues(
+                          alpha: tokens.subtleBorderAlpha,
+                        ),
+                      ),
+                    ),
+                    child: AppGlassSurface(
+                      enabled: tokens.barGlassEnabled,
+                      backgroundColor:
+                          widget.backgroundColor ?? cs.surfaceContainerHigh,
+                      borderRadius: BorderRadius.circular(100),
+                      blurSigma: 4,
+                      child: innerIndicator,
+                    ),
                   );
 
                   final Widget cupertinoIndicator =

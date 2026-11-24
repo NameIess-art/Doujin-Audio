@@ -808,9 +808,11 @@ void main() {
           image.dispose();
           return result;
         });
-        // The opaque body slides over the main page; only uncovered pixels
-        // continue to show the main page during entry and exit.
-        expect(colors!.$1, Color(Colors.red.toARGB32()));
+        // The opaque body slides over the main page; uncovered pixels show the
+        // main page darkened by the sliding route scrim during entry and exit.
+        expect(colors!.$1.r, inExclusiveRange(0.75, Colors.red.r));
+        expect(colors.$1.r, greaterThan(colors.$1.g * 2));
+        expect(colors.$1.r, greaterThan(colors.$1.b * 2));
         expect(colors.$2, Color(Colors.blue.toARGB32()));
       }
 

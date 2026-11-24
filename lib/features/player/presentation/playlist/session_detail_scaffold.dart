@@ -7,6 +7,7 @@ import 'dart:ui' as ui show Image, ImageFilter;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/physics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/presentation/app_presentation_providers.dart';
@@ -276,11 +277,17 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
     if (shouldDismiss) {
       _dragDismissClosing = true;
       final detailRoute = _detailRoute;
-      final hasCoverFlight = detailRoute?.canRunCoverExitFlight() ?? false;
-      if (!hasCoverFlight && !MediaQuery.disableAnimationsOf(context)) {
+      final viewportHeight = MediaQuery.sizeOf(context).height;
+      if (detailRoute != null && viewportHeight > 0 && velocity > 0) {
+        detailRoute.setExitReleaseVelocity(
+          (velocity / viewportHeight).clamp(0.4, 6.0),
+        );
+      }
+      if (!MediaQuery.disableAnimationsOf(context)) {
+        final velocityCarry = math.max(0.0, velocity) * 0.18;
         final targetOffset = math.max(
-          offset + 120.0,
-          MediaQuery.sizeOf(context).height * 0.45,
+          offset + math.max(120.0, velocityCarry),
+          viewportHeight * 0.45,
         );
         if (detailRoute != null) {
           detailRoute.startCoverlessDragDismissSlide(
@@ -299,7 +306,7 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
       widget.onClose();
       return;
     }
-    _animateDragDismissBack();
+    _animateDragDismissBack(velocity: velocity);
   }
 
   void _handleDragDismissCancel() {
@@ -311,7 +318,7 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
     _animateDragDismissBack();
   }
 
-  void _animateDragDismissBack() {
+  void _animateDragDismissBack({double velocity = 0.0}) {
     _dragThresholdReached = false;
     final start = _dragOffset.value;
     if (start == 0) {
@@ -324,12 +331,33 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
       _detailRoute?.endInteractiveDismiss();
       return;
     }
-    _dragResetAnimation = Tween<double>(
-      begin: start,
-      end: 0,
-    ).chain(CurveTween(curve: kAppSpringCurve)).animate(_dragResetController);
-    _dragResetController.duration = kAppMotionStandard;
-    _dragResetController.forward(from: 0);
+    _dragResetAnimation = _dragResetController;
+    final spring = SpringDescription.withDampingRatio(
+      mass: 1.0,
+      stiffness: 520.0,
+      ratio: 0.92,
+    );
+    _dragResetController.value = 0;
+    _dragResetAnimation = Tween<double>(begin: 0, end: 1).animate(
+      _dragResetController,
+    );
+    final normalizedVelocity = start > 0
+        ? (-velocity / start).clamp(-8.0, 8.0)
+        : 0.0;
+    _dragResetAnimation = _dragResetController.drive(
+      Tween<double>(begin: start, end: 0),
+    );
+    unawaited(
+      _dragResetController.animateWith(
+        SpringSimulation(
+          spring,
+          0.0,
+          1.0,
+          normalizedVelocity,
+          tolerance: const Tolerance(velocity: 0.01),
+        ),
+      ),
+    );
   }
 
   @override
@@ -721,8 +749,12 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
                                 );
                               }
 
+                              final Widget timerChild;
                               if (timer.hasTimer) {
-                                return RepaintBoundary(
+                                timerChild = RepaintBoundary(
+                                  key: const ValueKey<String>(
+                                    'session_detail_timer_capsule_slot',
+                                  ),
                                   child: Consumer(
                                     builder: (context, ref, _) {
                                       final timerRemaining = ref.watch(
@@ -744,17 +776,28 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
                                     },
                                   ),
                                 );
+                              } else {
+                                timerChild = IconButton(
+                                  key: const ValueKey(
+                                    'session_detail_timer_button',
+                                  ),
+                                  onPressed: openTimer,
+                                  style: headerActionStyle,
+                                  icon: const Icon(Icons.timer_rounded),
+                                  tooltip: i18n.tr('timer'),
+                                  iconSize: 20,
+                                  padding: EdgeInsets.zero,
+                                );
                               }
-                              return IconButton(
-                                key: const ValueKey(
-                                  'session_detail_timer_button',
-                                ),
-                                onPressed: openTimer,
-                                style: headerActionStyle,
-                                icon: const Icon(Icons.timer_rounded),
-                                tooltip: i18n.tr('timer'),
-                                iconSize: 20,
-                                padding: EdgeInsets.zero,
+                              return AnimatedSwitcher(
+                                duration: MediaQuery.disableAnimationsOf(
+                                  context,
+                                )
+                                    ? Duration.zero
+                                    : kAppMotionFast,
+                                switchInCurve: kAppSpringCurve,
+                                switchOutCurve: Curves.easeInCubic,
+                                child: timerChild,
                               );
                             },
                           ),

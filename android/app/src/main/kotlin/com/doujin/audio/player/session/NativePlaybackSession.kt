@@ -6,6 +6,7 @@ import com.doujin.audio.player.common.NATIVE_PLAYBACK_SPEED_MAX
 import com.doujin.audio.player.common.NATIVE_PLAYBACK_SPEED_MIN
 import com.doujin.audio.player.common.NativePrepareSessionArguments
 import com.doujin.audio.player.common.NativeRepeatOneArguments
+import com.doujin.audio.player.common.isNativePlaybackNetworkUri
 import com.doujin.audio.player.effects.*
 
 import android.os.SystemClock
@@ -245,6 +246,9 @@ internal class NativePlaybackSession(
 
     val queueIndex: Int
         get() = (_player?.currentMediaItemIndex ?: currentQueueIndexFor(queue)).coerceAtLeast(0)
+
+    val requiresNetworkWakeLock: Boolean
+        get() = queueStructure.wakeMode == C.WAKE_MODE_NETWORK || isNativePlaybackNetworkUri(uri)
 
     fun ensurePlayer(): ExoPlayer {
         _player?.let { return it }

@@ -548,22 +548,35 @@ void SubtitleWindow::Paint(HDC screen) {
         const DWORD red = GetRValue(text_color_), green = GetGValue(text_color_);
         const DWORD blue = GetBValue(text_color_);
         const int shadow_dy = std::max(1, static_cast<int>(std::lround(2.0 * scale)));
-        painted_text_bounds_ = text_rect;
-        painted_text_bounds_.bottom = std::min<LONG>(rows, text_rect.bottom + shadow_dy);
-        for (LONG y = text_rect.top; y < painted_text_bounds_.bottom; ++y) {
-          auto* output_row = pixels_ + y * stride + text_rect.left;
+        const int blur_r = std::max(1, static_cast<int>(std::lround(1.5 * scale)));
+        painted_text_bounds_.left = std::max<LONG>(0, text_rect.left - blur_r);
+        painted_text_bounds_.top = std::max<LONG>(0, text_rect.top - blur_r);
+        painted_text_bounds_.right = std::min<LONG>(width, text_rect.right + blur_r);
+        painted_text_bounds_.bottom =
+            std::min<LONG>(rows, text_rect.bottom + shadow_dy + blur_r);
+        const auto sample_mask = [&](LONG mx, LONG my) -> DWORD {
+          if (mx < 0 || mx >= text_w || my < 0 || my >= text_h) return 0;
+          return coverage_[static_cast<size_t>(my) * mask_stride + mx] & 255;
+        };
+        for (LONG y = painted_text_bounds_.top; y < painted_text_bounds_.bottom; ++y) {
+          auto* output_row = pixels_ + y * stride;
           const LONG local_y = y - text_rect.top;
-          const auto* text_row = local_y < text_h
-              ? coverage_ + static_cast<size_t>(local_y) * mask_stride
-              : nullptr;
-          const LONG shadow_local_y = local_y - shadow_dy;
-          const auto* shadow_row = (shadow_local_y >= 0 && shadow_local_y < text_h)
-              ? coverage_ + static_cast<size_t>(shadow_local_y) * mask_stride
-              : nullptr;
-          for (int x = 0; x < text_w; ++x) {
-            const DWORD a = text_row ? text_row[x] & 255 : 0;
-            const DWORD shadow_src = shadow_row ? shadow_row[x] & 255 : 0;
-            const DWORD alpha_s = Div255(shadow_src * 128);
+          const LONG sy = local_y - shadow_dy;
+          for (LONG x = painted_text_bounds_.left; x < painted_text_bounds_.right; ++x) {
+            const LONG local_x = x - text_rect.left;
+            const DWORD a = sample_mask(local_x, local_y);
+            // Soft 3x3 separable [1, 2, 1] kernel around (local_x, sy) for blurred shadow.
+            const DWORD blurred_shadow =
+                (sample_mask(local_x - blur_r, sy - blur_r)
+                + 2 * sample_mask(local_x, sy - blur_r)
+                + sample_mask(local_x + blur_r, sy - blur_r)
+                + 2 * sample_mask(local_x - blur_r, sy)
+                + 4 * sample_mask(local_x, sy)
+                + 2 * sample_mask(local_x + blur_r, sy)
+                + sample_mask(local_x - blur_r, sy + blur_r)
+                + 2 * sample_mask(local_x, sy + blur_r)
+                + sample_mask(local_x + blur_r, sy + blur_r) + 8) >> 4;
+            const DWORD alpha_s = Div255(blurred_shadow * 128);
             if (a == 0 && alpha_s == 0) continue;
             DWORD destination = output_row[x];
             if (alpha_s > 0) {

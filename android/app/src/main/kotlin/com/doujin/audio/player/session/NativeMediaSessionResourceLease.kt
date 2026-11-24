@@ -6,6 +6,8 @@ internal class NativeMediaSessionResourceLease<Session : Any, Player : Any> {
     private var bootstrapPlayer: Player? = null
     val hasResources: Boolean
         get() = currentSession != null || bootstrapPlayer != null
+    val isParkedOnBootstrap: Boolean
+        get() = currentSession != null && bootstrapPlayer != null
 
     fun installBootstrap(
         createPlayer: () -> Player,
@@ -32,6 +34,23 @@ internal class NativeMediaSessionResourceLease<Session : Any, Player : Any> {
         val player = bootstrapPlayer ?: return
         bootstrapPlayer = null
         releasePlayer(player)
+    }
+
+    fun parkToBootstrap(
+        createPlayer: () -> Player,
+        attachBootstrap: (Session, Player) -> Unit,
+        releasePlayer: (Player) -> Unit
+    ) {
+        val session = currentSession ?: return
+        if (bootstrapPlayer != null) return
+        val player = createPlayer()
+        try {
+            attachBootstrap(session, player)
+            bootstrapPlayer = player
+        } catch (error: Throwable) {
+            runCatching { releasePlayer(player) }
+            throw error
+        }
     }
 
     fun release(

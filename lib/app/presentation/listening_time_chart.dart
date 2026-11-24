@@ -932,6 +932,7 @@ class _BarListeningChartState extends State<_BarListeningChart> {
 
   int _windowMaxMs = 0;
   final ValueNotifier<int> _windowMaxNotifier = ValueNotifier<int>(0);
+  ValueNotifier<bool>? _scrollingNotifier;
 
   @override
   void initState() {
@@ -945,6 +946,7 @@ class _BarListeningChartState extends State<_BarListeningChart> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.removeListener(_handleScroll);
+      _detachScrollingListener();
       widget.controller.addListener(_handleScroll);
     }
     _windowMaxMs = _computeWindowMax();
@@ -953,12 +955,39 @@ class _BarListeningChartState extends State<_BarListeningChart> {
   @override
   void dispose() {
     widget.controller.removeListener(_handleScroll);
+    _detachScrollingListener();
     _windowMaxNotifier.dispose();
     super.dispose();
   }
 
+  void _detachScrollingListener() {
+    _scrollingNotifier?.removeListener(_handleScrollingChanged);
+    _scrollingNotifier = null;
+  }
+
+  void _ensureScrollingListener() {
+    if (!widget.controller.hasClients) return;
+    final notifier = widget.controller.position.isScrollingNotifier;
+    if (identical(_scrollingNotifier, notifier)) return;
+    _detachScrollingListener();
+    _scrollingNotifier = notifier;
+    notifier.addListener(_handleScrollingChanged);
+  }
+
+  void _handleScrollingChanged() {
+    if (_scrollingNotifier?.value == true || !mounted || widget.skeleton) {
+      return;
+    }
+    final next = _computeWindowMax();
+    if (next == _windowMaxMs) return;
+    _windowMaxMs = next;
+    _windowMaxNotifier.value++;
+  }
+
   void _handleScroll() {
     if (widget.skeleton) return;
+    _ensureScrollingListener();
+    if (_scrollingNotifier?.value == true) return;
     final next = _computeWindowMax();
     if (next == _windowMaxMs) return;
     _windowMaxMs = next;

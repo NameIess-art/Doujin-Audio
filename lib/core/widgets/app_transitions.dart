@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 
 import '../ui/ui_interaction_coordinator.dart';
 import 'app_edge_fade_mask.dart';
@@ -42,16 +43,20 @@ class AppDeferredFade extends StatefulWidget {
     required this.child,
     this.showDelay = Duration.zero,
     this.fadeInDuration = kAppFadeDuration,
+    this.fadeOutDuration = kAppFadeDuration,
     this.waitFor,
     this.beginScale = 1,
+    this.scaleCurve,
   });
 
   final bool visible;
   final Widget child;
   final Duration showDelay;
   final Duration fadeInDuration;
+  final Duration fadeOutDuration;
   final Animation<double>? waitFor;
   final double beginScale;
+  final Curve? scaleCurve;
 
   @override
   State<AppDeferredFade> createState() => _AppDeferredFadeState();
@@ -68,10 +73,20 @@ class _AppDeferredFadeState extends State<AppDeferredFade>
   bool _disableAnimations = false;
   Timer? _timer;
 
-  Animation<double> _buildScaleAnimation(Animation<double> opacity) =>
-      widget.beginScale == 1
-      ? kAlwaysCompleteAnimation
-      : Tween<double>(begin: widget.beginScale, end: 1).animate(opacity);
+  Animation<double> _buildScaleAnimation(
+    AnimationController controller,
+    Animation<double> opacity,
+  ) {
+    if (widget.beginScale == 1) return kAlwaysCompleteAnimation;
+    final parent = widget.scaleCurve != null
+        ? CurvedAnimation(
+            parent: controller,
+            curve: widget.scaleCurve!,
+            reverseCurve: Curves.easeInCubic,
+          )
+        : opacity;
+    return Tween<double>(begin: widget.beginScale, end: 1).animate(parent);
+  }
 
   AnimationController _ensureController({required double initialValue}) {
     final existing = _controller;
@@ -79,13 +94,13 @@ class _AppDeferredFadeState extends State<AppDeferredFade>
     final controller = AnimationController(
       vsync: this,
       duration: widget.fadeInDuration,
-      reverseDuration: kAppFadeDuration,
+      reverseDuration: widget.fadeOutDuration,
       value: initialValue,
     )..addStatusListener(_handleFadeStatus);
     _controller = controller;
     final opacity = controller.drive(CurveTween(curve: kAppFadeCurve));
     _opacity = opacity;
-    _scale = _buildScaleAnimation(opacity);
+    _scale = _buildScaleAnimation(controller, opacity);
     return controller;
   }
 
@@ -121,8 +136,14 @@ class _AppDeferredFadeState extends State<AppDeferredFade>
         _controller?.value = 1;
       }
     }
-    if (oldWidget.beginScale != widget.beginScale && _opacity != null) {
-      _scale = _buildScaleAnimation(_opacity!);
+    if (oldWidget.fadeOutDuration != widget.fadeOutDuration) {
+      _controller?.reverseDuration = widget.fadeOutDuration;
+    }
+    if ((oldWidget.beginScale != widget.beginScale ||
+            oldWidget.scaleCurve != widget.scaleCurve) &&
+        _controller != null &&
+        _opacity != null) {
+      _scale = _buildScaleAnimation(_controller!, _opacity!);
     }
     if (oldWidget.waitFor != widget.waitFor) {
       oldWidget.waitFor?.removeStatusListener(_handleMotionStatus);
@@ -1038,12 +1059,22 @@ class _HeaderOpacityLayer extends OpacityLayer {
   }
 }
 
+const double _kCoveredParallaxFraction = 0.26;
+final Expando<AppPreparedPageRoute<dynamic>> _nonSlidingCoverRoute =
+    Expando<AppPreparedPageRoute<dynamic>>();
+final Expando<AppPreparedPageRoute<dynamic>> _slidingCoverRoute =
+    Expando<AppPreparedPageRoute<dynamic>>();
+
 class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
   CurvedAnimation? _motion;
+  CurvedAnimation? _secondaryMotion;
   final ProxyAnimation _slideProgress = ProxyAnimation();
+  final ProxyAnimation _secondarySlideProgress = ProxyAnimation();
   late final ValueNotifier<Widget> _pageChild;
   final _headerViewport = GlobalKey();
   late Animation<Offset> _position;
+  late Animation<Offset> _secondaryPosition;
+  late Listenable _headerPositionListenable;
   late Animation<double> _opacity;
   late Animation<double> _coveredOpacity;
   late Animation<double> _combinedHeaderOpacity;
@@ -1051,6 +1082,7 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
   Animation<double>? _routeSecondaryAnimation;
   ModalRoute<dynamic>? _trackedRoute;
   AppPreparedPageRoute<dynamic>? _trackedPreparedRoute;
+  AppPreparedPageRoute<dynamic>? _trackedSlidingCoverRoute;
   bool _disableAnimations = false;
   late bool _interactive;
   Widget? _transition;
@@ -1066,6 +1098,23 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
       (_trackedPreparedRoute?._useLinearSlide.value ?? false) ||
       (_trackedRoute?.popGestureInProgress ?? false);
 
+  bool get _coveredByNonSlidingRoute {
+    final route = _trackedRoute;
+    if (route == null) return false;
+    final nonSliding = _nonSlidingCoverRoute[route];
+    return nonSliding != null &&
+        !nonSliding._disposed &&
+        nonSliding.animation?.status != AnimationStatus.dismissed;
+  }
+
+  bool get _useLinearSecondarySlide =>
+      _trackedSlidingCoverRoute != null &&
+      !_trackedSlidingCoverRoute!._disposed &&
+      _trackedSlidingCoverRoute!.animation?.status !=
+          AnimationStatus.dismissed &&
+      (_trackedSlidingCoverRoute!._useLinearSlide.value ||
+          _trackedSlidingCoverRoute!.popGestureInProgress);
+
   @override
   void initState() {
     super.initState();
@@ -1073,16 +1122,58 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
     _position = _slideProgress.drive(
       Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero),
     );
+    _secondaryPosition = _secondarySlideProgress.drive(
+      Tween<Offset>(
+        begin: Offset.zero,
+        end: const Offset(-_kCoveredParallaxFraction, 0),
+      ),
+    );
+    _headerPositionListenable = Listenable.merge([
+      _position,
+      _secondaryPosition,
+    ]);
     _updateAnimations();
     _interactive = _isInteractive;
     widget.animation.addStatusListener(_handleStatusChanged);
     _secondaryAnimation.addStatusListener(_handleStatusChanged);
   }
 
+  void _syncCoverRouteListener() {
+    final route = _trackedRoute;
+    final nextCover = route == null ? null : _slidingCoverRoute[route];
+    final activeCover =
+        nextCover != null &&
+            !nextCover._disposed &&
+            nextCover.animation?.status != AnimationStatus.dismissed
+        ? nextCover
+        : null;
+    if (identical(_trackedSlidingCoverRoute, activeCover)) return;
+    _trackedSlidingCoverRoute?._useLinearSlide.removeListener(
+      _syncSecondarySlideProgress,
+    );
+    _trackedSlidingCoverRoute = activeCover;
+    activeCover?._useLinearSlide.addListener(_syncSecondarySlideProgress);
+  }
+
   void _syncSlideProgress() {
     final parent = _useLinearSlide ? widget.animation : _motion!;
     if (!identical(_slideProgress.parent, parent)) {
       _slideProgress.parent = parent;
+    }
+  }
+
+  void _syncSecondarySlideProgress() {
+    _syncCoverRouteListener();
+    final Animation<double> parent;
+    if (_coveredByNonSlidingRoute || _secondaryMotion == null) {
+      parent = kAlwaysDismissedAnimation;
+    } else if (_useLinearSecondarySlide) {
+      parent = _secondaryAnimation;
+    } else {
+      parent = _secondaryMotion!;
+    }
+    if (!identical(_secondarySlideProgress.parent, parent)) {
+      _secondarySlideProgress.parent = parent;
     }
   }
 
@@ -1101,6 +1192,13 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
   }
 
   void _updateHeaderAnimation() {
+    _secondaryMotion?.dispose();
+    _secondaryMotion = CurvedAnimation(
+      parent: _secondaryAnimation,
+      curve: kAppSpringCurve,
+      reverseCurve: Curves.easeOutCubic.flipped,
+    );
+    _syncSecondarySlideProgress();
     _coveredOpacity = _secondaryAnimation.drive(
       Tween<double>(begin: 1, end: 0).chain(CurveTween(curve: kAppFadeCurve)),
     );
@@ -1150,6 +1248,7 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
 
   void _handleStatusChanged(AnimationStatus _) {
     _syncSlideProgress();
+    _syncSecondarySlideProgress();
     final interactive = _isInteractive;
     if (_interactive == interactive) return;
     setState(() {
@@ -1170,6 +1269,7 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
       preparedRoute?._useLinearSlide.addListener(_syncSlideProgress);
     }
     _syncSlideProgress();
+    _syncSecondarySlideProgress();
 
     final disableAnimations = MediaQuery.disableAnimationsOf(context);
     final disableChanged = _disableAnimations != disableAnimations;
@@ -1195,15 +1295,82 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
 
   @override
   void dispose() {
+    _trackedSlidingCoverRoute?._useLinearSlide.removeListener(
+      _syncSecondarySlideProgress,
+    );
+    _trackedSlidingCoverRoute = null;
     _trackedPreparedRoute?._useLinearSlide.removeListener(_syncSlideProgress);
     _trackedPreparedRoute = null;
     _trackedRoute = null;
     widget.animation.removeStatusListener(_handleStatusChanged);
     _secondaryAnimation.removeStatusListener(_handleStatusChanged);
     _slideProgress.parent = null;
+    _secondarySlideProgress.parent = null;
     _motion?.dispose();
+    _secondaryMotion?.dispose();
     _pageChild.dispose();
     super.dispose();
+  }
+
+  Widget _wrapSlidingCoverChrome(double viewportWidth, Widget child) {
+    return Stack(
+      clipBehavior: Clip.none,
+      fit: StackFit.passthrough,
+      children: [
+        if (viewportWidth > 0)
+          Positioned(
+            left: -viewportWidth,
+            top: 0,
+            bottom: 0,
+            width: viewportWidth,
+            child: IgnorePointer(
+              child: FadeTransition(
+                opacity: _slideProgress,
+                child: const ColoredBox(color: Color(0x21000000)),
+              ),
+            ),
+          ),
+        Positioned(
+          left: -18,
+          top: 0,
+          bottom: 0,
+          width: 18,
+          child: IgnorePointer(
+            child: FadeTransition(
+              opacity: widget.animation,
+              child: const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Color(0x00000000),
+                      Color(0x08000000),
+                      Color(0x22000000),
+                    ],
+                    stops: [0.0, 0.55, 1.0],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        child,
+      ],
+    );
+  }
+
+  Widget _wrapSecondaryParallax(double viewportWidth, Widget child) {
+    if (viewportWidth <= 0) return child;
+    return AnimatedBuilder(
+      animation: _secondaryPosition,
+      child: child,
+      builder: (context, inner) {
+        return Transform.translate(
+          offset: Offset(viewportWidth * _secondaryPosition.value.dx, 0),
+          transformHitTests: false,
+          child: inner,
+        );
+      },
+    );
   }
 
   Widget _buildTransition() => _buildPageActivity(
@@ -1217,6 +1384,7 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
   Widget _buildPage(BuildContext context, BoxConstraints constraints) {
     final animatePage =
         widget.animatePage && !MediaQuery.disableAnimationsOf(context);
+    final parallaxEnabled = !MediaQuery.disableAnimationsOf(context);
     final page = _AppPageMotionScope(
       key: widget.contentKey,
       headerAnimation: _headerAnimation,
@@ -1231,71 +1399,57 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
       ),
       contentBuilder: (context, content) {
         final body = RepaintBoundary(child: content);
-        if (!widget.separateHeader || !animatePage) return body;
+        final Widget parallaxBody = widget.separateHeader && parallaxEnabled
+            ? _wrapSecondaryParallax(constraints.maxWidth, body)
+            : body;
+        if (!widget.separateHeader || !animatePage) return parallaxBody;
         if (!widget.slide) {
-          return FadeTransition(opacity: _opacity, child: body);
+          return FadeTransition(opacity: _opacity, child: parallaxBody);
         }
         return SlideTransition(
           position: _position,
-          child: Stack(
-            clipBehavior: Clip.none,
-            fit: StackFit.passthrough,
-            children: [
-              Positioned(
-                left: -16,
-                top: 0,
-                bottom: 0,
-                width: 16,
-                child: IgnorePointer(
-                  child: FadeTransition(
-                    opacity: widget.animation,
-                    child: const DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            Color(0x00000000),
-                            Color(0x07000000),
-                            Color(0x1C000000),
-                          ],
-                          stops: [0.0, 0.55, 1.0],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              body,
-            ],
-          ),
+          child: _wrapSlidingCoverChrome(constraints.maxWidth, parallaxBody),
         );
       },
       headerBuilder: (context, header) {
         final needsSlideOffset =
-            animatePage && !widget.separateHeader && widget.slide;
+            !widget.separateHeader &&
+            ((animatePage && widget.slide) || parallaxEnabled);
         final boundaryHeader = RepaintBoundary(child: header);
+        final Widget fadedHeader;
         if (!animatePage || (!widget.slide && !widget.separateHeader)) {
-          return FadeTransition(
+          fadedHeader = FadeTransition(
             opacity: _coveredOpacity,
             child: boundaryHeader,
           );
+        } else {
+          fadedHeader = _PreparedHeaderFadeTransition(
+            opacity: _combinedHeaderOpacity,
+            snapFullOpacity: defaultTargetPlatform == TargetPlatform.windows,
+            child: boundaryHeader,
+          );
         }
-        final fadedHeader = _PreparedHeaderFadeTransition(
-          opacity: _combinedHeaderOpacity,
-          snapFullOpacity: defaultTargetPlatform == TargetPlatform.windows,
-          child: boundaryHeader,
-        );
         if (!needsSlideOffset) {
           return fadedHeader;
         }
         // Unseparated pages slide as a whole; keep their header in place
         // while its own opacity follows the route instead of the body.
         return AnimatedBuilder(
-          animation: _position,
+          animation: _headerPositionListenable,
           child: fadedHeader,
-          builder: (context, child) => Transform.translate(
-            offset: Offset(-constraints.maxWidth * _position.value.dx, 0),
-            child: child,
-          ),
+          builder: (context, child) {
+            final primaryDx = animatePage && widget.slide
+                ? _position.value.dx
+                : 0.0;
+            final secondaryDx = parallaxEnabled
+                ? _secondaryPosition.value.dx
+                : 0.0;
+            final totalDx = primaryDx + secondaryDx;
+            return Transform.translate(
+              offset: Offset(-constraints.maxWidth * totalDx, 0),
+              child: child,
+            );
+          },
         );
       },
       child: ValueListenableBuilder<Widget>(
@@ -1303,15 +1457,22 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
         builder: (_, child, _) => child,
       ),
     );
-    if (!animatePage || widget.separateHeader) return page;
+    if (widget.separateHeader) return page;
+    final Widget parallaxPage = parallaxEnabled
+        ? _wrapSecondaryParallax(
+            constraints.maxWidth,
+            RepaintBoundary(child: page),
+          )
+        : RepaintBoundary(child: page);
+    if (!animatePage) return parallaxPage;
     return widget.slide
         ? SlideTransition(
             position: _position,
-            child: RepaintBoundary(child: page),
+            child: _wrapSlidingCoverChrome(constraints.maxWidth, parallaxPage),
           )
         : _PreparedHeaderFadeTransition(
             opacity: _opacity,
-            child: RepaintBoundary(child: page),
+            child: parallaxPage,
           );
   }
 
@@ -1724,7 +1885,7 @@ class SecondaryOverlayConfig {
     this.transitionDuration = kAppOverlayDuration,
     this.reverseTransitionDuration = kAppOverlayDuration,
     this.curve = kAppSpringCurve,
-    this.reverseCurve = kAppSpringCurve,
+    this.reverseCurve = Curves.easeInCubic,
   });
 
   final double backgroundOpacity;
@@ -1866,6 +2027,63 @@ class _AnimatedTreeRevealState extends State<AnimatedTreeReveal>
   }
 }
 
+/// Smoothly expands and collapses inline non-sliver sections down to 0 height,
+/// unmounting the hidden subtree once collapsed so inactive controls are absent.
+class AnimatedSectionReveal extends StatelessWidget {
+  const AnimatedSectionReveal({
+    super.key,
+    required this.visible,
+    required this.builder,
+    this.duration = kAppMotionFast,
+    this.reverseDuration = const Duration(milliseconds: 160),
+  });
+
+  final bool visible;
+  final WidgetBuilder builder;
+  final Duration duration;
+  final Duration reverseDuration;
+
+  static Widget _defaultLayoutBuilder(
+    Widget? currentChild,
+    List<Widget> previousChildren,
+  ) => Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [...previousChildren, ?currentChild],
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final reducedMotion = MediaQuery.disableAnimationsOf(context);
+    if (reducedMotion) {
+      return visible ? builder(context) : const SizedBox.shrink();
+    }
+    return AnimatedSwitcher(
+      duration: duration,
+      reverseDuration: reverseDuration,
+      switchInCurve: kAppSpringCurve,
+      switchOutCurve: Curves.easeInCubic,
+      layoutBuilder: _defaultLayoutBuilder,
+      transitionBuilder: (child, animation) => ClipRect(
+        child: FadeTransition(
+          opacity: animation,
+          child: SizeTransition(
+            sizeFactor: animation,
+            axisAlignment: -1,
+            child: child,
+          ),
+        ),
+      ),
+      child: visible
+          ? KeyedSubtree(
+              key: const ValueKey<bool>(true),
+              child: Builder(builder: builder),
+            )
+          : const SizedBox.shrink(key: ValueKey<bool>(false)),
+    );
+  }
+}
+
 class UndoableRemovalTransition extends StatefulWidget {
   const UndoableRemovalTransition({
     super.key,
@@ -2000,6 +2218,7 @@ Widget buildAppScaleFadeTransition({
   required Animation<double> animation,
   required Widget child,
   double beginScale = 0.94,
+  Alignment alignment = Alignment.center,
   Curve curve = kAppFadeCurve,
   Curve reverseCurve = kAppFadeCurve,
 }) {
@@ -2009,6 +2228,7 @@ Widget buildAppScaleFadeTransition({
     curve: curve,
     reverseCurve: reverseCurve,
     beginScale: beginScale,
+    alignment: alignment,
     child: child,
   );
 }
@@ -2244,12 +2464,14 @@ class _AppFadeTransition extends StatefulWidget {
     required this.reverseCurve,
     required this.child,
     this.beginScale,
+    this.alignment = Alignment.center,
   });
 
   final Animation<double> animation;
   final Curve curve;
   final Curve reverseCurve;
   final double? beginScale;
+  final Alignment alignment;
   final Widget child;
 
   @override
@@ -2318,7 +2540,11 @@ class _AppFadeTransitionState extends State<_AppFadeTransition> {
     opacity: _opacity,
     child: _scale == null
         ? widget.child
-        : ScaleTransition(scale: _scale!, child: widget.child),
+        : ScaleTransition(
+            scale: _scale!,
+            alignment: widget.alignment,
+            child: widget.child,
+          ),
   );
 }
 
@@ -3541,6 +3767,7 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
   return AppPreparedPageRoute<T>(
     settings: settings,
     fullscreenDialog: fullscreenDialog,
+    slide: slide,
     transitionDuration: reducedMotion || duration == Duration.zero
         ? Duration.zero
         : duration,
@@ -3574,6 +3801,7 @@ class BedtimeCanvasRoute extends AppPreparedPageRoute<void> {
     required super.reverseTransitionDuration,
     super.settings,
     super.fullscreenDialog,
+    super.slide,
   });
 }
 
@@ -3591,6 +3819,7 @@ PageRoute<void> buildBedtimeCanvasRoute({
   return BedtimeCanvasRoute(
     settings: settings,
     fullscreenDialog: fullscreenDialog,
+    slide: slide,
     transitionDuration: reducedMotion || duration == Duration.zero
         ? Duration.zero
         : duration,
@@ -3622,8 +3851,10 @@ class AppPreparedPageRoute<T> extends PageRouteBuilder<T> {
     required super.reverseTransitionDuration,
     super.settings,
     super.fullscreenDialog,
+    this.slide = true,
   });
 
+  final bool slide;
   bool _prepared = false;
   bool _disposed = false;
   bool _reducedMotion = false;
@@ -3632,6 +3863,23 @@ class AppPreparedPageRoute<T> extends PageRouteBuilder<T> {
   double? _interactivePopReleaseVelocity;
   NavigatorState? _interactivePopNavigator;
   Timer? _exitCompletionTimer;
+
+  /// Records a gesture release velocity (in viewport-fractions/sec) so the
+  /// ensuing reverse transition inherits finger momentum smoothly.
+  void setExitReleaseVelocity(double velocityFraction) {
+    _interactivePopReleaseVelocity = velocityFraction;
+  }
+
+  @override
+  bool canTransitionFrom(TransitionRoute<dynamic> previousRoute) {
+    final result = super.canTransitionFrom(previousRoute);
+    if (result) {
+      final slidesHorizontally = slide && !fullscreenDialog;
+      _nonSlidingCoverRoute[previousRoute] = slidesHorizontally ? null : this;
+      _slidingCoverRoute[previousRoute] = slidesHorizontally ? this : null;
+    }
+    return result;
+  }
 
   @override
   Duration get transitionDuration =>
@@ -3707,7 +3955,7 @@ class AppPreparedPageRoute<T> extends PageRouteBuilder<T> {
         });
       }
 
-      if (_useLinearSlide.value) {
+      if (_useLinearSlide.value || _interactivePopReleaseVelocity != null) {
         final releaseVelocity = _interactivePopReleaseVelocity ?? 0.0;
         _interactivePopReleaseVelocity = null;
         return _PostFrameInteractiveExitSimulation(
@@ -3778,11 +4026,16 @@ class AppPreparedPageRoute<T> extends PageRouteBuilder<T> {
     return true;
   }
 
-  double? _updateInteractivePop(double deltaFraction) {
+  double? _setInteractivePopValue(double value) {
     if (_disposed || controller == null) return null;
-    final next = (controller!.value - deltaFraction).clamp(0.0, 1.0);
+    final next = value.clamp(0.0, 1.0);
     controller!.value = next;
     return next;
+  }
+
+  double? _updateInteractivePop(double deltaFraction) {
+    if (_disposed || controller == null) return null;
+    return _setInteractivePopValue(controller!.value - deltaFraction);
   }
 
   void _endInteractivePop(double velocityFraction, {bool cancelled = false}) {
@@ -3860,18 +4113,27 @@ class _EdgeSwipeBackLayer extends StatefulWidget {
   State<_EdgeSwipeBackLayer> createState() => _EdgeSwipeBackLayerState();
 }
 
-class _EdgeSwipeBackLayerState extends State<_EdgeSwipeBackLayer> {
-  static const double _edgeWidth = 32;
+class _EdgeSwipeBackLayerState extends State<_EdgeSwipeBackLayer>
+    with WidgetsBindingObserver {
+  static const double _edgeWidth = 48;
   bool _dragging = false;
+  bool _predictiveBackActive = false;
   bool _thresholdHapticTriggered = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
 
   @override
   void didUpdateWidget(covariant _EdgeSwipeBackLayer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (_dragging &&
+    if ((_dragging || _predictiveBackActive) &&
         ((oldWidget.enabled && !widget.enabled) ||
             !identical(oldWidget.route, widget.route))) {
       _dragging = false;
+      _predictiveBackActive = false;
       _thresholdHapticTriggered = false;
       oldWidget.route._endInteractivePop(0.0, cancelled: true);
     }
@@ -3879,15 +4141,76 @@ class _EdgeSwipeBackLayerState extends State<_EdgeSwipeBackLayer> {
 
   @override
   void dispose() {
-    if (_dragging) {
+    WidgetsBinding.instance.removeObserver(this);
+    if (_dragging || _predictiveBackActive) {
       _dragging = false;
+      _predictiveBackActive = false;
       _thresholdHapticTriggered = false;
       widget.route._endInteractivePop(0.0, cancelled: true);
     }
     super.dispose();
   }
 
+  void _checkThresholdHaptic(double value) {
+    if (!_thresholdHapticTriggered && value <= 0.68) {
+      _thresholdHapticTriggered = true;
+      unawaited(
+        AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+      );
+    } else if (_thresholdHapticTriggered && value > 0.72) {
+      _thresholdHapticTriggered = false;
+    }
+  }
+
+  @override
+  bool handleStartBackGesture(PredictiveBackEvent backEvent) {
+    if (!mounted ||
+        !widget.enabled ||
+        !widget.route.slide ||
+        _dragging ||
+        _predictiveBackActive ||
+        !TickerMode.valuesOf(context).enabled ||
+        !widget.route._canStartInteractivePop) {
+      return false;
+    }
+    _predictiveBackActive = widget.route._startInteractivePop();
+    _thresholdHapticTriggered = false;
+    if (_predictiveBackActive) {
+      final value = widget.route._setInteractivePopValue(
+        1.0 - backEvent.progress,
+      );
+      if (value != null) _checkThresholdHaptic(value);
+    }
+    return _predictiveBackActive;
+  }
+
+  @override
+  void handleUpdateBackGestureProgress(PredictiveBackEvent backEvent) {
+    if (!_predictiveBackActive) return;
+    final value = widget.route._setInteractivePopValue(
+      1.0 - backEvent.progress,
+    );
+    if (value != null) _checkThresholdHaptic(value);
+  }
+
+  @override
+  void handleCommitBackGesture() {
+    if (!_predictiveBackActive) return;
+    _predictiveBackActive = false;
+    _thresholdHapticTriggered = false;
+    widget.route._endInteractivePop(1.2);
+  }
+
+  @override
+  void handleCancelBackGesture() {
+    if (!_predictiveBackActive) return;
+    _predictiveBackActive = false;
+    _thresholdHapticTriggered = false;
+    widget.route._endInteractivePop(0.0, cancelled: true);
+  }
+
   void _handleDragStart() {
+    if (_predictiveBackActive) return;
     _dragging = widget.route._startInteractivePop();
     _thresholdHapticTriggered = false;
   }
@@ -3897,15 +4220,7 @@ class _EdgeSwipeBackLayerState extends State<_EdgeSwipeBackLayer> {
     final width = context.size?.width ?? 0;
     if (width <= 0) return;
     final value = widget.route._updateInteractivePop(delta / width);
-    if (value == null) return;
-    if (!_thresholdHapticTriggered && value <= 0.68) {
-      _thresholdHapticTriggered = true;
-      unawaited(
-        AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
-      );
-    } else if (_thresholdHapticTriggered && value > 0.72) {
-      _thresholdHapticTriggered = false;
-    }
+    if (value != null) _checkThresholdHaptic(value);
   }
 
   void _handleDragEnd(double pixelsPerSecond) {
@@ -4468,5 +4783,237 @@ class _RenderSliverHorizontalSlideSwitcher extends RenderSliver
       },
       oldLayer: _clipRectLayer.layer,
     );
+  }
+}
+
+/// Telegram-style single-frame screenshot circular reveal host for theme changes.
+///
+/// Captures the pre-change frame into a GPU texture, lets the underlying app
+/// switch theme in 1 frame (`AnimationStyle.noAnimation`), and animates an
+/// expanding circular cutout through the old snapshot from the tap origin.
+class AppThemeRevealHost extends StatefulWidget {
+  const AppThemeRevealHost({super.key, required this.child});
+
+  final Widget child;
+
+  static Future<T> run<T>({
+    required BuildContext context,
+    required Future<T> Function() applyChange,
+    Offset? globalOrigin,
+  }) {
+    final host = context.findAncestorStateOfType<_AppThemeRevealHostState>();
+    if (host == null) return applyChange();
+    final resolvedOrigin = globalOrigin ?? _centerGlobalOffsetOf(context);
+    return host._captureAndRun<T>(
+      applyChange: applyChange,
+      globalOrigin: resolvedOrigin,
+    );
+  }
+
+  static Offset? _centerGlobalOffsetOf(BuildContext context) {
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) return null;
+    return renderObject.localToGlobal(renderObject.size.center(Offset.zero));
+  }
+
+  @override
+  State<AppThemeRevealHost> createState() => _AppThemeRevealHostState();
+}
+
+class _AppThemeRevealHostState extends State<AppThemeRevealHost>
+    with SingleTickerProviderStateMixin {
+  static const Duration _revealDuration = Duration(milliseconds: 340);
+
+  final GlobalKey _boundaryKey = GlobalKey();
+  late final AnimationController _controller;
+  late final Animation<double> _progress;
+  ui.Image? _snapshot;
+  Offset _localOrigin = Offset.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: _revealDuration)
+      ..addStatusListener(_handleStatus);
+    _progress = CurvedAnimation(parent: _controller, curve: kAppFastOutCurve);
+  }
+
+  void _handleStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed ||
+        status == AnimationStatus.dismissed) {
+      _disposeSnapshot();
+      if (mounted) setState(() {});
+    }
+  }
+
+  void _disposeSnapshot() {
+    _snapshot?.dispose();
+    _snapshot = null;
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _disposeSnapshot();
+    super.dispose();
+  }
+
+  Future<T> _captureAndRun<T>({
+    required Future<T> Function() applyChange,
+    Offset? globalOrigin,
+  }) async {
+    if (!mounted ||
+        (MediaQuery.maybeDisableAnimationsOf(context) ?? false) ||
+        !TickerMode.valuesOf(context).enabled) {
+      return applyChange();
+    }
+    final boundary =
+        _boundaryKey.currentContext?.findRenderObject()
+            as _RenderThemeCaptureBoundary?;
+    ui.Image? captured;
+    Offset localOrigin = Offset.zero;
+    if (boundary != null &&
+        boundary.attached &&
+        boundary.hasSize &&
+        !boundary.size.isEmpty) {
+      try {
+        final dpr = View.maybeOf(context)?.devicePixelRatio ?? 1.0;
+        captured = boundary.captureLastPaintedImage(
+          pixelRatio: dpr.clamp(1.0, 2.5),
+        );
+        localOrigin = globalOrigin != null
+            ? boundary.globalToLocal(globalOrigin)
+            : boundary.size.center(Offset.zero);
+      } catch (_) {
+        captured?.dispose();
+        captured = null;
+      }
+    }
+    if (captured == null) {
+      return applyChange();
+    }
+
+    _controller.stop();
+    _disposeSnapshot();
+    setState(() {
+      _snapshot = captured;
+      _localOrigin = localOrigin;
+      _controller.value = 0.0;
+    });
+    final future = applyChange();
+    if (mounted && _snapshot != null) {
+      unawaited(_controller.forward(from: 0.0));
+    }
+    return future;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final snapshot = _snapshot;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        _ThemeCaptureBoundary(key: _boundaryKey, child: widget.child),
+        if (snapshot != null)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: ExcludeSemantics(
+                child: CustomPaint(
+                  key: const ValueKey<String>('app_theme_circular_reveal'),
+                  painter: _ThemeCircularRevealPainter(
+                    snapshot: snapshot,
+                    origin: _localOrigin,
+                    progress: _progress,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _ThemeCaptureBoundary extends SingleChildRenderObjectWidget {
+  const _ThemeCaptureBoundary({super.key, required super.child});
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderThemeCaptureBoundary();
+}
+
+class _RenderThemeCaptureBoundary extends RenderProxyBox {
+  @override
+  bool get isRepaintBoundary => true;
+
+  /// Captures the most recently composited GPU layer even when a tap gesture's
+  /// ink highlight has already marked a descendant dirty before [onTap] runs.
+  ui.Image? captureLastPaintedImage({required double pixelRatio}) {
+    final currentLayer = layer;
+    if (currentLayer is! OffsetLayer || !hasSize || size.isEmpty) return null;
+    return currentLayer.toImageSync(Offset.zero & size, pixelRatio: pixelRatio);
+  }
+}
+
+class _ThemeCircularRevealPainter extends CustomPainter {
+  _ThemeCircularRevealPainter({
+    required this.snapshot,
+    required this.origin,
+    required this.progress,
+  }) : super(repaint: progress);
+
+  final ui.Image snapshot;
+  final Offset origin;
+  final Animation<double> progress;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final t = progress.value.clamp(0.0, 1.0);
+    if (t >= 1.0 || size.isEmpty) return;
+
+    final maxDx = math.max(origin.dx, size.width - origin.dx);
+    final maxDy = math.max(origin.dy, size.height - origin.dy);
+    final maxRadius = math.sqrt(maxDx * maxDx + maxDy * maxDy);
+    final radius = maxRadius * t;
+
+    final dstRect = Offset.zero & size;
+    final srcRect = Rect.fromLTWH(
+      0,
+      0,
+      snapshot.width.toDouble(),
+      snapshot.height.toDouble(),
+    );
+
+    canvas.save();
+    if (radius > 0.5) {
+      final clipPath = Path()
+        ..fillType = PathFillType.evenOdd
+        ..addRect(dstRect)
+        ..addOval(Rect.fromCircle(center: origin, radius: radius));
+      canvas.clipPath(clipPath);
+    }
+    canvas.drawImageRect(
+      snapshot,
+      srcRect,
+      dstRect,
+      Paint()..filterQuality = FilterQuality.low,
+    );
+    canvas.restore();
+
+    if (radius > 2.0 && t < 0.98) {
+      final ringPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5
+        ..isAntiAlias = true
+        ..color = Colors.white.withValues(alpha: 0.14 * (1.0 - t));
+      canvas.drawCircle(origin, radius, ringPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ThemeCircularRevealPainter oldDelegate) {
+    return !identical(oldDelegate.snapshot, snapshot) ||
+        oldDelegate.origin != origin ||
+        oldDelegate.progress != progress;
   }
 }

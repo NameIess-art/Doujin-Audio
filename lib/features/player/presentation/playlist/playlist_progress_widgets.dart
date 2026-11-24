@@ -169,6 +169,8 @@ class _ProgressSliderAndTimecodesState
   bool _isDragging = false;
   double? _dragValueMs;
   double? _hoverValueMs;
+  double? _optimisticSeekMs;
+  final Stopwatch _optimisticSeekClock = Stopwatch();
   bool _tickerModeEnabled = true;
   double _devicePixelRatio = 1.0;
   final _sliderKey = GlobalKey();
@@ -196,6 +198,8 @@ class _ProgressSliderAndTimecodesState
     _isDragging = false;
     _dragValueMs = null;
     _hoverValueMs = null;
+    _optimisticSeekMs = null;
+    _optimisticSeekClock.stop();
     _clearTooltip();
     _frameKey.currentState?.cancelDrag();
     if (wasDragging) {
@@ -286,10 +290,7 @@ class _ProgressSliderAndTimecodesState
     if (force || _shouldUpdateSliderValue(_sliderValue.value, nextSlider)) {
       _sliderValue.value = nextSlider;
     }
-    _timecodeValue.value = _buildTimecodeValue(
-      nextSlider,
-      overridePositionMs: _isDragging ? null : _hoverValueMs,
-    );
+    _timecodeValue.value = _buildTimecodeValue(nextSlider);
   }
 
   bool _shouldUpdateSliderValue(
@@ -332,9 +333,20 @@ class _ProgressSliderAndTimecodesState
         ? max(1, effectiveDuration.inMilliseconds)
         : max(1, max(position.inMilliseconds, bufferedPosition.inMilliseconds));
     final maxMillis = durationMs.toDouble();
-    final basePositionMs = position.inMilliseconds
+    final rawPositionMs = position.inMilliseconds
         .clamp(0, durationMs)
         .toDouble();
+    var basePositionMs = rawPositionMs;
+    final heldSeek = _optimisticSeekMs;
+    if (!_isDragging && heldSeek != null) {
+      if ((rawPositionMs - heldSeek).abs() <= 500 ||
+          _optimisticSeekClock.elapsedMilliseconds >= 240) {
+        _optimisticSeekMs = null;
+        _optimisticSeekClock.stop();
+      } else {
+        basePositionMs = heldSeek.clamp(0.0, maxMillis);
+      }
+    }
     final sliderValue =
         (_isDragging ? (_dragValueMs ?? basePositionMs) : basePositionMs).clamp(
           0.0,
@@ -373,8 +385,7 @@ class _ProgressSliderAndTimecodesState
     final hoverMs = _sliderValueAt(localPosition);
     if (hoverMs == null) return;
     _hoverValueMs = hoverMs;
-    _publishProgressValue();
-    _showLabelsAtSliderValue(hoverMs);
+    _showLabelsAtSliderValue(hoverMs, isHover: true);
   }
 
   void _handleSliderHoverExit() {
@@ -382,7 +393,6 @@ class _ProgressSliderAndTimecodesState
     if (_hoverValueMs == null) return;
     _hoverValueMs = null;
     _clearTooltip();
-    _publishProgressValue();
   }
 
   double? _sliderValueAt(Offset localPosition) {
@@ -404,6 +414,8 @@ class _ProgressSliderAndTimecodesState
     _isDragging = true;
     _dragValueMs = value;
     _hoverValueMs = null;
+    _optimisticSeekMs = null;
+    _optimisticSeekClock.stop();
     _publishProgressValue();
     _showLabelsAtSliderValue(value);
   }
@@ -427,6 +439,10 @@ class _ProgressSliderAndTimecodesState
     if (committedPosition != null) {
       _positionGate.syncPosition(committedPosition);
     }
+    _optimisticSeekMs = value;
+    _optimisticSeekClock
+      ..reset()
+      ..start();
     _isDragging = false;
     _dragValueMs = null;
     _hoverValueMs = null;
@@ -435,9 +451,9 @@ class _ProgressSliderAndTimecodesState
     _positionGate.tickerModeEnabled = _tickerModeEnabled;
   }
 
-  void _showLabelsAtSliderValue(double valueMs) {
+  void _showLabelsAtSliderValue(double valueMs, {bool isHover = false}) {
     final labels = _overlayLabels;
-    if (labels.isEmpty) {
+    if (labels.isEmpty && !isHover) {
       _clearTooltip();
       return;
     }
@@ -446,6 +462,7 @@ class _ProgressSliderAndTimecodesState
       valueMs,
       slider.maxMillis,
       labels,
+      showHoverTime: isHover,
     );
     _showLabelsAtPosition(state);
   }
@@ -458,9 +475,10 @@ class _ProgressSliderAndTimecodesState
   _ProgressTooltipState? _tooltipStateForSliderValue(
     double valueMs,
     double maxMillis,
-    List<TimeSegmentLabel> labels,
-  ) {
-    if (labels.isEmpty) return null;
+    List<TimeSegmentLabel> labels, {
+    bool showHoverTime = false,
+  }) {
+    if (labels.isEmpty && !showHoverTime) return null;
     final box = _sliderKey.currentContext?.findRenderObject() as RenderBox?;
     final width = box?.size.width ?? 0;
     if (width <= 0) return null;
@@ -468,7 +486,13 @@ class _ProgressSliderAndTimecodesState
     final ratio = (valueMs / maxMillis).clamp(0.0, 1.0);
     final dx = sessionDetailProgressTrackInset + trackWidth * ratio;
     final position = Duration(milliseconds: valueMs.round());
-    return _tooltipStateForPosition(position, dx, width, labels);
+    return _tooltipStateForPosition(
+      position,
+      dx,
+      width,
+      labels,
+      hoverTimeText: showHoverTime ? formatDurationCompact(position) : null,
+    );
   }
 
   void _showLabelsAtPosition(_ProgressTooltipState? state) {
@@ -484,17 +508,21 @@ class _ProgressSliderAndTimecodesState
     Duration position,
     double dx,
     double width,
-    List<TimeSegmentLabel> labels,
-  ) {
-    if (labels.isEmpty) return null;
-    final hits = labels
-        .where((label) => label.contains(position))
-        .toList(growable: false);
-    if (hits.isEmpty) return null;
+    List<TimeSegmentLabel> labels, {
+    String? hoverTimeText,
+  }) {
+    final hits = labels.isEmpty
+        ? const <TimeSegmentLabel>[]
+        : labels
+              .where((label) => label.contains(position))
+              .toList(growable: false);
+    if (hits.isEmpty && hoverTimeText == null) return null;
+    final halfWidth = hits.isEmpty ? 32.0 : 96.0;
     return _ProgressTooltipState(
       labels: hits,
+      hoverTimeText: hoverTimeText,
       dx: dx,
-      left: (dx - 96).clamp(0.0, max(0.0, width - 192)),
+      left: (dx - halfWidth).clamp(0.0, max(0.0, width - halfWidth * 2)),
     );
   }
 
@@ -566,12 +594,18 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
     setState(() => _sliderDragging = dragging);
   }
 
+  void _setPointerDown(bool down) {
+    if (_pointerDown == down) return;
+    _pointerDown = down;
+    if (mounted) setState(() {});
+  }
+
   void cancelDrag() {
-    final wasDragging = _sliderDragging;
+    final wasDragging = _sliderDragging || _pointerDown;
     _resetFineScrub();
     _pointerDown = false;
     if (wasDragging && mounted) {
-      _setSliderDragging(false);
+      setState(() => _sliderDragging = false);
     } else {
       _sliderDragging = false;
     }
@@ -745,7 +779,9 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
 
   void _syncTooltipState() {
     final state = widget.tooltipValue.value;
-    final shouldShow = state != null && state.labels.isNotEmpty;
+    final shouldShow =
+        state != null &&
+        (state.labels.isNotEmpty || state.hoverTimeText != null);
     if (shouldShow) _lastTooltip = state;
     if (shouldShow == _tooltipVisible) return;
     _tooltipVisible = shouldShow;
@@ -789,7 +825,9 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
               Positioned.fill(child: widget.staticLayer),
               TweenAnimationBuilder<double>(
                 tween: Tween<double>(
-                  end: (_sliderHovered || _sliderDragging) ? 1.0 : 0.0,
+                  end: (_sliderHovered || _sliderDragging || _pointerDown)
+                      ? 1.0
+                      : 0.0,
                 ),
                 duration:
                     (_disableAnimations ||
@@ -820,7 +858,7 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
                         return Listener(
                           behavior: HitTestBehavior.translucent,
                           onPointerDown: (event) {
-                            _pointerDown = true;
+                            _setPointerDown(true);
                             if (!_sliderDragging) {
                               _resetFineScrub();
                               _scrubScale = _scrubScaleForOffset(
@@ -830,8 +868,8 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
                             _lastPointerLocalX = event.localPosition.dx;
                           },
                           onPointerMove: _handlePointerMoveScrub,
-                          onPointerUp: (_) => _pointerDown = false,
-                          onPointerCancel: (_) => _pointerDown = false,
+                          onPointerUp: (_) => _setPointerDown(false),
+                          onPointerCancel: (_) => _setPointerDown(false),
                           child: Slider(
                             max: value.maxMillis,
                             value: value.sliderValue,
@@ -878,13 +916,18 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
                   );
                 },
               ),
-              if (showFineScrubBadge)
-                Positioned(
-                  top: sliderHeight / 2 - 32,
-                  left: 0,
-                  right: 0,
-                  child: IgnorePointer(
-                    child: Center(
+              Positioned(
+                top: sliderHeight / 2 - 32,
+                left: 0,
+                right: 0,
+                child: IgnorePointer(
+                  child: Center(
+                    child: AppDeferredFade(
+                      visible: showFineScrubBadge,
+                      beginScale: 0.88,
+                      fadeInDuration: const Duration(milliseconds: 160),
+                      fadeOutDuration: const Duration(milliseconds: 140),
+                      scaleCurve: kAppSpringBackCurve,
                       child: DecoratedBox(
                         key: const ValueKey('progress_fine_scrub_badge'),
                         decoration: BoxDecoration(
@@ -907,6 +950,9 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
                                 ?.copyWith(
                                   color: widget.primaryColor,
                                   fontWeight: FontWeight.w700,
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures(),
+                                  ],
                                 ),
                           ),
                         ),
@@ -914,6 +960,7 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
                     ),
                   ),
                 ),
+              ),
             ],
           ),
         ),
@@ -926,7 +973,8 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
           valueListenable: widget.tooltipValue,
           builder: (context, currentValue, child) {
             final value = currentValue ?? _lastTooltip;
-            if (value == null || value.labels.isEmpty) {
+            if (value == null ||
+                (value.labels.isEmpty && value.hoverTimeText == null)) {
               return const SizedBox.shrink();
             }
             return Align(
@@ -944,7 +992,10 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
                   alignment: Alignment.bottomLeft,
                   child: FadeTransition(
                     opacity: _tooltipOpacity,
-                    child: _TimeSegmentDragTooltip(labels: value.labels),
+                    child: _TimeSegmentDragTooltip(
+                      labels: value.labels,
+                      hoverTimeText: value.hoverTimeText,
+                    ),
                   ),
                 ),
               ),
@@ -1066,11 +1117,13 @@ class _ProgressBarStaticLayer extends StatelessWidget {
 class _ProgressTooltipState {
   const _ProgressTooltipState({
     required this.labels,
+    this.hoverTimeText,
     required this.dx,
     required this.left,
   });
 
   final List<TimeSegmentLabel> labels;
+  final String? hoverTimeText;
   final double dx;
   final double left;
 
@@ -1078,12 +1131,14 @@ class _ProgressTooltipState {
   bool operator ==(Object other) {
     return other is _ProgressTooltipState &&
         listEquals(other.labels, labels) &&
+        other.hoverTimeText == hoverTimeText &&
         other.dx == dx &&
         other.left == left;
   }
 
   @override
-  int get hashCode => Object.hash(Object.hashAll(labels), dx, left);
+  int get hashCode =>
+      Object.hash(Object.hashAll(labels), hoverTimeText, dx, left);
 }
 
 class _TimeSegmentProgressPainter extends CustomPainter {
@@ -1252,9 +1307,10 @@ class _TimeSegmentProgressPainter extends CustomPainter {
 }
 
 class _TimeSegmentDragTooltip extends StatelessWidget {
-  const _TimeSegmentDragTooltip({required this.labels});
+  const _TimeSegmentDragTooltip({required this.labels, this.hoverTimeText});
 
   final List<TimeSegmentLabel> labels;
+  final String? hoverTimeText;
 
   @override
   Widget build(BuildContext context) {
@@ -1279,29 +1335,45 @@ class _TimeSegmentDragTooltip extends StatelessWidget {
           child: Wrap(
             spacing: 6,
             runSpacing: 4,
-            children: labels
-                .map(
-                  (label) => DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Color(label.colorValue).withValues(alpha: 0.22),
-                      borderRadius: BorderRadius.circular(999),
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              if (hoverTimeText != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 1,
+                  ),
+                  child: Text(
+                    hoverTimeText!,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: cs.onSurface,
+                      fontWeight: FontWeight.w800,
+                      fontFeatures: const [FontFeature.tabularFigures()],
                     ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      child: Text(
-                        label.name,
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: cs.onSurface,
-                          fontWeight: FontWeight.w800,
-                        ),
+                  ),
+                ),
+              ...labels.map(
+                (label) => DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Color(label.colorValue).withValues(alpha: 0.22),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    child: Text(
+                      label.name,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: cs.onSurface,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
                   ),
-                )
-                .toList(growable: false),
+                ),
+              ),
+            ],
           ),
         ),
       ),

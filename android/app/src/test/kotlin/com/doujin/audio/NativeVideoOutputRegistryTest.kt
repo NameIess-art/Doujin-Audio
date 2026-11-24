@@ -139,11 +139,42 @@ class NativeVideoOutputRegistryTest {
         assertTrue(output.screenKeptOn)
         assertFalse(registry.refreshSession("unknown"))
     }
+
+    @Test
+    fun `screen off or hidden window detaches surface while retaining registration and rebinds when visible`() {
+        val player = FakePlayer(playing = true)
+        val output = FakeOutput()
+        val registry = NativeVideoOutputRegistry<FakePlayer>(
+            playerForSession = { player },
+            shouldKeepScreenOn = FakePlayer::playing
+        )
+
+        registry.register("session", "owner", output)
+        assertSame(player, output.player)
+        assertTrue(output.screenKeptOn)
+
+        registry.setScreenInteractive(false)
+        assertTrue(registry.hasOutput("session"))
+        assertNull(output.player)
+        assertFalse(output.screenKeptOn)
+
+        output.isViewVisible = false
+        registry.setScreenInteractive(true)
+        assertTrue(registry.hasOutput("session"))
+        assertNull(output.player)
+        assertFalse(output.screenKeptOn)
+
+        output.isViewVisible = true
+        assertTrue(registry.refresh("session", "owner"))
+        assertSame(player, output.player)
+        assertTrue(output.screenKeptOn)
+    }
 }
 
 private data class FakePlayer(var playing: Boolean)
 
 private class FakeOutput : NativeVideoOutputBinding<FakePlayer> {
+    override var isViewVisible: Boolean = true
     var player: FakePlayer? = null
     var screenKeptOn: Boolean = false
     val boundPlayers = mutableListOf<FakePlayer?>()

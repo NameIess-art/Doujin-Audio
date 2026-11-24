@@ -15,6 +15,7 @@ import '../../../../core/ui/undoable_removal_service.dart';
 import '../../../../core/widgets/app_edit_panel.dart';
 import '../../../../core/widgets/app_entry_ink_well.dart';
 import '../../../../core/widgets/app_feedback.dart';
+import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/unified_dropdown.dart';
 import '../../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../../settings/application/settings_command_controller.dart';
@@ -390,7 +391,13 @@ class _VolumeBalancePageState extends ConsumerState<VolumeBalancePage> {
                             color: axisColor,
                           ),
                         ),
-                        Align(
+                        AnimatedAlign(
+                          duration:
+                              (_dragPosition != null ||
+                                  MediaQuery.disableAnimationsOf(context))
+                              ? Duration.zero
+                              : kAppMotionFast,
+                          curve: kAppSpringCurve,
                           alignment: Alignment(position.dx, -position.dy),
                           child: SizedBox.square(
                             dimension: _thumbSize,
@@ -841,6 +848,9 @@ class _EqBandSliderState extends State<EqBandSlider> {
     if (onChanged == null) return;
     final zeroValue = 0.0.clamp(widget.min, widget.max);
     _dragging = false;
+    unawaited(
+      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+    );
     setState(() => _dragValue = zeroValue);
     onChanged(zeroValue);
     widget.onChangeEnd?.call(zeroValue);
@@ -880,6 +890,15 @@ class _EqBandSliderState extends State<EqBandSlider> {
             onChanged: widget.onChanged == null
                 ? null
                 : (nextValue) {
+                    final prev = _dragValue ?? widget.value;
+                    if ((prev < 0 && nextValue >= 0) ||
+                        (prev > 0 && nextValue <= 0)) {
+                      unawaited(
+                        AppInteractionFeedback.trigger(
+                          AppInteractionFeedbackType.selection,
+                        ),
+                      );
+                    }
                     setState(() => _dragValue = nextValue);
                     widget.onChanged!(nextValue);
                   },

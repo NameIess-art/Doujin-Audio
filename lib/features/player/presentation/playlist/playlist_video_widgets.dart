@@ -938,11 +938,24 @@ class _SessionVideoFullscreenPageState
                               ),
                             ),
                             if (isSessionVideoReady(activeSession, track))
-                              NativeSessionVideoSurface(
-                                sessionId: widget.sessionId,
-                                nativeRepository: ref
-                                    .read(playbackFacadeProvider)
-                                    .nativeRepository,
+                              TweenAnimationBuilder<double>(
+                                tween: Tween<double>(begin: 0.0, end: 1.0),
+                                duration: MediaQuery.disableAnimationsOf(
+                                  context,
+                                )
+                                    ? Duration.zero
+                                    : const Duration(milliseconds: 220),
+                                curve: Curves.easeOutCubic,
+                                child: NativeSessionVideoSurface(
+                                  sessionId: widget.sessionId,
+                                  nativeRepository: ref
+                                      .read(playbackFacadeProvider)
+                                      .nativeRepository,
+                                ),
+                                builder: (context, opacity, child) =>
+                                    opacity >= 0.999
+                                    ? child!
+                                    : Opacity(opacity: opacity, child: child),
                               ),
                             Positioned.fromRect(
                               rect: gestureRect,
@@ -1410,10 +1423,14 @@ class _SessionVideoFullscreenPageState
                                                       color: onPrimaryColor,
                                                     ),
                                               )
-                                            : Icon(
-                                                playing
-                                                    ? Icons.pause_rounded
-                                                    : Icons.play_arrow_rounded,
+                                            : AppPlaybackIconTransition(
+                                                child: Icon(
+                                                  playing
+                                                      ? Icons.pause_rounded
+                                                      : Icons
+                                                            .play_arrow_rounded,
+                                                  key: ValueKey<bool>(playing),
+                                                ),
                                               ),
                                       ),
                                     ),
@@ -1623,45 +1640,79 @@ class _FullscreenVideoSubtitleOverlayState
   @override
   Widget build(BuildContext context) {
     final text = _activeText;
-    if (text == null) return const SizedBox.shrink();
-    final fontSize = ref.watch(
-      subtitleSettingsProvider.select((state) => state.fontSize),
-    );
-    final fontFamily = ref.watch(
-      subtitleSettingsProvider.select((state) => state.fontFamily),
-    );
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 720),
-        child: DecoratedBox(
-          key: const ValueKey<String>('fullscreen_video_subtitle_overlay'),
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.68),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-            child: Text(
-              text,
-              textAlign: TextAlign.center,
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: fontSize.clamp(13.0, 28.0),
-                fontFamily: fontFamily.isEmpty ? null : fontFamily,
-                fontWeight: FontWeight.w600,
-                height: 1.35,
-                shadows: const [
-                  Shadow(
-                    blurRadius: 4,
-                    offset: Offset(0, 1),
-                  ),
-                ],
-              ),
-            ),
-          ),
+    final styleState = ref.watch(
+      subtitleSettingsProvider.select(
+        (state) => (
+          fontSize: state.fontSize,
+          fontFamily: state.fontFamily,
+          fontColor: state.fontColor,
+          backgroundColor: state.backgroundColor,
+          backgroundOpacity: state.backgroundOpacity,
+          borderDepth: state.borderDepth,
         ),
+      ),
+    );
+    final resolvedTextColor = styleState.fontColor ?? Colors.white;
+    final resolvedBgColor = styleState.backgroundColor ?? Colors.black;
+    return Center(
+      child: AnimatedSwitcher(
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 140),
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeInCubic,
+        child: text == null
+            ? const SizedBox.shrink(
+                key: ValueKey<String>('fullscreen_video_subtitle_empty'),
+              )
+            : ConstrainedBox(
+                key: ValueKey<String>('fullscreen_video_subtitle_$text'),
+                constraints: const BoxConstraints(maxWidth: 720),
+                child: DecoratedBox(
+                  key: const ValueKey<String>(
+                    'fullscreen_video_subtitle_overlay',
+                  ),
+                  decoration: BoxDecoration(
+                    color: resolvedBgColor.withValues(
+                      alpha: styleState.backgroundOpacity.clamp(0.0, 1.0),
+                    ),
+                    borderRadius: BorderRadius.circular(10),
+                    border: styleState.borderDepth > 0
+                        ? Border.all(
+                            color: const Color(0x40FFFFFF),
+                            width: (styleState.borderDepth * 4).clamp(
+                              0.5,
+                              8.0,
+                            ),
+                          )
+                        : null,
+                  ),
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: 14 + styleState.borderDepth * 4,
+                      vertical: 6 + styleState.borderDepth * 2,
+                    ),
+                    child: Text(
+                      text,
+                      textAlign: TextAlign.center,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: resolvedTextColor,
+                        fontSize: styleState.fontSize.clamp(13.0, 28.0),
+                        fontFamily: styleState.fontFamily.isEmpty
+                            ? null
+                            : styleState.fontFamily,
+                        fontWeight: FontWeight.w600,
+                        height: 1.35,
+                        shadows: const [
+                          Shadow(blurRadius: 4, offset: Offset(0, 1)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
       ),
     );
   }

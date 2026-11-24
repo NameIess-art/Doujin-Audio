@@ -419,7 +419,8 @@ void main() {
         await tester.pump(const Duration(milliseconds: 100));
         await tester.pump(const Duration(milliseconds: 100));
         await tester.pump(const Duration(milliseconds: 100));
-        expect(await sample(), isNot(before));
+        final pressed = await sample();
+        expect(pressed, isNot(before));
         await gesture.up();
         await tester.pumpAndSettle();
         expect(find.byType(AsmrDownloadDetailsPage), findsOneWidget);
@@ -427,8 +428,11 @@ void main() {
         await tester.pump();
         expect(tester.element(find.byType(AsmrDownloadTaskCard)), same(card));
         await tester.pump(const Duration(milliseconds: 150));
-        expect(await sample(), before);
+        final duringPop = await sample();
+        expect(duringPop, isNot(pressed));
+        expect(duringPop.r, lessThan(before.r));
         await tester.pumpAndSettle();
+        expect(await sample(), before);
         if (platform == TargetPlatform.windows) {
           final mouse = await tester.createGesture(
             kind: PointerDeviceKind.mouse,

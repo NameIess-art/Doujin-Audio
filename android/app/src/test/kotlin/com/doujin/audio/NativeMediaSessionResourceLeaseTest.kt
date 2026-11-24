@@ -77,4 +77,29 @@ class NativeMediaSessionResourceLeaseTest {
         assertFalse(lease.hasResources)
         assertTrue(lease.currentSession == null)
     }
+
+    @Test
+    fun `parking onto bootstrap keeps session alive across player rebuild`() {
+        val released = mutableListOf<String>()
+        var attachedToSession: String? = null
+        val lease = NativeMediaSessionResourceLease<String, String>()
+        val session = lease.installSession { "session:live" }
+
+        assertFalse(lease.isParkedOnBootstrap)
+        lease.parkToBootstrap(
+            createPlayer = { "placeholder" },
+            attachBootstrap = { current, placeholder -> attachedToSession = "$current->$placeholder" },
+            releasePlayer = released::add
+        )
+
+        assertTrue(lease.isParkedOnBootstrap)
+        assertEquals(session, lease.currentSession)
+        assertEquals("session:live->placeholder", attachedToSession)
+        assertTrue(released.isEmpty())
+
+        lease.onPlayerAttached(released::add)
+        assertFalse(lease.isParkedOnBootstrap)
+        assertEquals(session, lease.currentSession)
+        assertEquals(listOf("placeholder"), released)
+    }
 }

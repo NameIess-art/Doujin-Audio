@@ -524,11 +524,14 @@ void main() {
     final tracks = [for (var i = 0; i < 1000; i++) _track('Disc $i/Track $i')];
     await _pumpSheet(tester, tracks);
     expect(find.text('Track 0'), findsOneWidget);
+    final header = find.byKey(const ValueKey('queue_switcher_header'));
+    final headerRect = tester.getRect(header);
     final position = tester
         .state<ScrollableState>(find.byType(Scrollable))
         .position;
     await _jumpToEnd(tester, position);
     expect(find.text('Disc 999'), findsOneWidget);
+    expect(tester.getRect(header), headerRect);
     await tester.tap(find.text('Disc 999'));
     await tester.pumpAndSettle();
     await _jumpToEnd(tester, position);

@@ -107,7 +107,7 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
     _appearanceCurve = CurvedAnimation(
       parent: _appearanceController,
       curve: kAppSpringCurve,
-      reverseCurve: kAppSpringCurve,
+      reverseCurve: Curves.easeInCubic,
     );
     _expandController = AnimationController(
       vsync: this,

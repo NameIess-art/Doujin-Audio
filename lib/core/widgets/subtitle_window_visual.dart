@@ -62,8 +62,15 @@ class SubtitleWindowVisual extends StatelessWidget {
         ? settings.borderDepth * 4
         : 0.0;
 
-    return Container(
+    final animDuration =
+        (MediaQuery.maybeDisableAnimationsOf(context) ?? false)
+        ? Duration.zero
+        : const Duration(milliseconds: 180);
+
+    return AnimatedContainer(
       key: const ValueKey<String>('subtitle_window_visual_surface'),
+      duration: animDuration,
+      curve: Curves.easeOutCubic,
       padding: padding,
       decoration: BoxDecoration(
         color: backgroundColor,
@@ -74,9 +81,9 @@ class SubtitleWindowVisual extends StatelessWidget {
       ),
       child: ConstrainedBox(
         constraints: BoxConstraints(maxWidth: maxTextWidth),
-        child: Text(
-          text,
-          textAlign: TextAlign.center,
+        child: AnimatedDefaultTextStyle(
+          duration: animDuration,
+          curve: Curves.easeOutCubic,
           style: TextStyle(
             inherit: false,
             color: settings.fontColor ?? Colors.white,
@@ -94,6 +101,7 @@ class SubtitleWindowVisual extends StatelessWidget {
               ),
             ],
           ),
+          child: Text(text, textAlign: TextAlign.center),
         ),
       ),
     );

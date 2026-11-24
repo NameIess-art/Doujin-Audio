@@ -131,18 +131,18 @@ class _LoopModeSheetState extends ConsumerState<LoopModeSheet> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  AppBottomSheetHeader(
+                    icon: Icons.repeat_rounded,
+                    iconKey: const ValueKey('loop_mode_header_icon'),
+                    title: i18n.tr('loop_mode_title'),
+                  ),
+                  const SizedBox(height: 18),
                   Flexible(
                     child: SingleChildScrollView(
                       padding: const EdgeInsets.only(bottom: 8),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          AppBottomSheetHeader(
-                            icon: Icons.repeat_rounded,
-                            iconKey: const ValueKey('loop_mode_header_icon'),
-                            title: i18n.tr('loop_mode_title'),
-                          ),
-                          const SizedBox(height: 18),
                           SegmentedButton<bool>(
                             key: const ValueKey('loop_mode_single_row'),
                             segments: [

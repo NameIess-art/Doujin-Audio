@@ -413,7 +413,10 @@ void main() {
         expect(route.animation!.value, closeTo(0.5, 0.001));
         expect(tester.getTopLeft(body).dx, inExclusiveRange(0, width));
         expect(tester.getRect(header), headerRect);
-        expect(await headerPixel(leftBodyPoint), lowerPageColor);
+        final pushExposedLower = await headerPixel(leftBodyPoint);
+        expect(pushExposedLower.r, 0);
+        expect(pushExposedLower.g, 0);
+        expect(pushExposedLower.b, inExclusiveRange(0.75, lowerPageColor.b));
         expect(await headerPixel(rightBodyPoint), Colors.black);
         final entering = [for (final point in points) await headerPixel(point)];
         await tester.pump(kAppPagePushDuration ~/ 2);
@@ -433,7 +436,10 @@ void main() {
         await tester.pump(kAppPagePopDuration ~/ 2);
         expect(tester.getTopLeft(body).dx, inExclusiveRange(0, width));
         expect(tester.getRect(header), headerRect);
-        expect(await headerPixel(leftBodyPoint), lowerPageColor);
+        final popExposedLower = await headerPixel(leftBodyPoint);
+        expect(popExposedLower.r, 0);
+        expect(popExposedLower.g, 0);
+        expect(popExposedLower.b, inExclusiveRange(0.75, lowerPageColor.b));
         expect(await headerPixel(rightBodyPoint), Colors.black);
         for (var i = 0; i < points.length; i++) {
           expect(

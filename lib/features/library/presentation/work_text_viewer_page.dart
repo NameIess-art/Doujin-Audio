@@ -16,7 +16,9 @@ import '../../../core/logging/app_log_service.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
 import '../../../core/widgets/app_buttons.dart';
+import '../../../core/widgets/app_entry_ink_well.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/file_tree_row.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/top_page_header.dart';
@@ -250,58 +252,60 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
           constraints: BoxConstraints(
             maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.65,
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AppBottomSheetHeader(
-                title: i18n.tr('text_file_list'),
-                icon: Icons.list_rounded,
-              ),
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: widget.files.length,
-                  itemBuilder: (itemContext, index) {
-                    final item = widget.files[index];
-                    final selected = index == _currentIndex;
-                    return ListTile(
-                      key: ValueKey<String>('work_text_file_list_item_$index'),
-                      dense: true,
-                      leading: Icon(
-                        item.isPdf
-                            ? Icons.picture_as_pdf_outlined
-                            : AppDesignTokens.textFileIcon,
-                        color: selected
-                            ? Theme.of(itemContext).colorScheme.primary
-                            : Theme.of(itemContext).colorScheme.onSurfaceVariant,
-                        size: 20,
-                      ),
-                      title: Text(
-                        item.displayName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontWeight: selected
-                              ? FontWeight.w700
-                              : FontWeight.w500,
-                          color: selected
-                              ? Theme.of(itemContext).colorScheme.primary
-                              : null,
-                        ),
-                      ),
-                      trailing: selected
-                          ? Icon(
-                              Icons.check_rounded,
-                              size: 18,
-                              color: Theme.of(itemContext).colorScheme.primary,
-                            )
-                          : null,
-                      onTap: () => Navigator.of(sheetContext).pop(index),
-                    );
-                  },
+          child: Padding(
+            padding: AppBottomSheet.contentPadding,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                AppBottomSheetHeader(
+                  title: i18n.tr('text_file_list'),
+                  icon: Icons.list_rounded,
                 ),
-              ),
-            ],
+                const SizedBox(height: 6),
+                Flexible(
+                  child: ListView.builder(
+                    padding: EdgeInsets.zero,
+                    shrinkWrap: true,
+                    itemCount: widget.files.length,
+                    itemBuilder: (itemContext, index) {
+                      final cs = Theme.of(itemContext).colorScheme;
+                      final item = widget.files[index];
+                      final selected = index == _currentIndex;
+                      return Semantics(
+                        selected: selected,
+                        child: FileTreeRow(
+                          key: ValueKey<String>(
+                            'work_text_file_list_item_$index',
+                          ),
+                          title: item.displayName,
+                          emphasized: selected,
+                          titleColor: selected ? cs.primary : null,
+                          backgroundColor: selected
+                              ? cs.primaryContainer.withValues(alpha: 0.24)
+                              : null,
+                          leading: Icon(
+                            item.isPdf
+                                ? Icons.picture_as_pdf_outlined
+                                : AppDesignTokens.textFileIcon,
+                            color: cs.primary,
+                            size: AppDesignTokens.fileEntryIconSize,
+                          ),
+                          trailing: selected
+                              ? Icon(
+                                  Icons.check_circle_rounded,
+                                  size: 20,
+                                  color: cs.primary,
+                                )
+                              : null,
+                          onTap: () => Navigator.of(sheetContext).pop(index),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -321,31 +325,28 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
         top: false,
         child: StatefulBuilder(
           builder: (innerContext, setSheetState) {
-            final cs = Theme.of(innerContext).colorScheme;
+            final theme = Theme.of(innerContext);
+            final cs = theme.colorScheme;
             final encodings = <WorkTextEncoding?>[
               null,
               WorkTextEncoding.utf8,
               WorkTextEncoding.shiftJis,
               WorkTextEncoding.gbk,
             ];
-            return SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+            final options = SingleChildScrollView(
+              padding: AppBottomSheet.contentPadding.copyWith(top: 0),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  AppBottomSheetHeader(
-                    title: i18n.tr('more_actions'),
-                    icon: Icons.tune_rounded,
-                  ),
-                  const SizedBox(height: 4),
                   Row(
                     children: [
-                      Text(
-                        i18n.tr('text_font_size'),
-                        style: Theme.of(innerContext).textTheme.titleSmall,
+                      Expanded(
+                        child: Text(
+                          i18n.tr('text_font_size'),
+                          style: theme.textTheme.titleSmall,
+                        ),
                       ),
-                      const Spacer(),
                       IconButton(
                         key: const ValueKey<String>('work_text_font_decrease'),
                         tooltip: 'A-',
@@ -364,8 +365,9 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
                       ),
                       Text(
                         '${(_fontScale * 100).round()}%',
-                        style: Theme.of(innerContext).textTheme.labelLarge
-                            ?.copyWith(fontWeight: FontWeight.w700),
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                       IconButton(
                         key: const ValueKey<String>('work_text_font_increase'),
@@ -388,12 +390,12 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
                   const SizedBox(height: 8),
                   Text(
                     i18n.tr('text_encoding'),
-                    style: Theme.of(innerContext).textTheme.titleSmall,
+                    style: theme.textTheme.titleSmall,
                   ),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
-                    runSpacing: 6,
+                    runSpacing: 8,
                     children: [
                       for (final encoding in encodings)
                         ChoiceChip(
@@ -417,32 +419,62 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
                     height: 1,
                     color: cs.outlineVariant.withValues(alpha: 0.4),
                   ),
-                  ListTile(
-                    key: const ValueKey<String>('work_text_copy_all_action'),
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.content_copy_rounded, size: 20),
-                    title: Text(i18n.tr('copy_all')),
-                    enabled: _document?.isEmpty == false,
-                    onTap: _document?.isEmpty == false
-                        ? () {
-                            Navigator.of(sheetContext).pop();
-                            unawaited(_copyAllText());
-                          }
-                        : null,
-                  ),
-                  if (widget.files.length > 2)
-                    ListTile(
-                      key: const ValueKey<String>('work_text_file_list_action'),
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.list_rounded, size: 20),
-                      title: Text(i18n.tr('text_file_list')),
-                      onTap: () {
-                        Navigator.of(sheetContext).pop();
-                        unawaited(_showFileListSheet(context));
-                      },
+                  Theme(
+                    data: AppEntryInkWell.entryTheme(innerContext),
+                    child: Column(
+                      children: [
+                        ListTile(
+                          key: const ValueKey<String>(
+                            'work_text_copy_all_action',
+                          ),
+                          leading: const Icon(Icons.content_copy_rounded),
+                          iconColor: cs.primary,
+                          title: Text(i18n.tr('copy_all')),
+                          enabled: _document?.isEmpty == false,
+                          onTap: _document?.isEmpty == false
+                              ? () {
+                                  Navigator.of(sheetContext).pop();
+                                  unawaited(_copyAllText());
+                                }
+                              : null,
+                        ),
+                        if (widget.files.length > 2)
+                          ListTile(
+                            key: const ValueKey<String>(
+                              'work_text_file_list_action',
+                            ),
+                            leading: const Icon(Icons.list_rounded),
+                            iconColor: cs.primary,
+                            title: Text(i18n.tr('text_file_list')),
+                            trailing: Icon(
+                              Icons.chevron_right_rounded,
+                              size: 20,
+                              color: cs.onSurfaceVariant,
+                            ),
+                            onTap: () {
+                              Navigator.of(sheetContext).pop();
+                              unawaited(_showFileListSheet(context));
+                            },
+                          ),
+                      ],
                     ),
+                  ),
                 ],
               ),
+            );
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: AppBottomSheet.contentPadding.copyWith(bottom: 8),
+                  child: AppBottomSheetHeader(
+                    title: i18n.tr('more_actions'),
+                    icon: Icons.tune_rounded,
+                  ),
+                ),
+                Flexible(child: options),
+              ],
             );
           },
         ),

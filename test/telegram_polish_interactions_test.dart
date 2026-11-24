@@ -784,5 +784,70 @@ void main() {
         await tester.pumpAndSettle();
       },
     );
+
+    testWidgets(
+      'AppThemeRevealHost captures single-frame snapshot, expands circular cutout, and disposes cleanly',
+      (tester) async {
+        var dark = false;
+        late StateSetter setDark;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: AppThemeRevealHost(
+              child: StatefulBuilder(
+                builder: (context, setState) {
+                  setDark = setState;
+                  return ColoredBox(
+                    color: dark ? Colors.black : Colors.white,
+                    child: Center(
+                      child: Builder(
+                        builder: (buttonContext) => TextButton(
+                          onPressed: () {
+                            unawaited(
+                              AppThemeRevealHost.run<void>(
+                                context: buttonContext,
+                                applyChange: () async {
+                                  setDark(() => dark = !dark);
+                                },
+                              ),
+                            );
+                          },
+                          child: const Text('Toggle theme'),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey<String>('app_theme_circular_reveal')),
+          findsNothing,
+        );
+
+        await tester.tap(find.text('Toggle theme'));
+        await tester.pump();
+        expect(dark, isTrue);
+        expect(
+          find.byKey(const ValueKey<String>('app_theme_circular_reveal')),
+          findsOneWidget,
+        );
+
+        await tester.pump(const Duration(milliseconds: 120));
+        expect(
+          find.byKey(const ValueKey<String>('app_theme_circular_reveal')),
+          findsOneWidget,
+        );
+
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey<String>('app_theme_circular_reveal')),
+          findsNothing,
+        );
+      },
+    );
   });
 }

@@ -526,49 +526,61 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
                                   ),
                                 ),
                               ),
-                              AppDeferredFade(
-                                visible:
-                                    widget.showConfirmButton ||
-                                    _editingElements,
-                                child: Padding(
-                                  padding: const EdgeInsets.only(left: 8),
-                                  child: SizedBox.square(
-                                    dimension: 38,
-                                    child: Material(
-                                      color: confirmEnabled
-                                          ? accent
-                                          : cs.surfaceContainerHighest,
-                                      shape: const CircleBorder(),
-                                      clipBehavior: Clip.antiAlias,
-                                      child: IconButton(
-                                        key: const ValueKey<String>(
-                                          'app_search_confirm',
-                                        ),
-                                        tooltip: widget.confirmLabel,
-                                        onPressed: _editingElements
-                                            ? () {
-                                                widget.onSubmitted(
-                                                  widget.controller.text,
-                                                );
-                                                setState(
-                                                  () =>
-                                                      _editingElements = false,
-                                                );
-                                              }
-                                            : widget.onConfirm,
-                                        icon: const Icon(Icons.search_rounded),
-                                        color: confirmForeground,
-                                        disabledColor: confirmForeground,
-                                        iconSize: 20,
-                                        padding: EdgeInsets.zero,
-                                        visualDensity: VisualDensity.compact,
-                                        style: appIconButtonStyle(
-                                          IconButton.styleFrom(
-                                            minimumSize: const Size(38, 38),
-                                            maximumSize: const Size(38, 38),
-                                            padding: EdgeInsets.zero,
-                                            tapTargetSize:
-                                                MaterialTapTargetSize.shrinkWrap,
+                              AnimatedSize(
+                                duration: MediaQuery.disableAnimationsOf(
+                                  context,
+                                )
+                                    ? Duration.zero
+                                    : kAppMotionFast,
+                                curve: kAppSpringCurve,
+                                alignment: Alignment.centerRight,
+                                child: AppDeferredFade(
+                                  visible:
+                                      widget.showConfirmButton ||
+                                      _editingElements,
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(left: 8),
+                                    child: SizedBox.square(
+                                      dimension: 38,
+                                      child: Material(
+                                        color: confirmEnabled
+                                            ? accent
+                                            : cs.surfaceContainerHighest,
+                                        shape: const CircleBorder(),
+                                        clipBehavior: Clip.antiAlias,
+                                        child: IconButton(
+                                          key: const ValueKey<String>(
+                                            'app_search_confirm',
+                                          ),
+                                          tooltip: widget.confirmLabel,
+                                          onPressed: _editingElements
+                                              ? () {
+                                                  widget.onSubmitted(
+                                                    widget.controller.text,
+                                                  );
+                                                  setState(
+                                                    () => _editingElements =
+                                                        false,
+                                                  );
+                                                }
+                                              : widget.onConfirm,
+                                          icon: const Icon(
+                                            Icons.search_rounded,
+                                          ),
+                                          color: confirmForeground,
+                                          disabledColor: confirmForeground,
+                                          iconSize: 20,
+                                          padding: EdgeInsets.zero,
+                                          visualDensity: VisualDensity.compact,
+                                          style: appIconButtonStyle(
+                                            IconButton.styleFrom(
+                                              minimumSize: const Size(38, 38),
+                                              maximumSize: const Size(38, 38),
+                                              padding: EdgeInsets.zero,
+                                              tapTargetSize:
+                                                  MaterialTapTargetSize
+                                                      .shrinkWrap,
+                                            ),
                                           ),
                                         ),
                                       ),

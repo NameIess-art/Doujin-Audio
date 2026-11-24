@@ -865,6 +865,25 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
             const <({String sourcePath, String name})>[];
         final selectionBusy = _subtitleBusy || generationBusy;
         const menuPadding = AppBottomSheet.contentPadding;
+        Widget buildMenu({
+          Key? key,
+          required Widget header,
+          required Widget body,
+          FlexFit bodyFit = FlexFit.loose,
+        }) => Padding(
+          padding: menuPadding,
+          child: Column(
+            key: key,
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              header,
+              const SizedBox(height: 16),
+              Flexible(fit: bodyFit, child: body),
+            ],
+          ),
+        );
+
         Widget buildHeader({
           required bool selectingScript,
           bool selectingSubtitle = false,
@@ -924,122 +943,111 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                     theme.bottomSheetTheme.backgroundColor ??
                     cs.surfaceContainerLow,
                 child: SafeArea(
-                  child: Padding(
-                    padding: menuPadding,
-                    child: Column(
+                  child: buildMenu(
+                    key: ValueKey(
+                      subtitleFiles != null
+                          ? 'subtitle_file_selection'
+                          : 'subtitle_script_selection',
+                    ),
+                    header: buildHeader(
+                      selectingScript: scriptFiles != null,
+                      selectingSubtitle: subtitleFiles != null,
+                    ),
+                    bodyFit: FlexFit.tight,
+                    body: SingleChildScrollView(
                       key: ValueKey(
                         subtitleFiles != null
-                            ? 'subtitle_file_selection'
-                            : 'subtitle_script_selection',
+                            ? 'subtitle_files'
+                            : 'subtitle_script_files',
                       ),
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        buildHeader(
-                          selectingScript: scriptFiles != null,
-                          selectingSubtitle: subtitleFiles != null,
-                        ),
-                        const SizedBox(height: 16),
-                        Expanded(
-                          child: SingleChildScrollView(
-                            key: ValueKey(
-                              subtitleFiles != null
-                                  ? 'subtitle_files'
-                                  : 'subtitle_script_files',
-                            ),
-                            child: Theme(
-                              data: AppEntryInkWell.entryTheme(context),
-                              child: Container(
-                                decoration: cardDecoration,
-                                clipBehavior: Clip.antiAlias,
-                                child: Column(
-                                  children: [
-                                    for (
-                                      var index = 0;
-                                      index < selectionFiles.length;
-                                      index++
-                                    ) ...[
-                                      if (index > 0)
-                                        Divider(
-                                          height: 1,
-                                          thickness: 0.5,
-                                          indent: 16,
-                                          endIndent: 16,
-                                          color: cs.outlineVariant.withValues(
-                                            alpha: 0.35,
-                                          ),
+                      child: Theme(
+                        data: AppEntryInkWell.entryTheme(context),
+                        child: Container(
+                          decoration: cardDecoration,
+                          clipBehavior: Clip.antiAlias,
+                          child: Column(
+                            children: [
+                              for (
+                                var index = 0;
+                                index < selectionFiles.length;
+                                index++
+                              ) ...[
+                                if (index > 0)
+                                  Divider(
+                                    height: 1,
+                                    thickness: 0.5,
+                                    indent: 16,
+                                    endIndent: 16,
+                                    color: cs.outlineVariant.withValues(
+                                      alpha: 0.35,
+                                    ),
+                                  ),
+                                ListTile(
+                                  key: subtitleFiles == null
+                                      ? null
+                                      : ValueKey(
+                                          selectionFiles[index]
+                                              .sourcePath,
                                         ),
-                                      ListTile(
-                                        key: subtitleFiles == null
-                                            ? null
-                                            : ValueKey(
-                                                selectionFiles[index]
-                                                    .sourcePath,
-                                              ),
-                                        enabled:
-                                            subtitleFiles == null ||
-                                            !selectionBusy,
-                                        titleAlignment:
-                                            ListTileTitleAlignment.top,
-                                        leading: Icon(
-                                          subtitleFiles != null
-                                              ? Icons.subtitles_rounded
-                                              : Icons.text_snippet_rounded,
+                                  enabled:
+                                      subtitleFiles == null ||
+                                      !selectionBusy,
+                                  titleAlignment:
+                                      ListTileTitleAlignment.top,
+                                  leading: Icon(
+                                    subtitleFiles != null
+                                        ? Icons.subtitles_rounded
+                                        : Icons.text_snippet_rounded,
+                                    color: cs.primary,
+                                  ),
+                                  title: Text(
+                                    selectionFiles[index].name,
+                                    style: theme.textTheme.bodyLarge
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                  ),
+                                  trailing:
+                                      subtitleFiles != null &&
+                                          selectionFiles[index]
+                                                  .sourcePath ==
+                                              activeTrack?.sourcePath
+                                      ? Icon(
+                                          Icons.check_rounded,
                                           color: cs.primary,
+                                        )
+                                      : null,
+                                  onTap: selectionBusy
+                                      ? null
+                                      : subtitleFiles != null
+                                      ? () => _selectSubtitleFile(
+                                          subtitles,
+                                          selectionFiles[index]
+                                              .sourcePath,
+                                        )
+                                      : () => _selectScriptFile(
+                                          subtitles,
+                                          scriptFiles![index],
                                         ),
-                                        title: Text(
-                                          selectionFiles[index].name,
-                                          style: theme.textTheme.bodyLarge
-                                              ?.copyWith(
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                        ),
-                                        trailing:
-                                            subtitleFiles != null &&
-                                                selectionFiles[index]
-                                                        .sourcePath ==
-                                                    activeTrack?.sourcePath
-                                            ? Icon(
-                                                Icons.check_rounded,
-                                                color: cs.primary,
-                                              )
-                                            : null,
-                                        onTap: selectionBusy
-                                            ? null
-                                            : subtitleFiles != null
-                                            ? () => _selectSubtitleFile(
-                                                subtitles,
-                                                selectionFiles[index]
-                                                    .sourcePath,
-                                              )
-                                            : () => _selectScriptFile(
-                                                subtitles,
-                                                scriptFiles![index],
-                                              ),
-                                      ),
-                                    ],
-                                  ],
                                 ),
-                              ),
-                            ),
-                          ).withWindowsSmoothScroll(),
+                              ],
+                            ],
+                          ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ).withWindowsSmoothScroll(),
                   ),
                 ),
               );
 
         final menu = SafeArea(
-          child: Padding(
-            padding: menuPadding,
-            child: SingleChildScrollView(
+          child: buildMenu(
+            header: buildHeader(selectingScript: false),
+            body: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  buildHeader(selectingScript: false),
-                  const SizedBox(height: 16),
-
                   // Switches Card
                   Theme(
                     data: AppEntryInkWell.entryTheme(context),

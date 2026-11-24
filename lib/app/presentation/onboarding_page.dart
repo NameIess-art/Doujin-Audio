@@ -54,8 +54,23 @@ class _OnboardingGateState extends ConsumerState<OnboardingGate> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_showOnboarding) return widget.child;
-    return OnboardingPage(onComplete: _complete, isCompleting: _completing);
+    final reducedMotion =
+        MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    return AnimatedSwitcher(
+      duration: reducedMotion ? Duration.zero : kAppMotionStandard,
+      switchInCurve: kAppSpringCurve,
+      switchOutCurve: Curves.easeInCubic,
+      child: _showOnboarding
+          ? OnboardingPage(
+              key: const ValueKey<String>('onboarding_gate_page'),
+              onComplete: _complete,
+              isCompleting: _completing,
+            )
+          : KeyedSubtree(
+              key: const ValueKey<String>('onboarding_gate_ready'),
+              child: widget.child,
+            ),
+    );
   }
 }
 

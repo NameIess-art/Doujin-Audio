@@ -294,13 +294,26 @@ class _MarqueeTextState extends State<MarqueeText>
       _pauseTimer = null;
       if (!mounted || !_shouldRun) return;
       final controller = _controller;
-      if (_atEnd && controller != null) {
-        controller.jumpTo(0);
+      if (_atEnd && controller != null && controller.hasClients) {
         _atEnd = false;
-        if (widget.pauseDuration > Duration.zero) {
-          _schedulePause(widget.pauseDuration);
-          return;
-        }
+        unawaited(
+          controller
+              .animateTo(
+                0,
+                duration: const Duration(milliseconds: 360),
+                curve: Curves.easeOutCubic,
+              )
+              .then((_) {
+                if (!mounted || !_shouldRun) return;
+                if (widget.pauseDuration > Duration.zero) {
+                  _schedulePause(widget.pauseDuration);
+                } else {
+                  _previousTick = null;
+                  _ensureTicker().start();
+                }
+              }),
+        );
+        return;
       }
       _previousTick = null;
       _ensureTicker().start();

@@ -78,8 +78,11 @@ class TransportPlaybackControlPanel extends StatelessWidget {
           duration: MediaQuery.disableAnimationsOf(context)
               ? Duration.zero
               : kAppFadeDuration,
-          reverseDuration: Duration.zero,
+          reverseDuration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : kAppMotionFast,
           switchInCurve: kAppFadeCurve,
+          switchOutCurve: Curves.easeInCubic,
           transitionBuilder: (child, animation) => isLandscape
               ? FadeTransition(opacity: animation, child: child)
               : SizeTransition(

@@ -16,7 +16,11 @@ final class FileTreeExpansionMotion<Branch extends Object, Entry> {
           : status.isDismissed;
       if (settled && _branch != null) onSettled();
     });
-    _factor = _controller.drive(CurveTween(curve: kAppFadeCurve));
+    _factor = CurvedAnimation(
+      parent: _controller,
+      curve: kAppSpringCurve,
+      reverseCurve: Curves.easeInCubic,
+    );
   }
 
   final AnimationController _controller;

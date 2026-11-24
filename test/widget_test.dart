@@ -8019,6 +8019,10 @@ void main() {
     expect(find.byKey(const ValueKey('loop_mode_scope_row')), findsOneWidget);
     final headerIcon = find.byKey(const ValueKey('loop_mode_header_icon'));
     expect(headerIcon, findsOneWidget);
+    expect(
+      find.ancestor(of: headerIcon, matching: find.byType(Scrollable)),
+      findsNothing,
+    );
     expect(tester.widget<Icon>(headerIcon).size, 24);
     expect(tester.widget<Icon>(headerIcon).icon, Icons.repeat_rounded);
     final actions = find.byKey(const ValueKey('loop_mode_actions'));

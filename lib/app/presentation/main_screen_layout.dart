@@ -514,6 +514,9 @@ class _MobileBottomBarDragScrubberState
     setState(() => _dragPosition = position);
     if (nearest != _lastNotifiedIndex) {
       _lastNotifiedIndex = nearest;
+      unawaited(
+        AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+      );
       if (nearest != widget.activeIndex) {
         widget.onSelectIndex(nearest);
       }

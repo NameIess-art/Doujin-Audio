@@ -10,40 +10,58 @@ class _AsmrDownloadProgressInlineButton extends ConsumerWidget {
     final state =
         ref.watch(asmrDownloadButtonViewStateProvider).value ??
         const AsmrDownloadButtonViewState(visible: false, progress: null);
-    if (!state.visible) {
-      return const SizedBox.shrink();
-    }
-    return Padding(
-      padding: const EdgeInsets.only(left: 8),
-      child: HeaderFloatingButton(
-        child: IconButton(
-          icon: RepaintBoundary(
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                const Icon(Icons.downloading_rounded),
-                if (state.progress != null)
-                  SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(
-                      value: state.progress,
-                      strokeWidth: 2,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
+    final reducedMotion =
+        MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    return AnimatedSize(
+      duration: reducedMotion ? Duration.zero : kAppMotionFast,
+      curve: kAppSpringCurve,
+      alignment: Alignment.centerRight,
+      child: AppDeferredFade(
+        visible: state.visible,
+        beginScale: 0.88,
+        fadeInDuration: kAppMotionFast,
+        fadeOutDuration: const Duration(milliseconds: 160),
+        child: Padding(
+          padding: const EdgeInsets.only(left: 8),
+          child: HeaderFloatingButton(
+            child: IconButton(
+              icon: RepaintBoundary(
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    const Icon(Icons.downloading_rounded),
+                    if (state.progress != null)
+                      SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: TweenAnimationBuilder<double>(
+                          tween: Tween<double>(end: state.progress!),
+                          duration: reducedMotion
+                              ? Duration.zero
+                              : const Duration(milliseconds: 220),
+                          curve: Curves.easeOutCubic,
+                          builder: (context, value, _) =>
+                              CircularProgressIndicator(
+                                value: value,
+                                strokeWidth: 2,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              tooltip: i18n.tr('downloads'),
+              onPressed: () {
+                Navigator.of(context).push(
+                  buildAppPageRoute<void>(
+                    context: context,
+                    child: const AsmrDownloadTaskPage(),
                   ),
-              ],
+                );
+              },
             ),
           ),
-          tooltip: i18n.tr('downloads'),
-          onPressed: () {
-            Navigator.of(context).push(
-              buildAppPageRoute<void>(
-                context: context,
-                child: const AsmrDownloadTaskPage(),
-              ),
-            );
-          },
         ),
       ),
     );

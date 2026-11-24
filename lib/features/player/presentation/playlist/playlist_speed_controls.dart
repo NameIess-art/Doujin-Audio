@@ -10,6 +10,7 @@ import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/theme/app_design_tokens.dart';
 import '../../../../core/widgets/app_entry_ink_well.dart';
 import '../../../../core/widgets/app_feedback.dart';
+import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../application/playback_facade.dart';
 import '../../application/playback_session_snapshot.dart';
@@ -159,7 +160,7 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
 
   void _resetSpeed() {
     final index = _nearestSpeedIndex(1.0);
-    _scrollToSpeedIndex(index, duration: const Duration(milliseconds: 240));
+    _scrollToSpeedIndex(index, duration: kAppMotionFast);
   }
 
   void _scrollToSpeedIndex(int index, {required Duration duration}) {
@@ -181,7 +182,7 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
     final generation = _adjustmentGeneration;
     unawaited(
       _controller
-          .animateToItem(index, duration: duration, curve: Curves.easeOutCubic)
+          .animateToItem(index, duration: duration, curve: kAppSpringCurve)
           .then((_) {
             // Same-position animations do not send a scroll-end notification.
             if (mounted && generation == _adjustmentGeneration) {
@@ -224,12 +225,27 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
       children: [
         const SizedBox(height: 8),
         Center(
-          child: Text(
-            formatSpeedValue(selectedSpeed),
-            key: ValueKey<double>(selectedSpeed),
-            style: Theme.of(context).textTheme.displaySmall?.copyWith(
-              color: cs.onSurface,
-              fontWeight: FontWeight.w900,
+          child: AnimatedSwitcher(
+            duration: MediaQuery.disableAnimationsOf(context)
+                ? Duration.zero
+                : const Duration(milliseconds: 140),
+            switchInCurve: kAppSpringCurve,
+            switchOutCurve: Curves.easeInCubic,
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: ScaleTransition(
+                scale: Tween<double>(begin: 0.94, end: 1.0).animate(animation),
+                child: child,
+              ),
+            ),
+            child: Text(
+              formatSpeedValue(selectedSpeed),
+              key: ValueKey<double>(selectedSpeed),
+              style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                color: cs.onSurface,
+                fontWeight: FontWeight.w900,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
             ),
           ),
         ),

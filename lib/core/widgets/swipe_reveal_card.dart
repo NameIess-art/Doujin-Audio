@@ -125,6 +125,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard>
   double _dragStartRevealedWidth = 0;
   double _dragDx = 0;
   double _dragDy = 0;
+  double _lastRevealDelta = 0;
   bool _dragAccepted = false;
   bool _dragRejected = false;
   bool _actionPaneActive = false;
@@ -433,6 +434,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard>
     _overscrollHapticFired = false;
     _dragDx = 0;
     _dragDy = 0;
+    _lastRevealDelta = 0;
     _dragAccepted = _currentProgress > 0;
     _dragRejected = false;
     if (_dragAccepted) _beginMotion();
@@ -474,7 +476,6 @@ class _SwipeRevealCardState extends State<SwipeRevealCard>
       _settleGeneration++;
       _ensureController().stop();
       _beginMotion();
-      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
       widget.onWillReveal?.call();
       if (!_actionPaneActive) {
         setState(() => _actionPaneActive = true);
@@ -499,16 +500,25 @@ class _SwipeRevealCardState extends State<SwipeRevealCard>
     }
 
     final actionWidth = _activeActionWidth;
-    final nextWidth =
-        (_dragStartRevealedWidth + (_dragStartFromStart ? _dragDx : -_dragDx))
-            .clamp(0.0, actionWidth);
-    if (!_overscrollHapticFired &&
-        _dragStartRevealedWidth < _minOpenDistance &&
-        nextWidth >= _minOpenDistance) {
-      _overscrollHapticFired = true;
-      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
-    } else if (nextWidth < _minOpenDistance * 0.85) {
+    final revealDelta = _dragStartFromStart
+        ? details.delta.dx
+        : -details.delta.dx;
+    if (revealDelta != 0) _lastRevealDelta = revealDelta;
+    final rawWidth =
+        _dragStartRevealedWidth + (_dragStartFromStart ? _dragDx : -_dragDx);
+    final nextWidth = rawWidth.clamp(0.0, actionWidth);
+    if (!_overscrollHapticFired && nextWidth >= _minOpenDistance) {
+      if (_dragStartRevealedWidth < _minOpenDistance) {
+        _overscrollHapticFired = true;
+        unawaited(
+          AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+        );
+      }
+    } else if (_overscrollHapticFired && nextWidth < _minOpenDistance * 0.85) {
       _overscrollHapticFired = false;
+      unawaited(
+        AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+      );
     }
     final nextProgress = actionWidth > 0
         ? (nextWidth / actionWidth).clamp(0.0, 1.0)
@@ -540,9 +550,14 @@ class _SwipeRevealCardState extends State<SwipeRevealCard>
         ? velocity <= -_minOpenVelocity
         : velocity >= _minOpenVelocity;
     final fullyRevealed = currentWidth >= _activeActionWidth * 0.88;
+    final openingFromClosed =
+        _dragStartRevealedWidth == 0 && distanceMet && _lastRevealDelta >= 0;
     final shouldOpen =
+        currentWidth > 0 &&
         !closingVelocityMet &&
-        ((distanceMet && velocityMet) || fullyRevealed);
+        ((distanceMet && velocityMet && _lastRevealDelta >= 0) ||
+            openingFromClosed ||
+            fullyRevealed);
     _dragAccepted = false;
     _dragRejected = false;
     final signedVelocity = _revealedFromStart ? velocity : -velocity;

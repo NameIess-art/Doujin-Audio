@@ -329,8 +329,9 @@ extension _TimerTabBody on _TimerTabState {
                   ),
                   const SizedBox(height: 12),
                   confirmButton,
-                  if (_durationIsZero)
-                    Padding(
+                  AnimatedSectionReveal(
+                    visible: _durationIsZero,
+                    builder: (context) => Padding(
                       padding: const EdgeInsets.only(top: 6),
                       child: Text(
                         i18n.tr('set_duration_first'),
@@ -338,6 +339,7 @@ extension _TimerTabBody on _TimerTabState {
                         style: TextStyle(color: cs.error, fontSize: 12),
                       ),
                     ),
+                  ),
                 ],
               )
             : Column(
@@ -347,14 +349,16 @@ extension _TimerTabBody on _TimerTabState {
                   ...sectionChildren,
                   const SizedBox(height: 14),
                   confirmButton,
-                  if (_durationIsZero)
-                    Padding(
+                  AnimatedSectionReveal(
+                    visible: _durationIsZero,
+                    builder: (context) => Padding(
                       padding: const EdgeInsets.only(top: 8),
                       child: Text(
                         i18n.tr('set_duration_first'),
                         style: TextStyle(color: cs.error, fontSize: 12),
                       ),
                     ),
+                  ),
                 ],
               ),
       );

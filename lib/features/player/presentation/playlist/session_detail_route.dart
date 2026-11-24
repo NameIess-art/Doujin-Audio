@@ -65,6 +65,7 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
   static const _portraitRestoreTimeout = Duration(milliseconds: 500);
   static const _coverDuration = Duration(milliseconds: 380);
   static const _reverseCoverDuration = Duration(milliseconds: 320);
+  static const double _sheetEntranceLiftFraction = 0.038;
   static const double _minMidFlightUpgradeSpan = 0.12;
   static const double interactiveReadyThreshold = 0.9;
 
@@ -77,6 +78,7 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
        _sourceTrackPath = sourceTrackPath,
        _sourceBounds = source?.bounds(),
        super(
+         slide: false,
          transitionDuration: _coverDuration,
          reverseTransitionDuration: _reverseCoverDuration,
          pageBuilder: (context, animation, secondaryAnimation) =>
@@ -106,11 +108,16 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
   SessionCoverAnchorState? _flightStart;
   SessionCoverAnchorState? _flightEnd;
   CurvedAnimation? _progressCurve;
+  Animation<Offset>? _sheetSlide;
   Animation<double> get _progress => _progressCurve ??= CurvedAnimation(
     parent: animation!,
     curve: kAppSpringCurve,
-    reverseCurve: kAppSpringCurve.flipped,
+    reverseCurve: Curves.easeInCubic,
   );
+  Animation<Offset> get _sheetOffset => _sheetSlide ??= Tween<Offset>(
+    begin: const Offset(0, _sheetEntranceLiftFraction),
+    end: Offset.zero,
+  ).animate(_progress);
   ValueNotifier<double>? _dragDismissOffset;
   double _dragDismissFrom = 0;
   double _dragDismissTo = 0;
@@ -417,12 +424,20 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
   Widget _buildMotion(Widget child) => ValueListenableBuilder<SessionCoverFlight?>(
     valueListenable: _flight,
     child: FadeTransition(key: _fadeKey, opacity: _progress, child: child),
-    builder: (context, flight, page) => SizedBox.expand(
+    builder: (context, flight, fadedPage) => SizedBox.expand(
       key: _viewportKey,
       child: Stack(
         fit: StackFit.expand,
         children: [
-          page!,
+          SlideTransition(
+            position:
+                (_reducedMotion ||
+                    flight != null ||
+                    (_sourceBounds != null && !_entryFlightEnded))
+                ? const AlwaysStoppedAnimation<Offset>(Offset.zero)
+                : _sheetOffset,
+            child: fadedPage,
+          ),
           if (flight != null)
             IgnorePointer(
               child: RepaintBoundary(

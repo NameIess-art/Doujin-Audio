@@ -140,17 +140,17 @@ class _SortOptionsSheetState<T> extends State<_SortOptionsSheet<T>> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  AppBottomSheetHeader(
+                    icon: Icons.sort_rounded,
+                    title: widget.title,
+                  ),
+                  const SizedBox(height: 18),
                   Flexible(
                     child: SingleChildScrollView(
                       padding: const EdgeInsets.only(bottom: 8),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          AppBottomSheetHeader(
-                            icon: Icons.sort_rounded,
-                            title: widget.title,
-                          ),
-                          const SizedBox(height: 18),
                           RadioGroup<T>(
                             groupValue: _selectedCriterion,
                             onChanged: (value) {
@@ -167,15 +167,40 @@ class _SortOptionsSheetState<T> extends State<_SortOptionsSheet<T>> {
                             child: Column(
                               children: widget.options
                                   .map(
-                                    (option) => RadioListTile<T>(
-                                      value: option.value,
-                                      title: Text(option.label),
-                                      contentPadding: EdgeInsets.zero,
-                                      visualDensity: const VisualDensity(
-                                        vertical: -1,
-                                      ),
-                                      activeColor: cs.primary,
-                                    ),
+                                    (option) {
+                                      final isSelected =
+                                          option.value == _selectedCriterion;
+                                      return RadioListTile<T>(
+                                        value: option.value,
+                                        title: Text(
+                                          option.label,
+                                          style: theme.textTheme.bodyLarge
+                                              ?.copyWith(
+                                                fontWeight: isSelected
+                                                    ? FontWeight.w700
+                                                    : FontWeight.w500,
+                                              ),
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            AppDesignTokens.of(
+                                              context,
+                                            ).radiusControl,
+                                          ),
+                                        ),
+                                        selected: isSelected,
+                                        selectedTileColor: cs.primary
+                                            .withValues(alpha: 0.08),
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                            ),
+                                        visualDensity: const VisualDensity(
+                                          vertical: -1,
+                                        ),
+                                        activeColor: cs.primary,
+                                      );
+                                    },
                                   )
                                   .toList(growable: false),
                             ),

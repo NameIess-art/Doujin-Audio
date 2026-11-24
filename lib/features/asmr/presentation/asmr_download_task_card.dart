@@ -5,6 +5,7 @@ import '../../../app/localization/app_language_provider.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/app_entry_ink_well.dart';
+import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/scroll_activity_gate.dart';
 import '../../../core/widgets/unified_popup_menu.dart';
 import '../application/asmr_download_models.dart';
@@ -93,12 +94,15 @@ class AsmrDownloadTaskCard extends StatelessWidget {
                             ? cs.error
                             : cs.onSurfaceVariant,
                       ),
-                      icon: Icon(
-                        task.status == AsmrDownloadTaskStatus.failed
-                            ? Icons.refresh_rounded
-                            : task.status == AsmrDownloadTaskStatus.paused
-                            ? Icons.play_arrow_rounded
-                            : Icons.pause_rounded,
+                      icon: AppPlaybackIconTransition(
+                        child: Icon(
+                          task.status == AsmrDownloadTaskStatus.failed
+                              ? Icons.refresh_rounded
+                              : task.status == AsmrDownloadTaskStatus.paused
+                              ? Icons.play_arrow_rounded
+                              : Icons.pause_rounded,
+                          key: ValueKey<AsmrDownloadTaskStatus>(task.status),
+                        ),
                       ),
                       iconSize: 22,
                       tooltip: task.status == AsmrDownloadTaskStatus.failed
@@ -236,13 +240,29 @@ class AsmrDownloadTaskProgressSection extends StatelessWidget {
     final scrolling = progress == null
         ? ScrollActivityGate.scrollingListenableOf(context)
         : null;
-    final indicator = LinearProgressIndicator(
-      value: progress,
-      minHeight: 6,
-      borderRadius: BorderRadius.circular(4),
-      color: indicatorColor,
-      backgroundColor: indicatorColor.withValues(alpha: 0.2),
-    );
+    final reducedMotion =
+        MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    final Widget indicator = progress == null
+        ? LinearProgressIndicator(
+            minHeight: 6,
+            borderRadius: BorderRadius.circular(4),
+            color: indicatorColor,
+            backgroundColor: indicatorColor.withValues(alpha: 0.2),
+          )
+        : TweenAnimationBuilder<double>(
+            tween: Tween<double>(end: progress!.clamp(0.0, 1.0)),
+            duration: reducedMotion
+                ? Duration.zero
+                : const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            builder: (context, animatedProgress, _) => LinearProgressIndicator(
+              value: animatedProgress,
+              minHeight: 6,
+              borderRadius: BorderRadius.circular(4),
+              color: indicatorColor,
+              backgroundColor: indicatorColor.withValues(alpha: 0.2),
+            ),
+          );
     final Widget progressBar = scrolling == null
         ? indicator
         : ValueListenableBuilder<bool>(
@@ -289,18 +309,21 @@ class AsmrDownloadTaskProgressSection extends StatelessWidget {
               ],
             ),
           ),
-          if (failedSummary.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text(
-              failedSummary,
-              key: const ValueKey<String>('asmr_download_task_error_summary'),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: cs.error,
+          AnimatedSectionReveal(
+            visible: failedSummary.isNotEmpty,
+            builder: (context) => Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                failedSummary,
+                key: const ValueKey<String>('asmr_download_task_error_summary'),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: cs.error),
               ),
             ),
-          ],
+          ),
         ],
       ),
     );

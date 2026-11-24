@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:doujin_audio/core/widgets/app_bottom_sheet.dart';
 import 'package:doujin_audio/core/widgets/drag_only_scrollbar.dart';
+import 'package:doujin_audio/core/widgets/sort_options_bottom_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -379,6 +380,65 @@ void main() {
       expect(find.byType(BottomSheet), findsNothing);
     },
     variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
+  testWidgets(
+    'sort options scroll between the fixed title and actions',
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => showSortOptionsBottomSheet<int>(
+                  context: context,
+                  options: [
+                    for (var index = 0; index < 20; index++)
+                      SortOption(value: index, label: 'Option $index'),
+                  ],
+                  selectedCriterion: 0,
+                  ascending: true,
+                  groupByLibrary: false,
+                  title: 'Sort options',
+                  descriptionLabel: 'Order',
+                  ascendingLabel: 'Ascending',
+                  descendingLabel: 'Descending',
+                  groupByLibraryLabel: 'By library',
+                  cancelLabel: 'Cancel',
+                  confirmLabel: 'Confirm',
+                ),
+                child: const Text('Open sort options'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open sort options'));
+      await tester.pumpAndSettle();
+
+      final header = find.byType(AppBottomSheetHeader);
+      final actions = find.byType(AppBottomSheetActions);
+      final body = find.byType(SingleChildScrollView);
+      final scroll = tester.state<ScrollableState>(
+        find.descendant(of: body, matching: find.byType(Scrollable)),
+      );
+      final headerRect = tester.getRect(header);
+      final actionsRect = tester.getRect(actions);
+
+      await tester.drag(body, const Offset(0, -200));
+      await tester.pumpAndSettle();
+
+      expect(scroll.position.pixels, greaterThan(0));
+      expect(tester.getRect(header), headerRect);
+      expect(tester.getRect(actions), actionsRect);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(find.byType(BottomSheet), findsNothing);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 
   testWidgets(

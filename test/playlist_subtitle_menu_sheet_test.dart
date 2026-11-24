@@ -1389,12 +1389,10 @@ void main() {
     expect(find.text(language.tr('subtitle_language_en')), findsOneWidget);
   });
 
-  testWidgets('long subtitle filenames stay within the sheet while scrolling', (
+  testWidgets('subtitle controls scroll below the fixed menu header', (
     tester,
   ) async {
-    await tester.binding.setSurfaceSize(const Size(550, 1096));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    tester.view.physicalSize = const Size(550, 1096);
+    tester.view.physicalSize = const Size(550, 600);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -1453,20 +1451,22 @@ void main() {
 
     expect(find.byKey(const ValueKey('subtitle_version_tile')), findsNothing);
     final tile = find.byKey(const ValueKey('subtitle_import_tile'));
-    final sheetTop = tester.getTopLeft(find.byType(BottomSheet)).dy;
-    final scrollable = tester.state<ScrollableState>(
-      find.descendant(
-        of: find.byType(SubtitleMenuSheet),
-        matching: find.byType(Scrollable),
-      ),
+    final header = find.byKey(const ValueKey('subtitle_menu_header'));
+    final headerRect = tester.getRect(header);
+    final tileTop = tester.getTopLeft(tile).dy;
+    final scrollable = find.descendant(
+      of: find.byType(SubtitleMenuSheet),
+      matching: find.byType(Scrollable),
     );
-    scrollable.position.jumpTo(
-      scrollable.position.pixels + tester.getTopLeft(tile).dy - sheetTop - 8,
-    );
-    await tester.pump();
-    expect(tester.getTopLeft(tile).dy, lessThan(sheetTop + 48));
+    final position = tester.state<ScrollableState>(scrollable).position;
+    expect(position.maxScrollExtent, greaterThan(0));
+    position.jumpTo(position.maxScrollExtent);
+    await tester.pumpAndSettle();
+    expect(tester.getRect(header), headerRect);
+    expect(tester.getTopLeft(tile).dy, lessThan(tileTop));
+    expect(tester.getTopLeft(scrollable).dy, greaterThan(headerRect.bottom));
 
-    await tester.tapAt(Offset(tester.getCenter(tile).dx, sheetTop + 24));
+    await tester.tapAt(headerRect.center);
     await tester.pumpAndSettle();
     expect(find.bySubtype<SimpleDialog>(), findsNothing);
   });

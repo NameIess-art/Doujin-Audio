@@ -354,7 +354,17 @@ class _SessionVideoViewportState extends State<SessionVideoViewport> {
           if (showSurface)
             KeyedSubtree(
               key: const ValueKey<String>('session_video_surface'),
-              child: widget.surfaceBuilder(context),
+              child: TweenAnimationBuilder<double>(
+                tween: Tween<double>(begin: 0.0, end: 1.0),
+                duration: MediaQuery.disableAnimationsOf(context)
+                    ? Duration.zero
+                    : const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                child: widget.surfaceBuilder(context),
+                builder: (context, opacity, child) => opacity >= 0.999
+                    ? child!
+                    : Opacity(opacity: opacity, child: child),
+              ),
             ),
           if (widget.videoReady)
             Positioned.fill(

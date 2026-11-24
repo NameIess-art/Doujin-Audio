@@ -21,7 +21,7 @@ const _menuEnterDuration = Duration(milliseconds: 200);
 const _menuExitDuration = Duration(milliseconds: 200);
 const _entryMenuScale = 0.75;
 const _textSelectionMenuWidth = 236.0;
-const _windowsMenuCurve = Curves.easeInOut;
+const _windowsMenuBackdropCurve = Curves.easeInOut;
 const _blurredMenuCardReverseCurve = Interval(
   0.20,
   1.0,
@@ -459,9 +459,9 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
     final isWindows = widget.isWindows;
     _curved = CurvedAnimation(
       parent: widget.animation,
-      curve: isWindows ? _windowsMenuCurve : kAppSpringCurve,
+      curve: kAppSpringCurve,
       reverseCurve: isWindows
-          ? _windowsMenuCurve
+          ? Curves.easeInCubic
           : _blurredMenuCardReverseCurve,
     );
     _scaleCurved = isWindows
@@ -509,11 +509,11 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
   @override
   Widget build(BuildContext context) {
     final backgroundReverseCurve = widget.isWindows
-        ? _windowsMenuCurve
+        ? _windowsMenuBackdropCurve
         : Curves.easeInQuad;
     Widget background = AppModalBackground(
       animation: widget.animation,
-      curve: widget.isWindows ? _windowsMenuCurve : kAppSpringCurve,
+      curve: widget.isWindows ? _windowsMenuBackdropCurve : kAppSpringCurve,
       reverseCurve: backgroundReverseCurve,
       blurReverseCurve: backgroundReverseCurve,
     );
@@ -1495,6 +1495,12 @@ Widget _buildTextSelectionMenu(
   if (entries.isEmpty) return const SizedBox.shrink();
 
   final anchor = anchors.primaryAnchor;
+  final disableAnimations = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+  final card = _UnifiedPopupMenuCard<VoidCallback>(
+    entries: entries,
+    fitContent: false,
+    onSelected: (action) => action(),
+  );
   return CustomSingleChildLayout(
     delegate: _PopupMenuPositionDelegate(
       preferredLeft: anchor.dx,
@@ -1502,10 +1508,25 @@ Widget _buildTextSelectionMenu(
       preferredTop: anchor.dy,
       menuWidth: _textSelectionMenuWidth,
     ),
-    child: _UnifiedPopupMenuCard<VoidCallback>(
-      entries: entries,
-      fitContent: false,
-      onSelected: (action) => action(),
-    ),
+    child: disableAnimations
+        ? card
+        : TweenAnimationBuilder<double>(
+            tween: Tween<double>(begin: 0.0, end: 1.0),
+            duration: const Duration(milliseconds: 160),
+            curve: kAppSpringCurve,
+            child: card,
+            builder: (context, progress, child) {
+              if (progress >= 0.999) return child!;
+              final scale = 0.92 + 0.08 * progress;
+              return Opacity(
+                opacity: progress.clamp(0.0, 1.0),
+                child: Transform.scale(
+                  scale: scale,
+                  alignment: Alignment.topLeft,
+                  child: child,
+                ),
+              );
+            },
+          ),
   );
 }

@@ -50,16 +50,28 @@ internal class NativeForegroundPlaybackNotification(
         )
     }
 
-    fun signature(session: NativePlaybackSession, attachedToPlayer: Boolean): String {
-        val isPlaying = session.playerOrNull()?.let { it.isPlaying || it.playWhenReady } == true
+    fun signature(
+        session: NativePlaybackSession,
+        mediaSession: MediaSession?,
+        attachedToPlayer: Boolean,
+        playbackIntended: Boolean = false
+    ): String {
+        val isPlaying = playbackIntended ||
+            session.playerOrNull()?.let { it.isPlaying || it.playWhenReady } == true
         val hasPrevious = session.hasPreviousMediaItem()
         val hasNext = session.hasNextMediaItem()
-        return "playback:${session.sessionId}:$attachedToPlayer:$isPlaying:" +
+        val mediaSessionIdentity = mediaSession?.let(System::identityHashCode) ?: 0
+        return "playback:${session.sessionId}:$mediaSessionIdentity:$attachedToPlayer:$isPlaying:" +
             "$hasPrevious:$hasNext:${session.title}:${session.subtitle.orEmpty()}"
     }
 
-    fun startPlayback(session: NativePlaybackSession?, mediaSession: MediaSession?) {
-        val isPlaying = session?.playerOrNull()?.let { it.isPlaying || it.playWhenReady } == true
+    fun startPlayback(
+        session: NativePlaybackSession?,
+        mediaSession: MediaSession?,
+        playbackIntended: Boolean = false
+    ) {
+        val isPlaying = playbackIntended ||
+            session?.playerOrNull()?.let { it.isPlaying || it.playWhenReady } == true
         startForeground(buildNotification(
             mediaSession = mediaSession,
             title = session?.title,

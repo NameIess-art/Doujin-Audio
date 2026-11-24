@@ -63,6 +63,12 @@ internal class NativePlaybackSessionManager(
 
     fun hasActivePlayback(): Boolean = sessions.values.any { it.isPlaybackActive() }
 
+    fun hasNetworkPlaybackToKeepAlive(isIntended: (String) -> Boolean): Boolean =
+        sessions.values.any { session ->
+            (session.isPlaybackActive() || isIntended(session.sessionId)) &&
+                session.requiresNetworkWakeLock
+        }
+
     fun playbackIntentBySessionId(isIntended: (String) -> Boolean): Map<String, Boolean> =
         sessions.values.associate { candidate ->
             val player = candidate.playerOrNull()

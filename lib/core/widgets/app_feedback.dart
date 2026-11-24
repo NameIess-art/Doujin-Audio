@@ -763,89 +763,104 @@ void _showTopFeedback(
                   showCountdown: currentData.showCountdown,
                   onRemove: () =>
                       dismissEntry(AppFeedbackDismissReason.timeout),
-                  builder: (remainingSeconds, appearance) {
-                    final isRemovalAction =
-                        hasAction &&
-                        currentData.showActionCountdown &&
-                        remainingSeconds != null;
-                    final resolvedActionLabel = hasAction
-                        ? (isRemovalAction
-                              ? '${currentData.actionLabel!} (${remainingSeconds}s)'
-                              : currentData.actionLabel!)
-                        : null;
-                    return Dismissible(
-                      key: ValueKey<Object>(currentData.dismissKey),
-                      onDismissed: (_) =>
-                          removeEntry(AppFeedbackDismissReason.swipe),
-                      child: _VerticalSwipeDismissWrapper(
-                        onDismissed: () =>
-                            dismissEntry(AppFeedbackDismissReason.swipe),
-                        child: Material(
-                          color: Colors.transparent,
-                          child: AppFeedbackSurface(
-                            tone: currentData.tone,
-                            icon: currentData.icon,
-                            iconWidget: currentData.iconWidget,
-                            iconColor: currentData.iconColor,
-                            title: currentData.title,
-                            message: currentData.message,
-                            appearance: appearance,
-                            remainingSeconds: hasAction
-                                ? null
-                                : remainingSeconds,
-                            padding: hasAction
-                                ? const EdgeInsets.fromLTRB(10, 1, 10, 1)
-                                : const EdgeInsets.fromLTRB(
-                                    10,
-                                    AppFeedbackSurface._verticalPadding,
-                                    14,
-                                    AppFeedbackSurface._verticalPadding,
-                                  ),
-                            trailing: hasAction
-                                ? TextButton(
-                                    key: ValueKey((
-                                      currentData.message,
-                                      currentData.actionLabel,
-                                    )),
-                                    style: appTextButtonStyle(
-                                      style: TextButton.styleFrom(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                        ),
-                                        minimumSize: const Size(0, 36),
-                                        tapTargetSize:
-                                            MaterialTapTargetSize.shrinkWrap,
-                                        shape: const StadiumBorder(),
+                  builder:
+                      (
+                        remainingSeconds,
+                        countdownFraction,
+                        appearance,
+                        onPauseChanged,
+                      ) {
+                        final isRemovalAction =
+                            hasAction &&
+                            currentData.showActionCountdown &&
+                            remainingSeconds != null;
+                        final resolvedActionLabel = hasAction
+                            ? (isRemovalAction
+                                  ? '${currentData.actionLabel!} (${remainingSeconds}s)'
+                                  : currentData.actionLabel!)
+                            : null;
+                        return Dismissible(
+                          key: ValueKey<Object>(currentData.dismissKey),
+                          onDismissed: (_) =>
+                              removeEntry(AppFeedbackDismissReason.swipe),
+                          child: _VerticalSwipeDismissWrapper(
+                            onDragActiveChanged: onPauseChanged,
+                            onDismissed: () =>
+                                dismissEntry(AppFeedbackDismissReason.swipe),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: AppFeedbackSurface(
+                                tone: currentData.tone,
+                                icon: currentData.icon,
+                                iconWidget: currentData.iconWidget,
+                                iconColor: currentData.iconColor,
+                                title: currentData.title,
+                                message: currentData.message,
+                                appearance: appearance,
+                                countdownFraction: countdownFraction,
+                                remainingSeconds: hasAction
+                                    ? null
+                                    : remainingSeconds,
+                                padding: hasAction
+                                    ? const EdgeInsets.fromLTRB(10, 1, 10, 1)
+                                    : const EdgeInsets.fromLTRB(
+                                        10,
+                                        AppFeedbackSurface._verticalPadding,
+                                        14,
+                                        AppFeedbackSurface._verticalPadding,
                                       ),
-                                    ),
-                                    onPressed: () {
-                                      if (dismissed ||
-                                          !identical(
-                                            dataNotifier.value,
-                                            currentData,
-                                          )) {
-                                        return;
-                                      }
-                                      dismissEntry(
-                                        AppFeedbackDismissReason.action,
-                                      );
-                                      currentData.onAction!();
-                                    },
-                                    child: Text(resolvedActionLabel!),
-                                  )
-                                : currentData.duration == null
-                                ? const SizedBox.square(
-                                    dimension: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : null,
+                                trailing: hasAction
+                                    ? TextButton(
+                                        key: ValueKey((
+                                          currentData.message,
+                                          currentData.actionLabel,
+                                        )),
+                                        style: appTextButtonStyle(
+                                          style: TextButton.styleFrom(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                            ),
+                                            minimumSize: const Size(0, 36),
+                                            tapTargetSize:
+                                                MaterialTapTargetSize.shrinkWrap,
+                                            shape: const StadiumBorder(),
+                                          ),
+                                        ),
+                                        onPressed: () {
+                                          if (dismissed ||
+                                              !identical(
+                                                dataNotifier.value,
+                                                currentData,
+                                              )) {
+                                            return;
+                                          }
+                                          dismissEntry(
+                                            AppFeedbackDismissReason.action,
+                                          );
+                                          currentData.onAction!();
+                                        },
+                                        child: Text(
+                                          resolvedActionLabel!,
+                                          style: const TextStyle(
+                                            fontFeatures: [
+                                              FontFeature.tabularFigures(),
+                                            ],
+                                          ),
+                                        ),
+                                      )
+                                    : currentData.duration == null
+                                    ? const SizedBox.square(
+                                        dimension: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : null,
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                    );
-                  },
+                        );
+                      },
                 ),
               ),
             ),
@@ -880,7 +895,12 @@ class _FeedbackAnimationWrapper extends StatefulWidget {
     this.showCountdown = false,
   });
 
-  final Widget Function(int? remainingSeconds, Animation<double>? appearance)
+  final Widget Function(
+    int? remainingSeconds,
+    double? countdownFraction,
+    Animation<double>? appearance,
+    ValueChanged<bool> onPauseChanged,
+  )
   builder;
   final Duration? duration;
   final Duration transitionDuration;
@@ -901,6 +921,10 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
   Timer? _expiryTimer;
   Timer? _countdownTimer;
   late int _remainingSeconds;
+  int _totalSeconds = 1;
+  Duration? _remainingDuration;
+  final Stopwatch _activeDurationStopwatch = Stopwatch();
+  bool _pausedByDrag = false;
   late bool _currentShowCountdown;
   bool _dismissing = false;
   bool _tickerModeEnabled = true;
@@ -960,11 +984,26 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
   void _startDuration(Duration? duration, bool showCountdown) {
     _expiryTimer?.cancel();
     _countdownTimer?.cancel();
+    _activeDurationStopwatch
+      ..stop()
+      ..reset();
+    _remainingDuration = duration;
     if (duration == null) return;
     final totalSeconds = (duration.inMilliseconds / 1000).ceil();
-    _remainingSeconds = totalSeconds > 0 ? totalSeconds : 1;
+    _totalSeconds = totalSeconds > 0 ? totalSeconds : 1;
+    _remainingSeconds = _totalSeconds;
+    if (!_pausedByDrag) {
+      _scheduleActiveTimers(duration, showCountdown);
+    }
+  }
 
-    if (showCountdown && totalSeconds > 1) {
+  void _scheduleActiveTimers(Duration remaining, bool showCountdown) {
+    _expiryTimer?.cancel();
+    _countdownTimer?.cancel();
+    _activeDurationStopwatch
+      ..reset()
+      ..start();
+    if (showCountdown && _totalSeconds > 1) {
       _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
         if (!mounted) return;
         if (_remainingSeconds > 1) {
@@ -974,11 +1013,29 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
         }
       });
     }
-
     // Undo expires on its wall-clock deadline even if rendering is paused.
-    _expiryTimer = Timer(duration, () {
+    _expiryTimer = Timer(remaining, () {
       if (mounted) widget.onRemove();
     });
+  }
+
+  void _handlePauseChanged(bool paused) {
+    if (_pausedByDrag == paused || _dismissing || _remainingDuration == null) {
+      return;
+    }
+    _pausedByDrag = paused;
+    if (paused) {
+      _activeDurationStopwatch.stop();
+      final elapsed = _activeDurationStopwatch.elapsed;
+      final left = _remainingDuration! - elapsed;
+      _remainingDuration = left > const Duration(milliseconds: 250)
+          ? left
+          : const Duration(milliseconds: 250);
+      _expiryTimer?.cancel();
+      _countdownTimer?.cancel();
+    } else {
+      _scheduleActiveTimers(_remainingDuration!, _currentShowCountdown);
+    }
   }
 
   void resetDuration(Duration? duration, bool showCountdown) {
@@ -1024,9 +1081,14 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
     final appearance = MediaQuery.disableAnimationsOf(context)
         ? null
         : _opacity;
+    final countdownFraction = _currentShowCountdown && _totalSeconds > 0
+        ? (_remainingSeconds / _totalSeconds).clamp(0.0, 1.0)
+        : null;
     final content = widget.builder(
       _currentShowCountdown ? _remainingSeconds : null,
+      countdownFraction,
       appearance,
+      _handlePauseChanged,
     );
     return IgnorePointer(
       ignoring: _dismissing,
@@ -1049,10 +1111,12 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
 class _VerticalSwipeDismissWrapper extends StatefulWidget {
   const _VerticalSwipeDismissWrapper({
     required this.onDismissed,
+    this.onDragActiveChanged,
     required this.child,
   });
 
   final VoidCallback onDismissed;
+  final ValueChanged<bool>? onDragActiveChanged;
   final Widget child;
 
   @override
@@ -1101,13 +1165,19 @@ class _VerticalSwipeDismissWrapperState
     super.dispose();
   }
 
+  void _handleDragStart(DragStartDetails _) {
+    widget.onDragActiveChanged?.call(true);
+  }
+
   void _handleDragUpdate(DragUpdateDetails details) {
     _resetController.stop();
+    widget.onDragActiveChanged?.call(true);
     final next = (_offsetY.value + details.delta.dy).clamp(-120.0, 0.0);
     _setOffset(next);
   }
 
   void _handleDragEnd(DragEndDetails details) {
+    widget.onDragActiveChanged?.call(false);
     final velocity = details.velocity.pixelsPerSecond.dy;
     final currentOffset = _offsetY.value;
     if (currentOffset <= -28 || (currentOffset < 0 && velocity <= -350)) {
@@ -1144,6 +1214,7 @@ class _VerticalSwipeDismissWrapperState
           );
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
+      onVerticalDragStart: _handleDragStart,
       onVerticalDragUpdate: _handleDragUpdate,
       onVerticalDragEnd: _handleDragEnd,
       onVerticalDragCancel: () =>
@@ -1161,6 +1232,7 @@ class AppFeedbackSurface extends StatelessWidget {
     this.iconWidget,
     required this.message,
     this.remainingSeconds,
+    this.countdownFraction,
     this.appearance,
     this.title,
     this.trailing,
@@ -1183,6 +1255,7 @@ class AppFeedbackSurface extends StatelessWidget {
   final Widget? iconWidget;
   final String message;
   final int? remainingSeconds;
+  final double? countdownFraction;
   final Animation<double>? appearance;
   final String? title;
   final Widget? trailing;
@@ -1206,6 +1279,67 @@ class AppFeedbackSurface extends StatelessWidget {
         ? '$message (${remainingSeconds}s)'
         : message;
 
+    final iconChip = AnimatedContainer(
+      duration: MediaQuery.disableAnimationsOf(context)
+          ? Duration.zero
+          : tokens.motionFast,
+      curve: Curves.easeOutCubic,
+      width: _iconChipSize,
+      height: _iconChipSize,
+      decoration: BoxDecoration(color: chipBackground, shape: BoxShape.circle),
+      child: Center(
+        child: AnimatedSwitcher(
+          duration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : tokens.motionFast,
+          switchInCurve: kAppSpringCurve,
+          switchOutCurve: Curves.easeInCubic,
+          transitionBuilder: (child, animation) =>
+              MediaQuery.disableAnimationsOf(context)
+              ? child
+              : FadeTransition(
+                  opacity: animation,
+                  child: ScaleTransition(
+                    scale: animation.drive(Tween<double>(begin: 0.85, end: 1)),
+                    child: child,
+                  ),
+                ),
+          child: iconWidget != null
+              ? IconTheme.merge(
+                  key: const ValueKey<String>('feedback_custom_icon'),
+                  data: IconThemeData(size: 16, color: accent),
+                  child: iconWidget!,
+                )
+              : Icon(
+                  icon,
+                  key: ValueKey<IconData>(icon),
+                  size: AppDesignTokens.opticalIconSize(icon, 16),
+                  color: accent,
+                ),
+        ),
+      ),
+    );
+    final Widget leadingIcon = countdownFraction == null
+        ? iconChip
+        : TweenAnimationBuilder<double>(
+            tween: Tween<double>(
+              begin: countdownFraction,
+              end: countdownFraction,
+            ),
+            duration: MediaQuery.disableAnimationsOf(context)
+                ? Duration.zero
+                : const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            child: iconChip,
+            builder: (context, fraction, child) => CustomPaint(
+              foregroundPainter: _FeedbackCountdownRingPainter(
+                fraction: fraction,
+                color: accent,
+              ),
+              child: child,
+            ),
+          );
+
     final surface = DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(resolvedBorderRadius),
@@ -1217,51 +1351,7 @@ class AppFeedbackSurface extends StatelessWidget {
         padding: padding,
         child: Row(
           children: [
-            AnimatedContainer(
-              duration: MediaQuery.disableAnimationsOf(context)
-                  ? Duration.zero
-                  : tokens.motionFast,
-              curve: Curves.easeOutCubic,
-              width: _iconChipSize,
-              height: _iconChipSize,
-              decoration: BoxDecoration(
-                color: chipBackground,
-                shape: BoxShape.circle,
-              ),
-              child: Center(
-                child: AnimatedSwitcher(
-                  duration: MediaQuery.disableAnimationsOf(context)
-                      ? Duration.zero
-                      : tokens.motionFast,
-                  switchInCurve: kAppSpringCurve,
-                  switchOutCurve: Curves.easeInCubic,
-                  transitionBuilder: (child, animation) =>
-                      MediaQuery.disableAnimationsOf(context)
-                      ? child
-                      : FadeTransition(
-                          opacity: animation,
-                          child: ScaleTransition(
-                            scale: animation.drive(
-                              Tween<double>(begin: 0.85, end: 1),
-                            ),
-                            child: child,
-                          ),
-                        ),
-                  child: iconWidget != null
-                      ? IconTheme.merge(
-                          key: const ValueKey<String>('feedback_custom_icon'),
-                          data: IconThemeData(size: 16, color: accent),
-                          child: iconWidget!,
-                        )
-                      : Icon(
-                          icon,
-                          key: ValueKey<IconData>(icon),
-                          size: AppDesignTokens.opticalIconSize(icon, 16),
-                          color: accent,
-                        ),
-                ),
-              ),
-            ),
+            leadingIcon,
             const SizedBox(width: 10),
             Expanded(
               child: Padding(
@@ -1317,6 +1407,9 @@ class AppFeedbackSurface extends StatelessWidget {
                                         ? FontWeight.w600
                                         : FontWeight.w700,
                                     height: 1.25,
+                                    fontFeatures: const [
+                                      FontFeature.tabularFigures(),
+                                    ],
                                   ),
                         ),
                       ],
@@ -1403,6 +1496,42 @@ Widget _feedbackContentLayout(
       ?currentChild,
     ],
   );
+}
+
+class _FeedbackCountdownRingPainter extends CustomPainter {
+  const _FeedbackCountdownRingPainter({
+    required this.fraction,
+    required this.color,
+  });
+
+  final double fraction;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final sweep = (fraction.clamp(0.0, 1.0)) * 2 * math.pi;
+    if (sweep <= 0) return;
+    const strokeWidth = 1.6;
+    final rect = (Offset.zero & size).deflate(strokeWidth / 2);
+    final trackPaint = Paint()
+      ..color = color.withValues(alpha: 0.16)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..isAntiAlias = true;
+    final arcPaint = Paint()
+      ..color = color.withValues(alpha: 0.78)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round
+      ..isAntiAlias = true;
+    canvas.drawOval(rect, trackPaint);
+    canvas.drawArc(rect, -math.pi / 2, sweep, false, arcPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _FeedbackCountdownRingPainter oldDelegate) {
+    return oldDelegate.fraction != fraction || oldDelegate.color != color;
+  }
 }
 
 Color _accentColor(BuildContext context, AppFeedbackTone tone) {

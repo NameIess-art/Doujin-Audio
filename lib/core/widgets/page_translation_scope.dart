@@ -14,9 +14,14 @@ import '../translation/text_translation_service.dart';
 import '../ui/ui_interaction_coordinator.dart';
 
 class WorkPageTranslationHost extends ConsumerStatefulWidget {
-  const WorkPageTranslationHost({super.key, required this.child});
+  const WorkPageTranslationHost({
+    super.key,
+    required this.child,
+    this.scene = TextTranslationScene.browse,
+  });
 
   final Widget child;
+  final TextTranslationScene scene;
 
   @override
   ConsumerState<WorkPageTranslationHost> createState() =>
@@ -34,6 +39,8 @@ class _WorkPageTranslationHostState
   late final _textCommitKey = 'page_translation_${identityHashCode(this)}';
   late final AppLanguageProvider _i18n;
   late String _target;
+  String? _backendSignature;
+  ValueListenable<int>? _serviceRevisionNotifier;
   Timer? _timer;
   TextTranslationRequest? _request;
   ValueListenable<TickerModeData>? _tickerModeNotifier;
@@ -70,6 +77,14 @@ class _WorkPageTranslationHostState
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final service = ref.read(textTranslationServiceProvider);
+    final revisionNotifier = service.configurationRevision;
+    if (!identical(revisionNotifier, _serviceRevisionNotifier)) {
+      _serviceRevisionNotifier?.removeListener(_serviceConfigurationChanged);
+      _serviceRevisionNotifier = revisionNotifier;
+      revisionNotifier.addListener(_serviceConfigurationChanged);
+    }
+    _backendSignature ??= service.backendSignatureFor(widget.scene);
     final notifier = TickerMode.getValuesNotifier(context);
     if (!identical(notifier, _tickerModeNotifier)) {
       _tickerModeNotifier?.removeListener(_handleActivityChanged);
@@ -78,6 +93,29 @@ class _WorkPageTranslationHostState
     }
     _routeVisible = ModalRoute.isCurrentOf(context) ?? true;
     _updateActivity(deferStatusNotification: true);
+  }
+
+  @override
+  void didUpdateWidget(WorkPageTranslationHost oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.scene != widget.scene) {
+      _serviceConfigurationChanged();
+    }
+  }
+
+  void _serviceConfigurationChanged() {
+    if (!mounted) return;
+    final signature = ref
+        .read(textTranslationServiceProvider)
+        .backendSignatureFor(widget.scene);
+    if (signature == _backendSignature) return;
+    _stop();
+    _backendSignature = signature;
+    _failed = false;
+    _pendingTranslations.clear();
+    _translations.clear();
+    _notifyTexts();
+    _updateActivity();
   }
 
   @override
@@ -221,7 +259,7 @@ class _WorkPageTranslationHostState
           _pendingTranslations.containsKey(text)) {
         continue;
       }
-      final value = service.cached(text, _target);
+      final value = service.cachedInScene(text, _target, scene: widget.scene);
       if (value == null) {
         missing.add(text);
       } else {
@@ -237,9 +275,10 @@ class _WorkPageTranslationHostState
     _status.value++;
     final TextTranslationResult result;
     try {
-      result = await service.translate(
+      result = await service.translateInScene(
         missing,
         target: _target,
+        scene: widget.scene,
         request: request,
       );
     } finally {
@@ -260,6 +299,9 @@ class _WorkPageTranslationHostState
         TextTranslationFailure.rateLimited => 'work_translation_rate_limited',
         TextTranslationFailure.unusualTraffic =>
           'work_translation_unusual_traffic',
+        TextTranslationFailure.unauthorized => 'work_translation_unauthorized',
+        TextTranslationFailure.misconfigured =>
+          'work_translation_misconfigured',
       };
       showAppSnackBar(context, _i18n.tr(key), tone: AppFeedbackTone.warning);
     }
@@ -270,6 +312,7 @@ class _WorkPageTranslationHostState
   @override
   void dispose() {
     _stop();
+    _serviceRevisionNotifier?.removeListener(_serviceConfigurationChanged);
     _tickerModeNotifier?.removeListener(_handleActivityChanged);
     WidgetsBinding.instance.removeObserver(this);
     _i18n.removeListener(_languageChanged);

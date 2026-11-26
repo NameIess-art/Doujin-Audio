@@ -1,13 +1,43 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart' show ChangeNotifierProvider;
 import '../../../core/ui/interaction_deferred_stream.dart';
+import '../../data_support/application/cross_platform_sync_service.dart';
 import '../application/audio_detail_cache_service.dart'
     show AudioLibraryDetailKey;
+import '../application/lan_media_server_service.dart';
 import '../application/library_facade.dart';
 import '../application/library_scan_coordinator.dart';
+import '../application/remote_library_controller.dart';
 import '../../../core/media/audio_detail.dart';
 import '../application/library_state_models.dart';
 import '../application/work_text_service.dart';
+import '../../player/application/playback_session_launcher.dart';
+import '../../player/presentation/playback_providers.dart'
+    show playbackFacadeProvider;
+
+final crossPlatformSyncServiceProvider =
+    ChangeNotifierProvider<CrossPlatformSyncService>((ref) {
+      return CrossPlatformSyncService();
+    });
+
+final lanMediaServerServiceProvider =
+    ChangeNotifierProvider<LanMediaServerService>((ref) {
+      return LanMediaServerService(
+        library: ref.watch(libraryFacadeProvider),
+        syncService: ref.watch(crossPlatformSyncServiceProvider),
+      );
+    });
+
+final remoteLibraryControllerProvider =
+    ChangeNotifierProvider<RemoteLibraryController>((ref) {
+      return RemoteLibraryController(
+        syncService: ref.watch(crossPlatformSyncServiceProvider),
+        playbackLauncher: PlaybackFacadeSessionLauncher(
+          ref.watch(playbackFacadeProvider),
+        ),
+      );
+    });
 
 final libraryFacadeProvider = Provider<LibraryFacade>((ref) {
   throw UnimplementedError(

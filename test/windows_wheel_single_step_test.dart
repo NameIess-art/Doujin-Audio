@@ -3,6 +3,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/media/subtitle_parser.dart';
+import 'package:doujin_audio/core/widgets/app_fixed_extent_wheel.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
@@ -153,6 +154,22 @@ void main() {
 
           final wheelFinder = find.byKey(const ValueKey('playback_speed_wheel'));
           expect(wheelFinder, findsOneWidget);
+          final fadeMask = find.ancestor(
+            of: wheelFinder,
+            matching: find.byType(AppWheelEdgeFadeMask),
+          );
+          expect(fadeMask, findsOneWidget);
+          expect(
+            tester
+                .widget<ShaderMask>(
+                  find.descendant(
+                    of: fadeMask,
+                    matching: find.byType(ShaderMask),
+                  ),
+                )
+                .blendMode,
+            BlendMode.dstIn,
+          );
 
           FixedExtentScrollController currentController() =>
               tester.widget<ListWheelScrollView>(wheelFinder).controller! as FixedExtentScrollController;

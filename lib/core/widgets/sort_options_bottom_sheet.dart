@@ -154,7 +154,8 @@ class _SortOptionsSheetState<T> extends State<_SortOptionsSheet<T>> {
                           RadioGroup<T>(
                             groupValue: _selectedCriterion,
                             onChanged: (value) {
-                              if (value == null || value == _selectedCriterion) {
+                              if (value == null ||
+                                  value == _selectedCriterion) {
                                 return;
                               }
                               unawaited(
@@ -164,10 +165,12 @@ class _SortOptionsSheetState<T> extends State<_SortOptionsSheet<T>> {
                               );
                               setState(() => _selectedCriterion = value);
                             },
-                            child: Column(
-                              children: widget.options
-                                  .map(
-                                    (option) {
+                            // ListTile ink must paint inside the scroll viewport.
+                            child: Material(
+                              type: MaterialType.transparency,
+                              child: Column(
+                                children: widget.options
+                                    .map((option) {
                                       final isSelected =
                                           option.value == _selectedCriterion;
                                       return RadioListTile<T>(
@@ -200,9 +203,9 @@ class _SortOptionsSheetState<T> extends State<_SortOptionsSheet<T>> {
                                         ),
                                         activeColor: cs.primary,
                                       );
-                                    },
-                                  )
-                                  .toList(growable: false),
+                                    })
+                                    .toList(growable: false),
+                              ),
                             ),
                           ),
                           const SizedBox(height: 12),

@@ -15,6 +15,8 @@ ggml (source commit 2f5a80d258c46e6ac8eee95f1328c0f58376d7ee): MIT, https://gith
 CrispASR c2pa-audio (source commit e40329b83f16f67bb5ddc7bb13ae18de0a9376fc): MIT; bundled micro-ecc: BSD-2-Clause. Full texts are installed in licenses/.
 The subtitle runtime build keeps Japanese CTC alignment labels in the original script; see tool/build_subtitle_native.dart.
 On-demand Japanese CTC model: cstr/wav2vec2-large-xlsr-53-japanese-GGUF, revision 16c3b21fe7858426806f4bf795578497e0b5dad2, Apache-2.0.
+On-demand ASMR VAD model: cstr/whisper-vad-encdec-asmr-GGUF, revision f7f32c7d5d1730830c7bb3b6521a185561e82357, MIT.
+On-demand ASR models: kotoba-tech/kotoba-whisper-v2.0-ggml (revision e3a0cf6a62b95911703cfb97d819292e058f12c3, Apache-2.0), ggerganov/whisper.cpp (revision 5359861c739e955e79d9a303bcbc70fb988958b1, MIT), and cstr/qwen3-asr-1.7b-ja-anime-GGUF (revision 1906c1f812b598d5e9dae091c79656d73b41ec28, Apache-2.0; upstream jaykwok/Qwen3-ASR-1.7B-JA-Anime-Galgame-hf, Apache-2.0).
 ASR model sizes and SHA256 values are pinned in lib/features/player/application/subtitle_model_store.dart. Models are downloaded to the user's application data directory when first used.
 Subtitle translation uses the online translation service and does not download a local translation model.
 Microsoft Visual C++ runtime: distributed under the Visual Studio redistributable license.

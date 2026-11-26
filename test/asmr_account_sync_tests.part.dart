@@ -382,6 +382,57 @@ void registerAsmrAccountSyncTests({
     },
   );
 
+  for (final workIsCollected in [false, true]) {
+    test(
+      'ASMR sync handles a rejected upload for a '
+      '${workIsCollected ? 'collected' : 'missing'} work',
+      () async {
+        await resetPrefs();
+        final local = _work(id: 71, title: 'Local favorite');
+        final remote = _work(id: 72, title: 'Remote favorite');
+        await preferences.saveFavoriteWorks([local]);
+        const uploadError = AsmrApiException(
+          'ASMR API server error (500).',
+          statusCode: HttpStatus.internalServerError,
+        );
+        final api = _AsmrWorkLookupApi(
+          workIsCollected: workIsCollected,
+          remoteReviewRecords: [
+            AsmrReviewRecord(work: remote, progress: 'marked', updatedAt: null),
+          ],
+        )..onPutReviewWithToken = (_, _, _) async => throw uploadError;
+        final controller = createTestAsmrController(
+          preferencesStore: preferences,
+          apiService: api,
+          authService: AsmrAuthService(
+            apiService: api,
+            tokenStore: _MemoryAsmrTokenStore(),
+          ),
+          persistenceRepository: _FakeTestPersistenceRepository([]),
+        );
+        addTearDown(controller.dispose);
+        await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+        await controller.loginAsmrAccount('alice', 'password');
+
+        expect(api.workLookups, [71]);
+        final favorites = await preferences.loadFavoriteWorks();
+        final pending = await preferences.loadSyncOperations();
+        if (workIsCollected) {
+          expect(controller.syncViewState.phase, AsmrSyncPhase.failed);
+          expect(controller.syncViewState.lastError, same(uploadError));
+          expect(pending.single.workId, 71);
+          expect(pending.single.retryCount, 1);
+          expect(favorites.map((work) => work.id), [71]);
+        } else {
+          expect(controller.syncViewState.phase, AsmrSyncPhase.succeeded);
+          expect(controller.syncViewState.lastSyncAt, isNotNull);
+          expect(pending, isEmpty);
+          expect(favorites.map((work) => work.id), unorderedEquals([71, 72]));
+        }
+      },
+    );
+  }
+
   for (final progress in <String?>[
     'listened',
     'replay',
@@ -1769,6 +1820,26 @@ void registerAsmrAccountSyncTests({
   );
 }
 
+class _AsmrWorkLookupApi extends _FakeAsmrApiService {
+  _AsmrWorkLookupApi({
+    required this.workIsCollected,
+    required super.remoteReviewRecords,
+  });
+
+  final bool workIsCollected;
+  final workLookups = <int>[];
+
+  @override
+  Future<bool> isWorkCollected(
+    int workId, {
+    AsmrRequestCancellationToken? cancellationToken,
+  }) async {
+    cancellationToken?.throwIfCancelled();
+    workLookups.add(workId);
+    return workIsCollected;
+  }
+}
+
 class _CountingFavoritePreferences extends AsmrPreferencesStore {
   _CountingFavoritePreferences({required super.repository});
   final favoriteBatches = <List<int>>[];
@@ -1795,12 +1866,14 @@ class _CountingFavoritePreferences extends AsmrPreferencesStore {
   Future<void> saveAccountSyncState({
     required List<AsmrWork> favoriteWorks,
     required List<AsmrWork> historyWorks,
+    List<AsmrWork> reviewedWorks = const <AsmrWork>[],
     required List<AsmrSyncOperation> operations,
   }) {
     fullAccountWrites++;
     return super.saveAccountSyncState(
       favoriteWorks: favoriteWorks,
       historyWorks: historyWorks,
+      reviewedWorks: reviewedWorks,
       operations: operations,
     );
   }

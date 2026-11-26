@@ -2,13 +2,16 @@ import 'package:flutter/foundation.dart';
 
 import '../../../core/app_language.dart';
 import '../../../core/network/network_route_settings.dart';
+import '../../../core/translation/translation_service_settings.dart';
 import '../../../core/immutable_collections.dart';
 import '../../../core/media/cover_image_resolution.dart';
 import '../../asmr/domain/asmr_download.dart';
 import '../../library/domain/library_node.dart';
+import '../../player/application/subtitle_model_store.dart';
 import '../../player/domain/audio_effects.dart';
 
 export '../../../core/media/cover_image_resolution.dart';
+export '../../../core/translation/translation_service_settings.dart';
 export '../../library/domain/library_node.dart'
     show LibrarySortCriterion, WorkNameDisplay;
 
@@ -38,6 +41,8 @@ enum PlaylistSortCriterion {
 class SettingsState {
   SettingsState({
     this.networkRouteSettings = const NetworkRouteSettings(),
+    this.translationSettings = const TranslationServiceSettings(),
+    this.selectedAsrModelId = SubtitleModelStore.defaultAsrModelId,
     this.asmrApiDomain = 'https://api.asmr-300.com',
     this.autoCheckUpdates = false,
     this.dlsiteMetadataLanguage = ContentLanguagePreference.followPage,
@@ -90,6 +95,8 @@ class SettingsState {
        );
 
   final NetworkRouteSettings networkRouteSettings;
+  final TranslationServiceSettings translationSettings;
+  final String selectedAsrModelId;
   final String asmrApiDomain;
   final bool autoCheckUpdates;
   final ContentLanguagePreference dlsiteMetadataLanguage;
@@ -136,6 +143,8 @@ class SettingsState {
   bool operator ==(Object other) {
     return other is SettingsState &&
         other.networkRouteSettings == networkRouteSettings &&
+        other.translationSettings == translationSettings &&
+        other.selectedAsrModelId == selectedAsrModelId &&
         other.asmrApiDomain == asmrApiDomain &&
         other.autoCheckUpdates == autoCheckUpdates &&
         other.dlsiteMetadataLanguage == dlsiteMetadataLanguage &&
@@ -186,6 +195,8 @@ class SettingsState {
   @override
   int get hashCode => Object.hashAll(<Object?>[
     networkRouteSettings,
+    translationSettings,
+    selectedAsrModelId,
     asmrApiDomain,
     autoCheckUpdates,
     dlsiteMetadataLanguage,

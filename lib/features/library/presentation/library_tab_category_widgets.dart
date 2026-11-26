@@ -31,6 +31,7 @@ import '../../../core/widgets/swipe_reveal_card.dart';
 import '../../../app/theme/app_styles.dart';
 
 import 'audio_detail_sheet.dart';
+import 'work_detail_review_actions.dart';
 import 'library_tab_tree_widgets.dart';
 import 'library_card_artwork.dart';
 import 'library_tab_ui_helpers.dart';
@@ -689,6 +690,18 @@ class AudioLibraryCategoryEntryCard extends ConsumerWidget {
         ),
         leadingActionIcon: Icons.push_pin_rounded,
         leadingActionIconWidget: isPinned ? const PushPinOffIcon() : null,
+        onSecondaryLeadingAction: () => unawaited(
+          openLocalWorkReviewEditor(
+            context,
+            ref,
+            entry.target,
+            fallbackTitle: entry.title,
+            initialDetail: entry.detail,
+          ),
+        ),
+        secondaryLeadingActionLabel: i18n.tr('work_review_action'),
+        secondaryLeadingActionTooltip: i18n.tr('work_review_action'),
+        secondaryLeadingActionIcon: Icons.rate_review_rounded,
         onRemove: () => _remove(context, ref),
         child: Card(
           margin: EdgeInsets.zero,

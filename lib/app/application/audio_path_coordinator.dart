@@ -18,13 +18,16 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
     required LibraryFacade library,
     required PlaybackFacade playback,
     AsmrPlaybackSource? asmrPlaybackSource,
+    MusicTrack? Function(String)? remoteTrackResolver,
   }) : _library = library,
        _playback = playback,
-       _asmrPlaybackSource = asmrPlaybackSource;
+       _asmrPlaybackSource = asmrPlaybackSource,
+       _remoteTrackResolver = remoteTrackResolver;
 
   final LibraryFacade _library;
   final PlaybackFacade _playback;
   final AsmrPlaybackSource? _asmrPlaybackSource;
+  final MusicTrack? Function(String)? _remoteTrackResolver;
   static const _maxCachedWorks = 64;
   static const _inlineWorkLookupLimit = 64;
   final Map<String, _WorkTracksCache> _workTracksCache = {};
@@ -46,6 +49,10 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
       final track = sessionTrackForPath(session.id, resolvedPath);
       if (track != null) return track;
     }
+    final remoteTrack =
+        _remoteTrackResolver?.call(resolvedPath) ??
+        (resolvedPath == trackPath ? null : _remoteTrackResolver?.call(trackPath));
+    if (remoteTrack != null) return remoteTrack;
     if (!includeLibraryFallback) return null;
     final sameTarget = resolvedPath == trackPath;
     if (PathMatcher.isContentUri(trackPath) ||
@@ -369,7 +376,7 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
 
   @override
   String workTitleForTrack(MusicTrack track) {
-    if (track.isRemoteAsmr) {
+    if (track.isRemoteMedia) {
       final remoteTitle = track.remoteMetadata?['workTitle'] as String?;
       if (remoteTitle != null && remoteTitle.trim().isNotEmpty) {
         return remoteTitle.trim();

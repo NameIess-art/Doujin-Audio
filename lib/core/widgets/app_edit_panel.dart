@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/theme/app_design_tokens.dart';
 import '../../app/theme/app_styles.dart';
+import 'app_bottom_sheet.dart';
 import 'app_buttons.dart';
 import 'app_dialog.dart';
 import 'app_transitions.dart';
@@ -315,7 +316,6 @@ class AppEditPanelForm extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final actionStyle = appEditPanelActionStyle();
     return SizedBox(
       width: double.infinity,
       height: height,
@@ -327,23 +327,12 @@ class AppEditPanelForm extends StatelessWidget {
             header,
             const SizedBox(height: 12),
             fields,
-            const SizedBox(height: 4),
-            Wrap(
-              alignment: WrapAlignment.end,
-              spacing: 8,
-              runSpacing: 4,
-              children: [
-                TextButton(
-                  style: actionStyle,
-                  onPressed: onCancel,
-                  child: Text(cancelLabel),
-                ),
-                TextButton(
-                  style: actionStyle,
-                  onPressed: onSubmit,
-                  child: Text(submitLabel),
-                ),
-              ],
+            const SizedBox(height: 8),
+            AppBottomSheetActions(
+              cancelLabel: cancelLabel,
+              confirmLabel: submitLabel,
+              onCancel: onCancel,
+              onConfirm: onSubmit,
             ),
           ],
         ),

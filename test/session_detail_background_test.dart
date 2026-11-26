@@ -155,6 +155,21 @@ void main() {
       await Future<void>.value();
       expect(route.animation!.status, AnimationStatus.reverse);
       await closing;
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      final detailContent = find.byKey(
+        const ValueKey('session_detail_content_cache'),
+      );
+      expect(tester.getTopLeft(detailContent).dy, closeTo(0, 0.1));
+      final exitFade = tester.widget<FadeTransition>(
+        find
+            .ancestor(
+              of: detailContent,
+              matching: find.byType(FadeTransition),
+            )
+            .first,
+      );
+      expect(exitFade.opacity.value, inExclusiveRange(0, 1));
       await tester.pumpAndSettle();
       expect(find.byType(SessionDetailPage), findsNothing);
     },
@@ -631,6 +646,19 @@ void main() {
         expect(exit.to, tester.getRect(target));
         expect(exit.reverse, isTrue);
         expect(exit.progress.value, inExclusiveRange(0, 1));
+        final detailContent = find.byKey(
+          const ValueKey('session_detail_content_cache'),
+        );
+        expect(tester.getTopLeft(detailContent).dy, closeTo(0, 0.1));
+        final exitFade = tester.widget<FadeTransition>(
+          find
+              .ancestor(
+                of: detailContent,
+                matching: find.byType(FadeTransition),
+              )
+              .first,
+        );
+        expect(exitFade.opacity.value, inExclusiveRange(0, 1));
         for (final name in ['close', 'title', 'cover_vignette']) {
           expect(overlayOpacity(name), 1);
         }

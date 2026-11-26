@@ -1672,6 +1672,31 @@ class _FakeAudioDetailRepository implements AudioDetailRepository {
   }
 
   @override
+  Future<AudioDetailSaveResult> saveUserReview(
+    AudioDetailTarget target, {
+    required WorkListenStatus? listenStatus,
+    required int? userRating,
+    required String reviewText,
+    DateTime? updatedAt,
+  }) async {
+    final normalizedReview = AudioDetail.normalizeReviewText(reviewText);
+    final hasAny =
+        listenStatus != null ||
+        userRating != null ||
+        normalizedReview.isNotEmpty;
+    final next = AudioDetail.empty(target).copyWith(
+      listenStatus: listenStatus,
+      userRating: userRating,
+      reviewText: normalizedReview,
+      reviewUpdatedAt: hasAny ? (updatedAt ?? DateTime.now().toUtc()) : null,
+    );
+    return AudioDetailSaveResult(
+      detail: next,
+      documentStatus: JsonDocumentWriteStatus.preserved,
+    );
+  }
+
+  @override
   Future<AudioDetailSaveResult> retarget(
     AudioDetailTarget previousTarget,
     AudioDetail detail,

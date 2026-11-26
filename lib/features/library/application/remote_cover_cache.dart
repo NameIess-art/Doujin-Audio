@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 
+import '../../../core/media/cover_image_format.dart';
 import '../../../core/media/path_matcher.dart';
 import 'cover_artwork_store.dart';
 import 'remote_cover_downloader.dart';
@@ -18,6 +19,7 @@ final class RemoteCoverCache {
     required bool Function() isClearingPersistentCache,
     required Duration requestTimeout,
     required Duration downloadIdleTimeout,
+    int maxRemoteCoverBytes = maxRemoteCoverFileBytes,
     Future<String?> Function(String remoteUrl)? download,
     DateTime Function()? now,
     bool Function(String key)? isActiveCoverKey,
@@ -33,6 +35,7 @@ final class RemoteCoverCache {
        _downloader = RemoteCoverDownloader(
          requestTimeout: requestTimeout,
          downloadIdleTimeout: downloadIdleTimeout,
+         maxFileBytes: maxRemoteCoverBytes,
        );
 
   final CoverArtworkStore _artworkStore;
@@ -160,12 +163,11 @@ final class RemoteCoverCache {
     required bool Function() isCurrent,
   }) async {
     if (_download != null) return _download(url);
-    final bytes = await _downloader.fetch(url);
-    if (bytes == null || !isCurrent() || _isClearing()) return null;
-    return _artworkStore.putBytes(
+    return _downloader.fetchAndStore(
+      url,
       logicalKey: key,
-      bytes: bytes,
-      namespace: CoverArtworkNamespace.remote,
+      artworkStore: _artworkStore,
+      isCurrent: () => isCurrent() && !_isClearing(),
     );
   }
 

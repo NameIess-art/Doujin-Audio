@@ -8,6 +8,8 @@ void main() {
       final SearchFilters filters = (
         hasSubtitle: null,
         minimumRating: 4.5,
+        minimumUserRating: null,
+        listenStatus: null,
         minimumDuration: const Duration(minutes: 30),
         maximumDuration: null,
         firstReleaseDate: null,

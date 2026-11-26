@@ -95,6 +95,32 @@ extension AppDatabaseListening on AppDatabase {
   Future<List<Map<String, Object?>>> loadListeningDays() =>
       _runDatabaseRead((db) => db.query('listening_days', orderBy: 'date'));
 
+  Future<Map<String, int>> loadListeningWorkTotalMilliseconds(
+    Iterable<String> workKeys,
+  ) => _runDatabaseRead((db) async {
+    final keys = workKeys.toSet().toList(growable: false);
+    if (keys.isEmpty) return const <String, int>{};
+    final totals = <String, int>{};
+    for (final chunk in _stringChunks(keys)) {
+      final placeholders = List.filled(chunk.length, '?').join(', ');
+      final rows = await db.rawQuery(
+        'SELECT work_key, SUM(milliseconds) AS total_ms '
+        'FROM listening_work_days '
+        'WHERE work_key IN ($placeholders) '
+        'GROUP BY work_key',
+        chunk,
+      );
+      for (final row in rows) {
+        final key = row['work_key'] as String?;
+        final total = (row['total_ms'] as num?)?.toInt() ?? 0;
+        if (key != null && total > 0) {
+          totals[key] = total;
+        }
+      }
+    }
+    return totals;
+  });
+
   Future<int> countListeningHistory() => _runDatabaseRead(
     (db) async => Sqflite.firstIntValue(
       await db.rawQuery('SELECT COUNT(*) FROM listening_history'),

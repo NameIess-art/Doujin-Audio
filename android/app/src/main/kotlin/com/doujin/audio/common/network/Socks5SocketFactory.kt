@@ -19,6 +19,15 @@ internal class Socks5SocketFactory(
     override fun createSocket(): Socket = object : Socket(Proxy.NO_PROXY) {
         override fun connect(endpoint: SocketAddress, timeout: Int) {
             val destination = endpoint as? InetSocketAddress ?: throw IOException("Invalid SOCKS destination")
+            if (isLocalOrPrivateHost(destination.hostString)) {
+                val direct = if (destination.isUnresolved) {
+                    InetSocketAddress(destination.hostString, destination.port)
+                } else {
+                    destination
+                }
+                super.connect(direct, timeout)
+                return
+            }
             try {
                 super.connect(InetSocketAddress(proxyHost, proxyPort), timeout)
                 val previousTimeout = soTimeout

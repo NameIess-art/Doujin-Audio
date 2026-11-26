@@ -12,6 +12,7 @@ class AsmrLibraryGlobalViewState {
     required this.contentLanguage,
     required this.contentLanguagePreference,
     required this.revision,
+    this.favoritesStatusFilter = AsmrFavoritesStatusFilter.marked,
   }) : visibleCategories = immutableList(visibleCategories);
 
   final bool initialized;
@@ -19,6 +20,7 @@ class AsmrLibraryGlobalViewState {
   final AsmrContentLanguage contentLanguage;
   final ContentLanguagePreference contentLanguagePreference;
   final int revision;
+  final AsmrFavoritesStatusFilter favoritesStatusFilter;
 
   @override
   bool operator ==(Object other) {
@@ -27,6 +29,7 @@ class AsmrLibraryGlobalViewState {
         listEquals(visibleCategories, other.visibleCategories) &&
         contentLanguage == other.contentLanguage &&
         contentLanguagePreference == other.contentLanguagePreference &&
+        favoritesStatusFilter == other.favoritesStatusFilter &&
         revision == other.revision;
   }
 
@@ -36,6 +39,7 @@ class AsmrLibraryGlobalViewState {
     Object.hashAll(visibleCategories),
     contentLanguage,
     contentLanguagePreference,
+    favoritesStatusFilter,
     revision,
   );
 }
@@ -151,6 +155,8 @@ extension AsmrWorkSearchFilters on AsmrWork {
       matchesSearchMetadata(
         filters,
         rating: rating,
+        userRating: userRating,
+        listenStatus: listenStatus,
         duration: duration > Duration.zero ? duration : null,
         releaseDate: releaseDate,
       );

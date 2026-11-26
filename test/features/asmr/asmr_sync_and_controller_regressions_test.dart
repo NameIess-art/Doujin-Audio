@@ -68,6 +68,7 @@ class _InMemoryAsmrRepository implements AsmrPersistenceRepository {
   final Map<String, String> settings = <String, String>{};
   final Map<String, List<AsmrWork>> workLists = <String, List<AsmrWork>>{
     'favorites': <AsmrWork>[],
+    'reviewed': <AsmrWork>[],
     'history': <AsmrWork>[],
   };
   List<AsmrSyncOperation> operations = <AsmrSyncOperation>[];
@@ -185,12 +186,39 @@ class _InMemoryAsmrRepository implements AsmrPersistenceRepository {
   }
 
   @override
+  Future<void> saveReviewState({
+    required AsmrWork work,
+    required bool favorite,
+    required bool reviewed,
+    AsmrSyncOperation? operation,
+  }) async {
+    final currentFavorites = workLists['favorites'] ?? const <AsmrWork>[];
+    workLists['favorites'] = [
+      if (favorite) work,
+      ...currentFavorites.where((item) => item.workKey != work.workKey),
+    ];
+    final currentReviewed = workLists['reviewed'] ?? const <AsmrWork>[];
+    workLists['reviewed'] = [
+      if (reviewed) work,
+      ...currentReviewed.where((item) => item.workKey != work.workKey),
+    ];
+    if (operation != null) {
+      operations = [
+        ...operations.where((item) => item.workId != operation.workId),
+        operation,
+      ];
+    }
+  }
+
+  @override
   Future<void> saveAccountSyncState({
     required List<AsmrWork> favoriteWorks,
     required List<AsmrWork> historyWorks,
     required List<AsmrSyncOperation> operations,
+    List<AsmrWork> reviewedWorks = const <AsmrWork>[],
   }) async {
     workLists['favorites'] = List<AsmrWork>.of(favoriteWorks);
+    workLists['reviewed'] = List<AsmrWork>.of(reviewedWorks);
     workLists['history'] = List<AsmrWork>.of(historyWorks);
     this.operations = List<AsmrSyncOperation>.of(operations);
   }
@@ -204,6 +232,7 @@ class _InMemoryAsmrRepository implements AsmrPersistenceRepository {
     visibleCategories = const <String>[];
     settings.clear();
     workLists['favorites'] = <AsmrWork>[];
+    workLists['reviewed'] = <AsmrWork>[];
     workLists['history'] = <AsmrWork>[];
     operations = <AsmrSyncOperation>[];
   }

@@ -33,6 +33,7 @@ import '../../features/asmr/presentation/asmr_providers.dart';
 import '../../features/asmr/presentation/asmr_work_detail_sheet.dart';
 import '../../features/library/presentation/audio_detail_sheet.dart';
 import '../../features/library/presentation/library_providers.dart';
+import '../../features/library/presentation/remote_library_work_detail.dart';
 import '../../features/settings/application/settings_state.dart';
 import '../../features/settings/presentation/settings_providers.dart';
 import 'app_presentation_providers.dart';
@@ -192,16 +193,32 @@ class _MyPageState extends ConsumerState<MyPage>
     final local = library.library
         .where(
           (candidate) =>
-              !candidate.isRemoteAsmr &&
+              !candidate.isRemoteMedia &&
               listeningWorkKey(candidate) == targetKey,
         )
         .firstOrNull;
-    if (local != null && !local.isRemoteAsmr) {
+    if (local != null && !local.isRemoteMedia) {
       await showAudioDetailSheet(
         context,
         library.audioDetailTargetForTrack(local),
       );
-    } else if (track.remoteMetadata != null) {
+    } else if (track.isRemoteSource) {
+      final remoteController = ref.read(remoteLibraryControllerProvider);
+      await remoteController.initialize();
+      if (!mounted) return;
+      final remoteWork = remoteController.resolveWorkForTrack(track);
+      if (remoteWork != null &&
+          remoteController.sourceById(remoteWork.sourceId) != null) {
+        await openRemoteLibraryWorkDetail(context, remoteWork);
+      } else {
+        showAppSnackBar(
+          context,
+          ref
+              .read(appLanguageProviderInstanceProvider)
+              .tr('my_work_unavailable'),
+        );
+      }
+    } else if (track.isRemoteAsmr && track.remoteMetadata != null) {
       await showAsmrWorkDetailSheet(
         context,
         AsmrWork.fromJson(track.remoteMetadata!),
@@ -1061,7 +1078,7 @@ class _HistoryListState extends ConsumerState<_HistoryList> {
 final _historyWorkTitleProvider = FutureProvider.autoDispose
     .family<String?, MusicTrack>((ref, track) async {
       final metadataTitle = track.remoteMetadata?['title']?.toString().trim();
-      if (track.isRemoteAsmr) {
+      if (track.isRemoteMedia) {
         return metadataTitle?.isNotEmpty == true
             ? metadataTitle
             : (track.groupTitle.trim().isEmpty ? null : track.groupTitle);

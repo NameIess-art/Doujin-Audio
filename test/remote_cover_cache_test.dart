@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/core/network/remote_source_headers.dart';
 import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:doujin_audio/features/library/application/cover_image_cache_policy.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
@@ -80,7 +82,7 @@ void main() {
         respond = (request) async {
           request.response.statusCode = status;
           request.response.contentLength = status == HttpStatus.ok
-              ? maxCoverFileBytes + 1
+              ? maxRemoteCoverFileBytes + 1
               : 1024;
           final socket = await request.response.detachSocket();
           sockets.add(socket);
@@ -332,4 +334,81 @@ void main() {
     expect(await cache.futureForRemoteCover(url), isNull);
     expect(coverChanges, 0);
   });
+
+  test(
+    'streams valid remote images larger than maxCoverFileBytes and strips auth on cross-origin redirect',
+    () async {
+      const largePayloadLength = maxCoverFileBytes + 1024 * 1024;
+      final iendIndex = pngBytes.length - 12;
+      final chunkBytes = Uint8List(12 + largePayloadLength);
+      ByteData.view(chunkBytes.buffer).setUint32(0, largePayloadLength);
+      chunkBytes.setRange(4, 8, utf8.encode('tEXt'));
+      final largePng = Uint8List(pngBytes.length + chunkBytes.length)
+        ..setRange(0, iendIndex, pngBytes.sublist(0, iendIndex))
+        ..setRange(iendIndex, iendIndex + chunkBytes.length, chunkBytes)
+        ..setRange(
+          iendIndex + chunkBytes.length,
+          pngBytes.length + chunkBytes.length,
+          pngBytes.sublist(iendIndex),
+        );
+
+      final cdnServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => cdnServer.close(force: true));
+      final cdnAuthHeaders = <String?>[];
+      cdnServer.listen((request) async {
+        cdnAuthHeaders.add(request.headers.value(HttpHeaders.authorizationHeader));
+        request.response.contentLength = largePng.length;
+        request.response.add(largePng);
+        await request.response.close();
+      });
+
+      final registry = RemoteSourceHeaderRegistry.instance;
+      addTearDown(registry.clear);
+      final originBase = Uri.parse(
+        'http://${server.address.address}:${server.port}',
+      );
+      registry.upsertRule(
+        RemoteSourceHeaderRule.bearerToken(
+          id: 'test-origin',
+          baseUri: originBase,
+          token: 'secret-token',
+        ),
+      );
+
+      final originAuthHeaders = <String?>[];
+      respond = (request) async {
+        originAuthHeaders.add(
+          request.headers.value(HttpHeaders.authorizationHeader),
+        );
+        if (request.uri.path == '/redirect.png') {
+          request.response.statusCode = HttpStatus.found;
+          request.response.headers.set(
+            HttpHeaders.locationHeader,
+            'http://${cdnServer.address.address}:${cdnServer.port}/cdn.png',
+          );
+          await request.response.close();
+          return;
+        }
+        request.response.contentLength = largePng.length;
+        request.response.add(largePng);
+        await request.response.close();
+      };
+
+      final cache = createCache();
+      final directPath = await cache.futureForRemoteCover(url('large'));
+      final redirectPath = await cache.futureForRemoteCover(url('redirect'));
+      expect(directPath, isNotNull);
+      expect(redirectPath, directPath);
+      expect(await File(directPath!).length(), largePng.length);
+      expect(originAuthHeaders, everyElement('Bearer secret-token'));
+      expect(cdnAuthHeaders, [isNull]);
+      expect(
+        directory
+            .listSync(recursive: true)
+            .whereType<File>()
+            .where((file) => file.path.endsWith('.part')),
+        isEmpty,
+      );
+    },
+  );
 }

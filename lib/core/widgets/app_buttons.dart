@@ -1177,6 +1177,40 @@ class AppOverlayIconButton extends StatelessWidget {
   }
 }
 
+class AppConnectionTestButton extends StatelessWidget {
+  const AppConnectionTestButton({
+    super.key,
+    required this.tooltip,
+    required this.onPressed,
+    required this.isTesting,
+  });
+
+  final String tooltip;
+  final VoidCallback? onPressed;
+  final bool isTesting;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton.filled(
+      tooltip: tooltip,
+      onPressed: isTesting ? null : onPressed,
+      style: IconButton.styleFrom(
+        minimumSize: const Size.square(40),
+        maximumSize: const Size.square(40),
+        padding: EdgeInsets.zero,
+        shape: const CircleBorder(),
+        tapTargetSize: MaterialTapTargetSize.padded,
+      ),
+      icon: isTesting
+          ? const SizedBox.square(
+              dimension: 14,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.network_check_rounded, size: 17),
+    );
+  }
+}
+
 class AppPillButton extends StatelessWidget {
   const AppPillButton({
     super.key,
@@ -1230,6 +1264,29 @@ class AppPillButton extends StatelessWidget {
   }
 }
 
+/// Marks a modal action bar whose primary/secondary buttons should use the
+/// compact bottom-sheet drawer styling instead of full-width 48px pills.
+class AppModalActionStyleScope extends InheritedWidget {
+  const AppModalActionStyleScope({
+    super.key,
+    this.compact = true,
+    required super.child,
+  });
+
+  final bool compact;
+
+  static bool isCompactOf(BuildContext context) {
+    return context
+            .dependOnInheritedWidgetOfExactType<AppModalActionStyleScope>()
+            ?.compact ??
+        false;
+  }
+
+  @override
+  bool updateShouldNotify(AppModalActionStyleScope oldWidget) =>
+      compact != oldWidget.compact;
+}
+
 class AppPrimaryButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final String label;
@@ -1252,6 +1309,7 @@ class AppPrimaryButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final compact = AppModalActionStyleScope.isCompactOf(context);
 
     final foregroundColor = isDestructive
         ? colorScheme.onError
@@ -1263,7 +1321,8 @@ class AppPrimaryButton extends StatelessWidget {
     final style = FilledButton.styleFrom(
       foregroundColor: foregroundColor,
       backgroundColor: backgroundColor,
-      minimumSize: const Size.fromHeight(48),
+      minimumSize: compact ? const Size(72, 40) : const Size.fromHeight(48),
+      padding: compact ? const EdgeInsets.symmetric(horizontal: 20) : null,
       shape: const StadiumBorder(),
       textStyle: theme.textTheme.labelLarge?.copyWith(
         fontWeight: FontWeight.bold,
@@ -1311,6 +1370,7 @@ class AppSecondaryButton extends StatelessWidget {
   final IconData? icon;
   final bool isDestructive;
   final bool isLoading;
+  final bool autofocus;
 
   const AppSecondaryButton({
     super.key,
@@ -1319,16 +1379,63 @@ class AppSecondaryButton extends StatelessWidget {
     this.icon,
     this.isDestructive = false,
     this.isLoading = false,
+    this.autofocus = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final compact = AppModalActionStyleScope.isCompactOf(context);
 
     final foregroundColor = isDestructive
         ? colorScheme.error
         : colorScheme.primary;
+
+    if (compact) {
+      final compactStyle = appTextButtonStyle(
+        style: TextButton.styleFrom(
+          foregroundColor: foregroundColor,
+          minimumSize: const Size(48, 40),
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          shape: const StadiumBorder(),
+          textStyle: theme.textTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      );
+      if (isLoading) {
+        return TextButton.icon(
+          onPressed: null,
+          autofocus: autofocus,
+          style: compactStyle,
+          icon: SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: foregroundColor.withValues(alpha: 0.5),
+            ),
+          ),
+          label: Text(label),
+        );
+      }
+      if (icon != null) {
+        return TextButton.icon(
+          onPressed: onPressed,
+          autofocus: autofocus,
+          style: compactStyle,
+          icon: Icon(icon, size: 18),
+          label: Text(label),
+        );
+      }
+      return TextButton(
+        onPressed: onPressed,
+        autofocus: autofocus,
+        style: compactStyle,
+        child: Text(label),
+      );
+    }
 
     final style = OutlinedButton.styleFrom(
       foregroundColor: foregroundColor,
@@ -1347,6 +1454,7 @@ class AppSecondaryButton extends StatelessWidget {
     if (isLoading) {
       return OutlinedButton.icon(
         onPressed: null,
+        autofocus: autofocus,
         style: appButtonStyle(style),
         icon: SizedBox(
           width: 18,
@@ -1363,6 +1471,7 @@ class AppSecondaryButton extends StatelessWidget {
       return AppLabelledButton(
         OutlinedButton.icon,
         onPressed: onPressed,
+        autofocus: autofocus,
         style: style,
         icon: Icon(icon, size: 20),
         label: Text(label),
@@ -1371,6 +1480,7 @@ class AppSecondaryButton extends StatelessWidget {
 
     return AppPillButton.outlined(
       onPressed: onPressed,
+      autofocus: autofocus,
       style: style,
       child: Text(label),
     );

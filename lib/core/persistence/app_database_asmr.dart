@@ -159,6 +159,11 @@ extension AppDatabaseAsmr on AppDatabase {
                   _dateTimeFromMs(row['created_at_ms']) ??
                   DateTime.fromMillisecondsSinceEpoch(0),
               retryCount: (row['retry_count'] as num?)?.toInt() ?? 0,
+              progress: row['progress'] as String?,
+              userRating: (row['user_rating'] as num?)?.toInt(),
+              reviewText: row['review_text'] as String?,
+              hasReviewPayload:
+                  ((row['has_review_payload'] as num?)?.toInt() ?? 0) == 1,
             ),
           )
           .where((operation) => operation.workId > 0)
@@ -179,19 +184,24 @@ extension AppDatabaseAsmr on AppDatabase {
   Future<void> saveAsmrAccountSyncState(
     List<AsmrWorkRecord> favoriteWorks,
     List<AsmrWorkRecord> historyWorks,
-    List<AsmrSyncOperationRecord> operations,
-  ) async {
+    List<AsmrSyncOperationRecord> operations, {
+    List<AsmrWorkRecord> reviewedWorks = const <AsmrWorkRecord>[],
+  }) async {
     await _runDatabaseWrite((db) async {
       await db.transaction((txn) async {
         final batch = txn.batch();
         final historyById = <String, AsmrWorkRecord>{
           for (final work in historyWorks) work.workKey: work,
         };
+        final reviewedById = <String, AsmrWorkRecord>{
+          for (final work in reviewedWorks) work.workKey: work,
+        };
         final favoriteById = <String, AsmrWorkRecord>{
           for (final work in favoriteWorks) work.workKey: work,
         };
         final workById = <String, AsmrWorkRecord>{
           ...historyById,
+          ...reviewedById,
           ...favoriteById,
         };
         for (final work in workById.values) {
@@ -205,6 +215,11 @@ extension AppDatabaseAsmr on AppDatabase {
           batch,
           'favorites',
           favoriteById.keys.toList(growable: false),
+        );
+        _replaceAsmrWorkListMembershipInBatch(
+          batch,
+          'reviewed',
+          reviewedById.keys.toList(growable: false),
         );
         _replaceAsmrWorkListMembershipInBatch(
           batch,
@@ -232,17 +247,18 @@ extension AppDatabaseAsmr on AppDatabase {
           whereArgs: ['history'],
           orderBy: 'sort_order ASC',
         );
-        final favorite = await txn.rawQuery(
+        final authoritative = await txn.rawQuery(
           'SELECT w.resources_json FROM asmr_works w '
           'INNER JOIN asmr_work_lists l ON l.work_id = w.work_key '
-          'WHERE l.list_type = ? AND l.work_id = ? LIMIT 1',
-          ['favorites', work.workKey],
+          'WHERE l.list_type IN (?, ?) AND l.work_id = ? LIMIT 1',
+          ['favorites', 'reviewed', work.workKey],
         );
         final batch = txn.batch();
-        // A favorite's saved metadata is authoritative for the shared work row.
-        if (favorite.isEmpty) {
+        // Favorites and reviewed rows own shared work/review metadata.
+        if (authoritative.isEmpty) {
           _writeAsmrWorkToBatch(batch, work, isFavorite: false);
-        } else if (favorite.single['resources_json'] != work.resourcesJson) {
+        } else if (authoritative.single['resources_json'] !=
+            work.resourcesJson) {
           batch.update(
             'asmr_works',
             {'resources_json': work.resourcesJson},
@@ -344,8 +360,23 @@ extension AppDatabaseAsmr on AppDatabase {
         var operationOrder = lastOperation.isEmpty
             ? 0
             : (lastOperation.single['sort_order'] as int) + 1;
+        final firstReviewed = await txn.query(
+          'asmr_work_lists',
+          columns: ['sort_order'],
+          where: 'list_type = ?',
+          whereArgs: ['reviewed'],
+          orderBy: 'sort_order ASC',
+          limit: 1,
+        );
+        var reviewedOrder = firstReviewed.isEmpty
+            ? 0
+            : firstReviewed.single['sort_order'] as int;
         final batch = txn.batch();
         for (final work in works) {
+          final hasReview =
+              work.listenStatus != null ||
+              work.userRating != null ||
+              work.reviewText.trim().isNotEmpty;
           if (favorite) {
             _writeAsmrWorkToBatch(batch, work, isFavorite: true);
             // Prepending does not require rewriting every existing membership.
@@ -354,15 +385,32 @@ extension AppDatabaseAsmr on AppDatabase {
               'work_id': work.workKey,
               'sort_order': --favoriteOrder,
             }, conflictAlgorithm: ConflictAlgorithm.replace);
+            batch.insert('asmr_work_lists', {
+              'list_type': 'reviewed',
+              'work_id': work.workKey,
+              'sort_order': --reviewedOrder,
+            }, conflictAlgorithm: ConflictAlgorithm.replace);
           } else {
             batch.delete(
               'asmr_work_lists',
               where: 'list_type = ? AND work_id = ?',
               whereArgs: ['favorites', work.workKey],
             );
+            if (!hasReview) {
+              batch.delete(
+                'asmr_work_lists',
+                where: 'list_type = ? AND work_id = ?',
+                whereArgs: ['reviewed', work.workKey],
+              );
+            }
             batch.update(
               'asmr_works',
-              {'is_favorite': 0},
+              {
+                'is_favorite': 0,
+                'listen_status': work.listenStatus,
+                'review_updated_at_ms':
+                    work.reviewUpdatedAt?.millisecondsSinceEpoch,
+              },
               where: 'work_key = ?',
               whereArgs: [work.workKey],
             );
@@ -379,10 +427,113 @@ extension AppDatabaseAsmr on AppDatabase {
         for (final operation in operations) {
           batch.delete(
             'asmr_sync_operations',
-            where: 'work_id = ? AND type IN (?, ?)',
-            whereArgs: [operation.workId, 'favoriteAdd', 'favoriteRemove'],
+            where: 'work_id = ? AND type IN (?, ?, ?, ?)',
+            whereArgs: [
+              operation.workId,
+              'favoriteAdd',
+              'favoriteRemove',
+              'reviewUpsert',
+              'reviewDelete',
+            ],
           );
           _writeAsmrSyncOperationToBatch(batch, operation, operationOrder++);
+        }
+        await batch.commit(noResult: true);
+      });
+    });
+  }
+
+  Future<void> saveAsmrReviewState(
+    AsmrWorkRecord work, {
+    required bool favorite,
+    required bool reviewed,
+    AsmrSyncOperationRecord? operation,
+  }) async {
+    await _runDatabaseWrite((db) async {
+      await db.transaction((txn) async {
+        final batch = txn.batch();
+        if (reviewed || favorite) {
+          _writeAsmrWorkToBatch(batch, work, isFavorite: favorite);
+        } else {
+          batch.update(
+            'asmr_works',
+            {
+              'is_favorite': 0,
+              'listen_status': null,
+              'user_rating': null,
+              'review_text': '',
+              'review_updated_at_ms':
+                  work.reviewUpdatedAt?.millisecondsSinceEpoch,
+            },
+            where: 'work_key = ?',
+            whereArgs: [work.workKey],
+          );
+        }
+
+        Future<void> upsertListMembership(String listType) async {
+          final existing = await txn.query(
+            'asmr_work_lists',
+            columns: ['sort_order'],
+            where: 'list_type = ? AND work_id = ?',
+            whereArgs: [listType, work.workKey],
+            limit: 1,
+          );
+          if (existing.isNotEmpty) return;
+          final first = await txn.query(
+            'asmr_work_lists',
+            columns: ['sort_order'],
+            where: 'list_type = ?',
+            whereArgs: [listType],
+            orderBy: 'sort_order ASC',
+            limit: 1,
+          );
+          final nextOrder = first.isEmpty
+              ? -1
+              : (first.single['sort_order'] as int) - 1;
+          batch.insert('asmr_work_lists', {
+            'list_type': listType,
+            'work_id': work.workKey,
+            'sort_order': nextOrder,
+          }, conflictAlgorithm: ConflictAlgorithm.replace);
+        }
+
+        if (favorite) {
+          await upsertListMembership('favorites');
+        } else {
+          batch.delete(
+            'asmr_work_lists',
+            where: 'list_type = ? AND work_id = ?',
+            whereArgs: ['favorites', work.workKey],
+          );
+        }
+        if (reviewed) {
+          await upsertListMembership('reviewed');
+        } else {
+          batch.delete(
+            'asmr_work_lists',
+            where: 'list_type = ? AND work_id = ?',
+            whereArgs: ['reviewed', work.workKey],
+          );
+        }
+        if (!favorite && !reviewed) {
+          _deleteUnreferencedAsmrWorksInBatch(batch, workIds: [work.workKey]);
+        }
+        if (operation != null) {
+          final lastOperation = await txn.query(
+            'asmr_sync_operations',
+            columns: ['sort_order'],
+            orderBy: 'sort_order DESC',
+            limit: 1,
+          );
+          final nextOrder = lastOperation.isEmpty
+              ? 0
+              : (lastOperation.single['sort_order'] as int) + 1;
+          batch.delete(
+            'asmr_sync_operations',
+            where: 'work_id = ?',
+            whereArgs: [operation.workId],
+          );
+          _writeAsmrSyncOperationToBatch(batch, operation, nextOrder);
         }
         await batch.commit(noResult: true);
       });

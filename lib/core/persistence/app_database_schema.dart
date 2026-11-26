@@ -24,6 +24,7 @@ Future<void> _onCreate(Database db, int version) async {
   await _createLibraryEntriesTable(db);
   await _createTimeSegmentLabelsTable(db);
   await _createListeningTables(db);
+  await _createSyncTables(db);
 }
 
 Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -163,6 +164,126 @@ Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
   if (oldVersion < 20 && newVersion >= 20) {
     await _repairLegacyJapaneseAsmrResources(db);
   }
+  if (oldVersion < 21 && newVersion >= 21) {
+    await _addColumnIfMissing(db, 'audio_details', 'listen_status', 'TEXT');
+    await _addColumnIfMissing(db, 'audio_details', 'user_rating', 'INTEGER');
+    await _addColumnIfMissing(
+      db,
+      'audio_details',
+      'review_text',
+      "TEXT NOT NULL DEFAULT ''",
+    );
+    await _addColumnIfMissing(
+      db,
+      'audio_details',
+      'review_updated_at_ms',
+      'INTEGER NOT NULL DEFAULT 0',
+    );
+    await _addColumnIfMissing(db, 'asmr_works', 'listen_status', 'TEXT');
+    await _addColumnIfMissing(db, 'asmr_works', 'user_rating', 'INTEGER');
+    await _addColumnIfMissing(
+      db,
+      'asmr_works',
+      'review_text',
+      "TEXT NOT NULL DEFAULT ''",
+    );
+    await _addColumnIfMissing(
+      db,
+      'asmr_works',
+      'review_updated_at_ms',
+      'INTEGER',
+    );
+    await _addColumnIfMissing(db, 'asmr_sync_operations', 'progress', 'TEXT');
+    await _addColumnIfMissing(
+      db,
+      'asmr_sync_operations',
+      'user_rating',
+      'INTEGER',
+    );
+    await _addColumnIfMissing(
+      db,
+      'asmr_sync_operations',
+      'review_text',
+      'TEXT',
+    );
+    await _addColumnIfMissing(
+      db,
+      'asmr_sync_operations',
+      'has_review_payload',
+      'INTEGER NOT NULL DEFAULT 0',
+    );
+  }
+  if (oldVersion < 22 && newVersion >= 22) {
+    await _createSyncTables(db);
+  }
+  if (oldVersion < 23 && newVersion >= 23) {
+    await _createSyncWorkStatesTable(db);
+  }
+}
+
+Future<void> _createSyncTables(Database db) async {
+  await db.execute('''
+    CREATE TABLE IF NOT EXISTS sync_track_states (
+      sync_key TEXT PRIMARY KEY,
+      work_key TEXT NOT NULL,
+      relative_path TEXT NOT NULL,
+      stem_key TEXT NOT NULL,
+      position_ms INTEGER NOT NULL DEFAULT 0,
+      last_played_at_ms INTEGER,
+      is_favorite INTEGER NOT NULL DEFAULT 0,
+      favorite_updated_at_ms INTEGER NOT NULL DEFAULT 0,
+      updated_at_ms INTEGER NOT NULL DEFAULT 0
+    )
+  ''');
+  await db.execute(
+    'CREATE INDEX IF NOT EXISTS idx_sync_track_states_work '
+    'ON sync_track_states(work_key)',
+  );
+  await db.execute('''
+    CREATE TABLE IF NOT EXISTS sync_listening_day_ledger (
+      device_id TEXT NOT NULL,
+      date TEXT NOT NULL,
+      milliseconds INTEGER NOT NULL,
+      PRIMARY KEY(device_id, date)
+    )
+  ''');
+  await db.execute('''
+    CREATE TABLE IF NOT EXISTS sync_listening_work_ledger (
+      device_id TEXT NOT NULL,
+      date TEXT NOT NULL,
+      work_key TEXT NOT NULL,
+      milliseconds INTEGER NOT NULL,
+      PRIMARY KEY(device_id, date, work_key)
+    )
+  ''');
+  await db.execute('''
+    CREATE TABLE IF NOT EXISTS sync_deleted_time_segments (
+      id TEXT PRIMARY KEY,
+      deleted_at_ms INTEGER NOT NULL
+    )
+  ''');
+  await _createSyncWorkStatesTable(db);
+}
+
+Future<void> _createSyncWorkStatesTable(Database db) async {
+  await db.execute('''
+    CREATE TABLE IF NOT EXISTS sync_work_states (
+      work_key TEXT PRIMARY KEY,
+      rj_code TEXT NOT NULL DEFAULT '',
+      work_title TEXT NOT NULL DEFAULT '',
+      circle_name TEXT NOT NULL DEFAULT '',
+      voice_actors_json TEXT NOT NULL DEFAULT '[]',
+      tags_json TEXT NOT NULL DEFAULT '[]',
+      release_date_ms INTEGER,
+      sales_count INTEGER,
+      rating REAL,
+      detail_updated_at_ms INTEGER NOT NULL DEFAULT 0,
+      listen_status TEXT,
+      user_rating INTEGER,
+      review_text TEXT NOT NULL DEFAULT '',
+      review_updated_at_ms INTEGER NOT NULL DEFAULT 0
+    )
+  ''');
 }
 
 Future<void> _createListeningTables(Database db) async {
@@ -420,7 +541,11 @@ Future<void> _createAsmrTables(Database db) async {
         review_count INTEGER NOT NULL DEFAULT 0,
         rating REAL NOT NULL DEFAULT 0,
         has_subtitle INTEGER NOT NULL DEFAULT 0,
-        is_favorite INTEGER NOT NULL DEFAULT 0
+        is_favorite INTEGER NOT NULL DEFAULT 0,
+        listen_status TEXT,
+        user_rating INTEGER,
+        review_text TEXT NOT NULL DEFAULT '',
+        review_updated_at_ms INTEGER
       )
     ''');
   await db.execute('''
@@ -461,6 +586,10 @@ Future<void> _createAsmrTables(Database db) async {
         source_id TEXT NOT NULL DEFAULT '',
         created_at_ms INTEGER NOT NULL,
         retry_count INTEGER NOT NULL DEFAULT 0,
+        progress TEXT,
+        user_rating INTEGER,
+        review_text TEXT,
+        has_review_payload INTEGER NOT NULL DEFAULT 0,
         sort_order INTEGER NOT NULL DEFAULT 0
       )
     ''');
@@ -489,6 +618,10 @@ Future<void> _createAudioDetailsTable(Database db) async {
         duration_ms INTEGER NOT NULL DEFAULT 0,
         sales_count INTEGER,
         rating REAL,
+        listen_status TEXT,
+        user_rating INTEGER,
+        review_text TEXT NOT NULL DEFAULT '',
+        review_updated_at_ms INTEGER NOT NULL DEFAULT 0,
         created_at_ms INTEGER NOT NULL DEFAULT 0,
         updated_at_ms INTEGER NOT NULL DEFAULT 0,
         UNIQUE(target_type, target_path)

@@ -107,6 +107,35 @@ final class LibraryMetadataCoordinator {
     return result;
   }
 
+  Future<AudioDetailSaveResult> saveAudioUserReview(
+    AudioDetailTarget target, {
+    required WorkListenStatus? listenStatus,
+    required int? userRating,
+    required String reviewText,
+    DateTime? updatedAt,
+    bool deferCategoryUpdate = false,
+  }) async {
+    final canonical = canonicalTarget(target);
+    final cachedCover = _detailCacheService
+        .resolvedDetail(canonical)
+        ?.cardCoverPath;
+    Future<AudioDetailSaveResult> save() => _detailCacheService.saveUserReview(
+      canonical,
+      listenStatus: listenStatus,
+      userRating: userRating,
+      reviewText: reviewText,
+      updatedAt: updatedAt,
+    );
+    final result =
+        cachedCover != null &&
+            CoverArtworkStore.isStoreArtifactPath(cachedCover)
+        ? await _coverArtwork().withPreservedCoverReference(cachedCover, save)
+        : await save();
+    _snapshotCacheService.markDetailChanged(result.detail, deferCategoryUpdate);
+    if (!deferCategoryUpdate) _syncState();
+    return result;
+  }
+
   void flushMetadataUpdates() {
     _snapshotCacheService.flushDetailChanges();
     _syncState();

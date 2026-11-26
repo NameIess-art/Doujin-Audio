@@ -142,6 +142,58 @@ internal class NetworkRouteRuntime private constructor(context: Context) : Call.
     }
 }
 
+internal fun isLocalOrPrivateHost(rawHost: String?): Boolean {
+    var host = rawHost?.trim()?.removeSurrounding("[", "]")?.lowercase().orEmpty()
+    if (host.isEmpty()) return false
+    val zoneSep = host.indexOf('%')
+    if (zoneSep >= 0) host = host.substring(0, zoneSep)
+    if (host == "localhost" || host.endsWith(".localhost") || host.endsWith(".local")) {
+        return true
+    }
+    val ipv4Parts = host.split('.')
+    if (ipv4Parts.size == 4 && ipv4Parts.all { it.isNotEmpty() && it.all(Char::isDigit) }) {
+        val octets = IntArray(4)
+        for (i in 0..3) {
+            val value = ipv4Parts[i].toIntOrNull() ?: return false
+            if (value !in 0..255) return false
+            octets[i] = value
+        }
+        return isPrivateIpv4Octets(octets[0], octets[1])
+    }
+    if (!host.contains(':')) return false
+    return try {
+        val bytes = InetAddress.getByName(host).address
+        when (bytes.size) {
+            4 -> isPrivateIpv4Octets(bytes[0].toInt() and 0xff, bytes[1].toInt() and 0xff)
+            16 -> {
+                val b0 = bytes[0].toInt() and 0xff
+                val b1 = bytes[1].toInt() and 0xff
+                val isLoopback = (0 until 15).all { bytes[it].toInt() == 0 } && (bytes[15].toInt() and 0xff) == 1
+                val isUnspecified = bytes.all { it.toInt() == 0 }
+                val isLinkLocal = b0 == 0xfe && (b1 and 0xc0) == 0x80
+                val isUniqueLocal = (b0 and 0xfe) == 0xfc
+                val isV4Mapped = (0 until 10).all { bytes[it].toInt() == 0 } &&
+                    (bytes[10].toInt() and 0xff) == 0xff &&
+                    (bytes[11].toInt() and 0xff) == 0xff
+                isLoopback || isUnspecified || isLinkLocal || isUniqueLocal ||
+                    (isV4Mapped && isPrivateIpv4Octets(bytes[12].toInt() and 0xff, bytes[13].toInt() and 0xff))
+            }
+            else -> false
+        }
+    } catch (_: Exception) {
+        false
+    }
+}
+
+private fun isPrivateIpv4Octets(b0: Int, b1: Int): Boolean =
+    b0 == 0 ||
+        b0 == 10 ||
+        b0 == 127 ||
+        (b0 == 169 && b1 == 254) ||
+        (b0 == 172 && b1 in 16..31) ||
+        (b0 == 192 && b1 == 168) ||
+        (b0 == 100 && b1 in 64..127)
+
 internal fun NetworkRoute.createClient(
     systemProxySelector: ProxySelector? = ProxySelector.getDefault(),
     directDns: Dns = if (dns.isEmpty()) Dns.SYSTEM else NetworkRouteDns(dns),
@@ -150,28 +202,45 @@ internal fun NetworkRoute.createClient(
         .connectTimeout(15, TimeUnit.SECONDS).readTimeout(20, TimeUnit.SECONDS)
         .followRedirects(true).followSslRedirects(true)
     if (mode == "system") {
-        if (systemProxySelector == null) return builder.proxy(Proxy.NO_PROXY).dns(directDns).build()
-        if (dns.isEmpty()) return builder.proxySelector(systemProxySelector).dns(directDns).build()
+        val effectiveDns = if (dns.isEmpty()) Dns.SYSTEM else object : Dns {
+            override fun lookup(hostname: String): List<InetAddress> =
+                (if (isLocalOrPrivateHost(hostname)) Dns.SYSTEM else directDns).lookup(hostname)
+        }
+        if (systemProxySelector == null) return builder.proxy(Proxy.NO_PROXY).dns(effectiveDns).build()
+        if (dns.isEmpty()) return builder.proxySelector(object : ProxySelector() {
+            override fun select(uri: URI): List<Proxy> =
+                if (isLocalOrPrivateHost(uri.host)) listOf(Proxy.NO_PROXY)
+                else systemProxySelector.select(uri)
+            override fun connectFailed(uri: URI, address: SocketAddress, error: IOException) =
+                systemProxySelector.connectFailed(uri, address, error)
+        }).dns(Dns.SYSTEM).build()
         val proxyHosts = ConcurrentHashMap.newKeySet<String>()
         fun hostKey(host: String) = host.removeSurrounding("[", "]").lowercase()
         // Let OkHttp retain PAC fallback and re-evaluate policy after redirects.
         // Its Dns also resolves proxy endpoints, which must use OS DNS.
         builder.proxySelector(object : ProxySelector() {
-            override fun select(uri: URI): List<Proxy> = systemProxySelector.select(uri).also { proxies ->
-                proxies.filter { it.type() != Proxy.Type.DIRECT }.forEach { proxy ->
-                    (proxy.address() as? InetSocketAddress)?.hostString?.let { host ->
-                        proxyHosts.add(hostKey(host))
+            override fun select(uri: URI): List<Proxy> =
+                if (isLocalOrPrivateHost(uri.host)) listOf(Proxy.NO_PROXY)
+                else systemProxySelector.select(uri).also { proxies ->
+                    proxies.filter { it.type() != Proxy.Type.DIRECT }.forEach { proxy ->
+                        (proxy.address() as? InetSocketAddress)?.hostString?.let { host ->
+                            proxyHosts.add(hostKey(host))
+                        }
                     }
                 }
-            }
             override fun connectFailed(uri: URI, address: SocketAddress, error: IOException) =
                 systemProxySelector.connectFailed(uri, address, error)
         }).dns(object : Dns {
             override fun lookup(hostname: String): List<InetAddress> =
-                (if (hostKey(hostname) in proxyHosts) Dns.SYSTEM else directDns).lookup(hostname)
+                (if (isLocalOrPrivateHost(hostname) || hostKey(hostname) in proxyHosts) Dns.SYSTEM else directDns).lookup(hostname)
         })
     } else if (mode == "http") {
-        builder.proxy(Proxy(Proxy.Type.HTTP, InetSocketAddress.createUnresolved(host, port))).dns(Dns.SYSTEM)
+        val httpProxy = Proxy(Proxy.Type.HTTP, InetSocketAddress.createUnresolved(host, port))
+        builder.proxySelector(object : ProxySelector() {
+            override fun select(uri: URI): List<Proxy> =
+                if (isLocalOrPrivateHost(uri.host)) listOf(Proxy.NO_PROXY) else listOf(httpProxy)
+            override fun connectFailed(uri: URI, address: SocketAddress, error: IOException) {}
+        }).dns(Dns.SYSTEM)
         if (authentication) builder.proxyAuthenticator { _, response ->
             if (response.request.header("Proxy-Authorization") != null) null
             else response.request.newBuilder().header(
@@ -182,10 +251,11 @@ internal fun NetworkRoute.createClient(
         builder.proxy(Proxy.NO_PROXY)
             .socketFactory(Socks5SocketFactory(host, port,
                 username.takeIf { authentication }, password.takeIf { authentication }))
-            // Route construction needs an address; the socket retains the hostname.
+            // Route construction needs an address; the socket retains the hostname unless bypassing for LAN.
             .dns(object : Dns {
                 override fun lookup(hostname: String): List<InetAddress> =
-                    listOf(InetAddress.getByAddress(hostname, byteArrayOf(0, 0, 0, 0)))
+                    if (isLocalOrPrivateHost(hostname)) Dns.SYSTEM.lookup(hostname)
+                    else listOf(InetAddress.getByAddress(hostname, byteArrayOf(0, 0, 0, 0)))
             })
     }
     return builder.build()

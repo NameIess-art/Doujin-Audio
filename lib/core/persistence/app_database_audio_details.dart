@@ -86,6 +86,10 @@ extension AppDatabaseAudioDetails on AppDatabase {
           'release_date_ms',
           'duration_ms',
           'rating',
+          'listen_status',
+          'user_rating',
+          'review_text',
+          'review_updated_at_ms',
         ],
       ),
     );
@@ -268,32 +272,91 @@ extension AppDatabaseAudioDetails on AppDatabase {
 
   Future<List<TimeSegmentLabelRecord>> loadTimeSegmentLabels(
     String trackKey,
-  ) async => (await loadTimeSegmentLabelsForTarget(trackKey, isFolder: false))
-      .map(
-        (record) => TimeSegmentLabelRecord.fromRow({
+  ) async {
+    final direct = await loadTimeSegmentLabelsForTarget(
+      trackKey,
+      isFolder: false,
+    );
+    final byId = <String, TimeSegmentLabelRecord>{
+      for (final record in direct)
+        record.id: TimeSegmentLabelRecord.fromRow({
           ...record.toRow(),
           'track_key': trackKey,
         }),
-      )
-      .toList(growable: false);
+    };
+    final identity = await _runDatabaseRead((db) async {
+      final rjMap = await _loadTargetRjMap(db);
+      final index = await _loadLocalTrackIdentityIndex(db, rjMap);
+      return (
+        resolved: _resolveIdentityForLabelTrackKey(trackKey, index),
+        index: index,
+      );
+    });
+    final resolved = identity.resolved;
+    if (resolved != null) {
+      final candidateKeys = <String>{
+        resolved.timeSegmentTrackKey,
+        for (final local in identity.index.findMatches(resolved))
+          PathMatcher.normalize(local.path),
+      }..remove(PathMatcher.normalize(trackKey));
+      for (final altKey in candidateKeys) {
+        final extra = await loadTimeSegmentLabelsForTarget(
+          altKey,
+          isFolder: false,
+        );
+        for (final record in extra) {
+          final current = byId[record.id];
+          if (current == null || record.updatedAtMs > current.updatedAtMs) {
+            byId[record.id] = TimeSegmentLabelRecord.fromRow({
+              ...record.toRow(),
+              'track_key': trackKey,
+            });
+          }
+        }
+      }
+    }
+    final merged = byId.values.toList(growable: false)
+      ..sort((a, b) {
+        final c = a.startMs.compareTo(b.startMs);
+        return c != 0 ? c : a.createdAtMs.compareTo(b.createdAtMs);
+      });
+    return merged;
+  }
 
   Future<void> upsertTimeSegmentLabel(TimeSegmentLabelRecord label) async {
     await _runDatabaseWrite(
-      (db) => db
-          .insert(
-            'time_segment_labels',
-            _timeSegmentLabelRow(label),
-            conflictAlgorithm: ConflictAlgorithm.replace,
-          )
-          .then((_) {}),
+      (db) => db.transaction((txn) async {
+        await txn.insert(
+          'time_segment_labels',
+          _timeSegmentLabelRow(label),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+        await txn.delete(
+          'sync_deleted_time_segments',
+          where: 'id = ?',
+          whereArgs: [label.id],
+        );
+      }),
     );
   }
 
   Future<void> deleteTimeSegmentLabel(String id) async {
     await _runDatabaseWrite(
-      (db) => db
-          .delete('time_segment_labels', where: 'id = ?', whereArgs: [id])
-          .then((_) {}),
+      (db) => db.transaction((txn) async {
+        await txn.delete(
+          'time_segment_labels',
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+        await txn.insert(
+          'sync_deleted_time_segments',
+          <String, Object?>{
+            'id': id,
+            'deleted_at_ms': DateTime.now().millisecondsSinceEpoch,
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }),
     );
   }
 
@@ -508,6 +571,10 @@ Future<List<AudioDetailRecord>> _loadAudioDetailRecords(
           duration: durationMs <= 0 ? null : Duration(milliseconds: durationMs),
           salesCount: (row['sales_count'] as num?)?.toInt(),
           rating: (row['rating'] as num?)?.toDouble(),
+          listenStatus: row['listen_status'] as String?,
+          userRating: (row['user_rating'] as num?)?.toInt(),
+          reviewText: row['review_text'] as String? ?? '',
+          reviewUpdatedAt: _dateTimeFromMs(row['review_updated_at_ms']),
           createdAt: _dateTimeFromMs(row['created_at_ms']),
           updatedAt: _dateTimeFromMs(row['updated_at_ms']),
         );
@@ -529,6 +596,10 @@ void _writeAudioDetailRecordToBatch(Batch batch, AudioDetailRecord detail) {
     'duration_ms': detail.duration?.inMilliseconds ?? 0,
     'sales_count': detail.salesCount,
     'rating': detail.rating,
+    'listen_status': detail.listenStatus,
+    'user_rating': detail.userRating,
+    'review_text': detail.reviewText,
+    'review_updated_at_ms': detail.reviewUpdatedAt?.millisecondsSinceEpoch ?? 0,
     'created_at_ms': detail.createdAt?.millisecondsSinceEpoch ?? 0,
     'updated_at_ms': detail.updatedAt?.millisecondsSinceEpoch ?? 0,
   }, conflictAlgorithm: ConflictAlgorithm.replace);

@@ -801,6 +801,21 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
             relativePath == second.remoteMetadata?['trackRelativePath'];
       }
     }
+    if (first.isRemoteSource && second.isRemoteSource) {
+      final workKey = first.remoteMetadata?['workKey']?.toString().trim() ?? '';
+      final otherWorkKey =
+          second.remoteMetadata?['workKey']?.toString().trim() ?? '';
+      final relativePath =
+          first.remoteMetadata?['trackRelativePath']?.toString().trim() ?? '';
+      final otherRelativePath =
+          second.remoteMetadata?['trackRelativePath']?.toString().trim() ?? '';
+      if (workKey.isNotEmpty &&
+          relativePath.isNotEmpty &&
+          workKey == otherWorkKey &&
+          relativePath == otherRelativePath) {
+        return true;
+      }
+    }
     return PathMatcher.equalsNormalized(first.path, second.path);
   }
 
@@ -886,7 +901,7 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
     createTrackSession(
       track,
       customQueueTracks: workTracks == null
-          ? (track.isRemoteAsmr ? [track] : null)
+          ? (track.isRemoteMedia ? [track] : null)
           : List<MusicTrack>.unmodifiable(workTracks),
     );
     return true;

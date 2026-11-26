@@ -160,6 +160,52 @@ class AudioDetailRepository {
     return _saveExplicit(detail);
   }
 
+  Future<AudioDetailSaveResult> saveUserReview(
+    AudioDetailTarget target, {
+    required WorkListenStatus? listenStatus,
+    required int? userRating,
+    required String reviewText,
+    DateTime? updatedAt,
+  }) async {
+    final normalizedTarget = _normalizeTarget(target);
+    var current =
+        await _store.load(normalizedTarget) ??
+        AudioDetail.empty(normalizedTarget);
+    if (current.updatedAt == null && current.isEmpty) {
+      await importBackupsMany([normalizedTarget]);
+      current =
+          await _store.load(normalizedTarget) ??
+          AudioDetail.empty(normalizedTarget);
+    }
+    final effectiveNow = updatedAt ?? _now();
+    final normalized = _coverStore
+        .normalize(
+          current.copyWith(
+            target: normalizedTarget,
+            listenStatus: listenStatus,
+            userRating: userRating,
+            reviewText: reviewText,
+            reviewUpdatedAt: effectiveNow,
+            createdAt: current.createdAt ?? effectiveNow,
+          ),
+        )
+        .normalizedForSave(_now(), touchUpdatedAt: false);
+    _ensureCanCommit();
+    await _store.upsert(normalized);
+    _ensureCanCommit();
+    final document = await _documents.saveExplicit(
+      normalized,
+      timeSegmentLabels: await _store.loadTimeSegmentLabelsForTarget(
+        normalized.target,
+      ),
+    );
+    return AudioDetailSaveResult(
+      detail: normalized,
+      documentStatus: document.status,
+      documentError: document.error,
+    );
+  }
+
   Future<AudioDetailSaveResult> retarget(
     AudioDetailTarget previousTarget,
     AudioDetail detail,
@@ -174,10 +220,24 @@ class AudioDetailRepository {
     AudioDetail detail, {
     AudioDetailTarget? previousTarget,
   }) async {
-    final normalized = _coverStore
+    final normalizedTarget = _normalizeTarget(detail.target);
+    var candidate = _coverStore
         .normalize(detail)
-        .copyWith(target: _normalizeTarget(detail.target))
-        .normalizedForSave(_now());
+        .copyWith(target: normalizedTarget);
+    if (previousTarget == null &&
+        !candidate.hasUserReview &&
+        candidate.reviewUpdatedAt == null) {
+      final existing = await _store.load(normalizedTarget);
+      if (existing != null && existing.hasUserReview) {
+        candidate = candidate.copyWith(
+          listenStatus: existing.listenStatus,
+          userRating: existing.userRating,
+          reviewText: existing.reviewText,
+          reviewUpdatedAt: existing.reviewUpdatedAt,
+        );
+      }
+    }
+    final normalized = candidate.normalizedForSave(_now());
     _ensureCanCommit();
     await _store.upsert(normalized);
     _ensureCanCommit();
@@ -338,6 +398,25 @@ class AudioDetailRepository {
     final preferFileUserFields =
         fileIsNewer || (file.updatedAt == null && database.updatedAt == null);
     final user = preferFileUserFields ? file : primary;
+    final dbReviewTime =
+        database.reviewUpdatedAt ??
+        (database.hasUserReview ? database.updatedAt : null);
+    final fileReviewTime =
+        file.reviewUpdatedAt ?? (file.hasUserReview ? file.updatedAt : null);
+    final AudioDetail reviewSource;
+    if (fileReviewTime != null &&
+        (dbReviewTime == null || fileReviewTime.isAfter(dbReviewTime))) {
+      reviewSource = file;
+    } else if (dbReviewTime != null &&
+        (fileReviewTime == null || dbReviewTime.isAfter(fileReviewTime))) {
+      reviewSource = database;
+    } else if (file.hasUserReview && !database.hasUserReview) {
+      reviewSource = file;
+    } else if (database.hasUserReview && !file.hasUserReview) {
+      reviewSource = database;
+    } else {
+      reviewSource = preferFileUserFields ? file : database;
+    }
     return primary.copyWith(
       target: target,
       rjCode: _nonEmpty(user.rjCode, secondary.rjCode),
@@ -353,6 +432,14 @@ class AudioDetailRepository {
       releaseDate: user.releaseDate ?? secondary.releaseDate,
       salesCount: user.salesCount ?? secondary.salesCount,
       rating: user.rating ?? secondary.rating,
+      listenStatus: reviewSource.listenStatus,
+      userRating: reviewSource.userRating,
+      reviewText: reviewSource.reviewText,
+      reviewUpdatedAt:
+          reviewSource.reviewUpdatedAt ??
+          (identical(reviewSource, file)
+              ? database.reviewUpdatedAt
+              : file.reviewUpdatedAt),
       createdAt: database.createdAt ?? file.createdAt,
       updatedAt: fileIsNewer ? file.updatedAt : database.updatedAt,
     );
@@ -384,6 +471,10 @@ bool _sameDetail(AudioDetail first, AudioDetail second) =>
     first.duration == second.duration &&
     first.salesCount == second.salesCount &&
     first.rating == second.rating &&
+    first.listenStatus == second.listenStatus &&
+    first.userRating == second.userRating &&
+    first.reviewText == second.reviewText &&
+    first.reviewUpdatedAt == second.reviewUpdatedAt &&
     first.createdAt == second.createdAt &&
     first.updatedAt == second.updatedAt;
 

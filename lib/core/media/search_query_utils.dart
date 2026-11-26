@@ -1,3 +1,5 @@
+import 'audio_detail.dart' show WorkListenStatus;
+
 final RegExp _searchQueryDelimiterPattern = RegExp(r'[,/\uFF0C]+');
 final RegExp _searchQueryWhitespacePattern = RegExp(r'\s+');
 
@@ -45,6 +47,8 @@ const SearchElements emptySearchElements = (all: [], any: []);
 typedef SearchFilters = ({
   bool? hasSubtitle,
   double? minimumRating,
+  int? minimumUserRating,
+  WorkListenStatus? listenStatus,
   Duration? minimumDuration,
   Duration? maximumDuration,
   DateTime? firstReleaseDate,
@@ -54,6 +58,8 @@ typedef SearchFilters = ({
 const SearchFilters emptySearchFilters = (
   hasSubtitle: null,
   minimumRating: null,
+  minimumUserRating: null,
+  listenStatus: null,
   minimumDuration: null,
   maximumDuration: null,
   firstReleaseDate: null,
@@ -71,11 +77,15 @@ bool canSubmitSearch(String input, SearchFilters filters) {
 bool matchesSearchMetadata(
   SearchFilters filters, {
   double? rating,
+  int? userRating,
+  WorkListenStatus? listenStatus,
   Duration? duration,
   DateTime? releaseDate,
 }) {
   final (
     :minimumRating,
+    :minimumUserRating,
+    listenStatus: expectedStatus,
     :minimumDuration,
     :maximumDuration,
     :firstReleaseDate,
@@ -86,6 +96,9 @@ bool matchesSearchMetadata(
       date.year * 10000 + date.month * 100 + date.day;
   return (minimumRating == null ||
           (rating != null && rating >= minimumRating)) &&
+      (minimumUserRating == null ||
+          (userRating != null && userRating >= minimumUserRating)) &&
+      (expectedStatus == null || listenStatus == expectedStatus) &&
       (minimumDuration == null ||
           (duration != null && duration >= minimumDuration)) &&
       (maximumDuration == null ||

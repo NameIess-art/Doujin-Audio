@@ -455,4 +455,189 @@ void main() {
       expect(secondProgress.last, bytes.length);
     },
   );
+
+  test(
+    'bundleStatus reports missing bytes and ensureBundle downloads missing items with combined progress',
+    () async {
+      final directory = await Directory.systemTemp.createTemp('model_bundle_');
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() async {
+        await server.close(force: true);
+        await directory.delete(recursive: true);
+      });
+      final vadBytes = List<int>.filled(512 * 1024, 3);
+      final asrBytes = List<int>.filled(1048576, 7);
+      final requestedPaths = <String>[];
+      server.listen((request) async {
+        requestedPaths.add(request.uri.path);
+        request.response.contentLength = asrBytes.length;
+        request.response.add(asrBytes);
+        await request.response.close();
+      });
+
+      final vadSpec = SubtitleModelSpec(
+        'vad.gguf',
+        'http://${server.address.host}:${server.port}/vad.gguf',
+        vadBytes.length,
+        sha256.convert(vadBytes).toString(),
+      );
+      final asrSpec = SubtitleModelSpec(
+        'asr.bin',
+        'http://${server.address.host}:${server.port}/asr.bin',
+        asrBytes.length,
+        sha256.convert(asrBytes).toString(),
+      );
+      await File(path.join(directory.path, vadSpec.name)).writeAsBytes(vadBytes);
+
+      final store = SubtitleModelStore(
+        storage: _Storage(256 * 1024 * 1024),
+        directoryResolver: () async => directory,
+      );
+      addTearDown(store.dispose);
+
+      final bundle = [vadSpec, asrSpec];
+      final before = await store.bundleStatus(bundle);
+      expect(before.ready, isFalse);
+      expect(before.bytes, asrBytes.length);
+
+      final combinedReceived = <int>[];
+      final paths = await store.ensureBundle(
+        bundle,
+        onProgress: (_, received, total) {
+          expect(total, vadBytes.length + asrBytes.length);
+          combinedReceived.add(received);
+        },
+      );
+      expect(paths.length, 2);
+      expect(requestedPaths, ['/asr.bin']);
+      expect(combinedReceived.last, vadBytes.length + asrBytes.length);
+
+      final after = await store.bundleStatus(bundle);
+      expect(after.ready, isTrue);
+      expect(after.bytes, vadBytes.length + asrBytes.length);
+      expect(store.bundleSnapshot(bundle).fraction, 1.0);
+    },
+  );
+
+  test(
+    'ensureBundle preflights combined disk space before starting downloads',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'model_bundle_space_',
+      );
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      var serverHits = 0;
+      server.listen((request) async {
+        serverHits++;
+        await request.response.close();
+      });
+      addTearDown(() async {
+        await server.close(force: true);
+        await directory.delete(recursive: true);
+      });
+
+      final small = SubtitleModelSpec(
+        'small.gguf',
+        'http://${server.address.host}:${server.port}/small.gguf',
+        4 * 1048576,
+        'unused1',
+      );
+      final large = SubtitleModelSpec(
+        'large.bin',
+        'http://${server.address.host}:${server.port}/large.bin',
+        60 * 1048576,
+        'unused2',
+      );
+      final store = SubtitleModelStore(
+        storage: _Storage(140 * 1048576),
+        directoryResolver: () async => directory,
+      );
+      addTearDown(store.dispose);
+
+      await expectLater(
+        store.ensureBundle([small, large]),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(serverHits, 0);
+    },
+  );
+
+  test(
+    'resolves built-in ASR models and deletes downloaded model bundles cleanly',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'model_delete_bundle_',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+
+      expect(
+        SubtitleModelStore.resolveAsrModel(null).id,
+        SubtitleModelStore.defaultAsrModelId,
+      );
+      expect(
+        SubtitleModelStore.resolveAsrModel('unknown-model-id').id,
+        SubtitleModelStore.defaultAsrModelId,
+      );
+      expect(SubtitleModelStore.builtInAsrModels, hasLength(5));
+      expect(
+        SubtitleModelStore.builtInAsrModels.map((m) => m.id).toSet(),
+        hasLength(5),
+      );
+      expect(
+        SubtitleModelStore.builtInAsrModels
+            .map((m) => m.checkpointSignature)
+            .toSet(),
+        hasLength(5),
+      );
+      for (final option in SubtitleModelStore.builtInAsrModels) {
+        expect(SubtitleModelStore.resolveAsrModel(option.id), same(option));
+        expect(option.vadModel, same(SubtitleModelStore.japaneseAsrVad));
+      }
+      expect(
+        SubtitleModelStore.qwen3JaAnime.backend,
+        SubtitleAsrBackend.qwen3WithVad,
+      );
+
+      const bytesA = <int>[1, 2, 3, 4, 5, 6];
+      const bytesB = <int>[9, 8, 7, 6];
+      final specA = SubtitleModelSpec(
+        'vad_test.gguf',
+        'https://example.invalid/vad_test.gguf',
+        bytesA.length,
+        sha256.convert(bytesA).toString(),
+      );
+      final specB = SubtitleModelSpec(
+        'asr_test.bin',
+        'https://example.invalid/asr_test.bin',
+        bytesB.length,
+        sha256.convert(bytesB).toString(),
+      );
+      await File('${directory.path}/${specA.name}').writeAsBytes(bytesA);
+      await File('${directory.path}/${specB.name}').writeAsBytes(bytesB);
+      await File('${directory.path}/${specB.name}.download').writeAsBytes([1]);
+
+      final store = SubtitleModelStore(
+        storage: _Storage(512 * 1048576),
+        directoryResolver: () async => directory,
+      );
+      addTearDown(store.dispose);
+
+      expect((await store.bundleStatus([specA, specB])).ready, isTrue);
+
+      var notifications = 0;
+      store.addListener(() => notifications++);
+      final freed = await store.deleteBundle(
+        [specA, specB],
+        retainedSpecNames: {specA.name},
+      );
+      expect(freed, bytesB.length + 1);
+      expect(notifications, 1);
+      expect((await store.status(specA)).ready, isTrue);
+      expect((await store.status(specB)).ready, isFalse);
+      expect(
+        await File('${directory.path}/${specB.name}.download').exists(),
+        isFalse,
+      );
+    },
+  );
 }

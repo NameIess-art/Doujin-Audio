@@ -5,6 +5,35 @@ import 'package:flutter/services.dart';
 
 import 'app_feedback.dart';
 
+/// Fades the top and bottom edges of a scroll wheel so outer rows soften out
+/// smoothly over any background.
+class AppWheelEdgeFadeMask extends StatelessWidget {
+  const AppWheelEdgeFadeMask({super.key, required this.child});
+
+  final Widget child;
+
+  static const LinearGradient _gradient = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [
+      Color(0x00000000),
+      Color(0xFF000000),
+      Color(0xFF000000),
+      Color(0x00000000),
+    ],
+    stops: [0.0, 0.3, 0.7, 1.0],
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return ShaderMask(
+      blendMode: BlendMode.dstIn,
+      shaderCallback: _gradient.createShader,
+      child: child,
+    );
+  }
+}
+
 class AppFixedExtentWheel extends StatefulWidget {
   const AppFixedExtentWheel({
     super.key,
@@ -14,9 +43,13 @@ class AppFixedExtentWheel extends StatefulWidget {
     required this.onChanged,
     this.looping = false,
     this.selectionColor,
+    this.itemExtent = 42,
+    this.fontSize = 22,
   });
 
   final int value;
+  final double itemExtent;
+  final double fontSize;
   final int itemCount;
   final String Function(int) labelAt;
   final bool looping;
@@ -201,7 +234,7 @@ class _AppFixedExtentWheelState extends State<AppFixedExtentWheel> {
             child: Text(
               widget.labelAt(index),
               style: TextStyle(
-                fontSize: 22,
+                fontSize: widget.fontSize,
                 fontWeight: FontWeight.w700,
                 color: color,
               ),
@@ -221,7 +254,7 @@ class _AppFixedExtentWheelState extends State<AppFixedExtentWheel> {
         children: [
           if (widget.selectionColor case final selectionColor?)
             Container(
-              height: 42,
+              height: widget.itemExtent,
               margin: const EdgeInsets.symmetric(horizontal: 8),
               decoration: BoxDecoration(
                 color: selectionColor,
@@ -237,7 +270,7 @@ class _AppFixedExtentWheelState extends State<AppFixedExtentWheel> {
           else if (_focused)
             IgnorePointer(
               child: Container(
-                height: 42,
+                height: widget.itemExtent,
                 margin: const EdgeInsets.symmetric(horizontal: 8),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(16),
@@ -248,38 +281,40 @@ class _AppFixedExtentWheelState extends State<AppFixedExtentWheel> {
                 ),
               ),
             ),
-          ScrollConfiguration(
-            behavior: ScrollConfiguration.of(context).copyWith(
-              dragDevices: {
-                PointerDeviceKind.touch,
-                PointerDeviceKind.mouse,
-                PointerDeviceKind.trackpad,
-              },
-            ),
-            child: NotificationListener<ScrollEndNotification>(
-              onNotification: (_) {
-                _wheelTargetItem = null;
-                return false;
-              },
-              child: ListWheelScrollView.useDelegate(
-                controller: _controller,
-                itemExtent: 42,
-                perspective: 0.005,
-                diameterRatio: 1.5,
-                physics: const FixedExtentScrollPhysics(),
-                onSelectedItemChanged: (index) {
-                  final actualIndex = _valueAt(index);
-                  if (actualIndex != _lastReportedValue) {
-                    _lastReportedValue = actualIndex;
-                    AppInteractionFeedback.trigger(
-                      AppInteractionFeedbackType.selection,
-                    );
-                    widget.onChanged(actualIndex);
-                  }
+          AppWheelEdgeFadeMask(
+            child: ScrollConfiguration(
+              behavior: ScrollConfiguration.of(context).copyWith(
+                dragDevices: {
+                  PointerDeviceKind.touch,
+                  PointerDeviceKind.mouse,
+                  PointerDeviceKind.trackpad,
                 },
-                childDelegate: widget.looping
-                    ? ListWheelChildLoopingListDelegate(children: labels)
-                    : ListWheelChildListDelegate(children: labels),
+              ),
+              child: NotificationListener<ScrollEndNotification>(
+                onNotification: (_) {
+                  _wheelTargetItem = null;
+                  return false;
+                },
+                child: ListWheelScrollView.useDelegate(
+                  controller: _controller,
+                  itemExtent: widget.itemExtent,
+                  perspective: 0.005,
+                  diameterRatio: 1.5,
+                  physics: const FixedExtentScrollPhysics(),
+                  onSelectedItemChanged: (index) {
+                    final actualIndex = _valueAt(index);
+                    if (actualIndex != _lastReportedValue) {
+                      _lastReportedValue = actualIndex;
+                      AppInteractionFeedback.trigger(
+                        AppInteractionFeedbackType.selection,
+                      );
+                      widget.onChanged(actualIndex);
+                    }
+                  },
+                  childDelegate: widget.looping
+                      ? ListWheelChildLoopingListDelegate(children: labels)
+                      : ListWheelChildListDelegate(children: labels),
+                ),
               ),
             ),
           ),

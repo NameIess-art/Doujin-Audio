@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../../core/cache/app_cache_service.dart';
 import '../../../core/platform/app_platform.dart';
 import '../../../core/logging/app_log_service.dart';
+import 'cross_platform_sync_service.dart';
 import 'diagnostic_report_service.dart';
 import 'data_backup_service.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
@@ -89,10 +90,13 @@ class DataSupportFileService {
     return result?.files.singleOrNull;
   }
 
-  Future<BackupValidationResult?> stageBackupFile(PlatformFile selected) async {
+  Future<T?> withBackupFilePath<T>(
+    PlatformFile selected,
+    Future<T> Function(String path) action,
+  ) async {
     final selectedPath = selected.path;
     if (selectedPath != null && selectedPath.isNotEmpty) {
-      return _backupService.inspectAndStageRestore(selectedPath);
+      return action(selectedPath);
     }
     final stream = selected.readStream;
     if (stream == null) return null;
@@ -117,9 +121,31 @@ class DataSupportFileService {
       } finally {
         await sink.close();
       }
-      return await _backupService.inspectAndStageRestore(temporary.path);
+      return await action(temporary.path);
     });
   }
+
+  Future<BackupInspectionResult> inspectBackupPath(String sourcePath) =>
+      _backupService.inspectBackup(sourcePath);
+
+  Future<BackupValidationResult> stageRestorePath(String sourcePath) =>
+      _backupService.inspectAndStageRestore(sourcePath);
+
+  Future<BackupMergeResult> mergeBackupPath(
+    String sourcePath, {
+    required CrossPlatformSyncService syncService,
+    bool syncAccountAndPortableSettings = false,
+  }) => _backupService.mergeBackup(
+    sourcePath,
+    syncService: syncService,
+    syncAccountAndPortableSettings: syncAccountAndPortableSettings,
+  );
+
+  Future<BackupInspectionResult?> inspectBackupFile(PlatformFile selected) =>
+      withBackupFilePath(selected, inspectBackupPath);
+
+  Future<BackupValidationResult?> stageBackupFile(PlatformFile selected) =>
+      withBackupFilePath(selected, stageRestorePath);
 
   Future<BackupValidationResult?> pickAndStageBackup({
     required String dialogTitle,

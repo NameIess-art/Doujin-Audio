@@ -197,4 +197,59 @@ void main() {
       }
     },
   );
+
+  test('round-trips user review status, star rating, and note in v1 JSON', () {
+    final target = AudioDetailTarget.libraryRootFolder('/library/reviewed');
+    final reviewTime = DateTime.utc(2026, 6, 15, 12, 30);
+    final detail = AudioDetail.empty(target).copyWith(
+      rjCode: 'RJ123456',
+      workTitle: 'Reviewed Work',
+      listenStatus: WorkListenStatus.listened,
+      userRating: 5,
+      reviewText: '  Great atmosphere\r\nSecond line  ',
+      reviewUpdatedAt: reviewTime,
+    );
+
+    final encoded = codec.encodeNew(detail);
+    final decoded = codec.decode(encoded, target);
+
+    expect(decoded.listenStatus, WorkListenStatus.listened);
+    expect(decoded.userRating, 5);
+    expect(decoded.reviewText, 'Great atmosphere\nSecond line');
+    expect(decoded.reviewUpdatedAt, reviewTime);
+
+    final cleared = codec.decode(
+      codec.merge(
+        encoded,
+        decoded.copyWith(
+          listenStatus: null,
+          userRating: null,
+          reviewText: '',
+          reviewUpdatedAt: null,
+        ),
+      ),
+      target,
+    );
+    expect(cleared.hasUserReview, isFalse);
+    expect(cleared.listenStatus, isNull);
+    expect(cleared.userRating, isNull);
+    expect(cleared.reviewText, isEmpty);
+    expect(cleared.reviewUpdatedAt, isNull);
+  });
+
+  test('rejects invalid listenStatus and out-of-range userRating in JSON', () {
+    final target = AudioDetailTarget.libraryRootFolder('/library/bad_review');
+    for (final badMap in <Map<String, Object?>>[
+      {'schemaVersion': 1, 'type': 'audio-detail', 'listenStatus': 'invalid'},
+      {'schemaVersion': 1, 'type': 'audio-detail', 'userRating': 0},
+      {'schemaVersion': 1, 'type': 'audio-detail', 'userRating': 6},
+    ]) {
+      final bytes = Uint8List.fromList(utf8.encode(jsonEncode(badMap)));
+      expect(
+        () => codec.decode(bytes, target),
+        throwsFormatException,
+        reason: 'Expected $badMap to be rejected',
+      );
+    }
+  });
 }

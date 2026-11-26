@@ -7,6 +7,7 @@ import 'package:doujin_audio/app/state/subtitle_settings_provider.dart';
 import 'package:doujin_audio/core/errors/native_result.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/media/subtitle_parser.dart';
+import 'package:doujin_audio/core/platform/video_display_platform_gateway.dart';
 import 'package:doujin_audio/core/ui/undoable_removal_service.dart';
 import 'package:doujin_audio/core/widgets/app_entry_ink_well.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
@@ -633,6 +634,336 @@ Dialogue: 0,0:00:10.00,0:00:14.00,Default,,0,0,0,,Middle line
 
         // Keyboard shortcut F exits fullscreen cleanly.
         await tester.sendKeyDownEvent(LogicalKeyboardKey.keyF);
+        await tester.pumpAndSettle();
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(milliseconds: 200));
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    );
+
+    testWidgets(
+      'fullscreen gestures accumulate double-tap skips, support drag & long-press, and show pure circular icon feedback without text on Android',
+      (tester) async {
+        tester.view.physicalSize = const Size(1280, 720);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+
+        final videoDisplay = _FakeVideoDisplayGateway();
+        final repo = _AcceptingPlaybackRepository();
+        final fixture = AppRuntimeWidgetTestFixture(
+          providedNativePlaybackRepository: repo,
+        );
+        addTearDown(fixture.dispose);
+
+        final video = testMusicTrack(
+          name: 'Video',
+          path: '/videos/gestures_android.mp4',
+          groupKey: '/videos',
+          groupTitle: 'Videos',
+        ).copyWith(isVideo: true);
+        fixture.library.addTracks([video], persist: false);
+        final session = fixture.playback.createTrackSession(video)
+          ..loadedPath = video.path
+          ..setOptimisticDuration(const Duration(seconds: 120))
+          ..lastKnownPosition = const Duration(seconds: 30);
+        addTearDown(session.shutdown);
+        session.applyNativeProgress(
+          NativePlaybackProgressUpdate(
+            sessionId: session.id,
+            position: const Duration(seconds: 30),
+            duration: const Duration(seconds: 120),
+            bufferedPosition: const Duration(seconds: 60),
+            nativeElapsedRealtimeMs: 10000,
+          ),
+        );
+        fixture.playback.publishSessionState(session.id);
+
+        final orientation = AppOrientationController(
+          setPreferredOrientations: (_) async {},
+          setSystemUiMode: (_) async {},
+          videoDisplay: videoDisplay,
+        );
+        final lease = await orientation.enterVideoFullscreen();
+        addTearDown(lease.release);
+
+        await tester.pumpWidget(
+          fixture.build(
+            SessionVideoFullscreenPage(
+              sessionId: session.id,
+              trackPath: video.path,
+              fullscreenLease: lease,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final surface = find.byKey(
+          const ValueKey('fullscreen_video_gesture_surface'),
+        );
+        final surfaceRect = tester.getRect(surface);
+        final feedbackCard = find.byKey(
+          const ValueKey('fullscreen_video_feedback_card'),
+        );
+
+        void expectPureCircularFeedback(
+          IconData expectedIcon, {
+          required bool hasProgressRing,
+        }) {
+          expect(feedbackCard, findsOneWidget);
+          final material = tester.widget<Material>(feedbackCard);
+          expect(material.shape, const CircleBorder());
+          expect(
+            find.descendant(of: feedbackCard, matching: find.byType(Text)),
+            findsNothing,
+          );
+          expect(
+            find.descendant(
+              of: feedbackCard,
+              matching: find.byIcon(expectedIcon),
+            ),
+            findsOneWidget,
+          );
+          expect(
+            find.descendant(
+              of: feedbackCard,
+              matching: find.byType(CircularProgressIndicator),
+            ),
+            hasProgressRing ? findsOneWidget : findsNothing,
+          );
+        }
+
+        // Consecutive double-taps on the right side accumulate +5s -> +10s.
+        final rightDoubleTap = Offset(
+          surfaceRect.right - 40,
+          surfaceRect.center.dy,
+        );
+        await tester.tapAt(rightDoubleTap);
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.tapAt(rightDoubleTap);
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(session.position, const Duration(seconds: 35));
+        expectPureCircularFeedback(
+          Icons.forward_5_rounded,
+          hasProgressRing: false,
+        );
+        expect(
+          tester.getCenter(feedbackCard).dx,
+          greaterThan(surfaceRect.center.dx),
+        );
+
+        await tester.tapAt(rightDoubleTap);
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.tapAt(rightDoubleTap);
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(session.position, const Duration(seconds: 40));
+
+        // Double-tap on the left side skips -5s and shows left-aligned circular icon.
+        final leftDoubleTap = Offset(
+          surfaceRect.left + 40,
+          surfaceRect.center.dy,
+        );
+        await tester.tapAt(leftDoubleTap);
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.tapAt(leftDoubleTap);
+        await tester.pump(const Duration(milliseconds: 220));
+        expect(session.position, const Duration(seconds: 35));
+        expectPureCircularFeedback(
+          Icons.replay_5_rounded,
+          hasProgressRing: false,
+        );
+        expect(
+          tester.getCenter(feedbackCard).dx,
+          lessThan(surfaceRect.center.dx),
+        );
+
+        // Double-tap center toggles play/pause with centered circular icon.
+        await tester.tapAt(surfaceRect.center);
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.tapAt(surfaceRect.center);
+        await tester.pump(const Duration(milliseconds: 220));
+        expectPureCircularFeedback(
+          Icons.play_arrow_rounded,
+          hasProgressRing: false,
+        );
+        expect(
+          tester.getCenter(feedbackCard).dx,
+          closeTo(surfaceRect.center.dx, 0.1),
+        );
+
+        await tester.pump(const Duration(milliseconds: 700));
+        await tester.pump(const Duration(milliseconds: 220));
+
+        // Horizontal drag shows circular fast-forward icon + progress ring, no text.
+        final hDrag = await tester.startGesture(surfaceRect.center);
+        await hDrag.moveBy(const Offset(40, 0));
+        await hDrag.moveBy(const Offset(80, 0));
+        await tester.pump(const Duration(milliseconds: 50));
+        expectPureCircularFeedback(
+          Icons.fast_forward_rounded,
+          hasProgressRing: true,
+        );
+        await hDrag.up();
+        await tester.pump();
+        expect(session.position, greaterThan(const Duration(seconds: 35)));
+        await tester.pump(const Duration(milliseconds: 600));
+        await tester.pump(const Duration(milliseconds: 220));
+
+        // Left-side vertical drag adjusts brightness with circular ring icon, no text.
+        final bDrag = await tester.startGesture(
+          Offset(surfaceRect.left + 80, surfaceRect.center.dy),
+        );
+        await bDrag.moveBy(const Offset(0, -24));
+        await bDrag.moveBy(const Offset(0, -80));
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(feedbackCard, findsOneWidget);
+        expect(
+          find.descendant(of: feedbackCard, matching: find.byType(Text)),
+          findsNothing,
+        );
+        expect(
+          find.descendant(
+            of: feedbackCard,
+            matching: find.byType(CircularProgressIndicator),
+          ),
+          findsOneWidget,
+        );
+        await bDrag.up();
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(videoDisplay.lastBrightness, greaterThan(0.5));
+        await tester.pump(const Duration(milliseconds: 600));
+        await tester.pump(const Duration(milliseconds: 220));
+
+        // Right-side vertical drag adjusts volume with circular ring icon, no text.
+        final vDrag = await tester.startGesture(
+          Offset(surfaceRect.right - 80, surfaceRect.center.dy),
+        );
+        await vDrag.moveBy(const Offset(0, 24));
+        await vDrag.moveBy(const Offset(0, 100));
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(feedbackCard, findsOneWidget);
+        expect(
+          find.descendant(of: feedbackCard, matching: find.byType(Text)),
+          findsNothing,
+        );
+        expect(
+          find.descendant(
+            of: feedbackCard,
+            matching: find.byType(CircularProgressIndicator),
+          ),
+          findsOneWidget,
+        );
+        await vDrag.up();
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(session.volume, lessThan(1.0));
+        await tester.pump(const Duration(milliseconds: 600));
+        await tester.pump(const Duration(milliseconds: 220));
+
+        // Long-press activates temporary 2.0x speed with pure circular icon and clears on release.
+        final hold = await tester.startGesture(surfaceRect.center);
+        await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
+        expect(repo.temporarySpeedCalls, [2.0]);
+        expectPureCircularFeedback(Icons.speed_rounded, hasProgressRing: false);
+        await hold.up();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 220));
+        expect(repo.temporarySpeedCalls, [2.0, null]);
+        expect(feedbackCard, findsNothing);
+
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(milliseconds: 200));
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.android),
+    );
+
+    testWidgets(
+      'Windows fullscreen supports mouse wheel volume adjustment with pure circular icon feedback',
+      (tester) async {
+        tester.view.physicalSize = const Size(1280, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+
+        final fixture = AppRuntimeWidgetTestFixture(
+          providedNativePlaybackRepository: _AcceptingPlaybackRepository(),
+        );
+        addTearDown(fixture.dispose);
+
+        final video = testMusicTrack(
+          name: 'Video',
+          path: '/videos/gestures_windows.mp4',
+          groupKey: '/videos',
+          groupTitle: 'Videos',
+        ).copyWith(isVideo: true);
+        fixture.library.addTracks([video], persist: false);
+        final session = fixture.playback.createTrackSession(video)
+          ..loadedPath = video.path
+          ..setOptimisticDuration(const Duration(seconds: 120));
+        addTearDown(session.shutdown);
+        fixture.playback.publishSessionState(session.id);
+
+        final orientation = AppOrientationController(
+          setPreferredOrientations: (_) async {},
+          setSystemUiMode: (_) async {},
+        );
+        final lease = await orientation.enterVideoFullscreen();
+        addTearDown(lease.release);
+
+        await tester.pumpWidget(
+          fixture.build(
+            SessionVideoFullscreenPage(
+              sessionId: session.id,
+              trackPath: video.path,
+              fullscreenLease: lease,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final surface = find.byKey(
+          const ValueKey('fullscreen_video_gesture_surface'),
+        );
+        final center = tester.getCenter(surface);
+
+        // Scroll up increases volume and displays circular ring icon without text.
+        await tester.sendEventToBinding(
+          PointerScrollEvent(
+            position: center,
+            scrollDelta: const Offset(0, -120),
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(session.volume, greaterThan(1.0));
+        final feedbackCard = find.byKey(
+          const ValueKey('fullscreen_video_feedback_card'),
+        );
+        expect(feedbackCard, findsOneWidget);
+        expect(
+          tester.widget<Material>(feedbackCard).shape,
+          const CircleBorder(),
+        );
+        expect(
+          find.descendant(of: feedbackCard, matching: find.byType(Text)),
+          findsNothing,
+        );
+        expect(
+          find.descendant(
+            of: feedbackCard,
+            matching: find.byType(CircularProgressIndicator),
+          ),
+          findsOneWidget,
+        );
+
+        // Scroll down decreases volume.
+        final raisedVolume = session.volume;
+        await tester.sendEventToBinding(
+          PointerScrollEvent(
+            position: center,
+            scrollDelta: const Offset(0, 240),
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(session.volume, lessThan(raisedVolume));
+
+        await tester.pump(const Duration(milliseconds: 700));
         await tester.pumpAndSettle();
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pump(const Duration(milliseconds: 200));
@@ -1691,6 +2022,8 @@ Dialogue: 0,0:00:10.00,0:00:14.00,Default,,0,0,0,,Middle line
 }
 
 class _AcceptingPlaybackRepository extends NativePlaybackRepository {
+  final List<double?> temporarySpeedCalls = <double?>[];
+
   @override
   void startListening() {}
 
@@ -1703,6 +2036,34 @@ class _AcceptingPlaybackRepository extends NativePlaybackRepository {
   @override
   Future<NativeResult<NativePlaybackBundleSnapshot>> snapshot() async =>
       NativeSuccess(NativePlaybackBundleSnapshot(sessions: const []));
+
+  @override
+  Future<NativeResult<NativePlaybackSnapshot>> play(
+    String sessionId, {
+    int transportCommandId = 0,
+    bool exclusive = false,
+  }) async => const NativeSuccess();
+
+  @override
+  Future<NativeResult<NativePlaybackSnapshot>> pause(
+    String sessionId, {
+    int transportCommandId = 0,
+  }) async => const NativeSuccess();
+
+  @override
+  Future<NativeResult<NativePlaybackSnapshot>> seek(
+    String sessionId,
+    Duration position,
+  ) async => const NativeSuccess();
+
+  @override
+  Future<NativeResult<NativePlaybackSnapshot>> setTemporarySpeed(
+    String sessionId,
+    double? speed,
+  ) async {
+    temporarySpeedCalls.add(speed);
+    return const NativeSuccess();
+  }
 
   @override
   Future<NativeResult<void>> setPlaybackBehavior({
@@ -1811,4 +2172,29 @@ class _GatedPlaybackRepository extends NativePlaybackRepository {
   Future<NativeResult<NativePlaybackSnapshot>> removeSession(
     String sessionId,
   ) async => const NativeSuccess();
+}
+
+class _FakeVideoDisplayGateway implements VideoDisplayPlatformGateway {
+  double? lastBrightness;
+
+  @override
+  Future<NativeResult<PlatformBrightnessLease>> beginBrightnessControl() async {
+    lastBrightness = 0.5;
+    return const NativeSuccess<PlatformBrightnessLease>(
+      PlatformBrightnessLease(token: 'brightness-token', brightness: 0.5),
+    );
+  }
+
+  @override
+  Future<NativeResult<void>> setBrightness(
+    String token,
+    double brightness,
+  ) async {
+    lastBrightness = brightness;
+    return const NativeSuccess<void>();
+  }
+
+  @override
+  Future<NativeResult<void>> endBrightnessControl(String token) async =>
+      const NativeSuccess<void>();
 }

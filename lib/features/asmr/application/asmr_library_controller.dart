@@ -143,9 +143,11 @@ class AsmrLibraryController extends ChangeNotifier
         context.authEpoch == _authEpoch &&
         context.token == _authSession?.token &&
         context.contentEpoch == _contentEpoch,
-    localWorks: (category) =>
-        category == AsmrCategoryType.favorites ? _favoriteWorks : _historyWorks,
+    localWorks: (category) => category == AsmrCategoryType.favorites
+        ? _localFavoritesWorks()
+        : _historyWorks,
     favoriteIds: () => _favoriteIds,
+    reviewedByWorkKey: () => _reviewedByWorkKey,
     isWorkAllowed: _isWorkAllowed,
     hasExclusions: () =>
         _tagPreferences.excluded.isNotEmpty ||
@@ -699,6 +701,14 @@ class AsmrLibraryController extends ChangeNotifier
   AsmrContentLanguage _contentLanguage = AsmrContentLanguage.zh;
   List<AsmrWork> _favoriteWorks = const <AsmrWork>[];
   Set<String> _favoriteIds = const <String>{};
+  List<AsmrWork> _reviewedWorks = const <AsmrWork>[];
+  Map<String, AsmrWork> _reviewedByWorkKey = const <String, AsmrWork>{};
+  Map<String, AsmrWork> _reviewedByRjCode = const <String, AsmrWork>{};
+  final Map<String, DateTime> _clearedReviewAtByRjCode = <String, DateTime>{};
+  AsmrFavoritesStatusFilter _favoritesStatusFilter =
+      AsmrFavoritesStatusFilter.marked;
+  final Map<AsmrFavoritesStatusFilter, List<AsmrWork>> _filteredReviewedCache =
+      <AsmrFavoritesStatusFilter, List<AsmrWork>>{};
   List<AsmrWork> _historyWorks = const <AsmrWork>[];
   List<AsmrSyncOperation> _syncOperations = const <AsmrSyncOperation>[];
   AsmrAuthSession? _authSession;
@@ -800,10 +810,29 @@ class AsmrLibraryController extends ChangeNotifier
   void _applyLocalAccountState(AsmrAccountSnapshot snapshot) {
     _favoriteWorks = snapshot.favoriteWorks;
     _favoriteIds = snapshot.favoriteIds;
+    if (!identical(_reviewedWorks, snapshot.reviewedWorks)) {
+      _filteredReviewedCache.clear();
+    }
+    _reviewedWorks = snapshot.reviewedWorks;
+    _reviewedByWorkKey = snapshot.reviewedByWorkKey;
+    _reviewedByRjCode = snapshot.reviewedByRjCode;
     _historyWorks = snapshot.historyWorks;
     _syncOperations = snapshot.pendingOperations;
     _lastSyncAt = snapshot.lastSyncAt;
     _catalog.refreshLocalSearch();
+  }
+
+  List<AsmrWork> _localFavoritesWorks() {
+    if (_favoritesStatusFilter == AsmrFavoritesStatusFilter.marked) {
+      return _favoriteWorks;
+    }
+    if (_favoritesStatusFilter == AsmrFavoritesStatusFilter.all) {
+      return _reviewedWorks;
+    }
+    final targetStatus = _favoritesStatusFilter.listenStatus;
+    return _filteredReviewedCache[_favoritesStatusFilter] ??= immutableList(
+      _reviewedWorks.where((work) => work.listenStatus == targetStatus),
+    );
   }
 
   void _cancelActiveSync() {
@@ -839,6 +868,49 @@ class AsmrLibraryController extends ChangeNotifier
       _contentLanguagePreference;
   AppLanguage get pageLanguage => _pageLanguage;
   AsmrContentLanguage get contentLanguage => _contentLanguage;
+  AsmrFavoritesStatusFilter get favoritesStatusFilter => _favoritesStatusFilter;
+  List<AsmrWork> get reviewedWorks => _reviewedWorks;
+  Map<String, AsmrWork> get reviewedByWorkKey => _reviewedByWorkKey;
+  Map<String, AsmrWork> get reviewedByRjCode => _reviewedByRjCode;
+  AsmrWork? reviewForWork(AsmrWork work) =>
+      _reviewedByWorkKey[work.workKey] ??
+      (work.rjCode.isNotEmpty ? _reviewedByRjCode[work.rjCode] : null);
+  AsmrWork? reviewForRjCode(String rjCode) {
+    final normalized = normalizeAsmrWorkCode(rjCode);
+    if (normalized.isEmpty) return null;
+    return _reviewedByRjCode[normalized] ??
+        _reviewedByWorkKey['code:$normalized'];
+  }
+  DateTime? clearedReviewUpdatedAtForRjCode(String rjCode) {
+    final normalized = normalizeAsmrWorkCode(rjCode);
+    if (normalized.isEmpty) return null;
+    return _clearedReviewAtByRjCode[normalized];
+  }
+  int favoritesFilterCount(AsmrFavoritesStatusFilter filter) {
+    if (filter == AsmrFavoritesStatusFilter.marked) {
+      return _favoriteWorks.length;
+    }
+    if (filter == AsmrFavoritesStatusFilter.all) {
+      return _reviewedWorks.length;
+    }
+    final targetStatus = filter.listenStatus;
+    final cached = _filteredReviewedCache[filter];
+    if (cached != null) return cached.length;
+    var count = 0;
+    for (final work in _reviewedWorks) {
+      if (work.listenStatus == targetStatus) count++;
+    }
+    return count;
+  }
+  void setFavoritesStatusFilter(AsmrFavoritesStatusFilter filter) {
+    if (_favoritesStatusFilter == filter) return;
+    _favoritesStatusFilter = filter;
+    _catalog.updateLocalCounts();
+    _catalog.bumpRevision(AsmrCategoryType.favorites);
+    _catalog.refreshLocalSearch();
+    _bumpGlobalRevision();
+    notifyListeners();
+  }
   bool isFavorite(String workKey) => _favoriteIds.contains(workKey);
   bool get isAsmrAccountLoggedIn {
     final session = _authSession;
@@ -907,6 +979,7 @@ class AsmrLibraryController extends ChangeNotifier
     ),
     _initialized,
     _contentLanguage,
+    category == AsmrCategoryType.favorites ? _favoritesStatusFilter : null,
   );
 
   AsmrLibraryGlobalViewState get globalViewState => AsmrLibraryGlobalViewState(
@@ -914,6 +987,7 @@ class AsmrLibraryController extends ChangeNotifier
     visibleCategories: _visibleCategories,
     contentLanguage: _contentLanguage,
     contentLanguagePreference: _contentLanguagePreference,
+    favoritesStatusFilter: _favoritesStatusFilter,
     revision: _globalRevision,
   );
 
@@ -1043,6 +1117,17 @@ class AsmrLibraryController extends ChangeNotifier
     if (restoreAccountSession) {
       unawaited(restoreAsmrAccountSession());
     }
+  }
+
+  Future<void> reloadInterestPreferences() async {
+    if (_disposed) return;
+    final interests = await _preferencesStore.loadAllInterestPreferences();
+    if (_disposed) return;
+    _tagPreferences = interests.tags;
+    _voiceActorPreferences = interests.voiceActors;
+    _circlePreferences = interests.circles;
+    _bumpGlobalRevision();
+    notifyListeners();
   }
 
   Future<void> restoreAsmrAccountSession({bool force = false}) {
@@ -1278,30 +1363,55 @@ class AsmrLibraryController extends ChangeNotifier
         return null;
       }
       final previousToken = _authSession?.token;
+      final previousReviewed = _reviewedByRjCode;
       _applyAccountSnapshot(result.snapshot);
       tokenChanged = _authSession?.token != previousToken;
       if (tokenChanged) {
+        _clearedReviewAtByRjCode.clear();
         _authEpoch++;
         _catalog.invalidateForAuthChange();
         _invalidateRemoteWorkCaches();
+      } else {
+        final syncedAt = result.snapshot.lastSyncAt ?? DateTime.now();
+        for (final rjCode in previousReviewed.keys) {
+          if (!_reviewedByRjCode.containsKey(rjCode)) {
+            _clearedReviewAtByRjCode[rjCode] = syncedAt;
+          }
+        }
+        for (final rjCode in _reviewedByRjCode.keys) {
+          _clearedReviewAtByRjCode.remove(rjCode);
+        }
+        _catalog.syncAllReviewsToCurrent();
       }
       _syncPhase = result.succeeded
           ? AsmrSyncPhase.succeeded
           : AsmrSyncPhase.failed;
       _lastSyncError = result.failure;
+      if (result.failure != null) {
+        AppLogService.warning(
+          'asmr_account_sync_failed '
+          'pending=${result.snapshot.pendingOperations.length} fullPull=$fullPull',
+          error: result.failure,
+        );
+      }
       final session = _authSession;
       return result.succeeded && session != null
           ? (authEpoch: _authEpoch, token: session.token)
           : null;
     } on AsmrRequestCancelled {
       return null;
-    } catch (error) {
+    } catch (error, stackTrace) {
       if (_disposed ||
           cancellationToken.isCancelled ||
           key.authEpoch != _authEpoch ||
           !identical(_activeSyncCancellationToken, cancellationToken)) {
         return null;
       }
+      AppLogService.warning(
+        'asmr_account_sync_failed fullPull=$fullPull',
+        error: error,
+        stackTrace: stackTrace,
+      );
       _syncPhase = AsmrSyncPhase.failed;
       _lastSyncError = error;
     } finally {
@@ -1466,6 +1576,7 @@ class AsmrLibraryController extends ChangeNotifier
                 !_catalog.isSearchRequestCurrent(searchQuery, category)))) {
       return;
     }
+    _remoteCatalogService.clearOneCatalogCooldown();
     await _catalog.refresh(
       category,
       searchQuery: searchQuery,
@@ -1720,6 +1831,16 @@ class AsmrLibraryController extends ChangeNotifier
     final previousIds = _favoriteIds;
     final previousOperations = _syncOperations;
     _applyLocalAccountState(latest);
+    final clearedAt = DateTime.now();
+    for (final work in works) {
+      final rjCode = work.rjCode;
+      if (rjCode.isEmpty) continue;
+      if (_reviewedByRjCode.containsKey(rjCode)) {
+        _clearedReviewAtByRjCode.remove(rjCode);
+      } else if (previousIds.contains(work.workKey)) {
+        _clearedReviewAtByRjCode[rjCode] = clearedAt;
+      }
+    }
     final changedIds = {
       for (final work in works)
         if (previousIds.contains(work.workKey) !=
@@ -1733,6 +1854,72 @@ class AsmrLibraryController extends ChangeNotifier
     if (isAsmrAccountLoggedIn &&
         (changedIds.isNotEmpty ||
             !identical(previousOperations, _syncOperations))) {
+      _scheduleBackgroundSync();
+    }
+    _catalog.updateLocalCounts();
+    _catalog.bumpRevision(AsmrCategoryType.favorites);
+    _catalog.bumpRevision(AsmrCategoryType.history);
+    notifyListeners();
+  }
+
+  Future<void> saveWorkReview(
+    AsmrWork work, {
+    required WorkListenStatus? listenStatus,
+    required int? userRating,
+    required String reviewText,
+    DateTime? updatedAt,
+    bool enqueueSync = true,
+  }) {
+    return _runStateMutation(
+      () => _saveWorkReviewNow(
+        work,
+        listenStatus: listenStatus,
+        userRating: userRating,
+        reviewText: reviewText,
+        updatedAt: updatedAt,
+        enqueueSync: enqueueSync,
+      ),
+    );
+  }
+
+  Future<void> _saveWorkReviewNow(
+    AsmrWork work, {
+    required WorkListenStatus? listenStatus,
+    required int? userRating,
+    required String reviewText,
+    DateTime? updatedAt,
+    required bool enqueueSync,
+  }) async {
+    final previous = _accountSyncService.snapshot;
+    final snapshot = await _accountSyncService.saveWorkReview(
+      work,
+      listenStatus: listenStatus,
+      userRating: userRating,
+      reviewText: reviewText,
+      updatedAt: updatedAt,
+      enqueueSync: enqueueSync,
+    );
+    if (_disposed) return;
+    final latest = _accountSyncService.snapshot;
+    if (identical(previous, snapshot) && identical(snapshot, latest)) return;
+    final previousOperations = _syncOperations;
+    _applyLocalAccountState(latest);
+    final rjCode = work.rjCode;
+    if (rjCode.isNotEmpty) {
+      if (_reviewedByRjCode.containsKey(rjCode)) {
+        _clearedReviewAtByRjCode.remove(rjCode);
+      } else {
+        _clearedReviewAtByRjCode[rjCode] = updatedAt ?? DateTime.now();
+      }
+    }
+    _catalog.updateWorkReview(
+      work.workKey,
+      _reviewedByWorkKey[work.workKey],
+    );
+    _bumpGlobalRevision();
+    if (enqueueSync &&
+        isAsmrAccountLoggedIn &&
+        !identical(previousOperations, _syncOperations)) {
       _scheduleBackgroundSync();
     }
     _catalog.updateLocalCounts();

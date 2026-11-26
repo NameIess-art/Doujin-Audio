@@ -32,8 +32,10 @@ class AsmrApiService {
   late final List<String> _candidateDomains;
   int _currentDomainIndex = 0;
   bool _closed = false;
+  AsmrApiException? _lastServerError;
 
   bool get isClosed => _closed;
+  AsmrApiException? get lastServerError => _lastServerError;
 
   void setPreferredDomain(String domain) {
     if (!asmrApiDomains.contains(domain)) {
@@ -187,6 +189,27 @@ class AsmrApiService {
     throw const HttpException('Unexpected API response.');
   }
 
+  Future<bool> isWorkCollected(
+    int workId, {
+    AsmrRequestCancellationToken? cancellationToken,
+  }) async {
+    if (workId <= 0) return false;
+    try {
+      await _send(
+        method: 'GET',
+        path: '/api/workInfo/$workId',
+        decodeBody: false,
+        cancellationToken: cancellationToken,
+      );
+      return true;
+    } on AsmrApiException catch (error) {
+      if (error.statusCode == HttpStatus.notFound) {
+        return false;
+      }
+      rethrow;
+    }
+  }
+
   Future<void> putReviewProgress({
     required int workId,
     required String progress,
@@ -196,7 +219,51 @@ class AsmrApiService {
       method: 'PUT',
       path: '/api/review',
       token: token,
+      // Kikoeru defaults starOnly=true unless starOnly=false is sent, which
+      // fails with HTTP 500 when rating is omitted on progress-only updates.
+      queryParameters: const <String, String>{
+        'starOnly': 'false',
+        'progressOnly': 'true',
+      },
       body: <String, Object?>{'work_id': workId, 'progress': progress},
+      decodeBody: false,
+      failoverOnJsonServerError: false,
+    );
+  }
+
+  Future<void> putReview({
+    required int workId,
+    required String token,
+    WorkListenStatus? progress,
+    int? userRating,
+    String? reviewText,
+    bool progressOnly = false,
+    bool starOnly = false,
+  }) async {
+    if (progressOnly) {
+      if (progress != null) {
+        await putReviewProgress(
+          workId: workId,
+          progress: progress.wireValue,
+          token: token,
+        );
+      }
+      return;
+    }
+    final query = <String, String>{'starOnly': starOnly ? 'true' : 'false'};
+    await _send(
+      method: 'PUT',
+      path: '/api/review',
+      token: token,
+      queryParameters: query,
+      body: <String, Object?>{
+        'work_id': workId,
+        if (!starOnly) 'progress': progress?.wireValue,
+        'rating': userRating,
+        if (!starOnly) 'review_text': reviewText ?? '',
+      },
+      decodeBody: false,
+      failoverOnJsonServerError: false,
     );
   }
 
@@ -209,6 +276,8 @@ class AsmrApiService {
       path: '/api/review',
       token: token,
       queryParameters: <String, String>{'work_id': '$workId'},
+      decodeBody: false,
+      failoverOnJsonServerError: false,
     );
   }
 
@@ -330,6 +399,7 @@ class AsmrApiService {
           'Media is unavailable (${response.statusCode}).',
           statusCode: response.statusCode,
           uri: Uri.parse(url),
+          source: AsmrCatalogSource.asmrOne,
         );
       }
       final received = Completer<void>();
@@ -390,6 +460,8 @@ class AsmrApiService {
     Map<String, String>? queryParameters,
     String? token,
     Object? body,
+    bool decodeBody = true,
+    bool failoverOnJsonServerError = true,
     ComputeCallback<TransferableTypedData, Object?> decodeResponse =
         _decodeJsonPayload,
     AsmrRequestCancellationToken? cancellationToken,
@@ -413,6 +485,7 @@ class AsmrApiService {
       HttpClientRequest? openedRequest;
       var attemptRetired = false;
       var responseConsumed = false;
+      var jsonServerError = false;
       try {
         final opening = _httpClient.openUrl(method, uri).then((request) {
           // openUrl may finish after the caller has already been cancelled.
@@ -458,26 +531,35 @@ class AsmrApiService {
         responseConsumed = true;
         cancellationToken?.throwIfCancelled();
         if (response.statusCode >= 500 && response.statusCode <= 599) {
-          throw AsmrApiException(
+          jsonServerError =
+              !failoverOnJsonServerError &&
+              response.statusCode == HttpStatus.internalServerError &&
+              response.headers.contentType?.mimeType == 'application/json';
+          final serverError = AsmrApiException(
             'ASMR API server error (${response.statusCode}).',
             statusCode: response.statusCode,
             uri: uri,
+            source: AsmrCatalogSource.asmrOne,
           );
+          _lastServerError = serverError;
+          throw serverError;
         }
         if (response.statusCode < 200 || response.statusCode >= 300) {
           throw AsmrApiException(
             'ASMR API request failed (${response.statusCode}).',
             statusCode: response.statusCode,
             uri: uri,
+            source: AsmrCatalogSource.asmrOne,
           );
         }
 
+        _lastServerError = null;
         final activeIndex = _candidateDomains.indexOf(domain);
         if (activeIndex >= 0) {
           _currentDomainIndex = activeIndex;
         }
 
-        if (responseBytes.isEmpty) {
+        if (!decodeBody || responseBytes.isEmpty) {
           return null;
         }
         // Responses can arrive during a later navigation or dock animation.
@@ -491,9 +573,21 @@ class AsmrApiService {
       } catch (error, stackTrace) {
         cancellationToken?.throwIfCancelled();
         if (error is AsmrRequestCancelled) rethrow;
-        lastError = error;
-        lastStackTrace = stackTrace;
+        // Retain an HTTP server response across mirror failover so a trailing
+        // unreachable fallback domain does not mask a real 5xx origin outage.
+        if (lastError == null ||
+            error is AsmrApiException ||
+            lastError is! AsmrApiException) {
+          lastError = error;
+          lastStackTrace = stackTrace;
+        }
         if (error is AsmrApiException && error.statusCode < 500) {
+          rethrow;
+        }
+        // Express returns 500 application/json when a review write references a
+        // work_id absent from the shared PostgreSQL t_work table; retrying the
+        // remaining mirrors hits the same database and multiplies sync latency.
+        if (error is AsmrApiException && jsonServerError) {
           rethrow;
         }
         // Model field errors are not endpoint failures; do not retry a domain
@@ -593,17 +687,34 @@ Object? _decodeTrackTree(TransferableTypedData data) {
 }
 
 class AsmrApiException extends HttpException {
-  const AsmrApiException(super.message, {required this.statusCode, super.uri});
+  const AsmrApiException(
+    super.message, {
+    required this.statusCode,
+    super.uri,
+    this.source,
+  });
 
   final int statusCode;
+  final AsmrCatalogSource? source;
 
   bool get isAuthenticationFailure =>
       statusCode == HttpStatus.unauthorized ||
       statusCode == HttpStatus.forbidden ||
       statusCode == 419;
 
+  bool get isServerError => statusCode >= 500 && statusCode <= 599;
+
+  bool get isAsmrOneOrigin =>
+      source == AsmrCatalogSource.asmrOne ||
+      (source == null &&
+          uri != null &&
+          AsmrApiService.isOfficialMediaUrl(uri.toString()));
+
   static bool isAuthenticationError(Object error) =>
       error is AsmrApiException && error.isAuthenticationFailure;
+
+  static bool isServerUnavailable(Object? error) =>
+      error is AsmrApiException && error.isServerError;
 }
 
 Object _decodeInterestCatalog(TransferableTypedData data) {

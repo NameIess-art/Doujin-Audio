@@ -9,16 +9,16 @@ void main() {
     final first = LibrarySortValue(
       name: 'Alpha 2',
       voiceActor: 'Actor A',
-      duration: const Duration(minutes: 2),
       releaseDate: DateTime(2024),
+      userRating: 2,
       addedAt: DateTime(2024, 2),
       lastPlayedAt: DateTime(2024, 3),
     );
     final second = LibrarySortValue(
       name: 'Beta 10',
       voiceActor: 'Actor B',
-      duration: const Duration(minutes: 4),
       releaseDate: DateTime(2025),
+      userRating: 5,
       addedAt: DateTime(2024, 3),
       lastPlayedAt: DateTime(2024, 4),
     );
@@ -63,8 +63,8 @@ void main() {
       const unknown = LibrarySortValue(
         name: 'Unknown',
         voiceActor: null,
-        duration: null,
         releaseDate: null,
+        userRating: null,
         addedAt: null,
         lastPlayedAt: null,
       );
@@ -82,10 +82,19 @@ void main() {
         compareLibrarySortValues(
           unknown,
           first,
-          LibrarySortCriterion.duration,
+          LibrarySortCriterion.userRating,
+          true,
+        ),
+        greaterThan(0),
+      );
+      expect(
+        compareLibrarySortValues(
+          unknown,
+          first,
+          LibrarySortCriterion.userRating,
           false,
         ),
-        lessThan(0),
+        greaterThan(0),
       );
     });
   });

@@ -79,6 +79,7 @@ final class AsmrCategoryCatalog {
     required AsmrCategoryRequestContext Function() currentContext,
     required List<AsmrWork> Function(AsmrCategoryType) localWorks,
     required Set<String> Function() favoriteIds,
+    Map<String, AsmrWork> Function()? reviewedByWorkKey,
     bool Function(AsmrWork)? isWorkAllowed,
     bool Function()? hasExclusions,
   }) : _remoteCatalogService = remoteCatalogService,
@@ -87,6 +88,8 @@ final class AsmrCategoryCatalog {
        _currentContext = currentContext,
        _localWorks = localWorks,
        _favoriteIds = favoriteIds,
+       _reviewedByWorkKey =
+           reviewedByWorkKey ?? (() => const <String, AsmrWork>{}),
        _isWorkAllowed = isWorkAllowed ?? ((_) => true),
        _hasExclusions = hasExclusions ?? (() => false);
   final AsmrRemoteCatalogService _remoteCatalogService;
@@ -95,6 +98,7 @@ final class AsmrCategoryCatalog {
   final AsmrCategoryRequestContext Function() _currentContext;
   final List<AsmrWork> Function(AsmrCategoryType) _localWorks;
   final Set<String> Function() _favoriteIds;
+  final Map<String, AsmrWork> Function() _reviewedByWorkKey;
   final bool Function(AsmrWork) _isWorkAllowed;
   final bool Function() _hasExclusions;
   Expando<List<AsmrWork>> _visibleCache = Expando();
@@ -355,6 +359,7 @@ final class AsmrCategoryCatalog {
 
   void updateFavorites(Map<String, bool> favorites) {
     if (favorites.isEmpty) return;
+    final reviews = _reviewedByWorkKey();
     for (final entry in _categories.entries) {
       if (!isRemote(entry.key.category)) continue;
       final state = entry.value;
@@ -363,16 +368,86 @@ final class AsmrCategoryCatalog {
       List<AsmrWork>? updated;
       for (final favorite in favorites.entries) {
         final index = state.workIndices[favorite.key];
-        if (index == null || works[index].isFavorite == favorite.value) {
-          continue;
-        }
-        (updated ??= works.toList(growable: false))[index] = works[index]
-            .copyWith(isFavorite: favorite.value);
+        if (index == null) continue;
+        final current = works[index];
+        final review = reviews[favorite.key];
+        final next = review != null
+            ? _overlayReview(current, review)
+            : (current.isFavorite == favorite.value
+                  ? current
+                  : current.copyWith(isFavorite: favorite.value));
+        if (identical(next, current)) continue;
+        (updated ??= works.toList(growable: false))[index] = next;
       }
       if (updated == null) continue;
       state.works = immutableList(updated);
       state.revision++;
     }
+  }
+
+  void updateWorkReview(String workKey, AsmrWork? reviewedWork) {
+    for (final entry in _categories.entries) {
+      if (!isRemote(entry.key.category)) continue;
+      final state = entry.value;
+      final works = state.works;
+      if (works == null) continue;
+      final index = state.workIndices[workKey];
+      if (index == null) continue;
+      final current = works[index];
+      final next = reviewedWork != null
+          ? _overlayReview(current, reviewedWork)
+          : current.copyWith(
+              isFavorite: false,
+              clearListenStatus: true,
+              clearUserRating: true,
+              reviewText: '',
+              clearReviewUpdatedAt: true,
+            );
+      if (current.listenStatus == next.listenStatus &&
+          current.isFavorite == next.isFavorite &&
+          current.userRating == next.userRating &&
+          current.reviewText == next.reviewText &&
+          current.reviewUpdatedAt == next.reviewUpdatedAt) {
+        continue;
+      }
+      final updated = works.toList(growable: false)..[index] = next;
+      state.works = immutableList(updated);
+      state.revision++;
+    }
+  }
+
+  void syncAllReviewsToCurrent() {
+    for (final entry in _categories.entries) {
+      if (!isRemote(entry.key.category)) continue;
+      final state = entry.value;
+      final works = state.works;
+      if (works == null || works.isEmpty) continue;
+      final synced = _syncFavoritesToCurrent(works);
+      if (!identical(synced, works)) {
+        state.works = synced;
+        state.revision++;
+      }
+    }
+  }
+
+  static AsmrWork _overlayReview(AsmrWork base, AsmrWork review) {
+    if (base.listenStatus == review.listenStatus &&
+        base.isFavorite == review.isFavorite &&
+        base.userRating == review.userRating &&
+        base.reviewText == review.reviewText &&
+        base.reviewUpdatedAt == review.reviewUpdatedAt) {
+      return base;
+    }
+    return base.copyWith(
+      listenStatus: review.listenStatus,
+      clearListenStatus: review.listenStatus == null,
+      isFavorite: review.isFavorite,
+      userRating: review.userRating,
+      clearUserRating: review.userRating == null,
+      reviewText: review.reviewText,
+      reviewUpdatedAt: review.reviewUpdatedAt,
+      clearReviewUpdatedAt: review.reviewUpdatedAt == null,
+    );
   }
 
   List<AsmrWork> selectedWorks(
@@ -886,9 +961,18 @@ final class AsmrCategoryCatalog {
   List<AsmrWork> _syncFavoritesToCurrent(List<AsmrWork> works) {
     if (works.isEmpty) return works;
     final favorites = _favoriteIds();
+    final reviews = _reviewedByWorkKey();
     List<AsmrWork>? updated;
     for (var i = 0; i < works.length; i++) {
       final work = works[i];
+      final review = reviews[work.workKey];
+      if (review != null) {
+        final overlaid = _overlayReview(work, review);
+        if (!identical(overlaid, work)) {
+          (updated ??= works.toList(growable: false))[i] = overlaid;
+        }
+        continue;
+      }
       final favorite = favorites.contains(work.workKey);
       if (work.isFavorite == favorite) continue;
       (updated ??= works.toList(growable: false))[i] = work.copyWith(
@@ -931,6 +1015,7 @@ final class AsmrCategoryCatalog {
                 work.circleName,
                 work.workCode,
                 work.sourceId,
+                work.reviewText,
                 ...work.tags,
                 ...work.voiceActors,
               ]

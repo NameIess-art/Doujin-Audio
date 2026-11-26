@@ -24,10 +24,17 @@ abstract interface class AsmrPersistenceRepository {
     required bool favorite,
     required List<AsmrSyncOperation> operations,
   });
+  Future<void> saveReviewState({
+    required AsmrWork work,
+    required bool favorite,
+    required bool reviewed,
+    AsmrSyncOperation? operation,
+  });
   Future<void> saveAccountSyncState({
     required List<AsmrWork> favoriteWorks,
     required List<AsmrWork> historyWorks,
     required List<AsmrSyncOperation> operations,
+    List<AsmrWork> reviewedWorks = const <AsmrWork>[],
   });
   Future<List<MusicTrack>> loadTracksForRecommendations();
   @visibleForTesting

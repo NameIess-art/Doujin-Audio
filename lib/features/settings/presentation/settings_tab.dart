@@ -13,7 +13,17 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../library/presentation/library_providers.dart'
+    show lanMediaServerServiceProvider;
+import '../../player/application/playback_subtitle_service.dart';
+import '../../player/application/subtitle_generation.dart';
+import '../../player/application/subtitle_model_store.dart';
+import '../../player/presentation/playback_providers.dart'
+    show playbackSubtitleServiceProvider;
+import '../../../core/translation/text_translation_service.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
@@ -56,6 +66,7 @@ import '../../../app/presentation/main_tab_state_mixin.dart';
 import '../../../core/widgets/unified_popup_menu.dart';
 
 part 'settings_tab_actions.dart';
+part 'settings_tab_ai_section.dart';
 part 'settings_tab_network_section.dart';
 part 'settings_tab_general_section.dart';
 part 'settings_tab_appearance_section.dart';
@@ -315,6 +326,11 @@ enum _SettingsCategory {
     'section_playback_subtitle',
     Icons.play_circle_outline_rounded,
   ),
+  aiModels(
+    'section_ai_models',
+    'section_ai_models_subtitle',
+    Icons.auto_awesome_outlined,
+  ),
   asmrDownload(
     'section_asmr_download',
     'section_asmr_download_subtitle',
@@ -523,6 +539,7 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
             settingsController: settingsController,
             cs: cs,
           ),
+          _SettingsCategory.aiModels => null,
           _SettingsCategory.asmrDownload => _buildSettingsAsmrSection(
             i18n: i18n,
             settings: settings,
@@ -642,9 +659,18 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
           );
         }
 
-        return normalSections == null
-            ? _NetworkSettingsControls(buildSections: buildSections)
-            : buildSections(normalSections);
+        if (normalSections != null) {
+          return buildSections(normalSections);
+        }
+        return switch (widget.category) {
+          _SettingsCategory.network => _NetworkSettingsControls(
+            buildSections: buildSections,
+          ),
+          _SettingsCategory.aiModels => _AiSettingsControls(
+            buildSections: buildSections,
+          ),
+          _ => const SizedBox.shrink(),
+        };
       },
     );
   }

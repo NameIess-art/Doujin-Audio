@@ -72,7 +72,7 @@ void main() {
   testWidgets(
     'other filters expand above history and retain their values',
     (tester) async {
-      await tester.binding.setSurfaceSize(const Size(320, 700));
+      await tester.binding.setSurfaceSize(const Size(360, 700));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       var filters = emptySearchFilters;
       await tester.pumpWidget(
@@ -98,6 +98,8 @@ void main() {
                         'search_has_subtitle' => '有',
                         'search_has_no_subtitle' => '无',
                         'search_minimum_rating' => '最低评分',
+                        'search_listen_status' => '收听状态',
+                        'search_minimum_user_rating' => '最低个人评分',
                         'search_duration_range' => '时长区间',
                         'search_release_range' => '发售区间',
                         _ => key,
@@ -160,8 +162,33 @@ void main() {
       );
 
       final titleStyle = tester.widget<Text>(history).style;
-      for (final title in ['字幕', '最低评分', '时长区间', '发售区间']) {
+      expect(
+        titleStyle?.color,
+        Theme.of(tester.element(history)).colorScheme.primary,
+      );
+      for (final title in [
+        '字幕',
+        '最低评分',
+        '收听状态',
+        '最低个人评分',
+        '时长区间',
+        '发售区间',
+      ]) {
         expect(tester.widget<Text>(find.text(title)).style, titleStyle);
+      }
+      for (final endpoint in [minDuration, maxDuration, firstDate, lastDate]) {
+        expect(
+          find.ancestor(
+            of: endpoint,
+            matching: find.byWidgetPredicate(
+              (widget) =>
+                  widget is DecoratedBox &&
+                  widget.decoration is BoxDecoration &&
+                  (widget.decoration as BoxDecoration).border != null,
+            ),
+          ),
+          findsNothing,
+        );
       }
       expect(
         tester.getTopLeft(subtitle).dx,
@@ -171,9 +198,13 @@ void main() {
         tester.getTopLeft(rating).dx,
         greaterThan(tester.getTopRight(find.text('最低评分')).dx),
       );
-      expect(tester.getSize(subtitle).height, 120);
-      expect(tester.getSize(rating).height, 120);
-      expect(find.byType(ListWheelScrollView), findsNWidgets(2));
+      expect(tester.getSize(subtitle).height, 84);
+      expect(tester.getSize(rating).height, 84);
+      expect(
+        tester.getSize(find.text('最低个人评分')).height,
+        tester.getSize(find.text('收听状态')).height,
+      );
+      expect(find.byType(ListWheelScrollView), findsNWidgets(4));
       expect(
         find.descendant(of: subtitle, matching: find.byType(DecoratedBox)),
         findsNothing,
@@ -211,7 +242,7 @@ void main() {
       }
 
       final isWindows = defaultTargetPlatform == TargetPlatform.windows;
-      final delta = isWindows ? 120.0 : 42.0;
+      final delta = isWindows ? 120.0 : 30.0;
       await scroll(subtitle, delta);
       expect(filters.hasSubtitle, isFalse);
       await scroll(subtitle, delta);
@@ -329,6 +360,12 @@ void main() {
       expect(find.byType(DecoratedSliver), findsNothing);
       expect(find.byType(AppSearchSuggestionSection), findsNWidgets(3));
       expect(find.byType(AppElementChip), findsNWidgets(3));
+      for (final title in ['History', 'Voices', 'Tags']) {
+        expect(
+          tester.widgetList<Text>(find.text(title)).first.style?.color,
+          theme.colorScheme.primary,
+        );
+      }
       expect(tester.takeException(), isNull);
     }
   });

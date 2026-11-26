@@ -288,7 +288,11 @@ class FileTreeSkeleton extends StatelessWidget {
       final contentHeight =
           availableHeight -
           padding.resolve(Directionality.of(context)).vertical;
-      final itemCount = math.max(1, (contentHeight / rowHeight).ceil());
+      // Guard against IEEE-754 Rect(top + height) - top rounding up by ~1e-13.
+      final itemCount = math.max(
+        1,
+        ((contentHeight - 1e-6) / rowHeight).ceil(),
+      );
       final placeholders = Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,

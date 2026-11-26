@@ -1614,7 +1614,12 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
           color: scheme.onSurfaceVariant,
         ),
         helperStyle: textTheme.bodySmall,
-        constraints: BoxConstraints(minHeight: tokens.minimumTapTarget),
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 12,
+        ),
+        constraints: BoxConstraints(minHeight: tokens.minimumTapTarget - 4),
         fillColor: scheme.surfaceContainer,
         border: inputBorder,
         enabledBorder: inputBorder,

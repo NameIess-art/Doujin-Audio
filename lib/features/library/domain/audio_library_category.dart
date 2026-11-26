@@ -2,7 +2,7 @@ import '../../../core/media/audio_detail.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/immutable_collections.dart';
 
-enum AudioLibraryCategoryType { all, tags, voiceActors, circles }
+enum AudioLibraryCategoryType { all, tags, voiceActors, circles, status }
 
 class AudioLibraryCategoryEntry {
   AudioLibraryCategoryEntry({
@@ -29,12 +29,16 @@ class AudioLibraryCategoryEntry {
   late final List<String> circleTerms = AudioLibraryCategorySnapshot.splitTerms(
     <String>[detail.circleName],
   );
+  late final List<String> statusTerms = <String>[
+    if (detail.listenStatus case final status?) status.wireValue,
+  ];
 
   late final Set<String> normalizedTagTerms = _normalizeTerms(tagTerms);
   late final Set<String> normalizedVoiceActorTerms = _normalizeTerms(
     voiceActorTerms,
   );
   late final Set<String> normalizedCircleTerms = _normalizeTerms(circleTerms);
+  late final Set<String> normalizedStatusTerms = _normalizeTerms(statusTerms);
 
   MusicTrack? get firstTrack => tracks.isEmpty ? null : tracks.first;
 
@@ -44,6 +48,7 @@ class AudioLibraryCategoryEntry {
     detail.rjCode,
     detail.workTitle,
     detail.circleName,
+    detail.reviewText,
     ...detail.voiceActors,
     ...detail.tags,
   ].where((value) => value.trim().isNotEmpty).join('\n').toLowerCase();
@@ -53,6 +58,7 @@ class AudioLibraryCategoryEntry {
       AudioLibraryCategoryType.tags => tagTerms,
       AudioLibraryCategoryType.voiceActors => voiceActorTerms,
       AudioLibraryCategoryType.circles => circleTerms,
+      AudioLibraryCategoryType.status => statusTerms,
       AudioLibraryCategoryType.all => const <String>[],
     };
   }
@@ -62,6 +68,7 @@ class AudioLibraryCategoryEntry {
       AudioLibraryCategoryType.tags => normalizedTagTerms,
       AudioLibraryCategoryType.voiceActors => normalizedVoiceActorTerms,
       AudioLibraryCategoryType.circles => normalizedCircleTerms,
+      AudioLibraryCategoryType.status => normalizedStatusTerms,
       AudioLibraryCategoryType.all => const <String>{},
     };
   }
@@ -77,6 +84,7 @@ class AudioLibraryCategorySnapshot {
     List<String>? tagTerms,
     List<String>? voiceActorTerms,
     List<String>? circleTerms,
+    List<String>? statusTerms,
     required int structureRevision,
     required int detailRevision,
   }) {
@@ -113,6 +121,9 @@ class AudioLibraryCategorySnapshot {
       circleTerms:
           circleTerms ??
           sortTermsByFrequency(frequencies[AudioLibraryCategoryType.circles]!),
+      statusTerms:
+          statusTerms ??
+          _orderedStatusTerms(frequencies[AudioLibraryCategoryType.status]!),
       structureRevision: structureRevision,
       detailRevision: detailRevision,
     );
@@ -125,6 +136,7 @@ class AudioLibraryCategorySnapshot {
     required List<String> tagTerms,
     required List<String> voiceActorTerms,
     required List<String> circleTerms,
+    required List<String> statusTerms,
     required this.structureRevision,
     required this.detailRevision,
   }) : entries = immutableList(entries),
@@ -132,12 +144,14 @@ class AudioLibraryCategorySnapshot {
        _frequencies = frequencies,
        tagTerms = immutableList(tagTerms),
        voiceActorTerms = immutableList(voiceActorTerms),
-       circleTerms = immutableList(circleTerms);
+       circleTerms = immutableList(circleTerms),
+       statusTerms = immutableList(statusTerms);
 
   final List<AudioLibraryCategoryEntry> entries;
   final List<String> tagTerms;
   final List<String> voiceActorTerms;
   final List<String> circleTerms;
+  final List<String> statusTerms;
   final int structureRevision;
   final int detailRevision;
   final Map<AudioDetailTarget, List<int>> _entryIndices;
@@ -198,7 +212,10 @@ class AudioLibraryCategorySnapshot {
     }
     List<String> terms(AudioLibraryCategoryType type, List<String> previous) {
       final changed = changedFrequencies[type];
-      return changed == null ? previous : sortTermsByFrequency(changed);
+      if (changed == null) return previous;
+      return type == AudioLibraryCategoryType.status
+          ? _orderedStatusTerms(changed)
+          : sortTermsByFrequency(changed);
     }
 
     return AudioLibraryCategorySnapshot._(
@@ -215,10 +232,17 @@ class AudioLibraryCategorySnapshot {
         voiceActorTerms,
       ),
       circleTerms: terms(AudioLibraryCategoryType.circles, circleTerms),
+      statusTerms: terms(AudioLibraryCategoryType.status, statusTerms),
       structureRevision: structureRevision,
       detailRevision: detailRevision,
     );
   }
+
+  static List<String> _orderedStatusTerms(Map<String, int> frequencies) =>
+      List<String>.unmodifiable([
+        for (final status in WorkListenStatus.values)
+          if ((frequencies[status.wireValue] ?? 0) > 0) status.wireValue,
+      ]);
 
   static String targetKey(AudioDetailTarget target) {
     return '${target.targetType.dbValue}|${target.targetPath}';

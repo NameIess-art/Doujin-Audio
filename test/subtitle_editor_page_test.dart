@@ -105,7 +105,7 @@ Future<void> _tapInputSave(WidgetTester tester) async {
   ).read(appLanguageProviderInstanceProvider);
   final save = find.descendant(
     of: find.byType(AppEditPanelForm),
-    matching: find.widgetWithText(TextButton, language.tr('save')),
+    matching: find.widgetWithText(FilledButton, language.tr('save')),
   );
   await tester.pumpAndSettle();
   await tester.ensureVisible(save);
@@ -948,7 +948,7 @@ void main() {
       await tester.tap(
         find.descendant(
           of: find.byType(AppEditPanelForm),
-          matching: find.widgetWithText(TextButton, language.tr('save')),
+          matching: find.widgetWithText(FilledButton, language.tr('save')),
         ),
       );
       await tester.pump(const Duration(milliseconds: 250));

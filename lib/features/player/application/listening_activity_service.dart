@@ -13,6 +13,14 @@ typedef ListeningInterestRecorder =
       required List<({List<String> tags, Duration duration})> contributions,
     });
 
+typedef ListeningWorkUsageUpdate = ({
+  String workKey,
+  MusicTrack track,
+  int addedMilliseconds,
+  int totalMilliseconds,
+  int lastPlayedAtMs,
+});
+
 /// Imports durable player batches before acknowledging them at their source.
 final class ListeningActivityService {
   ListeningActivityService({
@@ -45,6 +53,8 @@ final class ListeningActivityService {
   final Future<AudioDetail> Function(MusicTrack)? _resolveLocalAudioDetail;
   final DateTime Function() _now;
   final _changes = StreamController<ListeningActivityView>.broadcast();
+  final _workUsageUpdates =
+      StreamController<List<ListeningWorkUsageUpdate>>.broadcast();
   ListeningActivityView? _view;
   Future<void> _tail = Future.value();
   Timer? _timer;
@@ -65,6 +75,13 @@ final class ListeningActivityService {
     if (view != null) events.addSync(view);
     events.onCancel = subscription.cancel;
   }, isBroadcast: true);
+
+  Stream<List<ListeningWorkUsageUpdate>> get workUsageUpdates =>
+      _workUsageUpdates.stream;
+
+  Future<Map<String, int>> loadWorkTotalMilliseconds(
+    Iterable<String> workKeys,
+  ) => _repository.loadWorkTotalMilliseconds(workKeys);
 
   Future<void> _serialize(Future<void> Function() action) {
     if (_disposeFuture != null) return Future<void>.value();
@@ -150,7 +167,7 @@ final class ListeningActivityService {
           );
           AudioDetail? detail;
           final resolveLocalAudioDetail = _resolveLocalAudioDetail;
-          if (!track.isRemoteAsmr && resolveLocalAudioDetail != null) {
+          if (!track.isRemoteMedia && resolveLocalAudioDetail != null) {
             detail =
                 localDetails[track.path] ??
                 await resolveLocalAudioDetail(track);
@@ -197,7 +214,8 @@ final class ListeningActivityService {
           ),
         );
       }
-      if (await _repository.importBatch(batch.id, days)) _needsReload = true;
+      final imported = await _repository.importBatch(batch.id, days);
+      if (imported) _needsReload = true;
       // Retry the complete batch if either the preference write or native ack
       // failed. Both database and interest imports are independently idempotent.
       await _recordInterests(batchId: batch.id, contributions: interests);
@@ -210,6 +228,52 @@ final class ListeningActivityService {
         contributions: circleInterests,
       );
       await _acknowledgeUsage([batch.id]);
+      if (imported && !_disposed && _workUsageUpdates.hasListener) {
+        final aggregated =
+            <String, ({MusicTrack track, int addedMs, int lastPlayedAtMs})>{};
+        for (final day in days) {
+          for (final work in day.works) {
+            if (work.milliseconds <= 0) continue;
+            final prev = aggregated[work.workKey];
+            if (prev == null) {
+              aggregated[work.workKey] = (
+                track: work.track,
+                addedMs: work.milliseconds,
+                lastPlayedAtMs: work.lastPlayedAtMs,
+              );
+            } else {
+              aggregated[work.workKey] = (
+                track: work.lastPlayedAtMs >= prev.lastPlayedAtMs
+                    ? work.track
+                    : prev.track,
+                addedMs: prev.addedMs + work.milliseconds,
+                lastPlayedAtMs: math.max(
+                  prev.lastPlayedAtMs,
+                  work.lastPlayedAtMs,
+                ),
+              );
+            }
+          }
+        }
+        if (aggregated.isNotEmpty) {
+          final totals = await _repository.loadWorkTotalMilliseconds(
+            aggregated.keys,
+          );
+          if (!_disposed) {
+            _workUsageUpdates.add(<ListeningWorkUsageUpdate>[
+              for (final entry in aggregated.entries)
+                (
+                  workKey: entry.key,
+                  track: entry.value.track,
+                  addedMilliseconds: entry.value.addedMs,
+                  totalMilliseconds:
+                      totals[entry.key] ?? entry.value.addedMs,
+                  lastPlayedAtMs: entry.value.lastPlayedAtMs,
+                ),
+            ]);
+          }
+        }
+      }
     }
     if (_needsReload) await _reload();
   });
@@ -326,6 +390,7 @@ final class ListeningActivityService {
     await _tail;
     _disposed = true;
     await _changes.close();
+    await _workUsageUpdates.close();
   }
 }
 

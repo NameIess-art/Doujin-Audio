@@ -947,6 +947,209 @@ void main() {
       expect(lateRequest.aborted, isTrue);
     },
   );
+
+  test(
+    'normalizes OpenAI-compatible and local Ollama endpoints accurately',
+    () {
+      expect(
+        TranslationServiceSettings.resolveChatCompletionsUri(
+          'http://127.0.0.1:11434',
+        ).toString(),
+        'http://127.0.0.1:11434/v1/chat/completions',
+      );
+      expect(
+        TranslationServiceSettings.resolveChatCompletionsUri(
+          'http://localhost:11434/api/chat',
+        ).toString(),
+        'http://localhost:11434/v1/chat/completions',
+      );
+      expect(
+        TranslationServiceSettings.resolveChatCompletionsUri(
+          'https://api.openai.com/v1/',
+        ).toString(),
+        'https://api.openai.com/v1/chat/completions',
+      );
+      expect(
+        TranslationServiceSettings.resolveChatCompletionsUri(
+          'https://ark.example.com/api/v3/chat/completions?api-version=2025',
+        ).toString(),
+        'https://ark.example.com/api/v3/chat/completions?api-version=2025',
+      );
+      expect(
+        TranslationServiceSettings.resolveModelsUri(
+          'https://api.deepseek.com',
+        ).toString(),
+        'https://api.deepseek.com/v1/models',
+      );
+      expect(
+        TranslationServiceSettings.resolveChatCompletionsUri('not a url'),
+        isNull,
+      );
+    },
+  );
+
+  test(
+    'routes script and subtitle scenes to custom LLM while keeping browse on Google by default',
+    () async {
+      final capturedPaths = <String>[];
+      final capturedAuth = <String?>[];
+      final capturedPayloads = <Map<String, dynamic>>[];
+
+      handler = (request) async {
+        capturedPaths.add(request.uri.path);
+        capturedAuth.add(
+          request.headers.value(HttpHeaders.authorizationHeader),
+        );
+        final rawBody = await utf8.decoder.bind(request).join();
+        if (request.uri.path == '/translate_a/t') {
+          final items = Uri(query: rawBody).queryParametersAll['q']!;
+          await respond(request, [for (final item in items) 'google:$item']);
+          return;
+        }
+        final decoded = jsonDecode(rawBody) as Map<String, dynamic>;
+        capturedPayloads.add(decoded);
+        final messages = (decoded['messages'] as List)
+            .cast<Map<String, dynamic>>();
+        final userJson =
+            jsonDecode(messages.last['content'] as String)
+                as Map<String, dynamic>;
+        final items = (userJson['items'] as Map<String, dynamic>)
+            .cast<String, String>();
+        final replyMap = <String, String>{
+          for (final entry in items.entries)
+            entry.key: 'llm:${entry.value}',
+        };
+        await respond(request, {
+          'choices': [
+            {
+              'message': {
+                'content':
+                    '<think>analyzing tone</think>\n```json\n${jsonEncode(replyMap)}\n```',
+              },
+            },
+          ],
+        });
+      };
+
+      service.configure(
+        TranslationServiceSettings(
+          provider: TranslationProviderKind.openAiCompatible,
+          apiBaseUrl: 'http://127.0.0.1:${server.port}/v1',
+          model: 'qwen2.5:7b',
+          customPrompt: '保持同人音声耳语语气',
+        ),
+      );
+
+      final browseResult = await service.translateInScene(
+        ['耳かきボイス'],
+        target: 'zh-CN',
+        request: service.newRequest(),
+      );
+      expect(browseResult.failure, isNull);
+      expect(browseResult.translations['耳かきボイス'], 'google:耳かきボイス');
+
+      final scriptResult = await service.translateInScene(
+        ['耳かきボイス'],
+        target: 'zh-CN',
+        scene: TextTranslationScene.script,
+        contextBefore: const ['ねえ、こっちに来て。'],
+        request: service.newRequest(),
+      );
+      expect(scriptResult.failure, isNull);
+      expect(scriptResult.translations['耳かきボイス'], 'llm:耳かきボイス');
+      expect(capturedPaths, ['/translate_a/t', '/v1/chat/completions']);
+      expect(capturedAuth, [isNull, isNull]);
+      expect(capturedPayloads.single['model'], 'qwen2.5:7b');
+      final systemText =
+          ((capturedPayloads.single['messages'] as List).first
+                  as Map<String, dynamic>)['content']
+              as String;
+      expect(systemText, contains('保持同人音声耳语语气'));
+      final userPayload =
+          jsonDecode(
+                ((capturedPayloads.single['messages'] as List).last
+                        as Map<String, dynamic>)['content']
+                    as String,
+              )
+              as Map<String, dynamic>;
+      expect(userPayload['context'], ['ねえ、こっちに来て。']);
+
+      // Cache entries stay isolated between Google and Custom LLM backends.
+      expect(
+        service.cachedInScene('耳かきボイス', 'zh-CN'),
+        'google:耳かきボイス',
+      );
+      expect(
+        service.cachedInScene(
+          '耳かきボイス',
+          'zh-CN',
+          scene: TextTranslationScene.script,
+        ),
+        'llm:耳かきボイス',
+      );
+    },
+  );
+
+  test(
+    'fetches models with Ollama tags fallback and validates custom test and auth errors',
+    () async {
+      handler = (request) async {
+        final auth = request.headers.value(HttpHeaders.authorizationHeader);
+        if (request.uri.path == '/v1/models') {
+          request.response.statusCode = HttpStatus.notFound;
+          await request.response.close();
+          return;
+        }
+        if (request.uri.path == '/api/tags') {
+          await respond(request, {
+            'models': [
+              {'name': 'qwen2.5:7b'},
+              {'name': 'gemma3:12b'},
+            ],
+          });
+          return;
+        }
+        if (auth != 'Bearer secret-token') {
+          request.response.statusCode = HttpStatus.unauthorized;
+          await request.response.close();
+          return;
+        }
+        await respond(request, {
+          'choices': [
+            {
+              'message': {
+                'content': jsonEncode({'0': '辛苦啦，今天也好好休息吧。'}),
+              },
+            },
+          ],
+        });
+      };
+
+      final models = await service.fetchAvailableModels(
+        apiBaseUrl: 'http://127.0.0.1:${server.port}',
+      );
+      expect(models, ['qwen2.5:7b', 'gemma3:12b']);
+
+      final configured = TranslationServiceSettings(
+        provider: TranslationProviderKind.openAiCompatible,
+        apiBaseUrl: 'http://127.0.0.1:${server.port}/v1',
+        model: 'qwen2.5:7b',
+        apiKeyConfigured: true,
+      );
+      final unauthorized = await service.testCustomConfiguration(
+        settings: configured,
+      );
+      expect(unauthorized.failure, TextTranslationFailure.unauthorized);
+
+      service.configure(configured, 'secret-token');
+      final authorized = await service.testCustomConfiguration(
+        settings: configured,
+        useSavedApiKeyIfEmpty: true,
+      );
+      expect(authorized.isSuccess, isTrue);
+      expect(authorized.sampleTranslation, '辛苦啦，今天也好好休息吧。');
+    },
+  );
 }
 
 final class _DelayedPostHttpClient extends Fake implements HttpClient {

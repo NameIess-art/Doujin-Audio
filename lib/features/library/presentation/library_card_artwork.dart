@@ -18,6 +18,7 @@ import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/library_like_cards.dart';
 import '../../../core/widgets/duration_overlay.dart';
+import '../../../core/widgets/work_listen_status_badge.dart';
 import '../../../core/widgets/page_translation_scope.dart';
 import '../../../core/translation/text_translation_service.dart';
 
@@ -335,10 +336,24 @@ class RootFolderCardContent extends StatelessWidget {
       index: index,
       trailingActions: trailingActions,
       coverBuilder: (detail) {
+        final i18n = ProviderScope.containerOf(
+          context,
+          listen: false,
+        ).read(appLanguageProviderInstanceProvider);
+        final status = detail?.listenStatus;
         return Stack(
           clipBehavior: Clip.none,
           children: [
             cover,
+            if (status != null)
+              Positioned(
+                left: 4,
+                top: 4,
+                child: WorkListenStatusBadge(
+                  status: status,
+                  label: i18n.tr(workListenStatusTranslationKey(status)),
+                ),
+              ),
             if ((detail?.duration ?? folderDuration) > Duration.zero)
               Positioned(
                 left: 4,
@@ -432,6 +447,8 @@ class AudioDetailWorkCardContent extends ConsumerWidget {
       tagsLabel: i18n.tr('library_category_tags'),
       releaseDateLabel: i18n.tr('card_info_release_date'),
       ratingLabel: i18n.tr('card_info_rating'),
+      userRatingLabel: i18n.tr('work_user_rating'),
+      reviewNoteLabel: i18n.tr('work_review_note'),
       loading: detailLoading || detail == null,
       trailingActions: trailingActions,
       coverBuilder: (_) => coverBuilder(detail),
@@ -491,12 +508,43 @@ class SingleAudioFileCardContent extends ConsumerWidget {
                   tags: metadata.tags.map(translate).toList(),
                   releaseDate: metadata.releaseDate,
                   rating: metadata.rating,
+                  userRating: metadata.userRating,
+                  hasReviewNote: metadata.hasReviewNote,
                 ),
           voiceActorLabel: i18n.tr('card_info_voice_actors'),
           circleLabel: i18n.tr('library_category_circles'),
           tagsLabel: i18n.tr('library_category_tags'),
           releaseDateLabel: i18n.tr('card_info_release_date'),
           ratingLabel: i18n.tr('card_info_rating'),
+          userRatingLabel: i18n.tr('work_user_rating'),
+          reviewNoteLabel: i18n.tr('work_review_note'),
+        );
+        final status = detail?.listenStatus;
+        final pinLeading = AnimatedPadding(
+          duration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : kAppMotionFast,
+          curve: kAppSpringCurve,
+          padding: EdgeInsets.only(right: isPinned ? AppSpacing.xs : 0),
+          child: AnimatedSize(
+            duration: MediaQuery.disableAnimationsOf(context)
+                ? Duration.zero
+                : kAppMotionFast,
+            curve: kAppSpringCurve,
+            alignment: Alignment.centerLeft,
+            child: SizedBox(
+              width: isPinned ? 22 : 0,
+              height: LibraryLikeCardMetrics.contentHeight / 5,
+              child: OverflowBox(
+                alignment: Alignment.centerLeft,
+                minWidth: 22,
+                maxWidth: 22,
+                minHeight: 22,
+                maxHeight: 22,
+                child: LibraryPinnedIndicator(path: path, isPinned: isPinned),
+              ),
+            ),
+          ),
         );
         // The text content bounds the selection overlay inside lazy lists.
         return Stack(
@@ -506,35 +554,23 @@ class SingleAudioFileCardContent extends ConsumerWidget {
               title: '${translate(parts.source)}${parts.suffix}',
               lines: lines,
               trailingActions: trailingActions,
-              titleLeading: AnimatedPadding(
-                duration: MediaQuery.disableAnimationsOf(context)
-                    ? Duration.zero
-                    : kAppMotionFast,
-                curve: kAppSpringCurve,
-                padding: EdgeInsets.only(right: isPinned ? AppSpacing.xs : 0),
-                child: AnimatedSize(
-                  duration: MediaQuery.disableAnimationsOf(context)
-                      ? Duration.zero
-                      : kAppMotionFast,
-                  curve: kAppSpringCurve,
-                  alignment: Alignment.centerLeft,
-                  child: SizedBox(
-                    width: isPinned ? 22 : 0,
-                    height: LibraryLikeCardMetrics.contentHeight / 5,
-                    child: OverflowBox(
-                      alignment: Alignment.centerLeft,
-                      minWidth: 22,
-                      maxWidth: 22,
-                      minHeight: 22,
-                      maxHeight: 22,
-                      child: LibraryPinnedIndicator(
-                        path: path,
-                        isPinned: isPinned,
-                      ),
+              titleLeading: status == null
+                  ? pinLeading
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        pinLeading,
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: WorkListenStatusBadge(
+                            status: status,
+                            label: i18n.tr(
+                              workListenStatusTranslationKey(status),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ),
-              ),
             ),
             Positioned(
               left: -2,
@@ -593,10 +629,24 @@ class SingleMediaFileCardContent extends StatelessWidget {
       index: index,
       trailingActions: trailingActions,
       coverBuilder: (detail) {
+        final i18n = ProviderScope.containerOf(
+          context,
+          listen: false,
+        ).read(appLanguageProviderInstanceProvider);
+        final status = detail?.listenStatus;
         return Stack(
           clipBehavior: Clip.none,
           children: [
             cover,
+            if (status != null)
+              Positioned(
+                left: 4,
+                top: 4,
+                child: WorkListenStatusBadge(
+                  status: status,
+                  label: i18n.tr(workListenStatusTranslationKey(status)),
+                ),
+              ),
             if ((detail?.duration ?? track.duration) > Duration.zero)
               Positioned(
                 left: 4,
@@ -645,5 +695,7 @@ LibraryLikeInfoMetadata _audioDetailMetadata(
     tags: detail?.tags ?? const [],
     releaseDate: detail?.releaseDate,
     rating: detail?.rating,
+    userRating: detail?.userRating,
+    hasReviewNote: detail?.reviewText.trim().isNotEmpty ?? false,
   );
 }

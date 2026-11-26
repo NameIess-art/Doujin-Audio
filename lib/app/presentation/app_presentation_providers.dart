@@ -212,6 +212,7 @@ class LibrarySortedSnapshotNotifier
     final needsDetails =
         criterion == LibrarySortCriterion.voiceActor ||
         criterion == LibrarySortCriterion.releaseDate ||
+        criterion == LibrarySortCriterion.userRating ||
         (workNameDisplay == WorkNameDisplay.workTitle &&
             nodes.any(
               (node) => node is FolderNode && node.isModuleNode,
@@ -224,6 +225,8 @@ class LibrarySortedSnapshotNotifier
               libraryFacade.detailCacheService.voiceActorRevision,
             LibrarySortCriterion.releaseDate =>
               libraryFacade.detailCacheService.releaseDateRevision,
+            LibrarySortCriterion.userRating =>
+              libraryFacade.detailCacheService.userRatingRevision,
             _ => libraryFacade.detailCacheService.workTitleRevision,
           },
         ),

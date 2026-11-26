@@ -206,7 +206,14 @@ class AsmrAuthService {
       );
     }
     try {
-      final session = await _apiService.checkSession(token);
+      final hasCachedFallback =
+          allowCachedFallbackOnNetworkError &&
+          await _storedAccountName() != null;
+      if (generation != _generation) return null;
+      final checking = _apiService.checkSession(token);
+      final session = await (hasCachedFallback
+          ? checking.timeout(const Duration(seconds: 8))
+          : checking);
       if (generation != _generation) return null;
       if (session == null || !session.isValid) {
         if (!await _commit(generation, _tokenStore.clearToken)) return null;

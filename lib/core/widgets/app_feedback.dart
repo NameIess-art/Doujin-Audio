@@ -37,6 +37,8 @@ class _FeedbackData {
     required this.duration,
     this.actionLabel,
     this.onAction,
+    this.secondaryActionLabel,
+    this.onSecondaryAction,
     required this.showCountdown,
     required this.showActionCountdown,
     required this.context,
@@ -52,6 +54,8 @@ class _FeedbackData {
   final Duration? duration;
   final String? actionLabel;
   final VoidCallback? onAction;
+  final String? secondaryActionLabel;
+  final VoidCallback? onSecondaryAction;
   final bool showCountdown;
   final bool showActionCountdown;
   final BuildContext context;
@@ -67,6 +71,8 @@ class _FeedbackData {
     Duration? duration,
     String? actionLabel,
     VoidCallback? onAction,
+    String? secondaryActionLabel,
+    VoidCallback? onSecondaryAction,
     bool? showCountdown,
     bool? showActionCountdown,
     BuildContext? context,
@@ -82,6 +88,8 @@ class _FeedbackData {
       duration: duration ?? this.duration,
       actionLabel: actionLabel ?? this.actionLabel,
       onAction: onAction ?? this.onAction,
+      secondaryActionLabel: secondaryActionLabel ?? this.secondaryActionLabel,
+      onSecondaryAction: onSecondaryAction ?? this.onSecondaryAction,
       showCountdown: showCountdown ?? this.showCountdown,
       showActionCountdown: showActionCountdown ?? this.showActionCountdown,
       context: context ?? this.context,
@@ -116,6 +124,8 @@ class _QueuedFeedback {
     required this.duration,
     this.actionLabel,
     this.onAction,
+    this.secondaryActionLabel,
+    this.onSecondaryAction,
     this.replacementGroup,
     this.replacementOwner,
     this.onDismissed,
@@ -135,6 +145,8 @@ class _QueuedFeedback {
   final Duration? duration;
   final String? actionLabel;
   final VoidCallback? onAction;
+  final String? secondaryActionLabel;
+  final VoidCallback? onSecondaryAction;
   final Object? replacementGroup;
   final Object? replacementOwner;
   final ValueChanged<AppFeedbackDismissReason>? onDismissed;
@@ -219,6 +231,8 @@ void showAppSnackBar(
   Duration? duration,
   String? actionLabel,
   VoidCallback? onAction,
+  String? secondaryActionLabel,
+  VoidCallback? onSecondaryAction,
   Object? replacementGroup,
   Object? replacementOwner,
   ValueChanged<AppFeedbackDismissReason>? onDismissed,
@@ -242,6 +256,8 @@ void showAppSnackBar(
                   : const Duration(seconds: 2)),
     actionLabel: actionLabel,
     onAction: onAction,
+    secondaryActionLabel: secondaryActionLabel,
+    onSecondaryAction: onSecondaryAction,
     replacementGroup: replacementGroup,
     replacementOwner: replacementOwner,
     onDismissed: onDismissed,
@@ -468,6 +484,8 @@ void _showTopFeedback(
   required Duration? duration,
   String? actionLabel,
   VoidCallback? onAction,
+  String? secondaryActionLabel,
+  VoidCallback? onSecondaryAction,
   Object? replacementGroup,
   Object? replacementOwner,
   ValueChanged<AppFeedbackDismissReason>? onDismissed,
@@ -503,6 +521,8 @@ void _showTopFeedback(
       duration: duration,
       actionLabel: actionLabel,
       onAction: onAction,
+      secondaryActionLabel: secondaryActionLabel,
+      onSecondaryAction: onSecondaryAction,
       replacementGroup: replacementGroup,
       replacementOwner: replacementOwner,
       onDismissed: onDismissed,
@@ -548,6 +568,8 @@ void _showTopFeedback(
       duration: duration,
       actionLabel: actionLabel,
       onAction: onAction,
+      secondaryActionLabel: secondaryActionLabel,
+      onSecondaryAction: onSecondaryAction,
       showCountdown: showCountdown,
       showActionCountdown: showActionCountdown,
       context: context,
@@ -578,6 +600,8 @@ void _showTopFeedback(
     duration: duration,
     actionLabel: actionLabel,
     onAction: onAction,
+    secondaryActionLabel: secondaryActionLabel,
+    onSecondaryAction: onSecondaryAction,
     showCountdown: showCountdown,
     showActionCountdown: showActionCountdown,
     context: context,
@@ -630,6 +654,8 @@ void _showTopFeedback(
           duration: queued.duration,
           actionLabel: queued.actionLabel,
           onAction: queued.onAction,
+          secondaryActionLabel: queued.secondaryActionLabel,
+          onSecondaryAction: queued.onSecondaryAction,
           replacementGroup: queued.replacementGroup,
           replacementOwner: queued.replacementOwner,
           onDismissed: queued.onDismissed,
@@ -742,6 +768,11 @@ void _showTopFeedback(
               currentData.actionLabel != null &&
               currentData.actionLabel!.trim().isNotEmpty &&
               currentData.onAction != null;
+          final hasSecondaryAction =
+              currentData.secondaryActionLabel != null &&
+              currentData.secondaryActionLabel!.trim().isNotEmpty &&
+              currentData.onSecondaryAction != null;
+          final hasAnyAction = hasAction || hasSecondaryAction;
 
           return Positioned(
             top:
@@ -779,6 +810,16 @@ void _showTopFeedback(
                                   ? '${currentData.actionLabel!} (${remainingSeconds}s)'
                                   : currentData.actionLabel!)
                             : null;
+                        final buttonStyle = appTextButtonStyle(
+                          style: TextButton.styleFrom(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: hasSecondaryAction ? 9 : 12,
+                            ),
+                            minimumSize: const Size(0, 36),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            shape: const StadiumBorder(),
+                          ),
+                        );
                         return Dismissible(
                           key: ValueKey<Object>(currentData.dismissKey),
                           onDismissed: (_) =>
@@ -798,10 +839,10 @@ void _showTopFeedback(
                                 message: currentData.message,
                                 appearance: appearance,
                                 countdownFraction: countdownFraction,
-                                remainingSeconds: hasAction
+                                remainingSeconds: hasAnyAction
                                     ? null
                                     : remainingSeconds,
-                                padding: hasAction
+                                padding: hasAnyAction
                                     ? const EdgeInsets.fromLTRB(10, 1, 10, 1)
                                     : const EdgeInsets.fromLTRB(
                                         10,
@@ -809,44 +850,69 @@ void _showTopFeedback(
                                         14,
                                         AppFeedbackSurface._verticalPadding,
                                       ),
-                                trailing: hasAction
-                                    ? TextButton(
-                                        key: ValueKey((
-                                          currentData.message,
-                                          currentData.actionLabel,
-                                        )),
-                                        style: appTextButtonStyle(
-                                          style: TextButton.styleFrom(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 12,
+                                trailing: hasAnyAction
+                                    ? Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (hasSecondaryAction)
+                                            TextButton(
+                                              key: ValueKey((
+                                                currentData.message,
+                                                currentData.secondaryActionLabel,
+                                              )),
+                                              style: buttonStyle,
+                                              onPressed: () {
+                                                if (dismissed ||
+                                                    !identical(
+                                                      dataNotifier.value,
+                                                      currentData,
+                                                    )) {
+                                                  return;
+                                                }
+                                                dismissEntry(
+                                                  AppFeedbackDismissReason
+                                                      .action,
+                                                );
+                                                currentData
+                                                    .onSecondaryAction!();
+                                              },
+                                              child: Text(
+                                                currentData
+                                                    .secondaryActionLabel!,
+                                              ),
                                             ),
-                                            minimumSize: const Size(0, 36),
-                                            tapTargetSize:
-                                                MaterialTapTargetSize.shrinkWrap,
-                                            shape: const StadiumBorder(),
-                                          ),
-                                        ),
-                                        onPressed: () {
-                                          if (dismissed ||
-                                              !identical(
-                                                dataNotifier.value,
-                                                currentData,
-                                              )) {
-                                            return;
-                                          }
-                                          dismissEntry(
-                                            AppFeedbackDismissReason.action,
-                                          );
-                                          currentData.onAction!();
-                                        },
-                                        child: Text(
-                                          resolvedActionLabel!,
-                                          style: const TextStyle(
-                                            fontFeatures: [
-                                              FontFeature.tabularFigures(),
-                                            ],
-                                          ),
-                                        ),
+                                          if (hasAction)
+                                            TextButton(
+                                              key: ValueKey((
+                                                currentData.message,
+                                                currentData.actionLabel,
+                                              )),
+                                              style: buttonStyle,
+                                              onPressed: () {
+                                                if (dismissed ||
+                                                    !identical(
+                                                      dataNotifier.value,
+                                                      currentData,
+                                                    )) {
+                                                  return;
+                                                }
+                                                dismissEntry(
+                                                  AppFeedbackDismissReason
+                                                      .action,
+                                                );
+                                                currentData.onAction!();
+                                              },
+                                              child: Text(
+                                                resolvedActionLabel!,
+                                                style: const TextStyle(
+                                                  fontFeatures: [
+                                                    FontFeature
+                                                        .tabularFigures(),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                        ],
                                       )
                                     : currentData.duration == null
                                     ? const SizedBox.square(

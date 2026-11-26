@@ -43,6 +43,8 @@ import '../../../core/widgets/glass_refresh_indicator.dart';
 import '../../../core/widgets/library_like_cards.dart';
 import '../../../core/widgets/playlist_icon.dart';
 import '../../../core/widgets/duration_overlay.dart';
+import '../../../core/widgets/work_listen_status_badge.dart';
+import '../../../core/widgets/horizontal_edge_fade_scroll.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/operation_feedback.dart';
@@ -804,6 +806,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     final primaryColor = Theme.of(context).colorScheme.primary;
     final controller = ref.read(asmrLibraryControllerProvider);
     if (controller == null) return;
+    clearAsmrUnavailableNotice(controller);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final beforeIds = controller
         .filteredWorksFor(_selectedCategory)
@@ -829,6 +832,18 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
         .categoryViewState(_selectedCategory)
         .operationError;
     if (refreshError != null) {
+      if (shouldShowAsmrUnavailableFeedback(refreshError)) {
+        consumeAsmrUnavailableNotice(controller, refreshError);
+        showAsmrUnavailableFeedback(
+          context: context,
+          i18n: i18n,
+          error: refreshError,
+          onRetry: () => unawaited(
+            _refreshCategoryWithFeedback(showSnackbar: showSnackbar),
+          ),
+        );
+        return;
+      }
       showAppSnackBar(
         context,
         localizedAsmrCatalogErrorText(i18n, refreshError),

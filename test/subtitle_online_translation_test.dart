@@ -476,4 +476,99 @@ void main() {
       );
     },
   );
+
+  test(
+    'switching custom LLM configuration invalidates old translation checkpoints and passes context',
+    () async {
+      final source = [
+        _cue('ねえ、聞こえてる？'),
+        _cue('もう少し近くに来てね。'),
+      ];
+      final recordedContexts = <List<String>>[];
+      final recordedScenes = <TextTranslationScene>[];
+      var signature = 'google';
+      var useCustom = false;
+      var prefix = 'google';
+
+      final translations = _SceneAwareTranslations(
+        signatureOf: (_) => signature,
+        usesCustomOf: (_) => useCustom,
+        onTranslate: (texts, scene, contextBefore) async {
+          recordedScenes.add(scene);
+          recordedContexts.add(List.of(contextBefore));
+          return TextTranslationResult(
+            translations: {
+              for (final text in texts) text: '$prefix:$text',
+            },
+          );
+        },
+      );
+      addTearDown(translations.dispose);
+      final engine = SubtitleAiEngine(translations: translations);
+
+      final googleDraft = await engine.prepareTranslation(
+        source,
+        'zh',
+        trackPath: 'switch_test.mp3',
+      );
+      expect(googleDraft.cues.first.text, contains('google:ねえ、聞こえてる？'));
+      expect(recordedScenes, [TextTranslationScene.subtitle]);
+
+      // Repeating with the same backend signature reuses the saved checkpoint.
+      recordedScenes.clear();
+      final cachedDraft = await engine.prepareTranslation(
+        source,
+        'zh',
+        trackPath: 'switch_test.mp3',
+      );
+      expect(cachedDraft.cues.first.text, contains('google:ねえ、聞こえてる？'));
+      expect(recordedScenes, isEmpty);
+
+      // Switching to a custom LLM signature invalidates the Google checkpoint.
+      signature = 'llm:qwen2.5-test';
+      useCustom = true;
+      prefix = 'llm';
+      final llmDraft = await engine.prepareTranslation(
+        source,
+        'zh',
+        trackPath: 'switch_test.mp3',
+      );
+      expect(recordedScenes, [TextTranslationScene.subtitle]);
+      expect(llmDraft.cues.first.text, contains('llm:ねえ、聞こえてる？'));
+      expect(llmDraft.cues.last.text, contains('llm:もう少し近くに来てね。'));
+    },
+  );
+}
+
+class _SceneAwareTranslations extends TextTranslationService {
+  _SceneAwareTranslations({
+    required this.signatureOf,
+    required this.usesCustomOf,
+    required this.onTranslate,
+  });
+
+  final String Function(TextTranslationScene) signatureOf;
+  final bool Function(TextTranslationScene) usesCustomOf;
+  final Future<TextTranslationResult> Function(
+    List<String>,
+    TextTranslationScene,
+    List<String>,
+  )
+  onTranslate;
+
+  @override
+  String backendSignatureFor(TextTranslationScene scene) => signatureOf(scene);
+
+  @override
+  bool usesCustomBackendFor(TextTranslationScene scene) => usesCustomOf(scene);
+
+  @override
+  Future<TextTranslationResult> translateInScene(
+    List<String> texts, {
+    required String target,
+    required TextTranslationRequest request,
+    String source = 'auto',
+    TextTranslationScene scene = TextTranslationScene.browse,
+    List<String> contextBefore = const <String>[],
+  }) => onTranslate(texts, scene, contextBefore);
 }

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/theme/app_design_tokens.dart';
 import '../../app/theme/app_styles.dart';
+import 'app_buttons.dart';
 import 'app_glass_surface.dart';
 import 'app_transitions.dart';
 import 'windows_smooth_scroll_controller.dart';
@@ -502,11 +503,15 @@ class AppDialog extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.md),
                 Flexible(
-                  child: scrollable
-                      ? SingleChildScrollView(
-                          child: content,
-                        ).withWindowsSmoothScroll()
-                      : content,
+                  // Paint row ink above the glass tint.
+                  child: Material(
+                    type: MaterialType.transparency,
+                    child: scrollable
+                        ? SingleChildScrollView(
+                            child: content,
+                          ).withWindowsSmoothScroll()
+                        : content,
+                  ),
                 ),
                 if (actions != null) ...[
                   const SizedBox(height: AppSpacing.lg),
@@ -591,23 +596,20 @@ class AppDialogActions extends StatelessWidget {
   const AppDialogActions({
     super.key,
     required this.children,
+    this.leading,
     this.forceVertical = false,
   });
 
   final List<Widget> children;
+  final Widget? leading;
   final bool forceVertical;
 
   @override
   Widget build(BuildContext context) {
     assert(children.isNotEmpty);
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final stackVertically =
-            forceVertical || children.length > 2 || constraints.maxWidth < 260;
-
-        if (stackVertically) {
-          return Column(
+    final actions = forceVertical
+        ? Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               for (var index = 0; index < children.length; index++) ...[
@@ -616,19 +618,25 @@ class AppDialogActions extends StatelessWidget {
                   const SizedBox(height: AppSpacing.sm),
               ],
             ],
+          )
+        : SizedBox(
+            width: double.infinity,
+            child: Wrap(
+              alignment: WrapAlignment.end,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 4,
+              children: children,
+            ),
           );
-        }
-
-        return Row(
-          children: [
-            for (var index = 0; index < children.length; index++) ...[
-              Expanded(child: children[index]),
-              if (index != children.length - 1)
-                const SizedBox(width: AppSpacing.md),
-            ],
-          ],
-        );
-      },
+    final leading = this.leading;
+    return AppModalActionStyleScope(
+      child: leading == null
+          ? actions
+          : Row(
+              spacing: AppSpacing.xs,
+              children: [leading, Expanded(child: actions)],
+            ),
     );
   }
 }

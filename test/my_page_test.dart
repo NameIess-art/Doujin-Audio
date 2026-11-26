@@ -239,7 +239,7 @@ void main() {
       await tester.tap(
         find.descendant(
           of: panel,
-          matching: find.widgetWithText(TextButton, i18n.tr('confirm')),
+          matching: find.widgetWithText(FilledButton, i18n.tr('confirm')),
         ),
       );
       await tester.pumpAndSettle();
@@ -2532,6 +2532,11 @@ class _ListeningRepository implements ListeningActivityRepository {
   List<ListeningHistoryEntry> history = const [];
   @override
   Future<List<ListeningDay>> loadDays() async => days;
+
+  @override
+  Future<Map<String, int>> loadWorkTotalMilliseconds(
+    Iterable<String> workKeys,
+  ) async => const <String, int>{};
 
   @override
   Future<int> countHistory() async => history.length;

@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:doujin_audio/core/widgets/app_bottom_sheet.dart';
 import 'package:doujin_audio/core/widgets/drag_only_scrollbar.dart';
 import 'package:doujin_audio/core/widgets/sort_options_bottom_sheet.dart';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -383,10 +385,19 @@ void main() {
   );
 
   testWidgets(
-    'sort options scroll between the fixed title and actions',
+    'sort options and their highlights stay between the fixed title and actions',
     (tester) async {
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        tester.view.physicalSize = const Size(360, 780);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+      }
+      final captureKey = GlobalKey();
       await tester.pumpWidget(
         MaterialApp(
+          builder: (context, child) =>
+              RepaintBoundary(key: captureKey, child: child),
           home: Scaffold(
             body: Builder(
               builder: (context) => TextButton(
@@ -399,7 +410,7 @@ void main() {
                   selectedCriterion: 0,
                   ascending: true,
                   groupByLibrary: false,
-                  title: 'Sort options',
+                  title: 'Sort by',
                   descriptionLabel: 'Order',
                   ascendingLabel: 'Ascending',
                   descendingLabel: 'Descending',
@@ -424,11 +435,47 @@ void main() {
       );
       final headerRect = tester.getRect(header);
       final actionsRect = tester.getRect(actions);
+      final bodyTop = tester.getTopLeft(body).dy;
+      final sampleX = headerRect.right - 60;
+
+      Future<(int, int, int)> highlightPixels() async {
+        final boundary =
+            captureKey.currentContext!.findRenderObject()!
+                as RenderRepaintBoundary;
+        final image = boundary.toImageSync();
+        try {
+          final bytes = (await tester.runAsync(image.toByteData))!;
+          int pixel(double y) =>
+              bytes.getUint32((y.floor() * image.width + sampleX.floor()) * 4);
+          return (
+            pixel(headerRect.bottom - 6),
+            pixel(bodyTop + 4),
+            pixel(bodyTop + 35),
+          );
+        } finally {
+          image.dispose();
+        }
+      }
+
+      final (headerBackground, optionHighlight, _) = await highlightPixels();
+      expect(optionHighlight, isNot(headerBackground));
+      // Move the first option behind the title while keeping it partly visible.
+      scroll.position.jumpTo(38);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Option 1'));
+      await tester.pumpAndSettle();
+      await tester.tapAt(Offset(sampleX, bodyTop + 4));
+      await tester.pumpAndSettle();
+      expect(await highlightPixels(), (
+        headerBackground,
+        optionHighlight,
+        headerBackground,
+      ));
 
       await tester.drag(body, const Offset(0, -200));
       await tester.pumpAndSettle();
 
-      expect(scroll.position.pixels, greaterThan(0));
+      expect(scroll.position.pixels, greaterThan(38));
       expect(tester.getRect(header), headerRect);
       expect(tester.getRect(actions), actionsRect);
       await tester.tap(find.text('Cancel'));

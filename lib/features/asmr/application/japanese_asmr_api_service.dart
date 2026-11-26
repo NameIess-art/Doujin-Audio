@@ -135,6 +135,7 @@ class JapaneseAsmrApiService {
           'Japanese ASMR request failed (${response.statusCode}).',
           statusCode: response.statusCode,
           uri: uri,
+          source: AsmrCatalogSource.japaneseAsmr,
         );
       }
       final completed = Completer<Uint8List>();

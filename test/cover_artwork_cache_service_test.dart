@@ -15,7 +15,6 @@ import 'package:doujin_audio/features/library/application/library_facade.dart';
 import 'package:doujin_audio/core/cache/app_cache_service.dart';
 import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:doujin_audio/features/library/application/cover_artwork_store.dart';
-import 'package:doujin_audio/features/library/application/cover_image_cache_policy.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
 
@@ -1496,16 +1495,17 @@ void main() {
         'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk'
         '+A8AAQUBAScY42YAAAAASUVORK5CYII=',
       );
+      const testMaxRemoteBytes = 64 * 1024;
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       server.listen((request) async {
         if (request.uri.path == '/valid') {
           request.response.add(pngBytes);
         } else if (request.uri.path == '/too-large') {
-          request.response.contentLength = maxCoverFileBytes + 1;
-          request.response.add(List<int>.filled(maxCoverFileBytes + 1, 0));
+          request.response.contentLength = testMaxRemoteBytes + 1;
+          request.response.add(List<int>.filled(testMaxRemoteBytes + 1, 0));
         } else if (request.uri.path == '/chunked-too-large') {
           request.response.headers.chunkedTransferEncoding = true;
-          request.response.add(List<int>.filled(maxCoverFileBytes + 1, 0));
+          request.response.add(List<int>.filled(testMaxRemoteBytes + 1, 0));
         } else {
           request.response.add(utf8.encode('not an image'));
         }
@@ -1518,6 +1518,7 @@ void main() {
       final cache = CoverArtworkCacheService(
         libraryService: LibraryService(),
         persistentDirectory: () async => directory,
+        maxRemoteCoverBytes: testMaxRemoteBytes,
       );
       addTearDown(cache.dispose);
       String url(String path) =>

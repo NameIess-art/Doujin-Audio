@@ -10,6 +10,7 @@ import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/media/playback_media_reference.dart';
+import '../../../core/network/remote_source_headers.dart';
 import '../../../core/cache/app_cache_service.dart';
 import '../../asmr/domain/asmr_media_sources.dart';
 import '../domain/audio_effects.dart';

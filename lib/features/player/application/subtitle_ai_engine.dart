@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:crispasr/crispasr.dart';
 import 'package:crypto/crypto.dart';
@@ -18,30 +20,72 @@ import '../../../core/platform/file_cache_platform_gateway.dart';
 import '../../../core/platform/windows_media_tools.dart';
 import '../../../core/translation/text_translation_service.dart';
 import '../../library/application/work_text_service.dart';
+import 'subtitle_asr_postprocess.dart';
 import 'subtitle_ctc_alignment.dart';
 import 'subtitle_generation.dart';
 import 'subtitle_model_store.dart';
 
 typedef SubtitleProgressCallback = void Function(SubtitleTaskProgress progress);
 
+typedef SubtitleAudioDecodeHandler =
+    Future<void> Function(
+      String source,
+      File output,
+      SubtitleProgressCallback? onProgress,
+      bool Function()? isCancelled,
+    );
+
+abstract interface class SubtitleTranscriptionDriver {
+  Future<VadWindowPlan> planWindow({
+    required Uint8List stereoS16Le,
+    required int windowStartFrame,
+    required bool isFinalWindow,
+  });
+
+  Future<List<AsrRawSegment>> transcribeSlice({
+    required int windowStartFrame,
+    required int startFrame,
+    required int endFrame,
+  });
+
+  Future<void> close();
+}
+
+typedef SubtitleTranscriptionDriverFactory =
+    Future<SubtitleTranscriptionDriver> Function(
+      String asrModelPath,
+      String vadModelPath,
+    );
+
 class SubtitleAiEngine {
   SubtitleAiEngine({
     SubtitleModelStore? models,
     FileCachePlatformGateway? files,
     TextTranslationService? translations,
+    SubtitleAudioDecodeHandler? stereoAudioDecoder,
+    SubtitleTranscriptionDriverFactory? transcriptionDriverFactory,
+    SubtitleAsrModelOption Function()? activeAsrModel,
   }) : _models = models ?? SubtitleModelStore(),
        _files = files ?? FileCachePlatformGateway.instance,
-       _translations = translations ?? TextTranslationService();
+       _translations = translations ?? TextTranslationService(),
+       _stereoAudioDecoder = stereoAudioDecoder,
+       _transcriptionDriverFactory = transcriptionDriverFactory,
+       _activeAsrModel =
+           activeAsrModel ?? (() => SubtitleModelStore.kotobaWhisperJa);
 
   final SubtitleModelStore _models;
   final FileCachePlatformGateway _files;
   final TextTranslationService _translations;
+  final SubtitleAudioDecodeHandler? _stereoAudioDecoder;
+  final SubtitleTranscriptionDriverFactory? _transcriptionDriverFactory;
+  final SubtitleAsrModelOption Function() _activeAsrModel;
   static final RegExp _lineBreakPattern = RegExp(r'\r?\n');
   static const int _checkpointBatchInterval = 5;
   static const Duration _checkpointTimeInterval = Duration(seconds: 10);
 
   SubtitleModelStore get modelStore => _models;
   TextTranslationService get translationService => _translations;
+  SubtitleAsrModelOption get currentAsrModel => _activeAsrModel();
 
   Future<SubtitleDraft?> prepareScript(
     String trackPath,
@@ -189,7 +233,24 @@ class SubtitleAiEngine {
           originals[index],
         ],
     ];
-    final identity = sha256.convert(utf8.encode(jsonEncode(input))).toString();
+    final backendSignature = _translations.backendSignatureFor(
+      TextTranslationScene.subtitle,
+    );
+    final useCustomBackend = _translations.usesCustomBackendFor(
+      TextTranslationScene.subtitle,
+    );
+    final maxBatchItems = useCustomBackend
+        ? textTranslationLlmBatchMaxItems
+        : textTranslationBatchMaxItems;
+    final maxBatchChars = useCustomBackend
+        ? textTranslationLlmBatchMaxCharacters
+        : textTranslationBatchMaxCharacters;
+    final identityPayload = backendSignature == 'google'
+        ? input
+        : <Object>[backendSignature, input];
+    final identity = sha256
+        .convert(utf8.encode(jsonEncode(identityPayload)))
+        .toString();
     final checkpoint = File(
       path.join(workDir.path, '${sourceIdentity}_v3_$identity.json'),
     );
@@ -243,17 +304,18 @@ class SubtitleAiEngine {
         // their text and serializes network batches with the same global limits.
         var end = offset;
         var characters = 0;
-        while (end < source.length &&
-            end - offset < textTranslationBatchMaxItems) {
+        while (end < source.length && end - offset < maxBatchItems) {
           final length = originals[end].length;
-          if (end > offset &&
-              characters + length > textTranslationBatchMaxCharacters) {
+          if (end > offset && characters + length > maxBatchChars) {
             break;
           }
           characters += length;
           end++;
         }
         final group = originals.sublist(offset, end);
+        final contextBefore = offset > 0
+            ? originals.sublist(math.max(0, offset - 4), offset)
+            : const <String>[];
         // Keep a cue's lines together so translation sees the complete sentence.
         final parts = group
             .map(
@@ -266,10 +328,12 @@ class SubtitleAiEngine {
             .expand((parts) => parts)
             .where(canTranslateText)
             .toList();
-        final task = _translations.translate(
+        final task = _translations.translateInScene(
           texts,
           target: targetLanguage == 'zh' ? 'zh-CN' : 'en',
           source: 'ja',
+          scene: TextTranslationScene.subtitle,
+          contextBefore: contextBefore,
           request: request,
         );
         final result = cancelled == null
@@ -377,12 +441,348 @@ class SubtitleAiEngine {
     ]);
   }
 
+  Future<List<String>> _ensureModelBundle(
+    List<SubtitleModelSpec> specs,
+    SubtitleProgressCallback? onProgress,
+    bool Function()? isCancelled,
+    Future<void>? cancellation,
+  ) async {
+    _checkCancelled(isCancelled);
+    void reportProgress(double fraction, int received, int total) {
+      if (isCancelled?.call() == true) return;
+      onProgress?.call(
+        SubtitleTaskProgress(
+          'download',
+          fraction,
+          '${(received / 1048576).toStringAsFixed(0)} / ${(total / 1048576).toStringAsFixed(0)} MiB',
+        ),
+      );
+    }
+
+    final snapshot = _models.bundleSnapshot(specs);
+    if (snapshot.active) {
+      reportProgress(snapshot.fraction, snapshot.received, snapshot.total);
+    }
+    final download = _models.ensureBundle(specs, onProgress: reportProgress);
+    if (cancellation == null) return download;
+    return Future.any<List<String>>([
+      download,
+      cancellation.then<List<String>>(
+        (_) => throw const SubtitleTaskCancelled(),
+      ),
+    ]);
+  }
+
+  Future<SubtitleDraft?> prepareTranscription(
+    String trackPath, {
+    SubtitleProgressCallback? onProgress,
+    bool Function()? isCancelled,
+    Future<void>? cancellation,
+  }) async {
+    _requireSupported();
+    _checkCancelled(isCancelled);
+    final asrOption = currentAsrModel;
+    final workDir = Directory(
+      path.join(
+        (await getApplicationSupportDirectory()).path,
+        'subtitle_progress',
+      ),
+    );
+    await workDir.create(recursive: true);
+    final trackSourceKey = sha256
+        .convert(utf8.encode(jsonEncode(['asr', trackPath])))
+        .toString();
+    final localStatSignature = await _localFileSignature(
+      trackPath,
+      asrOption.checkpointSignature,
+    );
+    if (localStatSignature != null) {
+      final fastCheckpoint = await _findCompletedLocalAsrCheckpoint(
+        workDir,
+        trackSourceKey,
+        localStatSignature,
+      );
+      if (fastCheckpoint != null) {
+        _checkCancelled(isCancelled);
+        final cues = buildSanitizedTranscriptionCues(
+          fastCheckpoint.segments,
+          maxDuration: Duration(
+            microseconds: (fastCheckpoint.totalFrames * 1000000) ~/ 16000,
+          ),
+        );
+        if (cues.isEmpty) return null;
+        return SubtitleDraft(
+          cues: cues,
+          kind: SubtitleDraftKind.transcription,
+          sourceLanguage: asrOption.supportedLanguages.first,
+        );
+      }
+    }
+
+    final modelPaths = await _ensureModelBundle(
+      asrOption.bundleSpecs,
+      onProgress,
+      isCancelled,
+      cancellation,
+    );
+    final vadModelPath = asrOption.vadModel != null ? modelPaths.first : '';
+    final asrModelPath = modelPaths.last;
+    _checkCancelled(isCancelled);
+
+    final decoded = File(
+      path.join(
+        (await getTemporaryDirectory()).path,
+        'asr_$trackSourceKey.s16le.pcm',
+      ),
+    );
+    try {
+      final decode = _stereoAudioDecoder;
+      if (decode != null) {
+        await decode(trackPath, decoded, onProgress, isCancelled);
+      } else {
+        await _decodeAudio(
+          trackPath,
+          decoded,
+          onProgress,
+          isCancelled,
+          channels: 2,
+          sampleFormat: 's16le',
+        );
+      }
+      final length = await decoded.length();
+      final totalFrames = length ~/ 4;
+      if (totalFrames <= 0) return null;
+
+      final asrIdentity = sha256
+          .convert(
+            utf8.encode(
+              jsonEncode([
+                trackPath,
+                totalFrames,
+                for (final spec in asrOption.bundleSpecs) spec.sha256,
+              ]),
+            ),
+          )
+          .toString();
+      final checkpoint = File(
+        path.join(workDir.path, 'asr_${trackSourceKey}_v1_$asrIdentity.json'),
+      );
+      await for (final entry in workDir.list()) {
+        final name = path.basename(entry.path);
+        if (entry is File &&
+            entry.path != checkpoint.path &&
+            name.startsWith('asr_${trackSourceKey}_')) {
+          await entry.delete();
+        }
+      }
+
+      final prior = await _readAsrCheckpoint(checkpoint, totalFrames);
+      _checkCancelled(isCancelled);
+      final maxDuration = Duration(
+        microseconds: (totalFrames * 1000000) ~/ 16000,
+      );
+      if (prior.nextFrame >= totalFrames) {
+        final cues = buildSanitizedTranscriptionCues(
+          prior.segments,
+          maxDuration: maxDuration,
+        );
+        if (cues.isEmpty) return null;
+        return SubtitleDraft(
+          cues: cues,
+          kind: SubtitleDraftKind.transcription,
+          sourceLanguage: 'ja',
+        );
+      }
+
+      onProgress?.call(const SubtitleTaskProgress('loading', 0, ''));
+      final factory = _transcriptionDriverFactory;
+      final driver = factory != null
+          ? await factory(asrModelPath, vadModelPath)
+          : await _SubtitleWorker.openTranscription(
+              asrModelPath,
+              vadModelPath,
+              backend: asrOption.backend,
+            );
+
+      var frameOffset = prior.nextFrame;
+      var lastPersistedFrame = frameOffset;
+      final segments = prior.segments.toList();
+      var windowsSinceCheckpoint = 0;
+      final checkpointClock = Stopwatch()..start();
+      var completedNormally = false;
+
+      Future<T> runCancellable<T>(Future<T> operation) {
+        if (cancellation == null) return operation;
+        return Future.any<T>([
+          operation,
+          cancellation.then<T>((_) => throw const SubtitleTaskCancelled()),
+        ]);
+      }
+
+      try {
+        final reader = await decoded.open();
+        try {
+          const windowFrames = 16000 * 60;
+          final initialFraction = (frameOffset / totalFrames).clamp(0.0, 1.0);
+          onProgress?.call(
+            SubtitleTaskProgress(
+              'transcribing',
+              initialFraction,
+              '${(initialFraction * 100).round()}%',
+            ),
+          );
+
+          while (frameOffset < totalFrames) {
+            _checkCancelled(isCancelled);
+            final currentFrames = math.min(
+              windowFrames,
+              totalFrames - frameOffset,
+            );
+            final isFinalWindow = frameOffset + currentFrames >= totalFrames;
+            await reader.setPosition(frameOffset * 4);
+            final expectedBytes = currentFrames * 4;
+            final bytes = await reader.read(expectedBytes);
+            if (bytes.length < 4) {
+              throw FileSystemException(
+                'Decoded audio is incomplete',
+                decoded.path,
+              );
+            }
+
+            final plan = await runCancellable(
+              driver.planWindow(
+                stereoS16Le: bytes,
+                windowStartFrame: frameOffset,
+                isFinalWindow: isFinalWindow,
+              ),
+            );
+            _checkCancelled(isCancelled);
+
+            for (final slice in plan.slices) {
+              _checkCancelled(isCancelled);
+              final sliceSegments = await runCancellable(
+                driver.transcribeSlice(
+                  windowStartFrame: frameOffset,
+                  startFrame: slice.startFrame,
+                  endFrame: slice.endFrame,
+                ),
+              );
+              _checkCancelled(isCancelled);
+              segments.addAll(sliceSegments);
+              final sliceEndFrame = math.min(
+                totalFrames,
+                frameOffset + slice.endFrame,
+              );
+              final sliceFraction = (sliceEndFrame / totalFrames).clamp(
+                0.0,
+                1.0,
+              );
+              onProgress?.call(
+                SubtitleTaskProgress(
+                  'transcribing',
+                  sliceFraction,
+                  '${(sliceFraction * 100).round()}%',
+                ),
+              );
+            }
+
+            final nextOffset = math.max(
+              frameOffset + 1,
+              math.min(totalFrames, plan.nextFrameOffset),
+            );
+            frameOffset = nextOffset;
+            windowsSinceCheckpoint++;
+            if (frameOffset >= totalFrames ||
+                windowsSinceCheckpoint >= 2 ||
+                checkpointClock.elapsed >= _checkpointTimeInterval) {
+              await _writeAsrCheckpoint(
+                checkpoint,
+                totalFrames: totalFrames,
+                nextFrame: frameOffset,
+                segments: segments,
+                fileSignature: localStatSignature,
+              );
+              lastPersistedFrame = frameOffset;
+              windowsSinceCheckpoint = 0;
+              checkpointClock.reset();
+            }
+
+            final fraction = (frameOffset / totalFrames).clamp(0.0, 1.0);
+            onProgress?.call(
+              SubtitleTaskProgress(
+                'transcribing',
+                fraction,
+                '${(fraction * 100).round()}%',
+              ),
+            );
+          }
+          completedNormally = true;
+        } finally {
+          try {
+            await reader.close();
+          } catch (error, stackTrace) {
+            AppLogService.warning(
+              'subtitle_ai_reader_close_failed',
+              error: error,
+              stackTrace: stackTrace,
+            );
+          }
+        }
+      } finally {
+        if (!completedNormally && frameOffset > lastPersistedFrame) {
+          try {
+            await _writeAsrCheckpoint(
+              checkpoint,
+              totalFrames: totalFrames,
+              nextFrame: frameOffset,
+              segments: segments,
+              fileSignature: localStatSignature,
+            );
+          } catch (_) {
+            // Preserve the original failure or cancellation.
+          }
+        }
+        await driver.close();
+      }
+
+      final cues = buildSanitizedTranscriptionCues(
+        segments,
+        maxDuration: maxDuration,
+      );
+      if (cues.isEmpty) return null;
+      return SubtitleDraft(
+        cues: cues,
+        kind: SubtitleDraftKind.transcription,
+        sourceLanguage: 'ja',
+      );
+    } finally {
+      if (await decoded.exists()) await decoded.delete();
+    }
+  }
+
+  static Future<String?> _localFileSignature(
+    String trackPath,
+    String modelSignature,
+  ) async {
+    if (trackPath.isEmpty ||
+        trackPath.startsWith('content://') ||
+        trackPath.startsWith('http://') ||
+        trackPath.startsWith('https://')) {
+      return null;
+    }
+    final stat = await File(trackPath).stat();
+    if (stat.type != FileSystemEntityType.file || stat.size <= 0) return null;
+    return '${stat.size}:${stat.modified.millisecondsSinceEpoch}:$modelSignature';
+  }
+
   Future<void> _decodeAudio(
     String source,
     File output,
     SubtitleProgressCallback? onProgress,
-    bool Function()? isCancelled,
-  ) async {
+    bool Function()? isCancelled, {
+    int channels = 1,
+    String sampleFormat = 'f32le',
+  }) async {
     if (await output.exists()) await output.delete();
     var input = source;
     if (Platform.isAndroid && source.startsWith('content://')) {
@@ -400,11 +800,11 @@ class SubtitleAiEngine {
       input,
       '-vn',
       '-ac',
-      '1',
+      '$channels',
       '-ar',
       '16000',
       '-f',
-      'f32le',
+      sampleFormat,
       output.path,
     ];
     onProgress?.call(
@@ -519,14 +919,192 @@ Future<void> _writeCheckpoint(
   await temporary.rename(file.path);
 }
 
-class _SubtitleWorker {
-  _SubtitleWorker(this._isolate, this._port, this._commands);
+typedef _AsrCheckpoint = ({
+  int totalFrames,
+  int nextFrame,
+  List<AsrRawSegment> segments,
+  String? fileSignature,
+});
+
+Future<_AsrCheckpoint?> _findCompletedLocalAsrCheckpoint(
+  Directory workDir,
+  String trackSourceKey,
+  String expectedSignature,
+) async {
+  if (!await workDir.exists()) return null;
+  await for (final entry in workDir.list()) {
+    final name = path.basename(entry.path);
+    if (entry is! File || !name.startsWith('asr_${trackSourceKey}_v1_')) {
+      continue;
+    }
+    try {
+      final data =
+          jsonDecode(await entry.readAsString()) as Map<String, dynamic>;
+      if (data['version'] != 1 || data['fileSignature'] != expectedSignature) {
+        continue;
+      }
+      final totalFrames = data['totalFrames'] as int;
+      final nextFrame = data['nextFrame'] as int;
+      if (totalFrames <= 0 || nextFrame < totalFrames) continue;
+      return (
+        totalFrames: totalFrames,
+        nextFrame: nextFrame,
+        segments: _decodeAsrSegments(data['segments'] as List),
+        fileSignature: expectedSignature,
+      );
+    } catch (_) {
+      continue;
+    }
+  }
+  return null;
+}
+
+Future<_AsrCheckpoint> _readAsrCheckpoint(
+  File file,
+  int expectedTotalFrames,
+) async {
+  if (!await file.exists()) {
+    return (
+      totalFrames: expectedTotalFrames,
+      nextFrame: 0,
+      segments: <AsrRawSegment>[],
+      fileSignature: null,
+    );
+  }
+  try {
+    final data = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+    if (data['version'] != 1 || data['totalFrames'] != expectedTotalFrames) {
+      return (
+        totalFrames: expectedTotalFrames,
+        nextFrame: 0,
+        segments: <AsrRawSegment>[],
+        fileSignature: null,
+      );
+    }
+    final nextFrame = (data['nextFrame'] as int).clamp(0, expectedTotalFrames);
+    return (
+      totalFrames: expectedTotalFrames,
+      nextFrame: nextFrame,
+      segments: _decodeAsrSegments(data['segments'] as List),
+      fileSignature: data['fileSignature'] as String?,
+    );
+  } catch (_) {
+    return (
+      totalFrames: expectedTotalFrames,
+      nextFrame: 0,
+      segments: <AsrRawSegment>[],
+      fileSignature: null,
+    );
+  }
+}
+
+List<AsrRawSegment> _decodeAsrSegments(List<dynamic> rawList) {
+  return rawList.map((item) {
+    final seg = item as List;
+    final rawWords = seg.length > 4 ? (seg[4] as List) : const <dynamic>[];
+    return AsrRawSegment(
+      text: seg[0] as String,
+      startSeconds: (seg[1] as num).toDouble(),
+      endSeconds: (seg[2] as num).toDouble(),
+      noSpeechProb: (seg[3] as num).toDouble(),
+      words: rawWords.map((wordItem) {
+        final w = wordItem as List;
+        return AsrWordTiming(
+          text: w[0] as String,
+          startSeconds: (w[1] as num).toDouble(),
+          endSeconds: (w[2] as num).toDouble(),
+        );
+      }).toList(growable: false),
+    );
+  }).toList();
+}
+
+Future<void> _writeAsrCheckpoint(
+  File file, {
+  required int totalFrames,
+  required int nextFrame,
+  required List<AsrRawSegment> segments,
+  String? fileSignature,
+}) async {
+  final temporary = File('${file.path}.tmp');
+  await temporary.writeAsString(
+    jsonEncode({
+      'version': 1,
+      'totalFrames': totalFrames,
+      'nextFrame': nextFrame,
+      'fileSignature': ?fileSignature,
+      'segments': segments
+          .map(
+            (seg) => [
+              seg.text,
+              seg.startSeconds,
+              seg.endSeconds,
+              seg.noSpeechProb,
+              [
+                for (final w in seg.words)
+                  [w.text, w.startSeconds, w.endSeconds],
+              ],
+            ],
+          )
+          .toList(),
+    }),
+    flush: true,
+  );
+  if (await file.exists()) await file.delete();
+  await temporary.rename(file.path);
+}
+
+class _SubtitleWorker implements SubtitleTranscriptionDriver {
+  _SubtitleWorker(
+    this._isolate,
+    this._port,
+    this._exitPort,
+    this._unexpectedExit,
+    this._commands, {
+    Duration defaultCloseTimeout = const Duration(seconds: 10),
+  }) : _defaultCloseTimeout = defaultCloseTimeout;
+
   final Isolate _isolate;
   final ReceivePort _port;
+  final ReceivePort _exitPort;
+  final Future<Never> _unexpectedExit;
   final SendPort _commands;
+  final Duration _defaultCloseTimeout;
 
-  static Future<_SubtitleWorker> open(String model) async {
+  static Future<_SubtitleWorker> open(String model) =>
+      _spawn([model], defaultCloseTimeout: const Duration(seconds: 10));
+
+  static Future<_SubtitleWorker> openTranscription(
+    String asrModel,
+    String vadModel, {
+    SubtitleAsrBackend backend = SubtitleAsrBackend.whisperWithVad,
+  }) => _spawn(
+    [asrModel, vadModel, backend.name],
+    defaultCloseTimeout: const Duration(seconds: 45),
+  );
+
+  static Future<_SubtitleWorker> _spawn(
+    List<Object> extraArgs, {
+    required Duration defaultCloseTimeout,
+  }) async {
     final port = ReceivePort();
+    final exitPort = ReceivePort();
+    final exitSignal = Completer<Object?>();
+    exitPort.listen((message) {
+      if (!exitSignal.isCompleted) {
+        exitSignal.complete(message);
+      }
+    });
+    final Future<Never> unexpectedExit = exitSignal.future.then(
+      (detail) => throw StateError(
+        detail == null
+            ? 'Subtitle worker isolate exited unexpectedly'
+            : 'Subtitle worker isolate failed: $detail',
+      ),
+    );
+    // Prevent unhandled async error if the isolate exits during normal close().
+    unexpectedExit.ignore();
+
     final ready = Completer<SendPort>();
     final subscription = port.listen((message) {
       if (!ready.isCompleted) {
@@ -539,19 +1117,36 @@ class _SubtitleWorker {
     });
     final Isolate isolate;
     try {
-      isolate = await Isolate.spawn(_workerMain, [port.sendPort, model]);
+      isolate = await Isolate.spawn(
+        _workerMain,
+        [port.sendPort, ...extraArgs],
+        onExit: exitPort.sendPort,
+        onError: exitPort.sendPort,
+      );
     } catch (_) {
       await subscription.cancel();
+      exitPort.close();
       port.close();
       rethrow;
     }
     try {
-      final commands = await ready.future.timeout(const Duration(minutes: 5));
+      final commands = await Future.any<SendPort>([
+        ready.future,
+        unexpectedExit,
+      ]).timeout(const Duration(minutes: 5));
       await subscription.cancel();
-      return _SubtitleWorker(isolate, port, commands);
+      return _SubtitleWorker(
+        isolate,
+        port,
+        exitPort,
+        unexpectedExit,
+        commands,
+        defaultCloseTimeout: defaultCloseTimeout,
+      );
     } catch (_) {
       await subscription.cancel();
       isolate.kill(priority: Isolate.immediate);
+      exitPort.close();
       port.close();
       rethrow;
     }
@@ -562,7 +1157,11 @@ class _SubtitleWorker {
     try {
       _commands.send([reply.sendPort, action, payload]);
       final result =
-          await reply.first.timeout(const Duration(minutes: 10)) as List;
+          await Future.any<Object?>([
+                reply.first,
+                _unexpectedExit,
+              ]).timeout(const Duration(minutes: 10))
+              as List;
       if (result[0] != true) {
         if (result[1] == 'alignment_too_large') {
           throw const SubtitleAlignmentTooLarge();
@@ -602,12 +1201,50 @@ class _SubtitleWorker {
     }).toList();
   }
 
-  Future<void> close({Duration timeout = const Duration(seconds: 10)}) async {
+  @override
+  Future<VadWindowPlan> planWindow({
+    required Uint8List stereoS16Le,
+    required int windowStartFrame,
+    required bool isFinalWindow,
+  }) async {
+    final raw = await _request('vadWindow', [
+      TransferableTypedData.fromList([stereoS16Le]),
+      windowStartFrame,
+      isFinalWindow,
+    ]) as List;
+    final nextFrameOffset = raw[0] as int;
+    final rawSlices = raw[1] as List;
+    return VadWindowPlan(
+      nextFrameOffset: nextFrameOffset,
+      slices: rawSlices.map((item) {
+        final pair = item as List;
+        return (startFrame: pair[0] as int, endFrame: pair[1] as int);
+      }).toList(growable: false),
+    );
+  }
+
+  @override
+  Future<List<AsrRawSegment>> transcribeSlice({
+    required int windowStartFrame,
+    required int startFrame,
+    required int endFrame,
+  }) async {
+    final raw = await _request('transcribeWindowSlice', [
+      windowStartFrame,
+      startFrame,
+      endFrame,
+    ]) as List;
+    return _decodeAsrSegments(raw);
+  }
+
+  @override
+  Future<void> close({Duration? timeout}) async {
+    final effectiveTimeout = timeout ?? _defaultCloseTimeout;
     final reply = ReceivePort();
     var timedOut = false;
     try {
       _commands.send([reply.sendPort, 'close', null]);
-      await reply.first.timeout(timeout);
+      await reply.first.timeout(effectiveTimeout);
     } on TimeoutException catch (error, stackTrace) {
       timedOut = true;
       AppLogService.warning(
@@ -626,6 +1263,7 @@ class _SubtitleWorker {
       _isolate.kill(
         priority: timedOut ? Isolate.immediate : Isolate.beforeNextEvent,
       );
+      _exitPort.close();
       _port.close();
     }
   }
@@ -634,18 +1272,39 @@ class _SubtitleWorker {
 Future<void> _workerMain(List<Object> args) async {
   final outgoing = args[0] as SendPort;
   final model = args[1] as String;
+  final vadModel = args.length > 2 ? args[2] as String : null;
+  final asrBackendName = args.length > 3
+      ? args[3] as String
+      : SubtitleAsrBackend.whisperWithVad.name;
+  final useQwen3Session =
+      asrBackendName == SubtitleAsrBackend.qwen3WithVad.name;
   final incoming = ReceivePort();
+  final nThreads = Platform.isWindows
+      ? math.min(12, Platform.numberOfProcessors)
+      : (vadModel != null
+            ? math.min(6, math.max(4, Platform.numberOfProcessors - 2))
+            : 4);
   CrispasrSession? asr;
+  _NativeWhisperRuntime? whisper;
+  Float32List? currentWindowMono;
   SubtitleCtcAlignment? scriptAlignment;
   SendPort? closeReply;
   try {
-    asr = CrispasrSession.open(
-      model,
-      backend: 'wav2vec2',
-      nThreads: Platform.isWindows
-          ? math.min(12, Platform.numberOfProcessors)
-          : 4,
-    );
+    if (vadModel != null) {
+      whisper = useQwen3Session
+          ? _NativeWhisperRuntime.openSession(
+              model,
+              backend: 'qwen3',
+              nThreads: nThreads,
+            )
+          : _NativeWhisperRuntime.open(model);
+    } else {
+      asr = CrispasrSession.open(
+        model,
+        backend: 'wav2vec2',
+        nThreads: nThreads,
+      );
+    }
     outgoing.send(incoming.sendPort);
     await for (final message in incoming) {
       final command = message as List;
@@ -659,7 +1318,7 @@ Future<void> _workerMain(List<Object> args) async {
         switch (action) {
           case 'beginScriptAlignment':
             final input = command[2] as List;
-            final vocab = asr.ctcVocab();
+            final vocab = asr!.ctcVocab();
             if (vocab == null || vocab.isEmpty || vocab[0] != '<pad>') {
               throw StateError('CTC vocabulary is unavailable');
             }
@@ -677,7 +1336,7 @@ Future<void> _workerMain(List<Object> args) async {
                 .asFloat32List();
             final start = data[1] as double;
             final duration = data[2] as double;
-            final (_, logits) = asr.transcribeWithLogits(pcm);
+            final (_, logits) = asr!.transcribeWithLogits(pcm);
             if (logits == null) {
               scriptAlignment!.addSilence(
                 startSeconds: start,
@@ -705,6 +1364,83 @@ Future<void> _workerMain(List<Object> args) async {
                   )
                   .toList(),
             ]);
+          case 'vadWindow':
+            final data = command[2] as List;
+            final stereoBytes = (data[0] as TransferableTypedData)
+                .materialize()
+                .asUint8List();
+            final windowStartFrame = data[1] as int;
+            final isFinalWindow = data[2] as bool;
+            final mono = downmixBinauralS16LeToMonoF32(stereoBytes);
+            currentWindowMono = mono;
+            final maxSliceSec = useQwen3Session ? 12.0 : 26.0;
+            final mergeGapSec = useQwen3Session ? 0.45 : 1.8;
+            final spans = whisper!.vadSlices(
+              mono,
+              modelPath: vadModel!,
+              nThreads: nThreads,
+              maxSegmentSeconds: maxSliceSec,
+            );
+            final plan = planVadWindowSlices(
+              windowStartFrame: windowStartFrame,
+              windowFrameCount: mono.length,
+              isFinalWindow: isFinalWindow,
+              spans: spans,
+              mergeGapSeconds: mergeGapSec,
+              maxSliceSeconds: maxSliceSec,
+            );
+            reply!.send([
+              true,
+              [
+                plan.nextFrameOffset,
+                [
+                  for (final slice in plan.slices)
+                    [slice.startFrame, slice.endFrame],
+                ],
+              ],
+            ]);
+          case 'transcribeWindowSlice':
+            final data = command[2] as List;
+            final windowStartFrame = data[0] as int;
+            final startFrame = data[1] as int;
+            final endFrame = data[2] as int;
+            final mono = currentWindowMono;
+            if (mono == null ||
+                startFrame < 0 ||
+                endFrame > mono.length ||
+                endFrame <= startFrame) {
+              reply!.send([true, const <Object>[]]);
+              break;
+            }
+            final normalized = normalizeWhisperSlice(
+              Float32List.sublistView(mono, startFrame, endFrame),
+            );
+            if (normalized == null) {
+              reply!.send([true, const <Object>[]]);
+              break;
+            }
+            final offsetSec = (windowStartFrame + startFrame) / 16000.0;
+            final decodedSegments = whisper!.transcribePcm(
+              normalized,
+              nThreads: nThreads,
+              offsetSeconds: offsetSec,
+            );
+            reply!.send([
+              true,
+              [
+                for (final seg in decodedSegments)
+                  [
+                    seg.text,
+                    seg.startSeconds,
+                    seg.endSeconds,
+                    seg.noSpeechProb,
+                    [
+                      for (final word in seg.words)
+                        [word.text, word.startSeconds, word.endSeconds],
+                    ],
+                  ],
+              ],
+            ]);
         }
       } on SubtitleAlignmentTooLarge {
         reply?.send([false, 'alignment_too_large']);
@@ -715,8 +1451,631 @@ Future<void> _workerMain(List<Object> args) async {
   } catch (error) {
     outgoing.send(error.toString());
   } finally {
+    currentWindowMono = null;
+    whisper?.dispose();
     asr?.close();
     closeReply?.send([true, null]);
     incoming.close();
+  }
+}
+
+/// Direct C-ABI binding over `libcrispasr` for Whisper VAD + transcription.
+///
+/// `package:crispasr`'s high-level `CrispASR.transcribePcm(wordTimestamps: true)`
+/// decodes each raw BPE token via `Utf8Pointer.toDartString()`, which throws
+/// `FormatException` whenever a multi-byte UTF-8 CJK character is split across
+/// byte-level BPE tokens. Reading raw C byte slices and reassembling complete
+/// UTF-8 sequences preserves character-level timestamps safely.
+class _NativeWhisperRuntime {
+  _NativeWhisperRuntime._({
+    required DynamicLibrary lib,
+    required DynamicLibrary crt,
+    Pointer<Void>? ctx,
+    Pointer<Void>? session,
+  }) : _ctx = ctx ?? nullptr,
+       _session = session ?? nullptr,
+       _malloc = crt.lookupFunction<
+         Pointer<Void> Function(IntPtr),
+         Pointer<Void> Function(int)
+       >('malloc'),
+       _free = crt.lookupFunction<
+         Void Function(Pointer<Void>),
+         void Function(Pointer<Void>)
+       >('free'),
+       _whisperFree = (ctx ?? nullptr) == nullptr
+           ? null
+           : lib.lookupFunction<
+               Void Function(Pointer<Void>),
+               void Function(Pointer<Void>)
+             >('whisper_free'),
+       _defaultFullParams = (ctx ?? nullptr) == nullptr
+           ? null
+           : lib.lookupFunction<
+               Pointer<Void> Function(Int32),
+               Pointer<Void> Function(int)
+             >('whisper_full_default_params_by_ref'),
+       _freeFullParams = (ctx ?? nullptr) == nullptr
+           ? null
+           : lib.lookupFunction<
+               Void Function(Pointer<Void>),
+               void Function(Pointer<Void>)
+             >('whisper_free_params'),
+       _fullByRef = (ctx ?? nullptr) == nullptr
+           ? null
+           : lib.lookupFunction<
+               Int32 Function(
+                 Pointer<Void>,
+                 Pointer<Void>,
+                 Pointer<Float>,
+                 Int32,
+               ),
+               int Function(Pointer<Void>, Pointer<Void>, Pointer<Float>, int)
+             >('whisper_full_by_ref'),
+       _setLanguage = (ctx ?? nullptr) == nullptr
+           ? null
+           : lib.lookupFunction<
+               Void Function(Pointer<Void>, Pointer<Uint8>),
+               void Function(Pointer<Void>, Pointer<Uint8>)
+             >('crispasr_params_set_language'),
+       _setNThreads = (ctx ?? nullptr) == nullptr
+           ? null
+           : lib.lookupFunction<
+               Void Function(Pointer<Void>, Int32),
+               void Function(Pointer<Void>, int)
+             >('crispasr_params_set_n_threads'),
+       _setTokenTimestamps = (ctx ?? nullptr) == nullptr
+           ? null
+           : lib.lookupFunction<
+               Void Function(Pointer<Void>, Int32),
+               void Function(Pointer<Void>, int)
+             >('crispasr_params_set_token_timestamps'),
+       _setNoContext = (ctx ?? nullptr) == nullptr
+           ? null
+           : lib.lookupFunction<
+               Void Function(Pointer<Void>, Int32),
+               void Function(Pointer<Void>, int)
+             >('crispasr_params_set_no_context'),
+       _setPrintRealtime = (ctx ?? nullptr) == nullptr
+           ? null
+           : lib.lookupFunction<
+               Void Function(Pointer<Void>, Int32),
+               void Function(Pointer<Void>, int)
+             >('crispasr_params_set_print_realtime'),
+       _setPrintProgress = (ctx ?? nullptr) == nullptr
+           ? null
+           : lib.lookupFunction<
+               Void Function(Pointer<Void>, Int32),
+               void Function(Pointer<Void>, int)
+             >('crispasr_params_set_print_progress'),
+       _setPrintTimestamps = (ctx ?? nullptr) == nullptr
+           ? null
+           : lib.lookupFunction<
+               Void Function(Pointer<Void>, Int32),
+               void Function(Pointer<Void>, int)
+             >('crispasr_params_set_print_timestamps'),
+       _setPrintSpecial = (ctx ?? nullptr) == nullptr
+           ? null
+           : lib.lookupFunction<
+               Void Function(Pointer<Void>, Int32),
+               void Function(Pointer<Void>, int)
+             >('crispasr_params_set_print_special'),
+       _nSegments = (ctx ?? nullptr) == nullptr
+           ? null
+           : lib.lookupFunction<
+               Int32 Function(Pointer<Void>),
+               int Function(Pointer<Void>)
+             >('whisper_full_n_segments'),
+       _segmentText = (ctx ?? nullptr) == nullptr
+           ? null
+           : lib.lookupFunction<
+               Pointer<Uint8> Function(Pointer<Void>, Int32),
+               Pointer<Uint8> Function(Pointer<Void>, int)
+             >('whisper_full_get_segment_text'),
+       _segmentT0 = (ctx ?? nullptr) == nullptr
+           ? null
+           : lib.lookupFunction<
+               Int64 Function(Pointer<Void>, Int32),
+               int Function(Pointer<Void>, int)
+             >('whisper_full_get_segment_t0'),
+       _segmentT1 = (ctx ?? nullptr) == nullptr
+           ? null
+           : lib.lookupFunction<
+               Int64 Function(Pointer<Void>, Int32),
+               int Function(Pointer<Void>, int)
+             >('whisper_full_get_segment_t1'),
+       _segmentNoSpeechProb = (ctx ?? nullptr) == nullptr
+           ? null
+           : lib.lookupFunction<
+               Float Function(Pointer<Void>, Int32),
+               double Function(Pointer<Void>, int)
+             >('whisper_full_get_segment_no_speech_prob'),
+       _nTokens = (ctx ?? nullptr) == nullptr
+           ? null
+           : lib.lookupFunction<
+               Int32 Function(Pointer<Void>, Int32),
+               int Function(Pointer<Void>, int)
+             >('whisper_full_n_tokens'),
+       _tokenId = (ctx ?? nullptr) == nullptr
+           ? null
+           : lib.lookupFunction<
+               Int32 Function(Pointer<Void>, Int32, Int32),
+               int Function(Pointer<Void>, int, int)
+             >('whisper_full_get_token_id'),
+       _tokenText = (ctx ?? nullptr) == nullptr
+           ? null
+           : lib.lookupFunction<
+               Pointer<Uint8> Function(Pointer<Void>, Int32, Int32),
+               Pointer<Uint8> Function(Pointer<Void>, int, int)
+             >('whisper_full_get_token_text'),
+       _tokenT0 = (ctx ?? nullptr) == nullptr
+           ? null
+           : lib.lookupFunction<
+               Int64 Function(Pointer<Void>, Int32, Int32),
+               int Function(Pointer<Void>, int, int)
+             >('crispasr_token_t0'),
+       _tokenT1 = (ctx ?? nullptr) == nullptr
+           ? null
+           : lib.lookupFunction<
+               Int64 Function(Pointer<Void>, Int32, Int32),
+               int Function(Pointer<Void>, int, int)
+             >('crispasr_token_t1'),
+       _tokenEot = (ctx ?? nullptr) == nullptr
+           ? null
+           : lib.lookupFunction<
+               Int32 Function(Pointer<Void>),
+               int Function(Pointer<Void>)
+             >('whisper_token_eot'),
+       _sessionClose = (session ?? nullptr) == nullptr
+           ? null
+           : lib.lookupFunction<
+               Void Function(Pointer<Void>),
+               void Function(Pointer<Void>)
+             >('crispasr_session_close'),
+       _sessionTranscribeLang = (session ?? nullptr) == nullptr
+           ? null
+           : lib.lookupFunction<
+               Pointer<Void> Function(
+                 Pointer<Void>,
+                 Pointer<Float>,
+                 Int32,
+                 Pointer<Uint8>,
+               ),
+               Pointer<Void> Function(
+                 Pointer<Void>,
+                 Pointer<Float>,
+                 int,
+                 Pointer<Uint8>,
+               )
+             >('crispasr_session_transcribe_lang'),
+       _sessionResultNSegments = (session ?? nullptr) == nullptr
+           ? null
+           : lib.lookupFunction<
+               Int32 Function(Pointer<Void>),
+               int Function(Pointer<Void>)
+             >('crispasr_session_result_n_segments'),
+       _sessionResultSegmentText = (session ?? nullptr) == nullptr
+           ? null
+           : lib.lookupFunction<
+               Pointer<Uint8> Function(Pointer<Void>, Int32),
+               Pointer<Uint8> Function(Pointer<Void>, int)
+             >('crispasr_session_result_segment_text'),
+       _sessionResultSegmentT0 = (session ?? nullptr) == nullptr
+           ? null
+           : lib.lookupFunction<
+               Int64 Function(Pointer<Void>, Int32),
+               int Function(Pointer<Void>, int)
+             >('crispasr_session_result_segment_t0'),
+       _sessionResultSegmentT1 = (session ?? nullptr) == nullptr
+           ? null
+           : lib.lookupFunction<
+               Int64 Function(Pointer<Void>, Int32),
+               int Function(Pointer<Void>, int)
+             >('crispasr_session_result_segment_t1'),
+       _sessionResultFree = (session ?? nullptr) == nullptr
+           ? null
+           : lib.lookupFunction<
+               Void Function(Pointer<Void>),
+               void Function(Pointer<Void>)
+             >('crispasr_session_result_free'),
+       _vadSlices = lib.lookupFunction<
+         Int32 Function(
+           Pointer<Uint8>,
+           Pointer<Float>,
+           Int32,
+           Int32,
+           Float,
+           Int32,
+           Int32,
+           Int32,
+           Float,
+           Int32,
+           Pointer<Pointer<Float>>,
+         ),
+         int Function(
+           Pointer<Uint8>,
+           Pointer<Float>,
+           int,
+           int,
+           double,
+           int,
+           int,
+           int,
+           double,
+           int,
+           Pointer<Pointer<Float>>,
+         )
+       >('crispasr_vad_slices'),
+       _vadFree = lib.lookupFunction<
+         Void Function(Pointer<Float>),
+         void Function(Pointer<Float>)
+       >('crispasr_vad_free');
+
+  factory _NativeWhisperRuntime.open(String modelPath) {
+    final lib = DynamicLibrary.open(CrispASR.defaultLibName());
+    final crt = Platform.isWindows
+        ? DynamicLibrary.open('ucrtbase.dll')
+        : DynamicLibrary.process();
+    final mallocFn = crt.lookupFunction<
+      Pointer<Void> Function(IntPtr),
+      Pointer<Void> Function(int)
+    >('malloc');
+    final freeFn = crt.lookupFunction<
+      Void Function(Pointer<Void>),
+      void Function(Pointer<Void>)
+    >('free');
+    final defaultCtxParams = lib.lookupFunction<
+      Pointer<Void> Function(),
+      Pointer<Void> Function()
+    >('whisper_context_default_params_by_ref');
+    final freeCtxParams = lib.lookupFunction<
+      Void Function(Pointer<Void>),
+      void Function(Pointer<Void>)
+    >('whisper_free_context_params');
+    final initByRef = lib.lookupFunction<
+      Pointer<Void> Function(Pointer<Uint8>, Pointer<Void>),
+      Pointer<Void> Function(Pointer<Uint8>, Pointer<Void>)
+    >('whisper_init_from_file_with_params_by_ref');
+
+    final encodedPath = utf8.encode(modelPath);
+    final pathPtr = mallocFn(encodedPath.length + 1).cast<Uint8>();
+    if (pathPtr == nullptr) {
+      throw StateError('Failed to allocate native model path');
+    }
+    if (encodedPath.isNotEmpty) {
+      pathPtr.asTypedList(encodedPath.length).setAll(0, encodedPath);
+    }
+    pathPtr[encodedPath.length] = 0;
+
+    final ctxParams = defaultCtxParams();
+    Pointer<Void> ctx = nullptr;
+    try {
+      ctx = initByRef(pathPtr, ctxParams);
+    } finally {
+      if (ctxParams != nullptr) freeCtxParams(ctxParams);
+      freeFn(pathPtr.cast());
+    }
+    if (ctx == nullptr) {
+      throw StateError('Failed to load Whisper model: $modelPath');
+    }
+    return _NativeWhisperRuntime._(lib: lib, crt: crt, ctx: ctx);
+  }
+
+  factory _NativeWhisperRuntime.openSession(
+    String modelPath, {
+    required String backend,
+    required int nThreads,
+  }) {
+    final lib = DynamicLibrary.open(CrispASR.defaultLibName());
+    final crt = Platform.isWindows
+        ? DynamicLibrary.open('ucrtbase.dll')
+        : DynamicLibrary.process();
+    final mallocFn = crt.lookupFunction<
+      Pointer<Void> Function(IntPtr),
+      Pointer<Void> Function(int)
+    >('malloc');
+    final freeFn = crt.lookupFunction<
+      Void Function(Pointer<Void>),
+      void Function(Pointer<Void>)
+    >('free');
+    final openExplicit = lib.lookupFunction<
+      Pointer<Void> Function(Pointer<Uint8>, Pointer<Uint8>, Int32),
+      Pointer<Void> Function(Pointer<Uint8>, Pointer<Uint8>, int)
+    >('crispasr_session_open_explicit');
+
+    final encodedPath = utf8.encode(modelPath);
+    final encodedBackend = utf8.encode(backend);
+    final pathPtr = mallocFn(encodedPath.length + 1).cast<Uint8>();
+    final backendPtr = mallocFn(encodedBackend.length + 1).cast<Uint8>();
+    if (pathPtr == nullptr || backendPtr == nullptr) {
+      if (pathPtr != nullptr) freeFn(pathPtr.cast());
+      if (backendPtr != nullptr) freeFn(backendPtr.cast());
+      throw StateError('Failed to allocate native session open arguments');
+    }
+    if (encodedPath.isNotEmpty) {
+      pathPtr.asTypedList(encodedPath.length).setAll(0, encodedPath);
+    }
+    pathPtr[encodedPath.length] = 0;
+    if (encodedBackend.isNotEmpty) {
+      backendPtr.asTypedList(encodedBackend.length).setAll(0, encodedBackend);
+    }
+    backendPtr[encodedBackend.length] = 0;
+
+    Pointer<Void> session = nullptr;
+    try {
+      session = openExplicit(pathPtr, backendPtr, nThreads);
+    } finally {
+      freeFn(pathPtr.cast());
+      freeFn(backendPtr.cast());
+    }
+    if (session == nullptr) {
+      throw StateError('Failed to open ASR session ($backend): $modelPath');
+    }
+    return _NativeWhisperRuntime._(lib: lib, crt: crt, session: session);
+  }
+
+  final Pointer<Void> _ctx;
+  final Pointer<Void> _session;
+  bool _disposed = false;
+
+  final Pointer<Void> Function(int) _malloc;
+  final void Function(Pointer<Void>) _free;
+  final void Function(Pointer<Void>)? _whisperFree;
+  final Pointer<Void> Function(int)? _defaultFullParams;
+  final void Function(Pointer<Void>)? _freeFullParams;
+  final int Function(Pointer<Void>, Pointer<Void>, Pointer<Float>, int)?
+  _fullByRef;
+  final void Function(Pointer<Void>, Pointer<Uint8>)? _setLanguage;
+  final void Function(Pointer<Void>, int)? _setNThreads;
+  final void Function(Pointer<Void>, int)? _setTokenTimestamps;
+  final void Function(Pointer<Void>, int)? _setNoContext;
+  final void Function(Pointer<Void>, int)? _setPrintRealtime;
+  final void Function(Pointer<Void>, int)? _setPrintProgress;
+  final void Function(Pointer<Void>, int)? _setPrintTimestamps;
+  final void Function(Pointer<Void>, int)? _setPrintSpecial;
+  final int Function(Pointer<Void>)? _nSegments;
+  final Pointer<Uint8> Function(Pointer<Void>, int)? _segmentText;
+  final int Function(Pointer<Void>, int)? _segmentT0;
+  final int Function(Pointer<Void>, int)? _segmentT1;
+  final double Function(Pointer<Void>, int)? _segmentNoSpeechProb;
+  final int Function(Pointer<Void>, int)? _nTokens;
+  final int Function(Pointer<Void>, int, int)? _tokenId;
+  final Pointer<Uint8> Function(Pointer<Void>, int, int)? _tokenText;
+  final int Function(Pointer<Void>, int, int)? _tokenT0;
+  final int Function(Pointer<Void>, int, int)? _tokenT1;
+  final int Function(Pointer<Void>)? _tokenEot;
+  final void Function(Pointer<Void>)? _sessionClose;
+  final Pointer<Void> Function(
+    Pointer<Void>,
+    Pointer<Float>,
+    int,
+    Pointer<Uint8>,
+  )?
+  _sessionTranscribeLang;
+  final int Function(Pointer<Void>)? _sessionResultNSegments;
+  final Pointer<Uint8> Function(Pointer<Void>, int)? _sessionResultSegmentText;
+  final int Function(Pointer<Void>, int)? _sessionResultSegmentT0;
+  final int Function(Pointer<Void>, int)? _sessionResultSegmentT1;
+  final void Function(Pointer<Void>)? _sessionResultFree;
+  final int Function(
+    Pointer<Uint8>,
+    Pointer<Float>,
+    int,
+    int,
+    double,
+    int,
+    int,
+    int,
+    double,
+    int,
+    Pointer<Pointer<Float>>,
+  )
+  _vadSlices;
+  final void Function(Pointer<Float>) _vadFree;
+
+  Pointer<Uint8> _allocCString(String value) {
+    final encoded = utf8.encode(value);
+    final ptr = _malloc(encoded.length + 1).cast<Uint8>();
+    if (ptr == nullptr) throw StateError('Native C string allocation failed');
+    if (encoded.isNotEmpty) {
+      ptr.asTypedList(encoded.length).setAll(0, encoded);
+    }
+    ptr[encoded.length] = 0;
+    return ptr;
+  }
+
+  static Uint8List _readCStringBytes(Pointer<Uint8> ptr) {
+    if (ptr == nullptr) return Uint8List(0);
+    var length = 0;
+    while (ptr[length] != 0) {
+      length++;
+    }
+    if (length == 0) return Uint8List(0);
+    return Uint8List.fromList(ptr.asTypedList(length));
+  }
+
+  List<AsrVadSpan> vadSlices(
+    Float32List pcm, {
+    required String modelPath,
+    required int nThreads,
+    double maxSegmentSeconds = 26.0,
+  }) {
+    if (_disposed) throw StateError('ASR runtime is disposed');
+    if (pcm.isEmpty) return const <AsrVadSpan>[];
+    final samples = _malloc(pcm.length * sizeOf<Float>()).cast<Float>();
+    if (samples == nullptr) throw StateError('Native PCM allocation failed');
+    samples.asTypedList(pcm.length).setAll(0, pcm);
+    final modelPtr = _allocCString(modelPath);
+    final outPtr = _malloc(sizeOf<Pointer<Float>>()).cast<Pointer<Float>>();
+    if (outPtr == nullptr) {
+      _free(modelPtr.cast());
+      _free(samples.cast());
+      throw StateError('Native VAD pointer allocation failed');
+    }
+    outPtr.value = nullptr;
+    try {
+      final count = _vadSlices(
+        modelPtr,
+        samples,
+        pcm.length,
+        16000,
+        0.0,
+        200,
+        250,
+        120,
+        maxSegmentSeconds,
+        nThreads,
+        outPtr,
+      );
+      if (count < 0) throw StateError('VAD slices failed ($count)');
+      if (count == 0) return const <AsrVadSpan>[];
+      final data = outPtr.value;
+      if (data == nullptr) return const <AsrVadSpan>[];
+      try {
+        final raw = data.asTypedList(count * 2);
+        return List<AsrVadSpan>.generate(
+          count,
+          (i) => AsrVadSpan(startSeconds: raw[2 * i], endSeconds: raw[2 * i + 1]),
+          growable: false,
+        );
+      } finally {
+        _vadFree(data);
+      }
+    } finally {
+      _free(outPtr.cast());
+      _free(modelPtr.cast());
+      _free(samples.cast());
+    }
+  }
+
+  List<AsrRawSegment> transcribePcm(
+    Float32List pcm, {
+    required int nThreads,
+    required double offsetSeconds,
+  }) {
+    if (_disposed) throw StateError('ASR runtime is disposed');
+    if (pcm.isEmpty) return const <AsrRawSegment>[];
+    if (_session != nullptr) {
+      return _transcribeSessionPcm(pcm, offsetSeconds: offsetSeconds);
+    }
+    final samples = _malloc(pcm.length * sizeOf<Float>()).cast<Float>();
+    if (samples == nullptr) throw StateError('Native PCM allocation failed');
+    samples.asTypedList(pcm.length).setAll(0, pcm);
+    final params = _defaultFullParams!(0);
+    if (params == nullptr) {
+      _free(samples.cast());
+      throw StateError('Whisper params allocation failed');
+    }
+    final langPtr = _allocCString('ja');
+    try {
+      _setPrintRealtime!(params, 0);
+      _setPrintProgress!(params, 0);
+      _setPrintTimestamps!(params, 0);
+      _setPrintSpecial!(params, 0);
+      _setNThreads!(params, nThreads);
+      _setLanguage!(params, langPtr);
+      _setTokenTimestamps!(params, 1);
+      _setNoContext!(params, 1);
+
+      final rc = _fullByRef!(_ctx, params, samples, pcm.length);
+      if (rc != 0) throw StateError('Whisper transcription failed ($rc)');
+
+      final eotId = _tokenEot!(_ctx);
+      final segmentCount = _nSegments!(_ctx);
+      final segments = <AsrRawSegment>[];
+      for (var i = 0; i < segmentCount; i++) {
+        final textBytes = _readCStringBytes(_segmentText!(_ctx, i));
+        final text = utf8
+            .decode(textBytes, allowMalformed: true)
+            .replaceAll('\uFFFD', '');
+        final startSec = offsetSeconds + _segmentT0!(_ctx, i) / 100.0;
+        final endSec = offsetSeconds + _segmentT1!(_ctx, i) / 100.0;
+        final noSpeechProb = _segmentNoSpeechProb!(_ctx, i);
+
+        final tokenCount = _nTokens!(_ctx, i);
+        final rawTokens = <AsrRawTokenBytes>[];
+        for (var k = 0; k < tokenCount; k++) {
+          final tokId = _tokenId!(_ctx, i, k);
+          if (eotId > 0 && tokId >= eotId) continue;
+          final tokBytes = _readCStringBytes(_tokenText!(_ctx, i, k));
+          if (tokBytes.isEmpty) continue;
+          rawTokens.add((
+            bytes: tokBytes,
+            startSeconds: offsetSeconds + _tokenT0!(_ctx, i, k) / 100.0,
+            endSeconds: offsetSeconds + _tokenT1!(_ctx, i, k) / 100.0,
+          ));
+        }
+
+        segments.add(
+          AsrRawSegment(
+            text: text,
+            startSeconds: startSec,
+            endSeconds: endSec,
+            noSpeechProb: noSpeechProb,
+            words: assembleUtf8AsrTokenWords(rawTokens),
+          ),
+        );
+      }
+      return segments;
+    } finally {
+      _freeFullParams!(params);
+      _free(langPtr.cast());
+      _free(samples.cast());
+    }
+  }
+
+  List<AsrRawSegment> _transcribeSessionPcm(
+    Float32List pcm, {
+    required double offsetSeconds,
+  }) {
+    final samples = _malloc(pcm.length * sizeOf<Float>()).cast<Float>();
+    if (samples == nullptr) throw StateError('Native PCM allocation failed');
+    samples.asTypedList(pcm.length).setAll(0, pcm);
+    final langPtr = _allocCString('ja');
+    Pointer<Void> res = nullptr;
+    try {
+      res = _sessionTranscribeLang!(_session, samples, pcm.length, langPtr);
+    } finally {
+      _free(langPtr.cast());
+      _free(samples.cast());
+    }
+    if (res == nullptr) {
+      throw StateError('ASR session transcription failed');
+    }
+    try {
+      final segmentCount = _sessionResultNSegments!(res);
+      final segments = <AsrRawSegment>[];
+      for (var i = 0; i < segmentCount; i++) {
+        final textBytes = _readCStringBytes(_sessionResultSegmentText!(res, i));
+        final text = utf8
+            .decode(textBytes, allowMalformed: true)
+            .replaceAll('\uFFFD', '')
+            .trim();
+        if (text.isEmpty) continue;
+        final startSec = offsetSeconds + _sessionResultSegmentT0!(res, i) / 100.0;
+        final endSec = offsetSeconds + _sessionResultSegmentT1!(res, i) / 100.0;
+        segments.add(
+          AsrRawSegment(
+            text: text,
+            startSeconds: startSec,
+            endSeconds: endSec,
+            noSpeechProb: 0.0,
+          ),
+        );
+      }
+      return segments;
+    } finally {
+      _sessionResultFree!(res);
+    }
+  }
+
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    if (_session != nullptr) {
+      _sessionClose!(_session);
+    }
+    if (_ctx != nullptr) {
+      _whisperFree!(_ctx);
+    }
   }
 }

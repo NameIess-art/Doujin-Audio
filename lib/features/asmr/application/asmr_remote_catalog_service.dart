@@ -24,12 +24,14 @@ class AsmrRemoteCatalogService {
         const AsmrRecommendationEngine(),
     DateTime Function()? now,
     Duration secondaryJapaneseTimeout = const Duration(seconds: 8),
+    Duration secondaryOneTimeout = const Duration(seconds: 8),
   }) : _apiService = apiService,
        _persistenceRepository = persistenceRepository,
        _japaneseApiService = japaneseApiService,
        _recommendationEngine = recommendationEngine,
        _now = now ?? DateTime.now,
-       _secondaryJapaneseTimeout = secondaryJapaneseTimeout;
+       _secondaryJapaneseTimeout = secondaryJapaneseTimeout,
+       _secondaryOneTimeout = secondaryOneTimeout;
 
   static const Map<AsmrCategoryType, int> _pageSizes = <AsmrCategoryType, int>{
     AsmrCategoryType.collected: 40,
@@ -54,7 +56,9 @@ class AsmrRemoteCatalogService {
   ];
   static const Duration _mediaHostHealthTtl = Duration(seconds: 60);
   static const Duration _japaneseCooldownDuration = Duration(seconds: 60);
+  static const Duration _oneCooldownDuration = Duration(seconds: 60);
   static const int _japaneseFailureThreshold = 2;
+  static const int _oneFailureThreshold = 1;
   static const int _recommendationMaxConcurrency = 4;
 
   final AsmrApiService _apiService;
@@ -63,11 +67,15 @@ class AsmrRemoteCatalogService {
   final AsmrRecommendationEngine _recommendationEngine;
   final DateTime Function() _now;
   final Duration _secondaryJapaneseTimeout;
+  final Duration _secondaryOneTimeout;
   final Map<String, ({bool healthy, DateTime expiresAt, Object? error})>
   _mediaHostHealth = {};
   int _japaneseConsecutiveFailures = 0;
   DateTime? _japaneseCooldownUntil;
   Object? _japaneseCooldownError;
+  int _oneConsecutiveFailures = 0;
+  DateTime? _oneCooldownUntil;
+  Object? _oneCooldownError;
   Future<List<MusicTrack>>? _localTracksRead;
 
   bool Function(AsmrWork) isWorkAllowed = (_) => true;
@@ -110,6 +118,34 @@ class AsmrRemoteCatalogService {
   void clearMediaHostHealthCache() {
     _mediaHostHealth.clear();
     _recordJapaneseCatalogSuccess();
+    clearOneCatalogCooldown();
+  }
+
+  void clearOneCatalogCooldown() {
+    _oneConsecutiveFailures = 0;
+    _oneCooldownUntil = null;
+    _oneCooldownError = null;
+  }
+
+  Object? _activeOneCooldownError() {
+    if (_japaneseApiService == null) return null;
+    final until = _oneCooldownUntil;
+    if (until == null) return null;
+    if (_now().isBefore(until)) {
+      return _oneCooldownError ??
+          TimeoutException('ASMR.ONE catalog is cooling down.');
+    }
+    clearOneCatalogCooldown();
+    return null;
+  }
+
+  void _recordOneCatalogFailure(Object error) {
+    if (_japaneseApiService == null || !_isJapaneseHostFailure(error)) return;
+    _oneConsecutiveFailures += 1;
+    if (_oneConsecutiveFailures >= _oneFailureThreshold) {
+      _oneCooldownUntil = _now().add(_oneCooldownDuration);
+      _oneCooldownError = error;
+    }
   }
 
   bool _isJapaneseHostFailure(Object error) {
@@ -197,6 +233,77 @@ class AsmrRemoteCatalogService {
     }
   }
 
+  Future<AsmrWorkPage> _loadSecondaryOnePage(
+    AsmrCategoryType category, {
+    required String searchQuery,
+    required int page,
+    required AsmrContentLanguage language,
+    required String? token,
+    AsmrRequestCancellationToken? cancellationToken,
+  }) async {
+    cancellationToken?.throwIfCancelled();
+    final cooldownError = _activeOneCooldownError();
+    if (cooldownError != null) throw cooldownError;
+    final childToken = AsmrRequestCancellationToken();
+    final removeParent = cancellationToken?.addListener(childToken.cancel);
+    var timedOut = false;
+    final previousServerError = _apiService.lastServerError;
+    final timer = Timer(_secondaryOneTimeout, () {
+      timedOut = true;
+      childToken.cancel();
+    });
+    try {
+      final spec = _sortSpecFor(category);
+      final pageSize = _pageSizes[category] ?? 40;
+      final keyword = searchElementKeyword(searchQuery);
+      final result = await childToken.waitFor(
+        keyword.isNotEmpty
+            ? _apiService.searchWorks(
+                keyword: keyword,
+                order: spec.order,
+                sort: spec.sort,
+                page: page,
+                pageSize: pageSize,
+                token: token,
+                language: language,
+                cancellationToken: childToken,
+              )
+            : _apiService.fetchWorks(
+                order: spec.order,
+                sort: spec.sort,
+                page: page,
+                pageSize: pageSize,
+                token: token,
+                language: language,
+                cancellationToken: childToken,
+              ),
+      );
+      clearOneCatalogCooldown();
+      return result;
+    } on AsmrRequestCancelled {
+      if (timedOut && cancellationToken?.isCancelled != true) {
+        final latestServerError = _apiService.lastServerError;
+        final error =
+            latestServerError != null &&
+                !identical(latestServerError, previousServerError)
+            ? latestServerError
+            : TimeoutException(
+                'ASMR.ONE catalog request timed out.',
+                _secondaryOneTimeout,
+              );
+        _recordOneCatalogFailure(error);
+        throw error;
+      }
+      rethrow;
+    } catch (error) {
+      _recordOneCatalogFailure(error);
+      rethrow;
+    } finally {
+      timer.cancel();
+      removeParent?.call();
+    }
+  }
+
   Future<AsmrWorkPage> loadPage(
     AsmrCategoryType category, {
     required String searchQuery,
@@ -206,6 +313,7 @@ class AsmrRemoteCatalogService {
     AsmrRequestCancellationToken? cancellationToken,
     AsmrCatalogCursor? cursor,
     bool includeJapanese = true,
+    bool useSecondaryOneTimeout = false,
   }) {
     final branches = searchElementBranches(searchQuery);
     if (branches.length > 1 ||
@@ -228,6 +336,7 @@ class AsmrRemoteCatalogService {
       language: language,
       token: token,
       cancellationToken: cancellationToken,
+      useSecondaryOneTimeout: useSecondaryOneTimeout,
     );
   }
 
@@ -244,35 +353,55 @@ class AsmrRemoteCatalogService {
     required AsmrContentLanguage language,
     required String? token,
     AsmrRequestCancellationToken? cancellationToken,
-  }) {
+    bool useSecondaryOneTimeout = false,
+  }) async {
     cancellationToken?.throwIfCancelled();
+    if (useSecondaryOneTimeout) {
+      return _loadSecondaryOnePage(
+        category,
+        searchQuery: searchQuery,
+        page: page,
+        language: language,
+        token: token,
+        cancellationToken: cancellationToken,
+      );
+    }
     final spec = _sortSpecFor(category);
     final pageSize = _pageSizes[category] ?? 40;
-    return _retryTransientLoad(
-      category: category,
-      page: page,
-      cancellationToken: cancellationToken,
-      load: () => searchQuery.isNotEmpty
-          ? _apiService.searchWorks(
-              keyword: searchElementKeyword(searchQuery),
-              order: spec.order,
-              sort: spec.sort,
-              page: page,
-              pageSize: pageSize,
-              token: token,
-              language: language,
-              cancellationToken: cancellationToken,
-            )
-          : _apiService.fetchWorks(
-              order: spec.order,
-              sort: spec.sort,
-              page: page,
-              pageSize: pageSize,
-              token: token,
-              language: language,
-              cancellationToken: cancellationToken,
-            ),
-    );
+    try {
+      final result = await _retryTransientLoad(
+        category: category,
+        page: page,
+        cancellationToken: cancellationToken,
+        load: () => searchQuery.isNotEmpty
+            ? _apiService.searchWorks(
+                keyword: searchElementKeyword(searchQuery),
+                order: spec.order,
+                sort: spec.sort,
+                page: page,
+                pageSize: pageSize,
+                token: token,
+                language: language,
+                cancellationToken: cancellationToken,
+              )
+            : _apiService.fetchWorks(
+                order: spec.order,
+                sort: spec.sort,
+                page: page,
+                pageSize: pageSize,
+                token: token,
+                language: language,
+                cancellationToken: cancellationToken,
+              ),
+      );
+      clearOneCatalogCooldown();
+      return result;
+    } catch (error) {
+      if (error is! AsmrRequestCancelled) {
+        _recordOneCatalogFailure(error);
+      }
+      rethrow;
+    }
   }
 
   Future<List<AsmrWork>> loadRecommendations({
@@ -360,6 +489,7 @@ class AsmrRemoteCatalogService {
           semaphore: semaphore,
           firstPageOnly: true,
           includeJapanese: false,
+          resolveIncludeJapanese: () => _activeOneCooldownError() != null,
           cancellationToken: cancellationToken,
         );
       })(),
@@ -395,13 +525,30 @@ class AsmrRemoteCatalogService {
     onSourceTotalCount?.call(
       searchBranches.length == 1 ? sourceTotalCount : null,
     );
-    final failedSources = <AsmrCatalogSource>{
-      for (final result in results)
-        for (final page in result.pages.whereType<AsmrMergedWorkPage>())
-          ...?page.partialError?.sources,
-    };
+    final failedCauses = <AsmrCatalogSource, Object>{};
+    for (final result in results) {
+      for (final page in result.pages.whereType<AsmrMergedWorkPage>()) {
+        if (page.partialError case final partial?) {
+          for (final source in partial.sources) {
+            final cause = partial.causes[source];
+            if (cause != null &&
+                (!failedCauses.containsKey(source) ||
+                    cause is AsmrApiException)) {
+              failedCauses[source] = cause;
+            } else {
+              failedCauses.putIfAbsent(source, () => partial);
+            }
+          }
+        }
+      }
+    }
     onPartialError?.call(
-      failedSources.isEmpty ? null : AsmrPartialCatalogException(failedSources),
+      failedCauses.isEmpty
+          ? null
+          : AsmrPartialCatalogException(
+              failedCauses.keys,
+              causes: failedCauses,
+            ),
     );
     explorationIds.removeAll(firstPageIds);
     final promotedIds = searchQuery.isEmpty && refreshSeed > 1
@@ -446,6 +593,15 @@ class AsmrRemoteCatalogService {
         page.works.where((work) => work.rjCode == code).firstOrNull;
 
     Object? oneError;
+    final japanese = _japaneseApiService;
+    final preferJapanese =
+        japanese != null && _activeOneCooldownError() != null;
+    if (preferJapanese) {
+      final page = await japanese.searchWorks(keyword: code, pageSize: 20);
+      _recordJapaneseCatalogSuccess();
+      final work = exactMatch(page);
+      if (work != null) return work;
+    }
     try {
       final work = exactMatch(
         await _apiService.searchWorks(
@@ -457,12 +613,13 @@ class AsmrRemoteCatalogService {
           token: token,
         ),
       );
+      clearOneCatalogCooldown();
       if (work != null) return work;
     } catch (error) {
+      _recordOneCatalogFailure(error);
       oneError = error;
     }
-    final japanese = _japaneseApiService;
-    if (japanese != null) {
+    if (!preferJapanese && japanese != null) {
       final page = await japanese.searchWorks(keyword: code, pageSize: 20);
       _recordJapaneseCatalogSuccess();
       final work = exactMatch(page);
@@ -478,10 +635,13 @@ class AsmrRemoteCatalogService {
     AsmrRequestCancellationToken? cancellationToken,
   }) async {
     Object? firstError;
-    for (final source in const [
-      AsmrCatalogSource.asmrOne,
-      AsmrCatalogSource.japaneseAsmr,
-    ]) {
+    final sources =
+        _japaneseApiService != null &&
+            work.workCode.isNotEmpty &&
+            _activeOneCooldownError() != null
+        ? const [AsmrCatalogSource.japaneseAsmr, AsmrCatalogSource.asmrOne]
+        : const [AsmrCatalogSource.asmrOne, AsmrCatalogSource.japaneseAsmr];
+    for (final source in sources) {
       cancellationToken?.throwIfCancelled();
       try {
         List<AsmrTrackFile> tree;
@@ -493,6 +653,7 @@ class AsmrRemoteCatalogService {
             token: token,
             cancellationToken: cancellationToken,
           );
+          clearOneCatalogCooldown();
           cancellationToken?.throwIfCancelled();
           if (tree.any((node) => node.hasBrowsableContent) &&
               _japaneseApiService != null &&
@@ -513,6 +674,9 @@ class AsmrRemoteCatalogService {
       } on AsmrRequestCancelled {
         rethrow;
       } catch (error) {
+        if (source == AsmrCatalogSource.asmrOne) {
+          _recordOneCatalogFailure(error);
+        }
         firstError ??= error;
       }
     }
@@ -671,6 +835,7 @@ class AsmrRemoteCatalogService {
     required _AsyncSemaphore semaphore,
     bool firstPageOnly = false,
     bool includeJapanese = true,
+    bool Function()? resolveIncludeJapanese,
     AsmrRequestCancellationToken? cancellationToken,
   }) {
     // Share one concurrency bound across base sources and interest recall so
@@ -686,7 +851,7 @@ class AsmrRemoteCatalogService {
             refreshSeed: refreshSeed,
             japanesePages: japanesePages,
             firstPageOnly: firstPageOnly,
-            includeJapanese: includeJapanese,
+            includeJapanese: resolveIncludeJapanese?.call() ?? includeJapanese,
             cancellationToken: cancellationToken,
           ),
           cancellationToken: cancellationToken,
@@ -708,6 +873,7 @@ class AsmrRemoteCatalogService {
   }) async {
     final pages = <AsmrWorkPage>[];
     final cursor = AsmrCatalogCursor().._japanesePages = japanesePages;
+    final useSecondaryOneTimeout = _japaneseApiService != null;
     try {
       final firstPage = await loadPage(
         category,
@@ -718,6 +884,7 @@ class AsmrRemoteCatalogService {
         cancellationToken: cancellationToken,
         cursor: cursor,
         includeJapanese: includeJapanese,
+        useSecondaryOneTimeout: useSecondaryOneTimeout,
       );
       cancellationToken?.throwIfCancelled();
       pages.add(firstPage);
@@ -742,6 +909,7 @@ class AsmrRemoteCatalogService {
             cancellationToken: cancellationToken,
             cursor: cursor,
             includeJapanese: includeJapanese,
+            useSecondaryOneTimeout: useSecondaryOneTimeout,
           ),
         );
       }
@@ -810,6 +978,8 @@ class AsmrRemoteCatalogService {
       return true;
     }
     if (error is AsmrApiException) {
+      // AsmrApiService._send already fails over across all candidate mirrors.
+      if (error.source == AsmrCatalogSource.asmrOne) return false;
       return error.statusCode == HttpStatus.tooManyRequests ||
           error.statusCode >= 500;
     }

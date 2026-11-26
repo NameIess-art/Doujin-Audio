@@ -53,6 +53,7 @@ typedef _NativeQueueTrack = ({
   String path,
   MusicTrack? track,
   String? coverPath,
+  Map<String, String> httpHeaders,
   bool playOnceBeforeQueue,
 });
 
@@ -66,6 +67,9 @@ List<Map<String, Object?>> _buildNativePlaybackQueue(
         : Uri.file(descriptor.coverPath!).toString();
     final candidates = _candidatePlaybackUris(track);
     final reference = PlaybackMediaReference.parse(descriptor.path);
+    final headers = descriptor.httpHeaders.isNotEmpty
+        ? descriptor.httpHeaders
+        : reference.httpHeaders;
     return <String, Object?>{
       'path': descriptor.path,
       'uri':
@@ -75,8 +79,7 @@ List<Map<String, Object?>> _buildNativePlaybackQueue(
           : Uri.file(descriptor.path).toString(),
       if (reference.isChapter) 'clipStartMs': reference.startMs,
       if (reference.endMs != null) 'clipEndMs': reference.endMs,
-      if (reference.httpHeaders.isNotEmpty)
-        'httpHeaders': reference.httpHeaders,
+      if (headers.isNotEmpty) 'httpHeaders': headers,
       if (descriptor.playOnceBeforeQueue) 'playOnceBeforeQueue': true,
       'title':
           track?.displayName ?? path.basenameWithoutExtension(descriptor.path),
@@ -499,7 +502,11 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
       return false;
     }
     final scopeKey = _playbackQueueScopeKey(session, targetResolvedPath);
-    final baseKey = Object.hash(scopeKey, _libraryFacade.contentRevision);
+    final baseKey = Object.hash(
+      scopeKey,
+      _libraryFacade.contentRevision,
+      RemoteSourceHeaderRegistry.instance.revision,
+    );
     return session.syncedNativeQueueBaseKey == baseKey;
   }
 
@@ -797,6 +804,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
     int computeBaseKey() => Object.hash(
       session.nativePlaybackQueueScopeCacheKey,
       _libraryFacade.contentRevision,
+      RemoteSourceHeaderRegistry.instance.revision,
     );
 
     bool cachedQueueCoversMatch(
@@ -951,6 +959,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
               path: trackPath,
               track: track,
               coverPath: resolvedPlaybackCoverPathForTrack(track),
+              httpHeaders: PlaybackMediaReference.parse(trackPath).httpHeaders,
               playOnceBeforeQueue: playDetachedOnce && index == 0,
             ));
             if (slice.elapsedMicroseconds >= 2000) {

@@ -9,6 +9,7 @@ import 'package:path/path.dart' as paths;
 
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/path_matcher.dart';
+import '../../../core/media/playback_media_reference.dart';
 import '../../../core/media/subtitle_parser.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 
@@ -731,6 +732,10 @@ class WorkTextService {
             request = await client
                 .getUrl(uri)
                 .timeout(const Duration(seconds: 15));
+            for (final header
+                in PlaybackMediaReference.requestHeadersForUri(uri).entries) {
+              request.headers.set(header.key, header.value);
+            }
             _checkReadActive(active);
             final response = await request.close().timeout(
               const Duration(seconds: 15),

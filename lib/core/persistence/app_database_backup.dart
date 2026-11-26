@@ -121,6 +121,7 @@ extension AppDatabaseBackup on AppDatabase {
       } else {
         await _copyInMemorySnapshot(source, target, tables);
       }
+      await _materializeSnapshotSyncLedgers(target);
       await _writePortableDatabaseFlags(target);
       final integrity = await target.rawQuery('PRAGMA integrity_check');
       if (integrity.singleOrNull?['integrity_check'] != 'ok') {
@@ -182,6 +183,11 @@ extension AppDatabaseBackup on AppDatabase {
   }) async {
     final candidate = await openDatabase(candidatePath, singleInstance: false);
     try {
+      await candidate.delete(
+        'app_kv_settings',
+        where: 'key = ?',
+        whereArgs: [_crossPlatformSyncDeviceIdKey],
+      );
       if (!await _attachReadableRestoreSource(candidate, localPath)) return;
       await candidate.transaction((txn) async {
         final localActivity = await _listeningRecency(txn, 'local_restore');
@@ -206,6 +212,26 @@ extension AppDatabaseBackup on AppDatabase {
             );
           }
         }
+        if (keepLocalActivity) {
+          final localLedgerTables = (await txn.rawQuery(
+            "SELECT name FROM local_restore.sqlite_master WHERE type = 'table' "
+            "AND name IN ('sync_listening_day_ledger', 'sync_listening_work_ledger')",
+          )).map((row) => row['name'] as String).toSet();
+          if (localLedgerTables.contains('sync_listening_day_ledger')) {
+            await txn.rawDelete('DELETE FROM main.sync_listening_day_ledger');
+            await txn.execute(
+              'INSERT INTO main.sync_listening_day_ledger (device_id, date, milliseconds) '
+              'SELECT device_id, date, milliseconds FROM local_restore.sync_listening_day_ledger',
+            );
+          }
+          if (localLedgerTables.contains('sync_listening_work_ledger')) {
+            await txn.rawDelete('DELETE FROM main.sync_listening_work_ledger');
+            await txn.execute(
+              'INSERT INTO main.sync_listening_work_ledger (device_id, date, work_key, milliseconds) '
+              'SELECT device_id, date, work_key, milliseconds FROM local_restore.sync_listening_work_ledger',
+            );
+          }
+        }
         final localSettings = [
           if (keepLocalActivity) _listeningActivityPlaybackAtKey,
           if (keepLocalHistory) _listeningHistoryEditedAtKey,
@@ -220,6 +246,13 @@ extension AppDatabaseBackup on AppDatabase {
             'INSERT INTO main.app_kv_settings (key, value) '
             'SELECT key, value FROM local_restore.app_kv_settings WHERE key = ?',
             [key],
+          );
+        }
+        if (keepLocalActivity) {
+          await txn.execute(
+            'INSERT INTO main.app_kv_settings (key, value) '
+            'SELECT key, value FROM local_restore.app_kv_settings WHERE key = ?',
+            [_crossPlatformSyncDeviceIdKey],
           );
         }
         if (keepLocalActivity != keepLocalHistory) {
@@ -266,6 +299,186 @@ extension AppDatabaseBackup on AppDatabase {
       await candidate.close();
     }
   }
+
+  /// Clears the active sync device ID on a fresh full-restore candidate while
+  /// keeping `sync_listening_*_ledger` historical totals intact so the restored
+  /// installation mints a distinct device ID without double-counting past hours.
+  Future<void> clearActiveSyncDeviceIdInCandidate(String candidatePath) async {
+    final candidate = await openDatabase(candidatePath, singleInstance: false);
+    try {
+      await candidate.delete(
+        'app_kv_settings',
+        where: 'key = ?',
+        whereArgs: [_crossPlatformSyncDeviceIdKey],
+      );
+    } finally {
+      await candidate.close();
+    }
+  }
+
+  /// Extracts platform-independent sync state and portable ASMR preferences
+  /// from an already validated backup SQLite candidate.
+  Future<
+    ({
+      PersistedCrossPlatformSyncSnapshot syncSnapshot,
+      String? asmrContentLanguage,
+      List<String>? asmrVisibleCategories,
+    })
+  >
+  extractPortableBackupData({
+    required String candidatePath,
+    required String fallbackDeviceId,
+    required Iterable<String> interestSettingKeys,
+  }) async {
+    final candidate = await openDatabase(candidatePath, singleInstance: false);
+    try {
+      return await candidate.transaction((txn) async {
+        final syncSnapshot = await _exportSyncSnapshotInTxn(
+          txn,
+          generateDeviceId: () => fallbackDeviceId,
+          interestSettingKeys: interestSettingKeys,
+        );
+        final langRows = await txn.query(
+          'app_kv_settings',
+          columns: const ['value'],
+          where: 'key = ?',
+          whereArgs: const ['asmr_content_language_v1'],
+          limit: 1,
+        );
+        final rawLang = langRows.firstOrNull?['value'] as String?;
+        final categoryRows = await txn.query(
+          'asmr_visible_categories',
+          columns: const ['category'],
+          orderBy: 'sort_order ASC',
+        );
+        final categories = categoryRows
+            .map((r) => r['category'] as String?)
+            .whereType<String>()
+            .where((c) => c.trim().isNotEmpty)
+            .toList(growable: false);
+        return (
+          syncSnapshot: syncSnapshot,
+          asmrContentLanguage: (rawLang != null && rawLang.trim().isNotEmpty)
+              ? rawLang.trim()
+              : null,
+          asmrVisibleCategories: categories.isEmpty ? null : categories,
+        );
+      });
+    } finally {
+      await candidate.close();
+    }
+  }
+
+  Future<void> applyPortableBackupDatabaseSettings({
+    String? asmrContentLanguage,
+    List<String>? asmrVisibleCategories,
+  }) async {
+    if (asmrContentLanguage == null &&
+        (asmrVisibleCategories == null || asmrVisibleCategories.isEmpty)) {
+      return;
+    }
+    await _runDatabaseWrite((db) async {
+      await db.transaction((txn) async {
+        final batch = txn.batch();
+        if (asmrContentLanguage != null) {
+          batch.insert(
+            'app_kv_settings',
+            <String, Object?>{
+              'key': 'asmr_content_language_v1',
+              'value': asmrContentLanguage,
+            },
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+        }
+        if (asmrVisibleCategories != null &&
+            asmrVisibleCategories.isNotEmpty) {
+          batch.delete('asmr_visible_categories');
+          for (var i = 0; i < asmrVisibleCategories.length; i++) {
+            batch.insert(
+              'asmr_visible_categories',
+              <String, Object?>{
+                'category': asmrVisibleCategories[i],
+                'sort_order': i,
+              },
+              conflictAlgorithm: ConflictAlgorithm.replace,
+            );
+          }
+        }
+        await batch.commit(noResult: true);
+      });
+    });
+  }
+
+  Future<void> ensureSyncDeviceIdWhenListeningPresent() =>
+      _runDatabaseRead((db) async {
+        await db.transaction((txn) async {
+          final idRows = await txn.query(
+            'app_kv_settings',
+            columns: const ['value'],
+            where: 'key = ?',
+            whereArgs: const [_crossPlatformSyncDeviceIdKey],
+            limit: 1,
+          );
+          final existing = (idRows.firstOrNull?['value'] as String?)?.trim();
+          if (existing != null && existing.isNotEmpty) return;
+          final hasListening =
+              (await txn.query('listening_days', limit: 1)).isNotEmpty ||
+              (await txn.query('listening_work_days', limit: 1)).isNotEmpty;
+          if (!hasListening) return;
+          await txn.insert(
+            'app_kv_settings',
+            <String, Object?>{
+              'key': _crossPlatformSyncDeviceIdKey,
+              'value': _generateSnapshotLedgerUuidV4(),
+            },
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+        });
+      });
+}
+
+Future<void> _materializeSnapshotSyncLedgers(Database target) =>
+    target.transaction((txn) async {
+      final idRows = await txn.query(
+        'app_kv_settings',
+        columns: const ['value'],
+        where: 'key = ?',
+        whereArgs: const [_crossPlatformSyncDeviceIdKey],
+        limit: 1,
+      );
+      final existingId = (idRows.firstOrNull?['value'] as String?)?.trim();
+      var deviceId = (existingId != null && existingId.isNotEmpty)
+          ? existingId
+          : null;
+      if (deviceId == null) {
+        final hasDays =
+            (await txn.query('listening_days', limit: 1)).isNotEmpty ||
+            (await txn.query('listening_work_days', limit: 1)).isNotEmpty;
+        if (!hasDays) return;
+        deviceId = _generateSnapshotLedgerUuidV4();
+        await txn.insert(
+          'app_kv_settings',
+          <String, Object?>{
+            'key': _crossPlatformSyncDeviceIdKey,
+            'value': deviceId,
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      await _snapshotDayLedgerInTxn(txn, deviceId);
+      await _snapshotWorkDayLedgerInTxn(txn, deviceId);
+    });
+
+String _generateSnapshotLedgerUuidV4() {
+  final random = Random.secure();
+  final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  String hex(int start, int end) => bytes
+      .sublist(start, end)
+      .map((b) => b.toRadixString(16).padLeft(2, '0'))
+      .join();
+  return '${hex(0, 4)}-${hex(4, 6)}-${hex(6, 8)}-${hex(8, 10)}-${hex(10, 16)}';
 }
 
 Future<void> _writePortableDatabaseFlags(Database db) =>
@@ -464,6 +677,7 @@ Future<void> _validateRestoreSchema(
     )).map((row) => row['name']).toSet();
     for (final table in requiredTables) {
       final name = table['name']! as String;
+      if (version < 22 && name.startsWith('sync_')) continue;
       if (version < 14 && name.startsWith('listening_')) continue;
       if (version < 6 && name.startsWith('audio_detail_')) continue;
       if (!candidateTables.contains(name)) {
@@ -478,7 +692,30 @@ Future<void> _validateRestoreSchema(
           'audio_details' =>
             (version >= 2 || columnName != 'card_cover_path') &&
                 (version >= 3 || columnName != 'duration_ms') &&
-                (version >= 4 || columnName != 'card_cover_selected'),
+                (version >= 4 || columnName != 'card_cover_selected') &&
+                (version >= 21 ||
+                    !const {
+                      'listen_status',
+                      'user_rating',
+                      'review_text',
+                      'review_updated_at_ms',
+                    }.contains(columnName)),
+          'asmr_works' =>
+            version >= 21 ||
+                !const {
+                  'listen_status',
+                  'user_rating',
+                  'review_text',
+                  'review_updated_at_ms',
+                }.contains(columnName),
+          'asmr_sync_operations' =>
+            version >= 21 ||
+                !const {
+                  'progress',
+                  'user_rating',
+                  'review_text',
+                  'has_review_payload',
+                }.contains(columnName),
           'sessions' => version >= 7 || columnName != 'is_temporary',
           'session_audio_effects' =>
             version >= 17 || columnName != 'front_back',

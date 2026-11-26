@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:doujin_audio/core/app_language.dart';
 import 'package:doujin_audio/core/immutable_collections.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/widgets/app_feedback.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/app_search_page.dart';
 import 'package:doujin_audio/core/widgets/library_like_cards.dart';
@@ -10,6 +11,7 @@ import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/widgets/scroll_activity_gate.dart';
 import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_api_service.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_remote_catalog_service.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
@@ -303,10 +305,8 @@ void main() {
             ],
           ),
         );
-        final notice = find.byKey(
-          const ValueKey<String>('online_library_partial_failure'),
-        );
-        await pumpUntilFound(tester, notice);
+        final feedback = find.byType(AppFeedbackSurface);
+        await pumpUntilFound(tester, feedback);
         await tester.pumpAndSettle();
         expect(
           tester
@@ -322,22 +322,115 @@ void main() {
           findsWidgets,
         );
         expect(
-          find.text(
-            fixture.languageProvider.tr('online_library_partial_failure'),
+          find.descendant(
+            of: feedback,
+            matching: find.text(
+              fixture.languageProvider.tr('japanese_asmr_unavailable_title'),
+            ),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: feedback,
+            matching: find.text(
+              fixture.languageProvider.tr('online_library_partial_failure'),
+            ),
           ),
           findsOneWidget,
         );
         await tester.tap(
-          find.descendant(of: notice, matching: find.byType(IconButton)),
+          find.descendant(
+            of: feedback,
+            matching: find.text(fixture.languageProvider.tr('retry')),
+          ),
         );
         await tester.pumpAndSettle();
         await tester.pump(interaction.idleDelay);
         await tester.pumpAndSettle();
         expect(controller.refreshCount, 1);
         expect(find.text('Published work'), findsOneWidget);
-        expect(notice, findsNothing);
+        expect(
+          find.text(
+            fixture.languageProvider.tr('online_library_partial_failure'),
+          ),
+          findsNothing,
+        );
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    testWidgets(
+      'ASMR.ONE server error shows header feedback once and displays Japanese ASMR total count on $platform',
+      (tester) async {
+        final controller = _PresentationController(createTestAsmrServices())
+          ..workCount = 40
+          ..combinedTotalCount = 5821
+          ..hasMore = true
+          ..catalogError = AsmrPartialCatalogException(
+            const [AsmrCatalogSource.asmrOne],
+            causes: const {
+              AsmrCatalogSource.asmrOne: AsmrApiException(
+                'ASMR API server error (502).',
+                statusCode: 502,
+                source: AsmrCatalogSource.asmrOne,
+              ),
+            },
+          );
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(controller.dispose);
+        addTearDown(fixture.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            const AsmrTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        final feedback = find.byType(AppFeedbackSurface);
+        await pumpUntilFound(tester, feedback);
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<TopPageHeader>(find.byType(TopPageHeader))
+              .topCapsuleData,
+          fixture.languageProvider.tr('asmr_header_stats_combined', {
+            'count': '5821',
+          }),
+        );
+        expect(
+          find.descendant(
+            of: feedback,
+            matching: find.text(
+              fixture.languageProvider.tr('asmr_one_unavailable_title'),
+            ),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: feedback,
+            matching: find.text(
+              fixture.languageProvider.tr('asmr_one_server_unavailable_partial'),
+            ),
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('Published work 1'), findsOneWidget);
+        await tester.pump(const Duration(seconds: 5));
+        await tester.pumpAndSettle();
+        expect(feedback, findsNothing);
+        // Subsequent paging while ASMR.ONE stays unavailable must not re-pop the header feedback.
+        await controller.loadMoreCategory(AsmrCategoryType.collected);
+        await tester.pumpAndSettle();
+        expect(feedback, findsNothing);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
       },
       variant: TargetPlatformVariant({platform}),
     );

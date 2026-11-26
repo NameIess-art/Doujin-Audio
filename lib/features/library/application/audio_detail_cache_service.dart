@@ -75,6 +75,7 @@ class AudioDetailCacheService {
   int _workTitleRevision = 0;
   int _voiceActorRevision = 0;
   int _releaseDateRevision = 0;
+  int _userRatingRevision = 0;
   int _cacheEpoch = 0;
   bool _suspended = false;
 
@@ -82,10 +83,15 @@ class AudioDetailCacheService {
   int get workTitleRevision => _workTitleRevision;
   int get voiceActorRevision => _voiceActorRevision;
   int get releaseDateRevision => _releaseDateRevision;
+  int get userRatingRevision => _userRatingRevision;
   Stream<AudioDetailCacheChange> get changes => _changes.stream;
 
   AudioDetail? resolvedDetail(AudioDetailTarget target) {
     return _resolved[AudioLibraryDetailKey.forTarget(target)]?.detail;
+  }
+
+  AudioDetail? resolvedDetailByKey(String targetKey) {
+    return _resolved[targetKey]?.detail;
   }
 
   Future<AudioDetailLoadResult> load(
@@ -521,6 +527,33 @@ class AudioDetailCacheService {
     );
   }
 
+  Future<AudioDetailSaveResult> saveUserReview(
+    AudioDetailTarget target, {
+    required WorkListenStatus? listenStatus,
+    required int? userRating,
+    required String reviewText,
+    DateTime? updatedAt,
+  }) {
+    final epoch = _cacheEpoch;
+    return _runSerialized<AudioDetailSaveResult>(<AudioDetailTarget>[
+      target,
+    ], () async {
+      final result = await _repository.saveUserReview(
+        target,
+        listenStatus: listenStatus,
+        userRating: userRating,
+        reviewText: reviewText,
+        updatedAt: updatedAt,
+      );
+      if (epoch != _cacheEpoch) {
+        throw const AudioDetailOperationCancelled();
+      }
+      _store(result.detail);
+      _bumpRevision([result.detail.target]);
+      return result;
+    });
+  }
+
   Future<bool> exportTimeSegments(AudioDetailTarget target) =>
       _runSerialized<bool>(<AudioDetailTarget>[
         target,
@@ -735,6 +768,7 @@ class AudioDetailCacheService {
     _workTitleRevision++;
     _voiceActorRevision++;
     _releaseDateRevision++;
+    _userRatingRevision++;
     _bumpRevision();
   }
 
@@ -817,6 +851,7 @@ class AudioDetailCacheService {
       _voiceActorRevision++;
     }
     if (previous?.releaseDate != detail.releaseDate) _releaseDateRevision++;
+    if (previous?.userRating != detail.userRating) _userRatingRevision++;
     _storeLoadResult(
       AudioDetailLoadResult(
         detail: detail,
@@ -851,6 +886,7 @@ class AudioDetailCacheService {
     _workTitleRevision++;
     _voiceActorRevision++;
     _releaseDateRevision++;
+    _userRatingRevision++;
   }
 
   void _bumpRevision([Iterable<AudioDetailTarget>? targets]) {

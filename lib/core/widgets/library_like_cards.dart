@@ -226,6 +226,7 @@ class LibraryLikeInfoLineData {
     this.text, {
     required this.icon,
     this.isSecondary = false,
+    this.highlightAccent = false,
     this.trailingText = '',
   });
 
@@ -233,6 +234,7 @@ class LibraryLikeInfoLineData {
   final String text;
   final IconData icon;
   final bool isSecondary;
+  final bool highlightAccent;
   final String trailingText;
 }
 
@@ -244,6 +246,8 @@ class LibraryLikeInfoMetadata {
     this.tags = const <String>[],
     this.releaseDate,
     this.rating,
+    this.userRating,
+    this.hasReviewNote = false,
   });
 
   final List<String> voiceActors;
@@ -252,6 +256,8 @@ class LibraryLikeInfoMetadata {
   final List<String> tags;
   final DateTime? releaseDate;
   final double? rating;
+  final int? userRating;
+  final bool hasReviewNote;
 }
 
 List<LibraryLikeInfoLineData> buildLibraryLikeInfoLines({
@@ -261,6 +267,8 @@ List<LibraryLikeInfoLineData> buildLibraryLikeInfoLines({
   required String tagsLabel,
   required String releaseDateLabel,
   required String ratingLabel,
+  String? userRatingLabel,
+  String? reviewNoteLabel,
   String listSeparator = '\uFF0C',
   String tagSeparator = kLibraryLikeTagSeparator,
 }) {
@@ -316,6 +324,30 @@ List<LibraryLikeInfoLineData> buildLibraryLikeInfoLines({
         rating,
         icon: Icons.star_rounded,
         isSecondary: true,
+      ),
+    );
+  }
+  if (metadata.userRating != null &&
+      metadata.userRating! >= 1 &&
+      metadata.userRating! <= 5) {
+    result.add(
+      LibraryLikeInfoLineData(
+        userRatingLabel ?? ratingLabel,
+        '${metadata.userRating}',
+        icon: Icons.star_rounded,
+        isSecondary: true,
+        highlightAccent: true,
+      ),
+    );
+  }
+  if (metadata.hasReviewNote) {
+    result.add(
+      LibraryLikeInfoLineData(
+        reviewNoteLabel ?? '',
+        '',
+        icon: Icons.notes_rounded,
+        isSecondary: true,
+        highlightAccent: true,
       ),
     );
   }
@@ -465,6 +497,7 @@ class _LibraryLikeCardInfo extends StatelessWidget {
         _libraryLikeSecondaryInfo(
           context,
           secondaryLines,
+          accentColor: accentColor,
           trailingActions: trailingActions,
         ),
       ],
@@ -500,11 +533,13 @@ class _LibraryLikeCardInfo extends StatelessWidget {
 Widget _libraryLikeSecondaryInfo(
   BuildContext context,
   List<LibraryLikeInfoLineData> lines, {
+  Color? accentColor,
   Widget? trailingActions,
 }) {
   final theme = Theme.of(context);
   final isWindows = theme.platform == TargetPlatform.windows;
   final color = theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.80);
+  final highlightColor = accentColor ?? theme.colorScheme.primary;
   final style = isWindows
       ? theme.textTheme.bodySmall!.copyWith(
           fontSize: 11,
@@ -512,6 +547,10 @@ Widget _libraryLikeSecondaryInfo(
           color: color,
         )
       : TextStyle(fontSize: 11, fontWeight: FontWeight.w400, color: color);
+  final highlightStyle = style.copyWith(
+    color: highlightColor,
+    fontWeight: FontWeight.w700,
+  );
   final row = SizedBox(
     height: _libraryLikeInfoLineHeight,
     child: Align(
@@ -528,17 +567,28 @@ Widget _libraryLikeSecondaryInfo(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     for (var i = 0; i < lines.length; i++) ...[
-                      if (i > 0) const SizedBox(width: 12),
+                      if (i > 0)
+                        SizedBox(width: lines[i].highlightAccent ? 8 : 12),
                       Tooltip(
                         message: lines[i].label,
-                        child: Icon(lines[i].icon, size: 12, color: color),
+                        child: Icon(
+                          lines[i].icon,
+                          size: 12,
+                          color: lines[i].highlightAccent
+                              ? highlightColor
+                              : color,
+                        ),
                       ),
-                      const SizedBox(width: 4),
-                      SearchHighlightedText(
-                        text: lines[i].text,
-                        maxLines: 1,
-                        style: style,
-                      ),
+                      if (lines[i].text.isNotEmpty) ...[
+                        const SizedBox(width: 3),
+                        SearchHighlightedText(
+                          text: lines[i].text,
+                          maxLines: 1,
+                          style: lines[i].highlightAccent
+                              ? highlightStyle
+                              : style,
+                        ),
+                      ],
                     ],
                   ],
                 ),
@@ -913,6 +963,8 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
     required this.tagsLabel,
     required this.releaseDateLabel,
     required this.ratingLabel,
+    this.userRatingLabel,
+    this.reviewNoteLabel,
     required this.coverBuilder,
     this.listSeparator = '\uFF0C',
     this.tagSeparator = kLibraryLikeTagSeparator,
@@ -929,6 +981,8 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
   final String tagsLabel;
   final String releaseDateLabel;
   final String ratingLabel;
+  final String? userRatingLabel;
+  final String? reviewNoteLabel;
   final String listSeparator;
   final String tagSeparator;
   final bool loading;
@@ -953,12 +1007,16 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
                   tags: metadata.tags.map(translate).toList(),
                   releaseDate: metadata.releaseDate,
                   rating: metadata.rating,
+                  userRating: metadata.userRating,
+                  hasReviewNote: metadata.hasReviewNote,
                 ),
           voiceActorLabel: voiceActorLabel,
           circleLabel: circleLabel,
           tagsLabel: tagsLabel,
           releaseDateLabel: releaseDateLabel,
           ratingLabel: ratingLabel,
+          userRatingLabel: userRatingLabel,
+          reviewNoteLabel: reviewNoteLabel,
           listSeparator: listSeparator,
           tagSeparator: tagSeparator,
         ),

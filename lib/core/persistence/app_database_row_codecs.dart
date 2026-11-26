@@ -342,6 +342,10 @@ void _writeAsmrWorkToBatch(
     'rating': work.rating,
     'has_subtitle': work.hasSubtitle ? 1 : 0,
     'is_favorite': (isFavorite ?? work.isFavorite) ? 1 : 0,
+    'listen_status': work.listenStatus,
+    'user_rating': work.userRating,
+    'review_text': work.reviewText,
+    'review_updated_at_ms': work.reviewUpdatedAt?.millisecondsSinceEpoch,
   }, conflictAlgorithm: ConflictAlgorithm.replace);
   batch.delete(
     'asmr_work_voice_actors',
@@ -464,6 +468,10 @@ void _writeAsmrSyncOperationToBatch(
     'source_id': operation.sourceId,
     'created_at_ms': operation.createdAt.millisecondsSinceEpoch,
     'retry_count': operation.retryCount,
+    'progress': operation.progress,
+    'user_rating': operation.userRating,
+    'review_text': operation.reviewText,
+    'has_review_payload': operation.hasReviewPayload ? 1 : 0,
     'sort_order': sortOrder,
   });
 }
@@ -497,6 +505,10 @@ AsmrWorkRecord _asmrWorkFromRow(
     tags: tags ?? const <String>[],
     hasSubtitle: (row['has_subtitle'] as int? ?? 0) == 1,
     isFavorite: (row['is_favorite'] as int? ?? 0) == 1,
+    listenStatus: row['listen_status'] as String?,
+    userRating: (row['user_rating'] as num?)?.toInt(),
+    reviewText: row['review_text'] as String? ?? '',
+    reviewUpdatedAt: _dateTimeFromMs(row['review_updated_at_ms']),
   );
 }
 

@@ -107,7 +107,14 @@ class PlaybackSubtitleService extends ChangeNotifier {
 
   SubtitleModelStore get modelStore => _aiEngine.modelStore;
   TextTranslationService get translationService => _aiEngine.translationService;
+  SubtitleAsrModelOption get activeAsrModel => _aiEngine.currentAsrModel;
   SubtitleGenerationJob? get generationJob => _generationJob;
+  bool isModelTaskRunningFor(SubtitleDraftKind kind) {
+    final job = _generationJob;
+    return job != null &&
+        job.status == SubtitleGenerationStatus.running &&
+        job.kind == kind;
+  }
   bool get canRetryGeneration {
     final job = _generationJob;
     return _retryLastGeneration != null &&
@@ -121,7 +128,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
     return _retryLastGeneration!.call();
   }
   bool canEditSubtitle(String trackPath) =>
-      _trackResolver(trackPath)?.isRemoteAsmr != true;
+      _trackResolver(trackPath)?.isRemoteMedia != true;
 
   bool startScriptGeneration(
     String trackPath,
@@ -133,6 +140,21 @@ class PlaybackSubtitleService extends ChangeNotifier {
     (onProgress, isCancelled, cancellation) => prepareScriptSubtitle(
       trackPath,
       scriptPath,
+      onProgress: onProgress,
+      isCancelled: isCancelled,
+      cancellation: cancellation,
+    ),
+    onApplied,
+  );
+
+  bool startTranscriptionGeneration(
+    String trackPath, {
+    VoidCallback? onApplied,
+  }) => _startGeneration(
+    trackPath,
+    SubtitleDraftKind.transcription,
+    (onProgress, isCancelled, cancellation) => prepareTranscriptionSubtitle(
+      trackPath,
       onProgress: onProgress,
       isCancelled: isCancelled,
       cancellation: cancellation,
@@ -273,6 +295,10 @@ class PlaybackSubtitleService extends ChangeNotifier {
           TextTranslationFailure.rateLimited => 'work_translation_rate_limited',
           TextTranslationFailure.unusualTraffic =>
             'work_translation_unusual_traffic',
+          TextTranslationFailure.unauthorized =>
+            'work_translation_unauthorized',
+          TextTranslationFailure.misconfigured =>
+            'work_translation_misconfigured',
         };
         AppLogService.warning('subtitle_online_translation_failed_$failure');
         job._status = SubtitleGenerationStatus.failed;
@@ -423,6 +449,18 @@ class PlaybackSubtitleService extends ChangeNotifier {
     cancellation: cancellation,
   );
 
+  Future<SubtitleDraft?> prepareTranscriptionSubtitle(
+    String trackPath, {
+    void Function(SubtitleTaskProgress)? onProgress,
+    bool Function()? isCancelled,
+    Future<void>? cancellation,
+  }) => _aiEngine.prepareTranscription(
+    trackPath,
+    onProgress: onProgress,
+    isCancelled: isCancelled,
+    cancellation: cancellation,
+  );
+
   Future<SubtitleDraft> prepareTranslation(
     String trackPath,
     String targetLanguage, {
@@ -497,8 +535,10 @@ class PlaybackSubtitleService extends ChangeNotifier {
     if (isCancelled?.call() == true) throw const SubtitleTaskCancelled();
     _validateCues(trackPath, draft.cues);
     final translation = draft.kind == SubtitleDraftKind.translation;
-    final extension = translation ? '.srt' : '.lrc';
-    final content = translation
+    final useSrt =
+        translation || draft.kind == SubtitleDraftKind.transcription;
+    final extension = useSrt ? '.srt' : '.lrc';
+    final content = useSrt
         ? _srtContent(draft.cues)
         : _lrcContent(draft.cues);
     final bytes = Uint8List.fromList(utf8.encode(content));
@@ -608,7 +648,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
     final files = <String, ({String sourcePath, String name})>{};
     if (_isRemote(trackPath)) {
       final track = _trackResolver(trackPath);
-      if (track?.isRemoteAsmr == true) {
+      if (track?.isRemoteMedia == true) {
         final source = _subtitleSource(trackPath);
         final generation = _generation;
         final original = await _loadAsmrTrack(
@@ -1620,7 +1660,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
     if (loaded == null) {
       if (trackPath.startsWith('content://')) {
         loaded = await _loadContentTrack(trackPath, track);
-      } else if (track?.isRemoteAsmr == true && track != null) {
+      } else if (track?.isRemoteMedia == true && track != null) {
         loaded = await _loadAsmrTrack(
           track,
           source: source,
@@ -1707,7 +1747,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
   });
 
   bool _hasRemoteSubtitleUrl(MusicTrack? track) {
-    if (track?.isRemoteAsmr != true) return false;
+    if (track?.isRemoteMedia != true) return false;
     return track?.remoteMetadata?['subtitleUrl']
             ?.toString()
             .trim()

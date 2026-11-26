@@ -9,12 +9,17 @@ import '../../../app/localization/app_language_provider.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_styles.dart';
+import '../../../core/media/natural_sort.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/media/search_query_utils.dart';
+import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_search_page.dart';
 import '../../../core/widgets/app_transitions.dart';
+import '../../../core/widgets/library_like_cards.dart';
+import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/page_header_inset.dart';
+import '../../../core/widgets/search_highlight.dart';
 import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../player/application/playback_subtitle_service.dart';
 import '../../player/presentation/playback_providers.dart';
@@ -22,11 +27,15 @@ import '../../settings/presentation/settings_providers.dart';
 import '../application/library_facade.dart';
 import '../domain/audio_library_category.dart';
 import '../domain/library_node.dart';
+import '../domain/remote_media_source.dart';
 import 'audio_detail_sheet.dart' show showAudioDetailEditor;
+import 'dlsite_metadata_batch_page.dart';
 import 'library_providers.dart';
 import 'library_search_all_results.dart';
 import 'library_tab_ui_helpers.dart';
 import 'library_view_models.dart';
+import 'remote_library_work_detail.dart';
+import 'remote_source_sheets.dart';
 
 class LibrarySearchPage extends ConsumerStatefulWidget {
   const LibrarySearchPage({super.key, this.initialQuery = ''});
@@ -65,6 +74,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   int _queryRevision = 0;
   bool _isSelectionMode = false;
   Set<String> _selectedLibraryPaths = const {};
+  Set<String> _selectedRemoteWorkIds = const {};
   (_SelectionTreeKey, List<LibraryNode>)? _searchSelection;
   Future<AudioLibraryCategorySnapshot>? _categorySnapshotFuture;
   int? _categorySnapshotStructureRevision;
@@ -282,6 +292,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   void _clearSelection() {
     _isSelectionMode = false;
     _selectedLibraryPaths = const {};
+    _selectedRemoteWorkIds = const {};
   }
 
   void _enterSelectionMode(LibraryNode node) {
@@ -289,7 +300,17 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
     setState(() {
       _isSelectionMode = true;
+      _selectedRemoteWorkIds = const {};
       _selectedLibraryPaths = {selectionKeyForLibraryNode(node)};
+    });
+  }
+
+  void _enterRemoteSelectionMode(RemoteLibraryWork work) {
+    AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
+    setState(() {
+      _isSelectionMode = true;
+      _selectedLibraryPaths = const {};
+      _selectedRemoteWorkIds = {work.workId};
     });
   }
 
@@ -306,6 +327,26 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
       if (!paths.remove(key)) paths.add(key);
       _selectedLibraryPaths = paths;
       if (paths.isEmpty) _isSelectionMode = false;
+    });
+  }
+
+  void _toggleRemoteSelection(RemoteLibraryWork work) {
+    AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
+    setState(() {
+      final ids = Set<String>.of(_selectedRemoteWorkIds);
+      if (!ids.remove(work.workId)) ids.add(work.workId);
+      _selectedRemoteWorkIds = ids;
+      if (ids.isEmpty) _isSelectionMode = false;
+    });
+  }
+
+  void _toggleSelectAllRemoteSearchResults(List<RemoteLibraryWork> visible) {
+    if (visible.isEmpty) return;
+    final ids = <String>[for (final w in visible) w.workId];
+    final allSelected = ids.every(_selectedRemoteWorkIds.contains);
+    AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
+    setState(() {
+      _selectedRemoteWorkIds = allSelected ? const <String>{} : ids.toSet();
     });
   }
 
@@ -426,10 +467,15 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     _observeSubtitleService(ref.watch(playbackSubtitleServiceProvider));
     ref.watch(libraryListUiProvider.select((state) => state.structureRevision));
     ref.watch(libraryDetailRevisionProvider);
+    final selectedRemoteSource = ref.watch(
+      remoteLibraryControllerProvider.select((c) => c.selectedSource),
+    );
+    final isRemote = selectedRemoteSource != null;
+    final effectiveSelectionMode = _isSelectionMode;
     final structureRevision = libraryFacade.structureRevision;
     final detailRevision = libraryFacade.detailCacheService.revision;
     final cached = libraryFacade.categorySnapshot;
-    final topInset = _isSelectionMode
+    final topInset = effectiveSelectionMode
         ? AppPageHeaderMetrics.contentTopInset(
             context,
             additionalHeight: 6 + AppPageHeaderMetrics.buttonSize,
@@ -451,62 +497,391 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
       showConfirmButton: query == null,
       onConfirm: _canSubmitDraft ? () => _onSubmitted(_controller.text) : null,
       confirmLabel: i18n.tr('confirm'),
-      controlsOverlay: _isSelectionMode ? _buildSelectionHeader(i18n) : null,
+      controlsOverlay: effectiveSelectionMode
+          ? (isRemote
+                ? _buildRemoteSelectionHeader(
+                    i18n,
+                    selectedRemoteSource,
+                    query ?? '',
+                  )
+                : _buildSelectionHeader(i18n))
+          : null,
       body: PageHeaderInset(
         topInset: topInset,
-        child: AppDeferredContent(
-          // A cold snapshot loads metadata for the entire library. Keep that
-          // query out of entrance frames while retaining warm suggestions.
-          prepared:
-              cached?.structureRevision == structureRevision &&
-              cached?.detailRevision == detailRevision,
-          placeholder: const SizedBox.shrink(),
-          builder: (_) => _buildSuggestions(
-            libraryFacade,
-            structureRevision,
-            detailRevision,
-            topInset,
-          ),
-        ),
+        child: isRemote
+            ? _buildRemoteSuggestions(selectedRemoteSource, topInset)
+            : AppDeferredContent(
+                // A cold snapshot loads metadata for the entire library. Keep
+                // that query out of entrance frames while retaining warm
+                // suggestions.
+                prepared:
+                    cached?.structureRevision == structureRevision &&
+                    cached?.detailRevision == detailRevision,
+                placeholder: const SizedBox.shrink(),
+                builder: (_) => _buildSuggestions(
+                  libraryFacade,
+                  structureRevision,
+                  detailRevision,
+                  topInset,
+                ),
+              ),
       ),
       resultsBody: query == null
           ? null
           : PageHeaderInset(
               topInset: topInset,
               child: HeroMode(
-                key: const ValueKey('library_search_hero_mode'),
-                enabled: false,
-                child: LibrarySearchAllResults(
-                  key: const ValueKey('library_search_confirmed'),
-                  query: query,
-                  filters: _filters,
-                  queryRevision: _queryRevision,
-                  structureRevision: structureRevision,
-                  detailRevision: detailRevision,
-                  subtitleRevision: _subtitleRevision,
-                  scrollController: _resultsScrollController,
-                  topPadding: topInset,
-                  isSelectionMode: _isSelectionMode,
-                  selectedPaths: _selectedLibraryPaths,
-                  onEnterSelectionMode: _enterSelectionMode,
-                  onToggleSelection: _toggleLibrarySelection,
-                  onTreeChanged: (tree) =>
-                      _acceptSearchTree(selectionKey, tree),
-                  searchIndex: _searchIndex,
-                  onClearFilters: _clearFilters,
-                  onEditSearch: _editSearch,
+                key: ValueKey(
+                  isRemote
+                      ? 'remote_library_search_hero_mode'
+                      : 'library_search_hero_mode',
                 ),
+                enabled: false,
+                child: isRemote
+                    ? _buildRemoteSearchResults(
+                        source: selectedRemoteSource,
+                        query: query,
+                        topInset: topInset,
+                      )
+                    : LibrarySearchAllResults(
+                        key: const ValueKey('library_search_confirmed'),
+                        query: query,
+                        filters: _filters,
+                        queryRevision: _queryRevision,
+                        structureRevision: structureRevision,
+                        detailRevision: detailRevision,
+                        subtitleRevision: _subtitleRevision,
+                        scrollController: _resultsScrollController,
+                        topPadding: topInset,
+                        isSelectionMode: _isSelectionMode,
+                        selectedPaths: _selectedLibraryPaths,
+                        onEnterSelectionMode: _enterSelectionMode,
+                        onToggleSelection: _toggleLibrarySelection,
+                        onTreeChanged: (tree) =>
+                            _acceptSearchTree(selectionKey, tree),
+                        searchIndex: _searchIndex,
+                        onClearFilters: _clearFilters,
+                        onEditSearch: _editSearch,
+                      ),
               ),
             ),
     );
     return PopScope<void>(
-      canPop: !_isSelectionMode,
+      canPop: !effectiveSelectionMode,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop && _isSelectionMode) {
+        if (!didPop && effectiveSelectionMode) {
           _exitSelectionMode();
         }
       },
       child: scaffold,
+    );
+  }
+
+  List<String> _rankRemoteTerms(Iterable<List<String>> groups) {
+    final counts = <String, int>{};
+    for (final list in groups) {
+      for (final raw in list) {
+        final term = raw.trim();
+        if (term.isEmpty) continue;
+        counts[term] = (counts[term] ?? 0) + 1;
+      }
+    }
+    final terms = counts.keys.toList(growable: false);
+    terms.sort((a, b) {
+      final byCount = (counts[b] ?? 0).compareTo(counts[a] ?? 0);
+      if (byCount != 0) return byCount;
+      return compareNatural(a, b);
+    });
+    return terms;
+  }
+
+  Widget _buildRemoteSuggestions(RemoteMediaSource source, double topInset) {
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final remoteController = ref.watch(remoteLibraryControllerProvider);
+    final history = ref.watch(
+      settingsStateProvider.select(
+        (state) => state.value?.librarySearchHistory ?? const <String>[],
+      ),
+    );
+    final works = remoteController.worksFor(source.id);
+    final isLoading = remoteController.isLoading(source.id) && works.isEmpty;
+    final error = remoteController.errorFor(source.id);
+    final voiceTerms = _rankRemoteTerms(works.map((w) => w.voiceActors));
+    final tagTerms = _rankRemoteTerms(works.map((w) => w.tags));
+
+    return CustomScrollView(
+      key: const ValueKey('remote_library_search_suggestions'),
+      controller: _suggestionsScrollController,
+      physics: const ClampingScrollPhysics(),
+      slivers: [
+        SliverPadding(
+          padding: EdgeInsets.only(
+            top: topInset,
+            bottom: AppSearchPageScaffold.contentBottomInset(context),
+          ),
+          sliver: SliverMainAxisGroup(
+            slivers: [
+              SliverToBoxAdapter(
+                child: ValueListenableBuilder<String>(
+                  valueListenable: _draftQuery,
+                  builder: (context, draft, _) => AppSearchElementTabs(
+                    draft: draft,
+                    matchAll: _matchAll,
+                    onSelected: (value) {
+                      setState(() => _matchAll = value);
+                      _syncSuggestionSelection(allowDuringComposing: true);
+                    },
+                    translate: i18n.tr,
+                    filters: _filters,
+                    onFiltersChanged: (value) =>
+                        setState(() => _filters = value),
+                  ),
+                ),
+              ),
+              ValueListenableBuilder<_LibrarySuggestionSelection>(
+                valueListenable: _suggestionSelection,
+                builder: (context, selection, _) {
+                  final selectedLowerSet = selection.selectedLowerTerms;
+                  final canonicalDraft = selection.canonicalDraft;
+                  bool isSelected(String element) =>
+                      selectedLowerSet.isNotEmpty &&
+                      selectedLowerSet.contains(element.toLowerCase());
+
+                  AppSearchSuggestionSection section(
+                    String key,
+                    String title,
+                    List<String> items,
+                    String emptyText, {
+                    bool metadata = false,
+                    bool isHistory = false,
+                    VoidCallback? onClear,
+                  }) => AppSearchSuggestionSection(
+                    key: ValueKey(key),
+                    title: title,
+                    items: items,
+                    isSelected: isHistory
+                        ? (item) => item == canonicalDraft
+                        : isSelected,
+                    onToggle: isHistory ? _onSubmitted : _toggleTerm,
+                    buildItemMenu: isHistory
+                        ? (item) => buildSearchHistoryMenu(
+                            context,
+                            item,
+                            online: false,
+                          )
+                        : null,
+                    emptyText: emptyText,
+                    expandLabel: i18n.tr('expand'),
+                    collapseLabel: i18n.tr('collapse'),
+                    onClear: onClear,
+                    clearLabel: i18n.tr('clear'),
+                    isLoading: metadata && isLoading,
+                    errorText: metadata && error != null && works.isEmpty
+                        ? i18n.tr('operation_failed_retry')
+                        : null,
+                    retryLabel: i18n.tr('retry'),
+                    onRetry: metadata && error != null && works.isEmpty
+                        ? () => unawaited(
+                            remoteController.refreshSource(source.id),
+                          )
+                        : null,
+                  );
+
+                  return SliverMainAxisGroup(
+                    slivers: [
+                      section(
+                        'library_search_history',
+                        i18n.tr('search_history'),
+                        history,
+                        i18n.tr('search_history_empty'),
+                        isHistory: true,
+                        onClear: () => unawaited(
+                          clearSearchHistoryWithFeedback(
+                            context,
+                            online: false,
+                          ),
+                        ),
+                      ),
+                      section(
+                        'library_search_voices',
+                        i18n.tr('library_category_voice_actors'),
+                        voiceTerms,
+                        i18n.tr('library_category_no_voice_actors'),
+                        metadata: true,
+                      ),
+                      section(
+                        'library_search_tags',
+                        i18n.tr('library_category_tags'),
+                        tagTerms,
+                        i18n.tr('library_category_no_tags'),
+                        metadata: true,
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  List<RemoteLibraryWork> _visibleRemoteSearchResults(
+    RemoteMediaSource source,
+    String query,
+  ) {
+    final remoteController = ref.watch(remoteLibraryControllerProvider);
+    final removals = ref.watch(undoableRemovalStateProvider);
+    final sort = ref.watch(
+      settingsStateProvider.select(
+        (s) => (
+          criterion:
+              s.value?.librarySortCriterion ?? LibrarySortCriterion.name,
+          ascending: s.value?.librarySortAscending ?? true,
+        ),
+      ),
+    );
+    final elements = parseSearchElements(query) ?? emptySearchElements;
+    return sortRemoteLibraryWorks(
+      filterRemoteLibraryWorks(
+        remoteController
+            .worksFor(source.id)
+            .where((w) => !removals.isHidden(remoteWorkRemovalKey(w))),
+        elements: elements,
+        filters: _filters,
+      ),
+      criterion: sort.criterion,
+      ascending: sort.ascending,
+    );
+  }
+
+  Widget _buildRemoteSearchResults({
+    required RemoteMediaSource source,
+    required String query,
+    required double topInset,
+  }) {
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final filtered = _visibleRemoteSearchResults(source, query);
+    final hasActiveFilters = _filters != emptySearchFilters;
+
+    Widget buildCard(RemoteLibraryWork work) => RemoteWorkCardTile(
+      work: work,
+      isSelectionMode: _isSelectionMode,
+      isSelected: _selectedRemoteWorkIds.contains(work.workId),
+      onLongPress: () => _enterRemoteSelectionMode(work),
+      onToggleSelect: () => _toggleRemoteSelection(work),
+    );
+
+    if (filtered.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: EdgeInsets.only(top: topInset),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppEmptyState(
+                key: const ValueKey<String>('library_search_empty'),
+                icon: Icons.search_off_rounded,
+                title: i18n.tr('no_search_results'),
+                message: i18n.tr('search_try_another_term'),
+              ),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 10,
+                runSpacing: 8,
+                alignment: WrapAlignment.center,
+                children: [
+                  if (hasActiveFilters)
+                    AppPillButton(
+                      key: const ValueKey<String>(
+                        'library_search_clear_filters_button',
+                      ),
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size(112, 44),
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                      ),
+                      onPressed: _clearFilters,
+                      child: Text(i18n.tr('clear_filters')),
+                    ),
+                  AppPillButton(
+                    key: const ValueKey<String>(
+                      'library_search_edit_search_button',
+                    ),
+                    onPressed: _editSearch,
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size(112, 44),
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      backgroundColor: Theme.of(
+                        context,
+                      ).colorScheme.secondaryContainer,
+                      foregroundColor: Theme.of(
+                        context,
+                      ).colorScheme.onSecondaryContainer,
+                    ),
+                    child: Text(i18n.tr('edit_search')),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final highlightQuery = searchElementHighlight(query);
+    return SearchHighlightScope(
+      query: highlightQuery,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final columns = responsiveLibraryCardColumnCount(
+            constraints.maxWidth,
+          );
+          final rowCount = columns <= 1
+              ? filtered.length
+              : (filtered.length / columns).ceil();
+          return CustomScrollView(
+            key: const ValueKey<String>('remote_library_search_results_all'),
+            controller: _resultsScrollController,
+            cacheExtent: 320,
+            physics: const ClampingScrollPhysics(),
+            slivers: [
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(
+                  LibraryLikeCardMetrics.listHorizontalPadding,
+                  topInset,
+                  LibraryLikeCardMetrics.listHorizontalPadding,
+                  AppSearchPageScaffold.contentBottomInset(context),
+                ),
+                sliver: SliverFixedExtentList.builder(
+                  itemExtent: LibraryLikeCardMetrics.rootTileHeight,
+                  itemCount: rowCount,
+                  itemBuilder: (context, rowIndex) {
+                    if (columns <= 1) {
+                      return buildCard(filtered[rowIndex]);
+                    }
+                    final start = rowIndex * columns;
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        for (var col = 0; col < columns; col++) ...[
+                          if (col > 0)
+                            const SizedBox(width: kResponsiveLibraryCardSpacing),
+                          Expanded(
+                            child: start + col < filtered.length
+                                ? buildCard(filtered[start + col])
+                                : const SizedBox.shrink(),
+                          ),
+                        ],
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -726,6 +1101,92 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
       onRemove: selectedSelections.isEmpty
           ? null
           : () => unawaited(_removeCurrentSelections()),
+      onExit: _exitSelectionMode,
+    );
+  }
+
+  Widget _buildRemoteSelectionHeader(
+    AppLanguageProvider i18n,
+    RemoteMediaSource source,
+    String query,
+  ) {
+    final coreReady = ref.watch(coreRuntimeReadyProvider);
+    final visible = _visibleRemoteSearchResults(source, query);
+    final selectedWorks = visible
+        .where((w) => _selectedRemoteWorkIds.contains(w.workId))
+        .toList(growable: false);
+    final allSelected =
+        visible.isNotEmpty && selectedWorks.length >= visible.length;
+    final isAllPinned =
+        selectedWorks.isNotEmpty && selectedWorks.every((w) => w.isPinned);
+
+    return LibraryBatchSelectionHeader(
+      keyPrefix: 'library_search',
+      i18n: i18n,
+      selectedCount: selectedWorks.length,
+      allSelected: allSelected,
+      onToggleSelectAll: visible.isEmpty
+          ? null
+          : () => _toggleSelectAllRemoteSearchResults(visible),
+      onEditInfo: selectedWorks.length == 1
+          ? () {
+              final work = selectedWorks.single;
+              _exitSelectionMode();
+              unawaited(openRemoteWorkDetailEditor(context, ref, work));
+            }
+          : null,
+      isPinned: isAllPinned,
+      onAddToPlaylist: !coreReady || selectedWorks.isEmpty
+          ? null
+          : () => unawaited(
+              addRemoteBatchWorksToPlaylist(
+                context: context,
+                ref: ref,
+                works: selectedWorks,
+                exitSelectionMode: _exitSelectionMode,
+              ),
+            ),
+      onCompleteMetadata: selectedWorks.isEmpty
+          ? null
+          : () {
+              final ids = selectedWorks.map((w) => w.workId).toSet();
+              _exitSelectionMode();
+              unawaited(
+                Navigator.of(context).push(
+                  buildAppPageRoute<void>(
+                    context: context,
+                    child: DlsiteMetadataBatchPage(
+                      remoteSourceId: source.id,
+                      initialRemoteWorkIds: ids,
+                      initialScope: DlsiteMetadataBatchScope.all,
+                    ),
+                  ),
+                ),
+              );
+            },
+      onTogglePin: selectedWorks.isEmpty
+          ? null
+          : () => unawaited(
+              toggleRemoteBatchWorksPinned(
+                context: context,
+                ref: ref,
+                sourceId: source.id,
+                workIds: selectedWorks
+                    .map((w) => w.workId)
+                    .toList(growable: false),
+                exitSelectionMode: _exitSelectionMode,
+              ),
+            ),
+      onRemove: selectedWorks.isEmpty
+          ? null
+          : () => unawaited(
+              stageRemoteBatchWorksRemoval(
+                context: context,
+                ref: ref,
+                works: selectedWorks,
+                exitSelectionMode: _exitSelectionMode,
+              ),
+            ),
       onExit: _exitSelectionMode,
     );
   }

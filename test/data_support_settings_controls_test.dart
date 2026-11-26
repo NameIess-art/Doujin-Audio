@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:doujin_audio/app/application/app_runtime_lifecycle.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/presentation/app_settings_group_card.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
@@ -14,10 +15,13 @@ import 'package:doujin_audio/core/ui/ui_operation_service.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/features/data_support/application/data_backup_service.dart';
+import 'package:doujin_audio/features/data_support/application/data_support_file_service.dart';
 import 'package:doujin_audio/features/data_support/application/storage_usage_service.dart';
 import 'package:doujin_audio/features/data_support/presentation/data_support_settings_controls.dart';
 import 'package:doujin_audio/features/data_support/presentation/storage_usage_card.dart';
 import 'package:doujin_audio/features/settings/application/app_update_service.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -26,6 +30,7 @@ void main() {
   const cardKeys = <ValueKey<String>>[
     ValueKey('data-support-export-backup'),
     ValueKey('data-support-restore-backup'),
+    ValueKey('data-support-webdav-sync-config'),
     ValueKey('data-support-export-diagnostics'),
     ValueKey('data-support-privacy-summary'),
   ];
@@ -226,10 +231,11 @@ void main() {
     },
   );
 
-  testWidgets('backup actions require explicit destructive-data warnings', (
+  testWidgets('backup actions require explicit destructive-data warnings and support cross-platform merge dialog', (
     tester,
   ) async {
     final languageProvider = AppLanguageProvider();
+    final fakeFileService = _InspectOnlyFileService();
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -238,6 +244,8 @@ void main() {
           ),
           appUpdateServiceProvider.overrideWithValue(AppUpdateService()),
           uiOperationServiceProvider.overrideWithValue(operationService),
+          audioRuntimeCoordinatorProvider.overrideWithValue(_NoopRuntime()),
+          dataSupportFileServiceProvider.overrideWithValue(fakeFileService),
           dataSupportStorageUsageServiceProvider.overrideWithValue(
             storageService(),
           ),
@@ -260,16 +268,74 @@ void main() {
     await tester.tap(find.text(languageProvider.tr('cancel')));
     await tester.pumpAndSettle();
 
+    // Same-platform backup defaults to Full Restore with destructive warning, and allows switching to Merge Sync.
+    fakeFileService.nextInspection = BackupInspectionResult(
+      manifest: BackupManifest(
+        formatVersion: 1,
+        appVersion: '1.0.0',
+        databaseSchemaVersion: 23,
+        platform: 'windows',
+        createdAt: DateTime.utc(2026, 11, 26),
+        containsSensitiveAccountData: true,
+        files: const {},
+      ),
+      isSamePlatform: true,
+      hasAccountData: true,
+      accountName: 'alice',
+    );
     final restoreCard = find.byKey(
       const ValueKey('data-support-restore-backup'),
     );
     await tester.ensureVisible(restoreCard);
     await tester.tap(restoreCard);
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
     expect(
       find.text(languageProvider.tr('restore_backup_warning')),
       findsOneWidget,
     );
+    await tester.tap(find.byKey(const ValueKey('backup-import-mode-merge')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(
+      find.text(languageProvider.tr('backup_import_merge_description')),
+      findsOneWidget,
+    );
+    final syncCheckbox = tester.widget<CheckboxListTile>(
+      find.byKey(const ValueKey('backup-import-sync-portable-settings')),
+    );
+    expect(syncCheckbox.value, isFalse);
+    await tester.tap(find.text(languageProvider.tr('cancel')));
+    await tester.pumpAndSettle();
+
+    // Cross-platform backup automatically locks into Merge Sync without destructive replacement option.
+    fakeFileService.nextInspection = BackupInspectionResult(
+      manifest: BackupManifest(
+        formatVersion: 1,
+        appVersion: '1.0.0',
+        databaseSchemaVersion: 23,
+        platform: 'android',
+        createdAt: DateTime.utc(2026, 11, 26),
+        containsSensitiveAccountData: true,
+        files: const {},
+      ),
+      isSamePlatform: false,
+      hasAccountData: true,
+      accountName: 'bob',
+    );
+    await tester.tap(restoreCard);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(
+      find.text(languageProvider.tr('backup_import_cross_platform_hint')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('backup-import-mode-full')),
+      findsNothing,
+    );
+    await tester.tap(find.text(languageProvider.tr('cancel')));
+    await tester.pumpAndSettle();
   });
 
   testWidgets('storage queries and results wait for idle', (tester) async {
@@ -775,4 +841,36 @@ class _SynchronousStorageUsageService extends StorageUsageService {
       availableBytes: 512,
     ),
   );
+}
+
+class _InspectOnlyFileService extends DataSupportFileService {
+  BackupInspectionResult? nextInspection;
+
+  @override
+  Future<PlatformFile?> pickBackupFile({required String dialogTitle}) async =>
+      PlatformFile(name: 'test.dabackup', size: 64, path: '/test.dabackup');
+
+  @override
+  Future<BackupInspectionResult> inspectBackupPath(String sourcePath) async =>
+      nextInspection!;
+}
+
+class _NoopRuntime implements AppRuntimeLifecycle {
+  @override
+  Future<void> start() async {}
+
+  @override
+  Future<void> initializeSecondaryData() async {}
+
+  @override
+  Future<void> enterBackground() async {}
+
+  @override
+  Future<void> resumeForeground() async {}
+
+  @override
+  Future<void> dispose({bool fastShutdown = false}) async {}
+
+  @override
+  Future<void> handleMemoryPressure() async {}
 }

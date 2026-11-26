@@ -2905,7 +2905,7 @@ void main() {
       find.ancestor(of: detail, matching: find.byType(FadeTransition)).first,
     );
     expect(fade.opacity.value, inExclusiveRange(0, 1));
-    expect(tester.getTopLeft(detail).dy, greaterThan(0));
+    expect(tester.getTopLeft(detail).dy, closeTo(0, 0.1));
     expect(
       find.byKey(const ValueKey<String>('under_playback_detail')),
       findsOneWidget,

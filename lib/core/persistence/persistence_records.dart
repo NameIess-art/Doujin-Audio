@@ -184,6 +184,10 @@ final class AudioDetailRecord {
     this.duration,
     this.salesCount,
     this.rating,
+    this.listenStatus,
+    this.userRating,
+    this.reviewText = '',
+    this.reviewUpdatedAt,
     this.createdAt,
     this.updatedAt,
   }) : voiceActors = List<String>.unmodifiable(voiceActors),
@@ -202,6 +206,10 @@ final class AudioDetailRecord {
   final Duration? duration;
   final int? salesCount;
   final double? rating;
+  final String? listenStatus;
+  final int? userRating;
+  final String reviewText;
+  final DateTime? reviewUpdatedAt;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 }
@@ -229,6 +237,10 @@ final class AsmrWorkRecord {
     required List<String> tags,
     required this.hasSubtitle,
     required this.isFavorite,
+    this.listenStatus,
+    this.userRating,
+    this.reviewText = '',
+    this.reviewUpdatedAt,
   }) : workKey = workKey ?? asmrLegacyWorkKey(sourceId, id),
        voiceActors = List<String>.unmodifiable(voiceActors),
        tags = List<String>.unmodifiable(tags);
@@ -254,6 +266,10 @@ final class AsmrWorkRecord {
   final List<String> tags;
   final bool hasSubtitle;
   final bool isFavorite;
+  final String? listenStatus;
+  final int? userRating;
+  final String reviewText;
+  final DateTime? reviewUpdatedAt;
 }
 
 final class AsmrSyncOperationRecord {
@@ -263,6 +279,10 @@ final class AsmrSyncOperationRecord {
     required this.sourceId,
     required this.createdAt,
     required this.retryCount,
+    this.progress,
+    this.userRating,
+    this.reviewText,
+    this.hasReviewPayload = false,
   });
 
   final String type;
@@ -270,6 +290,10 @@ final class AsmrSyncOperationRecord {
   final String sourceId;
   final DateTime createdAt;
   final int retryCount;
+  final String? progress;
+  final int? userRating;
+  final String? reviewText;
+  final bool hasReviewPayload;
 }
 
 final class TimeSegmentLabelRecord {

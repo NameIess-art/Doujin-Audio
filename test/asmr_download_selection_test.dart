@@ -44,6 +44,76 @@ void main() {
     );
   }
 
+  test(
+    'file groups share selection across nested folders and manual edits',
+    () {
+      final model = AsmrDownloadSelectionModel([
+        folder(
+          'Root',
+          'Root',
+          children: [
+            file('First.MP3', 'Root/First.MP3'),
+            file('Cover.JPG', 'Root/Cover.JPG'),
+            file('Manual.PDF', 'Root/Manual.PDF'),
+            file('Clip.mp4', 'Root/Clip.mp4'),
+            folder(
+              'Disc',
+              'Root/Disc',
+              children: [
+                file('Second.mp3', 'Root/Disc/Second.mp3'),
+                file('Track.WAV', 'Root/Disc/Track.WAV'),
+                file('Info.TXT', 'Root/Disc/Info.TXT', size: 0),
+                file('Caption.srt', 'Root/Disc/Caption.srt'),
+              ],
+            ),
+          ],
+        ),
+      ]);
+      const mp3 = AsmrDownloadFileGroup.mp3;
+      const all = AsmrDownloadFileGroup.all;
+
+      model.togglePath('Root/First.MP3', true);
+      expect(model.groupSelection(mp3), isFalse);
+      expect(model.selectedSummary().leafCount, 1);
+      model.toggleGroup(mp3);
+      expect(model.groupSelection(mp3), isTrue);
+      expect(model.stateForPath('Root/Disc'), isNull);
+      expect(model.selectedSummary(), (
+        leafCount: 2,
+        totalSizeBytes: 2048,
+        hasUnknownSize: false,
+      ));
+
+      for (final group in [
+        AsmrDownloadFileGroup.image,
+        AsmrDownloadFileGroup.wav,
+        AsmrDownloadFileGroup.txt,
+        AsmrDownloadFileGroup.pdf,
+      ]) {
+        model.toggleGroup(group);
+        expect(model.groupSelection(group), isTrue);
+      }
+      model.toggleGroup(mp3);
+      expect(model.groupSelection(mp3), isFalse);
+      expect(model.selectedDownloadRoots().map((file) => file.relativePath), [
+        'Root/Cover.JPG',
+        'Root/Manual.PDF',
+        'Root/Disc/Track.WAV',
+        'Root/Disc/Info.TXT',
+      ]);
+      expect(model.selectedSummary().hasUnknownSize, isTrue);
+      expect(model.stateForPath('Root'), isNull);
+
+      model.toggleGroup(all);
+      expect(model.groupSelection(all), isTrue);
+      expect(model.stateForPath('Root/Disc'), isTrue);
+      expect(model.selectedDownloadRoots().single.relativePath, 'Root');
+      model.toggleGroup(all);
+      expect(model.stateForPath('Root'), isFalse);
+      expect(model.selectedSummary().leafCount, 0);
+    },
+  );
+
   test('unknown sizes follow selected files and partial folder selection', () {
     final model = AsmrDownloadSelectionModel([
       folder('Disc', 'Disc', children: [

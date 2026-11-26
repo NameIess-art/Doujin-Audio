@@ -24,6 +24,8 @@ import '../../domain/time_segment_label.dart';
 import '../../../asmr/domain/asmr_models.dart';
 import '../../../asmr/presentation/asmr_work_detail_sheet.dart';
 import '../../../library/presentation/audio_detail_sheet.dart';
+import '../../../library/presentation/library_providers.dart';
+import '../../../library/presentation/remote_library_work_detail.dart';
 import 'playlist_progress_widgets.dart';
 import 'playlist_subtitle_panel.dart';
 import 'playlist_subtitle_menu_sheet.dart';
@@ -715,7 +717,9 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
   void _openWorkDetail(BuildContext context) {
     final session = widget.session;
     if (session.currentTrackPath.trim().isEmpty) return;
-    final track = _paths.trackByPath(session.currentTrackPath);
+    final track =
+        _paths.sessionTrackForPath(session.id, session.currentTrackPath) ??
+        _paths.trackByPath(session.currentTrackPath);
     if (track?.isRemoteAsmr == true && track?.remoteMetadata != null) {
       unawaited(
         showAsmrWorkDetailSheet(
@@ -724,6 +728,21 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
           returnToMain: true,
         ),
       );
+      return;
+    }
+    if (track?.isRemoteSource == true) {
+      final remoteWork = ref
+          .read(remoteLibraryControllerProvider)
+          .resolveWorkForTrack(track!);
+      if (remoteWork != null) {
+        unawaited(
+          openRemoteLibraryWorkDetail(
+            context,
+            remoteWork,
+            returnToMain: true,
+          ),
+        );
+      }
       return;
     }
     final target = track != null
@@ -745,7 +764,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
         path.basenameWithoutExtension(session.currentTrackPath);
     var circleName = '';
     var voiceActors = const <String>[];
-    if (track?.isRemoteAsmr == true) {
+    if (track?.isRemoteMedia == true) {
       circleName = track!.remoteCircleName;
       if (track.remoteMetadata case final metadata?
           when widget.showCoverOverlays) {
@@ -787,6 +806,8 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
         session: session,
         playback: playback,
         inlineTimecodes: widget.isLandscape,
+        // This row's height also determines how much room the cover gets.
+        compactSeekTarget: widget.isLandscape,
         timeSegmentLabels: visibleSegmentLabels,
         selectedSegmentId: selectedSegmentId,
         onManualSeek: _handleSegmentManualSeek,

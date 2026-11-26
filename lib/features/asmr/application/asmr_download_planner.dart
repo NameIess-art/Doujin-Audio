@@ -427,6 +427,7 @@ class AsmrDownloadPlanner {
       rating: work.rating > 0 ? work.rating.clamp(0, 5).toDouble() : null,
     );
     final resolved = metadata?.fillMissingFrom(catalog) ?? catalog;
+    final now = DateTime.now();
     return AudioDetail(
       target: AudioDetailTarget.libraryRootFolder(workRootPath),
       rjCode: resolved.rjCode,
@@ -438,9 +439,14 @@ class AsmrDownloadPlanner {
       duration: resolved.duration,
       salesCount: resolved.salesCount,
       rating: resolved.rating,
-      createdAt: DateTime.now(),
-      updatedAt: DateTime.now(),
-    ).normalizedForSave(DateTime.now());
+      listenStatus: work.listenStatus,
+      userRating: work.userRating,
+      reviewText: work.reviewText,
+      reviewUpdatedAt:
+          work.reviewUpdatedAt ?? (work.hasUserReview ? now : null),
+      createdAt: now,
+      updatedAt: now,
+    ).normalizedForSave(now);
   }
 
   String? downloadUrlFor(AsmrTrackFile node) {

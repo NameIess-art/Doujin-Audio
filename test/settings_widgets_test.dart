@@ -26,6 +26,8 @@ import 'package:doujin_audio/features/settings/presentation/subtitle_rgb_control
 import 'package:doujin_audio/features/settings/presentation/subtitle_window_settings_sheet.dart';
 import 'package:doujin_audio/features/settings/presentation/asmr_download_folder_name_settings_sheet.dart';
 import 'package:doujin_audio/features/data_support/application/storage_usage_service.dart';
+import 'package:doujin_audio/features/data_support/application/cross_platform_sync_service.dart';
+import 'package:doujin_audio/features/library/presentation/library_providers.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/features/settings/presentation/about_page.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
@@ -506,6 +508,14 @@ void main() {
 
     await tester.tap(find.text(i18n.tr('section_playback')));
     await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('smart_listen_status_switch')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('auto_postpone_stale_listening_switch')),
+      findsNothing,
+    );
     final allowVideoPlaybackTile = find.byKey(
       const ValueKey<String>('allow_video_playback_switch'),
     );
@@ -783,6 +793,89 @@ void main() {
         closeTo(3, 0.001),
       );
     },
+  );
+
+  testWidgets(
+    'WebDAV settings test connection from the leading icon action',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = defaultTargetPlatform == TargetPlatform.windows
+          ? const Size(1024, 760)
+          : const Size(360, 770);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      final harness = AppRuntimeWidgetTestFixture();
+      addTearDown(harness.dispose);
+      final syncService = _DeferredWebDavSyncService();
+      await tester.pumpWidget(
+        harness.build(
+          const SettingsTab(),
+          overrides: [
+            crossPlatformSyncServiceProvider.overrideWith((_) => syncService),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final i18n = harness.languageProvider;
+      final category = find.text(
+        i18n.tr(
+          defaultTargetPlatform == TargetPlatform.windows
+              ? 'settings_group_data'
+              : 'section_data_storage',
+        ),
+      );
+      await tester.ensureVisible(category);
+      await tester.tap(category);
+      await tester.pumpAndSettle();
+      final configure = find.byKey(
+        const ValueKey('data-support-webdav-sync-config'),
+      );
+      await tester.ensureVisible(configure);
+      await tester.tap(configure);
+      final dialog = find.byType(AppDialog);
+      await pumpUntilFound(tester, dialog);
+      await tester.pumpAndSettle();
+
+      final url = find
+          .descendant(of: dialog, matching: find.byType(TextField))
+          .first;
+      final testButton = find.byType(AppConnectionTestButton);
+      final confirm = find.text(i18n.tr('confirm'));
+      expect(find.text(i18n.tr('network_test')), findsNothing);
+      expect(find.byTooltip(i18n.tr('network_test')), findsOneWidget);
+      expect(find.byIcon(Icons.network_check_rounded), findsOneWidget);
+      expect(tester.getTopLeft(testButton).dx, tester.getTopLeft(url).dx);
+      expect(
+        tester.getCenter(testButton).dy,
+        closeTo(tester.getCenter(confirm).dy, 1),
+      );
+
+      const endpoint = 'https://dav.example.com/sync';
+      await tester.enterText(url, endpoint);
+      await tester.tap(testButton);
+      await tester.pump();
+      expect(syncService.testedUrl, endpoint);
+      expect(
+        find.descendant(
+          of: testButton,
+          matching: find.byType(CircularProgressIndicator),
+        ),
+        findsOneWidget,
+      );
+      syncService.connection.complete();
+      await pumpUntilFound(
+        tester,
+        find.text(i18n.tr('remote_source_test_success')),
+      );
+      expect(dialog, findsOneWidget);
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 
   testWidgets(
@@ -2640,6 +2733,21 @@ final class _DeferredFolderNameSettingsRepository extends SettingsRepository {
   ) {
     folderNameFieldUpdates.add(List.of(fields));
     return _pendingPersistence.future;
+  }
+}
+
+class _DeferredWebDavSyncService extends CrossPlatformSyncService {
+  final connection = Completer<void>();
+  String? testedUrl;
+
+  @override
+  Future<void> testWebDavConnection({
+    required String url,
+    required String username,
+    String? password,
+  }) {
+    testedUrl = url;
+    return connection.future;
   }
 }
 

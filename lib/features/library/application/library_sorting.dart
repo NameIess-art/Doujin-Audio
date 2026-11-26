@@ -32,6 +32,7 @@ class LibrarySortRequest {
     final needsDetails =
         criterion == LibrarySortCriterion.voiceActor ||
         criterion == LibrarySortCriterion.releaseDate ||
+        criterion == LibrarySortCriterion.userRating ||
         (criterion == LibrarySortCriterion.name &&
             workNameDisplay == WorkNameDisplay.workTitle);
     final stopwatch = Stopwatch()..start();
@@ -149,16 +150,16 @@ class LibrarySortValue {
   const LibrarySortValue({
     required this.name,
     required this.voiceActor,
-    required this.duration,
     required this.releaseDate,
+    required this.userRating,
     required this.addedAt,
     required this.lastPlayedAt,
   });
 
   final String name;
   final String? voiceActor;
-  final Duration? duration;
   final DateTime? releaseDate;
+  final int? userRating;
   final DateTime? addedAt;
   final DateTime? lastPlayedAt;
 }
@@ -172,7 +173,8 @@ LibrarySortValue _librarySortValue(
   final workNameDisplay = request.workNameDisplay;
   final needsDetail =
       criterion == LibrarySortCriterion.voiceActor ||
-      criterion == LibrarySortCriterion.releaseDate;
+      criterion == LibrarySortCriterion.releaseDate ||
+      criterion == LibrarySortCriterion.userRating;
   final needsWorkTitle =
       criterion == LibrarySortCriterion.name &&
       workNameDisplay == WorkNameDisplay.workTitle &&
@@ -215,16 +217,14 @@ LibrarySortValue _librarySortValue(
   return LibrarySortValue(
     name: workTitle.isNotEmpty ? workTitle : node.name,
     voiceActor: voiceActors.isEmpty ? null : voiceActors.join('\u0000'),
-    duration: criterion == LibrarySortCriterion.duration
-        ? node is FolderNode
-              ? node.totalDuration
-              : firstTrack?.duration
-        : null,
     releaseDate: criterion == LibrarySortCriterion.releaseDate
         ? detail?.releaseDate ??
               dateTimeFromSortMetadata(
                 firstTrack?.remoteMetadata?['releaseDate'],
               )
+        : null,
+    userRating: criterion == LibrarySortCriterion.userRating
+        ? detail?.userRating
         : null,
     addedAt: addedAt,
     lastPlayedAt: lastPlayedAt,
@@ -240,22 +240,25 @@ int compareLibrarySortValues(
   LibrarySortCriterion criterion,
   bool ascending,
 ) {
+  if (criterion == LibrarySortCriterion.userRating) {
+    if (left.userRating == null && right.userRating == null) return 0;
+    if (left.userRating == null) return 1;
+    if (right.userRating == null) return -1;
+    final cmp = left.userRating!.compareTo(right.userRating!);
+    return ascending ? cmp : -cmp;
+  }
   final result = switch (criterion) {
     LibrarySortCriterion.name => compareNatural(left.name, right.name),
     LibrarySortCriterion.voiceActor => compareOptionalSortStrings(
       left.voiceActor,
       right.voiceActor,
     ),
-    LibrarySortCriterion.duration => compareOptionalSortValues(
-      left.duration,
-      right.duration,
-      (a, b) => a.compareTo(b),
-    ),
     LibrarySortCriterion.releaseDate => compareOptionalSortValues(
       left.releaseDate,
       right.releaseDate,
       (a, b) => a.compareTo(b),
     ),
+    LibrarySortCriterion.userRating => 0,
     LibrarySortCriterion.addedAt => compareOptionalSortValues(
       left.addedAt,
       right.addedAt,

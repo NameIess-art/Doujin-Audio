@@ -109,6 +109,21 @@ void main() {
     });
   }
 
+  test('legacy listening status toggles are dropped on save', () async {
+    await AppPreferences.writeJson('playback_settings_v1', {
+      'smartListenStatusEnabled': false,
+      'autoPostponeStaleListening': false,
+      'recordPlaybackProgress': false,
+    });
+    await settings.loadPersistedState(enforceCacheLimit: false);
+
+    await settings.setAllowVideoPlayback(false);
+    final stored = preferences.writes.last;
+    expect(stored, isNot(contains('smartListenStatusEnabled')));
+    expect(stored, isNot(contains('autoPostponeStaleListening')));
+    expect(stored['recordPlaybackProgress'], isFalse);
+  });
+
   test(
     'My page visibility and startup fallback persist across restart',
     () async {
@@ -298,7 +313,7 @@ void main() {
       expect(settings.startupPage, StartupPage.library);
       await expectLater(
         settings.setLibrarySortOptions(
-          criterion: LibrarySortCriterion.duration,
+          criterion: LibrarySortCriterion.voiceActor,
           ascending: false,
           groupByLibrary: true,
         ),

@@ -13,6 +13,10 @@ String listeningWorkKey(MusicTrack track) {
   if (rj != null) return 'rj:${rj.toUpperCase()}';
   final id = track.remoteMetadata?['id'];
   if (track.isRemoteAsmr && id != null) return 'asmr:$id';
+  if (track.isRemoteSource) {
+    final workKey = track.remoteMetadata?['workKey']?.toString().trim() ?? '';
+    if (workKey.isNotEmpty) return 'remote:$workKey';
+  }
   return 'local:${track.groupKey.replaceAll('\\', '/').toLowerCase()}';
 }
 
@@ -70,9 +74,12 @@ final class ListeningDayContribution {
   final List<ListeningWorkContribution> works;
 }
 
-abstract interface class ListeningActivityRepository {
+abstract class ListeningActivityRepository {
   Future<bool> importBatch(String batchId, List<ListeningDayContribution> days);
   Future<List<ListeningDay>> loadDays();
+  Future<Map<String, int>> loadWorkTotalMilliseconds(
+    Iterable<String> workKeys,
+  ) async => const <String, int>{};
   Future<int> countHistory();
   Future<List<ListeningHistoryEntry>> loadHistory({
     int offset = 0,

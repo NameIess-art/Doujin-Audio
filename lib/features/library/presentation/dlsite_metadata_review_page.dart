@@ -4,6 +4,7 @@ import 'dlsite_metadata_review_navigation.dart';
 import 'library_providers.dart';
 import '../../settings/presentation/settings_providers.dart';
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -32,10 +33,26 @@ import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../application/audio_detail_repository.dart';
+import '../application/dlsite_metadata_query.dart';
 import '../application/library_entry_editor_service.dart';
 import 'folder_cover_selector.dart';
 
 enum DlsiteMetadataReviewOutcome { applied, confirmed, skipped }
+
+typedef RemoteMetadataEditSaver =
+    Future<AudioDetail> Function(
+      AudioDetail current,
+      DlsiteMetadata edited, {
+      required String folderName,
+      required bool preserveDuration,
+    });
+
+typedef RemoteMetadataCandidateApplier =
+    Future<AudioDetail> Function(
+      AudioDetail current,
+      DlsiteMetadata metadata, {
+      required bool saveCover,
+    });
 
 class DlsiteMetadataReviewResult {
   const DlsiteMetadataReviewResult.applied(this.detail, this.saveCover)
@@ -78,6 +95,9 @@ class DlsiteMetadataReviewPage extends ConsumerStatefulWidget {
     this.onBatchExclude,
     this.onCompleted,
     this.editing = false,
+    this.remoteSaveEdits,
+    this.remoteApplyMetadata,
+    this.remoteInitialCoverUrl,
   }) : assert(
          editing ||
              initialCandidates != null ||
@@ -85,21 +105,26 @@ class DlsiteMetadataReviewPage extends ConsumerStatefulWidget {
              searchTitles.length > 0,
        );
 
-  const DlsiteMetadataReviewPage.edit({super.key, required this.detail})
-    : rjCode = null,
-      searchTitles = const <String>[],
-      batchIndex = null,
-      batchTotal = null,
-      allowSkip = false,
-      missingOnly = false,
-      initialSaveCover = false,
-      initialCandidates = null,
-      canNavigatePrevious = false,
-      canNavigateNext = false,
-      onBatchNavigate = null,
-      onBatchExclude = null,
-      onCompleted = null,
-      editing = true;
+  const DlsiteMetadataReviewPage.edit({
+    super.key,
+    required this.detail,
+    this.remoteSaveEdits,
+    this.remoteApplyMetadata,
+    this.remoteInitialCoverUrl,
+  }) : rjCode = null,
+       searchTitles = const <String>[],
+       batchIndex = null,
+       batchTotal = null,
+       allowSkip = false,
+       missingOnly = false,
+       initialSaveCover = false,
+       initialCandidates = null,
+       canNavigatePrevious = false,
+       canNavigateNext = false,
+       onBatchNavigate = null,
+       onBatchExclude = null,
+       onCompleted = null,
+       editing = true;
 
   final AudioDetail detail;
   final String? rjCode;
@@ -116,6 +141,9 @@ class DlsiteMetadataReviewPage extends ConsumerStatefulWidget {
   final VoidCallback? onBatchExclude;
   final ValueChanged<DlsiteMetadataReviewResult>? onCompleted;
   final bool editing;
+  final RemoteMetadataEditSaver? remoteSaveEdits;
+  final RemoteMetadataCandidateApplier? remoteApplyMetadata;
+  final String? remoteInitialCoverUrl;
 
   @override
   ConsumerState<DlsiteMetadataReviewPage> createState() =>
@@ -145,6 +173,8 @@ class _DlsiteMetadataReviewPageState
 
   DlsiteMetadata? _metadata;
   AudioDetail? _editingDetail;
+  AudioDetail? _fetchedAppliedDetail;
+  int _coverRefreshVersion = 0;
   List<DlsiteMetadata> _candidates = const <DlsiteMetadata>[];
   int _candidateIndex = 0;
   Object? _error;
@@ -209,7 +239,14 @@ class _DlsiteMetadataReviewPageState
   }
 
   Future<void> _requestClose() async {
-    if (await _confirmDiscard() && mounted) Navigator.of(context).pop();
+    if (await _confirmDiscard() && mounted) {
+      final applied = _fetchedAppliedDetail;
+      Navigator.of(context).pop(
+        applied == null
+            ? null
+            : DlsiteMetadataReviewResult.applied(applied, false),
+      );
+    }
   }
 
   Future<void> _changeCandidate(int index) async {
@@ -330,6 +367,8 @@ class _DlsiteMetadataReviewPageState
     _populateFields(metadata);
     _metadata = metadata;
     _editingDetail = detail;
+    _fetchedAppliedDetail = null;
+    _coverRefreshVersion = 0;
     _candidates = <DlsiteMetadata>[metadata];
     _loading = false;
     _saveCover = false;
@@ -337,7 +376,7 @@ class _DlsiteMetadataReviewPageState
     _durationController.addListener(_markDurationEdited);
     _rememberDraft();
     final generation = ++_durationCalculationGeneration;
-    if (detail.duration == null) {
+    if (detail.duration == null && widget.remoteSaveEdits == null) {
       UiInteractionCoordinator.instance.scheduleCommit(
         key: _durationCommitKey,
         commit: () {
@@ -559,6 +598,27 @@ class _DlsiteMetadataReviewPageState
 
     var popped = false;
     try {
+      if (widget.remoteApplyMetadata != null) {
+        final savedDetail = await ref
+            .read(uiOperationServiceProvider)
+            .run<AudioDetail>(
+              scope: _operationScope,
+              labelKey: 'audio_detail_save_failed',
+              task: (_) => widget.remoteApplyMetadata!(
+                widget.detail,
+                edited,
+                saveCover: _saveCover,
+              ),
+            );
+        if (!mounted) return;
+        if (readAppRoute(context)?.isCurrent == true) {
+          popped = _finish(
+            DlsiteMetadataReviewResult.applied(savedDetail, _saveCover),
+          );
+        }
+        return;
+      }
+
       final language = ref
           .read(settingsRepositoryProvider)
           .slice
@@ -600,6 +660,22 @@ class _DlsiteMetadataReviewPageState
           DlsiteMetadataReviewResult.applied(result.detail, _saveCover),
         );
       }
+    } on HttpException catch (error) {
+      if (mounted && readAppRoute(context)?.isCurrent == true) {
+        final key = error.message.contains('remote_source_edit_disabled')
+            ? 'remote_source_edit_disabled'
+            : error.message.contains('remote_source_unauthorized')
+            ? 'remote_source_auth_failed'
+            : 'audio_detail_save_failed';
+        showAppSnackBar(
+          context,
+          ProviderScope.containerOf(
+            context,
+            listen: false,
+          ).read(appLanguageProviderInstanceProvider).tr(key),
+          tone: AppFeedbackTone.warning,
+        );
+      }
     } catch (_) {
       if (mounted && readAppRoute(context)?.isCurrent == true) {
         showAppSnackBar(
@@ -630,6 +706,27 @@ class _DlsiteMetadataReviewPageState
       final folderName = _folderNameController.text.trim();
       if (folderName.isEmpty) {
         throw const FormatException('Folder name cannot be empty.');
+      }
+      if (widget.remoteSaveEdits != null) {
+        final savedDetail = await operations.run<AudioDetail>(
+          scope: _operationScope,
+          labelKey: 'audio_detail_save_failed',
+          task: (_) => widget.remoteSaveEdits!(
+            detail,
+            edited,
+            folderName: folderName,
+            preserveDuration: !_durationEdited,
+          ),
+        );
+        if (!mounted) return;
+        if (readAppRoute(context)?.isCurrent == true) {
+          popped = _finish(
+            DlsiteMetadataReviewResult.applied(savedDetail, false),
+          );
+        } else {
+          _rememberDraft();
+        }
+        return;
       }
       if (folderName !=
           PathDisplay.fileName(
@@ -692,6 +789,22 @@ class _DlsiteMetadataReviewPageState
           tone: AppFeedbackTone.warning,
         );
       }
+    } on HttpException catch (error) {
+      if (mounted && readAppRoute(context)?.isCurrent == true) {
+        final key = error.message.contains('remote_source_edit_disabled')
+            ? 'remote_source_edit_disabled'
+            : error.message.contains('remote_source_unauthorized')
+            ? 'remote_source_auth_failed'
+            : 'audio_detail_save_failed';
+        showAppSnackBar(
+          context,
+          ProviderScope.containerOf(
+            context,
+            listen: false,
+          ).read(appLanguageProviderInstanceProvider).tr(key),
+          tone: AppFeedbackTone.warning,
+        );
+      }
     } catch (_) {
       if (mounted && readAppRoute(context)?.isCurrent == true) {
         showAppSnackBar(
@@ -726,6 +839,95 @@ class _DlsiteMetadataReviewPageState
           .tr('audio_detail_cover_saved'),
       tone: AppFeedbackTone.success,
     );
+  }
+
+  Future<void> _fetchInfoFromEditor() async {
+    if (!widget.editing || _saving || _loading) return;
+    final detail = _editingDetail ?? widget.detail;
+    final draftRj = _rjCodeController.text.trim();
+    final draftTitle = _titleController.text.trim();
+    final draftFolder = _folderNameController.text.trim();
+    var query = ref
+        .read(libraryFacadeProvider)
+        .buildDlsiteMetadataQuery(
+          detail.copyWith(rjCode: draftRj, workTitle: draftTitle),
+        );
+    if (query.rjCode == null && draftFolder.isNotEmpty) {
+      final rjFromFolder = AudioDetail.findRjCodeInText(draftFolder);
+      if (rjFromFolder != null) {
+        query = DlsiteMetadataQuery(rjCode: rjFromFolder);
+      } else {
+        final seen = <String>{};
+        query = DlsiteMetadataQuery(
+          searchTitles: <String>[draftFolder, ...query.searchTitles]
+              .map((value) => value.trim())
+              .where((value) => value.isNotEmpty && seen.add(value))
+              .toList(growable: false),
+        );
+      }
+    }
+    if (!query.hasQuery) {
+      final i18n = ref.read(appLanguageProviderInstanceProvider);
+      showAppSnackBar(
+        context,
+        i18n.tr('audio_detail_fetch_missing_query'),
+        tone: AppFeedbackTone.warning,
+      );
+      return;
+    }
+    final result = await Navigator.of(context).push<DlsiteMetadataReviewResult>(
+      buildAppPageRoute(
+        context: context,
+        child: DlsiteMetadataReviewPage(
+          detail: detail,
+          rjCode: query.rjCode,
+          searchTitles: query.searchTitles,
+          remoteApplyMetadata: widget.remoteApplyMetadata,
+        ),
+      ),
+    );
+    final applied = result?.detail;
+    if (!mounted || result == null || !result.isApplied || applied == null) {
+      return;
+    }
+    final diskFolderName = PathDisplay.fileName(
+      applied.target.targetPath,
+      withoutExtension: !applied.target.isLibraryRootFolder,
+    );
+    final preservedFolderEdit =
+        draftFolder.isNotEmpty && draftFolder != diskFolderName;
+    final nextMetadata = DlsiteMetadata(
+      rjCode: applied.rjCode,
+      workTitle: applied.workTitle,
+      circleName: applied.circleName,
+      voiceActors: applied.voiceActors,
+      tags: applied.tags,
+      releaseDate: applied.releaseDate,
+      duration: applied.duration,
+      salesCount: applied.salesCount,
+      rating: applied.rating,
+    );
+    _durationController.removeListener(_markDurationEdited);
+    if (!preservedFolderEdit) {
+      _folderNameController.text = diskFolderName;
+    }
+    _populateFields(nextMetadata);
+    _durationEdited = false;
+    _durationController.addListener(_markDurationEdited);
+    setState(() {
+      _editingDetail = applied;
+      _fetchedAppliedDetail = applied;
+      _metadata = nextMetadata;
+      _candidates = <DlsiteMetadata>[nextMetadata];
+      if (result.saveCover == true) {
+        _coverRefreshVersion++;
+      }
+      _rememberDraft();
+      if (preservedFolderEdit) {
+        _initialFields[0] = diskFolderName;
+        _dirty = true;
+      }
+    });
   }
 
   Future<void> _skip() async {
@@ -831,7 +1033,16 @@ class _DlsiteMetadataReviewPageState
     final listTopPadding =
         effectiveHeaderHeight + AppPageHeaderMetrics.firstContentSpacing;
 
-    final Widget? headerTrailing = hasCandidateNavigation
+    final Widget? headerTrailing = widget.editing
+        ? HeaderFloatingButton(
+            child: IconButton(
+              key: const ValueKey<String>('audio_detail_edit_fetch_info'),
+              tooltip: i18n.tr('audio_detail_fetch_info'),
+              onPressed: _saving || _loading ? null : _fetchInfoFromEditor,
+              icon: const Icon(Icons.cloud_download_rounded),
+            ),
+          )
+        : hasCandidateNavigation
         ? HeaderActionPill(
             children: [
               IconButton(
@@ -952,10 +1163,13 @@ class _DlsiteMetadataReviewPageState
                               const SizedBox(height: 12),
                             ],
                             if (widget.editing &&
-                                editingDetail.target.isLibraryRootFolder) ...[
+                                editingDetail.target.isLibraryRootFolder &&
+                                widget.remoteSaveEdits == null) ...[
                               FolderCoverSelector(
                                 key: ValueKey<String>(
-                                  'metadata_edit_cover_${editingDetail.target.targetPath}',
+                                  _coverRefreshVersion == 0
+                                      ? 'metadata_edit_cover_${editingDetail.target.targetPath}'
+                                      : 'metadata_edit_cover_${editingDetail.target.targetPath}_$_coverRefreshVersion',
                                 ),
                                 folderPath: editingDetail.target.targetPath,
                                 initialCoverPath: library
@@ -965,6 +1179,56 @@ class _DlsiteMetadataReviewPageState
                                 compactNavigation: true,
                                 showLabel: false,
                                 onCoverSelected: _handleCoverSelected,
+                              ),
+                              const SizedBox(height: 20),
+                            ] else if (widget.editing &&
+                                widget.remoteInitialCoverUrl != null &&
+                                widget.remoteInitialCoverUrl!.isNotEmpty) ...[
+                              Center(
+                                child: ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    maxWidth: 480,
+                                    maxHeight: 360,
+                                  ),
+                                  child: CoverArtworkFrame(
+                                    borderRadius: BorderRadius.circular(16),
+                                    child: AspectRatio(
+                                      aspectRatio: kStandardCoverAspectRatio,
+                                      child: AsyncRemoteCoverImage(
+                                        url: widget.remoteInitialCoverUrl!,
+                                        future: ref
+                                            .read(
+                                              libraryCoverUiControllerProvider,
+                                            )
+                                            .deferredRemoteCover(
+                                              widget.remoteInitialCoverUrl!,
+                                            ),
+                                        initialPath: library
+                                            .resolvedCoverPathForRemoteCover(
+                                              widget.remoteInitialCoverUrl!,
+                                            ),
+                                        retryFutureBuilder: () => ref
+                                            .read(
+                                              libraryCoverUiControllerProvider,
+                                            )
+                                            .deferredRemoteCover(
+                                              widget.remoteInitialCoverUrl!,
+                                            ),
+                                        fit: BoxFit.cover,
+                                        cacheWidth: coverCacheWidth,
+                                        useDefaultCacheWidth:
+                                            coverCacheWidth != null,
+                                        loadingBuilder: (_) =>
+                                            const CoverLoadingArtwork(
+                                              placeholder:
+                                                  CoverFallbackArtwork(),
+                                            ),
+                                        fallbackBuilder: (_) =>
+                                            const CoverFallbackArtwork(),
+                                      ),
+                                    ),
+                                  ),
+                                ),
                               ),
                               const SizedBox(height: 20),
                             ],
@@ -1152,7 +1416,7 @@ class _DlsiteMetadataReviewPageState
       ),
     );
     return PopScope<Object?>(
-      canPop: !_dirty && !_saving,
+      canPop: !_dirty && !_saving && _fetchedAppliedDetail == null,
       onPopInvokedWithResult: (didPop, result) {
         if (!didPop) unawaited(_requestClose());
       },

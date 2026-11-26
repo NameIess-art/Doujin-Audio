@@ -1286,7 +1286,7 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey<String>('asmr_work_detail_favorite')),
+      find.byKey(const ValueKey<String>('work_review_status_marked')),
       findsOneWidget,
     );
     expect(find.text('Test work'), findsOneWidget);
@@ -1709,7 +1709,7 @@ void main() {
       await pumpAndSettleWithAsync(tester);
 
       final favoriteButtonFinder = find.byKey(
-        const ValueKey<String>('asmr_work_detail_favorite'),
+        const ValueKey<String>('work_review_status_marked'),
       );
       final downloadButtonFinder = find.byKey(
         const ValueKey<String>('asmr_work_detail_download'),
@@ -1718,9 +1718,9 @@ void main() {
       expect(favoriteButtonFinder, findsOneWidget);
       expect(downloadButtonFinder, findsOneWidget);
 
-      final downloadRight = tester.getTopRight(downloadButtonFinder).dx;
-      final favoriteLeft = tester.getTopLeft(favoriteButtonFinder).dx;
-      expect(downloadRight, lessThanOrEqualTo(favoriteLeft));
+      final downloadBottom = tester.getBottomLeft(downloadButtonFinder).dy;
+      final favoriteTop = tester.getTopLeft(favoriteButtonFinder).dy;
+      expect(downloadBottom, lessThanOrEqualTo(favoriteTop));
 
       expect(controller.isFavorite(work.workKey), isTrue);
 
@@ -1739,7 +1739,7 @@ void main() {
       expect(controller.isFavorite(work.workKey), isTrue);
       final selectedIcon = find.descendant(
         of: favoriteButtonFinder,
-        matching: find.byIcon(Icons.favorite_rounded),
+        matching: find.byIcon(Icons.bookmark_rounded),
       );
       await pumpUntilFound(tester, selectedIcon);
       expect(selectedIcon, findsOneWidget);

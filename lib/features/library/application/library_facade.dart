@@ -368,6 +368,22 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
     preserveExistingDuration: preserveExistingDuration,
   );
 
+  Future<AudioDetailSaveResult> saveAudioUserReview(
+    AudioDetailTarget target, {
+    required WorkListenStatus? listenStatus,
+    required int? userRating,
+    required String reviewText,
+    DateTime? updatedAt,
+    bool deferCategoryUpdate = false,
+  }) => _metadataCoordinator.saveAudioUserReview(
+    target,
+    listenStatus: listenStatus,
+    userRating: userRating,
+    reviewText: reviewText,
+    updatedAt: updatedAt,
+    deferCategoryUpdate: deferCategoryUpdate,
+  );
+
   Future<AudioDetailSaveResult> saveMissingLibraryDuration(
     AudioDetailTarget target,
     Duration duration,
@@ -463,6 +479,24 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
     return updated;
   }
 
+  Future<void> reloadSyncedTracks(Set<String> trackPaths) async {
+    if (trackPaths.isEmpty || _disposed) return;
+    final loaded = await databaseRepository.loadTrackDetails(trackPaths);
+    if (_disposed || loaded.isEmpty) return;
+    for (final track in loaded.values) {
+      if (_service.libraryByPath.containsKey(track.path)) {
+        _replaceTrackInIndexes(track);
+      }
+    }
+    snapshotCacheService.clear();
+    _syncStateSlice();
+  }
+
+  List<String> get activeGroupKeys => _service.activeGroupKeys;
+
+  bool isActiveAllowedFileSystemPath(String candidatePath) =>
+      _service.isActiveAllowedFileSystemPath(candidatePath);
+
   @override
   List<MusicTrack> tracksInGroup(String groupKey, {int? limit}) =>
       List<MusicTrack>.unmodifiable(
@@ -514,6 +548,12 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
 
   Future<String?> coverPathFutureForRemoteCover(String url) =>
       _metadataCoordinator.coverForRemote(url);
+
+  void invalidateRemoteCover(String url, {bool clearFailure = true}) =>
+      coverArtworkCacheService.invalidateRemoteCover(
+        url,
+        clearFailure: clearFailure,
+      );
 
   Future<List<String>> discoverCoverCandidatesInFolder(
     String folderPath, {

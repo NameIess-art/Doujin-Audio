@@ -440,6 +440,31 @@ class LibraryService {
     );
   }
 
+  List<String> get activeGroupKeys => List<String>.unmodifiable(groupOrder);
+
+  bool isActiveAllowedFileSystemPath(String candidatePath) {
+    final normalized = PathMatcher.normalize(candidatePath);
+    if (normalized.isEmpty ||
+        PathMatcher.isContentUri(normalized) ||
+        PathMatcher.isRemoteUri(normalized)) {
+      return false;
+    }
+    final libRoot = mostSpecificWatchedLibrary(normalized);
+    if (libRoot != null) {
+      return !isLibraryPathExcluded(libRoot, normalized);
+    }
+    final watchedFolder = mostSpecificWatchedFolder(normalized);
+    if (watchedFolder != null) {
+      final parentLib = mostSpecificWatchedLibrary(watchedFolder);
+      if (parentLib != null &&
+          isLibraryPathExcluded(parentLib, normalized)) {
+        return false;
+      }
+      return true;
+    }
+    return trackByPath(normalized) != null;
+  }
+
   LibraryFolderRetargetResult retargetLibraryFolder(
     String oldFolderPath,
     String newFolderPath,

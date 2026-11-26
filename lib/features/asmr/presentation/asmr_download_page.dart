@@ -38,6 +38,7 @@ class AsmrDownloadPage extends ConsumerStatefulWidget {
     this.batchTotal,
     this.customDestinationRoot,
     this.customWorkFolderName,
+    this.customTreeLoader,
   }) : assert(
          work != null || initialRjCode != null,
          'Either work or initialRjCode must be provided',
@@ -49,6 +50,7 @@ class AsmrDownloadPage extends ConsumerStatefulWidget {
   final int? batchTotal;
   final String? customDestinationRoot;
   final String? customWorkFolderName;
+  final Future<List<AsmrTrackFile>> Function()? customTreeLoader;
 
   @override
   ConsumerState<AsmrDownloadPage> createState() => _AsmrDownloadPageState();
@@ -58,7 +60,6 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
   final GlobalKey _headerKey = GlobalKey();
   double _headerHeight = 0;
   bool _headerMeasurementScheduled = false;
-  Object? _lastHeaderLayoutKey;
   final ValueNotifier<int> _selectionRevision = ValueNotifier<int>(0);
   AsmrDownloadSelectionModel? _selection;
   String? _destinationRoot;
@@ -127,7 +128,8 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
             scope: UiOperationScope.asmrDownloadInit,
             labelKey: 'asmr_download_title',
             task: (_) async {
-              if (libraryController == null || downloadManager == null) {
+              if (downloadManager == null ||
+                  (widget.customTreeLoader == null && libraryController == null)) {
                 throw StateError('ASMR services are not configured.');
               }
               var work = _work;
@@ -136,7 +138,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                 if (rjCode == null || rjCode.isEmpty) {
                   throw StateError('No RJ code provided');
                 }
-                work = await libraryController.findWorkByRjCode(rjCode);
+                work = await libraryController!.findWorkByRjCode(rjCode);
                 if (work == null) {
                   throw StateError(
                     i18n.tr('audio_detail_asmr_work_not_found', {'rj': rjCode}),
@@ -147,7 +149,9 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                 }
               }
 
-              final tree = await libraryController.ensureTrackTree(work);
+              final tree = widget.customTreeLoader != null
+                  ? await widget.customTreeLoader!()
+                  : await libraryController!.ensureTrackTree(work);
               await downloadManager.initialize();
               final customRoot = widget.customDestinationRoot?.trim();
               final customFolder = widget.customWorkFolderName?.trim();
@@ -415,9 +419,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
     }
   }
 
-  void _scheduleHeaderMeasurement(Object layoutKey) {
-    if (_headerHeight > 0 && _lastHeaderLayoutKey == layoutKey) return;
-    _lastHeaderLayoutKey = layoutKey;
+  void _scheduleHeaderMeasurement() {
     if (_headerMeasurementScheduled) return;
     _headerMeasurementScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -466,20 +468,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
         activeTaskStatus != AsmrDownloadTaskStatus.completed &&
         activeTaskStatus != AsmrDownloadTaskStatus.failed;
 
-    _scheduleHeaderMeasurement((
-      _work?.id,
-      _work?.title,
-      widget.initialRjCode,
-      widget.batchIndex,
-      widget.batchTotal,
-      widget.customWorkFolderName,
-      _destinationRoot,
-      hasActiveTask,
-      mediaSize.width,
-      mediaPadding.top,
-      MediaQuery.textScalerOf(context),
-      i18n.language,
-    ));
+    _scheduleHeaderMeasurement();
 
     final defaultHeaderHeight =
         mediaPadding.top +
@@ -705,46 +694,53 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                         valueListenable: _selectionRevision,
                         builder: (context, _, _) {
                           final summary = selection?.selectedSummary();
-                          final allSelected =
-                              selection != null &&
-                              selection.rootNodes.isNotEmpty &&
-                              selection.rootNodes.every(
-                                (root) => root.selected,
-                              );
-                          return AnimatedSwitcher(
-                            duration: MediaQuery.disableAnimationsOf(context)
-                                ? Duration.zero
-                                : kAppFadeDuration,
-                            switchInCurve: kAppFadeCurve,
-                            switchOutCurve: kAppFadeCurve,
-                            child: AsmrDownloadSummaryCard(
-                              key: ValueKey(_work == null),
-                              work: _work,
-                              initialRjCode: widget.initialRjCode,
-                              selectedLeafCount: summary?.leafCount ?? 0,
-                              selectedTotalSizeBytes:
-                                  summary?.totalSizeBytes ?? 0,
-                              selectedHasUnknownSize:
-                                  summary?.hasUnknownSize ?? false,
-                              customWorkFolderName: widget.customWorkFolderName,
-                              destinationRoot: _destinationRoot,
-                              allSelected: allSelected,
-                              onToggleSelectAll:
-                                  selection == null ||
-                                      _loading ||
-                                      _starting ||
-                                      _choosingDestination
-                                  ? null
-                                  : () {
-                                      if (allSelected) {
-                                        selection.clearAll();
-                                      } else {
-                                        selection.selectAll();
-                                      }
-                                      _refreshSelection();
-                                    },
-                              hasActiveTask: hasActiveTask,
-                              onViewTasks: _openDownloadTasks,
+                          final card = AsmrDownloadSummaryCard(
+                            key: ValueKey(_work == null),
+                            work: _work,
+                            initialRjCode: widget.initialRjCode,
+                            selectedLeafCount: summary?.leafCount ?? 0,
+                            selectedTotalSizeBytes:
+                                summary?.totalSizeBytes ?? 0,
+                            selectedHasUnknownSize:
+                                summary?.hasUnknownSize ?? false,
+                            customWorkFolderName: widget.customWorkFolderName,
+                            destinationRoot: _destinationRoot,
+                            fileGroups: {
+                              if (selection != null)
+                                for (final group
+                                    in AsmrDownloadFileGroup.values)
+                                  group: selection.groupSelection(group),
+                            },
+                            onToggleFileGroup:
+                                selection == null ||
+                                    _loading ||
+                                    _starting ||
+                                    _choosingDestination
+                                ? null
+                                : (group) {
+                                    selection.toggleGroup(group);
+                                    _refreshSelection();
+                                  },
+                            hasActiveTask: hasActiveTask,
+                            onViewTasks: _openDownloadTasks,
+                          );
+                          return NotificationListener<
+                            SizeChangedLayoutNotification
+                          >(
+                            onNotification: (_) {
+                              _scheduleHeaderMeasurement();
+                              return true;
+                            },
+                            child: SizeChangedLayoutNotifier(
+                              child: AnimatedSwitcher(
+                                duration:
+                                    MediaQuery.disableAnimationsOf(context)
+                                    ? Duration.zero
+                                    : kAppFadeDuration,
+                                switchInCurve: kAppFadeCurve,
+                                switchOutCurve: kAppFadeCurve,
+                                child: card,
+                              ),
                             ),
                           );
                         },

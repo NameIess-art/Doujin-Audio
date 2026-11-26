@@ -146,9 +146,7 @@ class AppNetwork extends HttpOverrides {
         super.createHttpClient(context);
     final proxy = Uri.parse(proxyUrl);
     client.findProxy = (uri) {
-      final host = uri.host.toLowerCase();
-      final address = InternetAddress.tryParse(host);
-      if (host == 'localhost' || address?.isLoopback == true) return 'DIRECT';
+      if (isLocalOrPrivateNetworkHost(uri.host)) return 'DIRECT';
       return 'PROXY ${proxy.host}:${proxy.port}';
     };
     return client;
@@ -224,9 +222,7 @@ class AppNetwork extends HttpOverrides {
       dnsLease?.acquire();
       _ProxyRoute? chosen;
       try {
-        final localTarget =
-            uri.host == 'localhost' ||
-            InternetAddress.tryParse(uri.host)?.isLoopback == true;
+        final localTarget = isLocalOrPrivateNetworkHost(uri.host);
         final routes = localTarget
             ? [const _ProxyRoute('DIRECT', '', 0)]
             : settings.proxyMode == AppProxyMode.system
@@ -405,6 +401,7 @@ class AppNetwork extends HttpOverrides {
           timeout: const Duration(seconds: 8),
         );
       } else if (route.type == 'DIRECT' &&
+          !isLocalOrPrivateNetworkHost(host) &&
           settings.customDnsServer.isNotEmpty &&
           dnsResolver != null) {
         final connected = Completer<Socket>();
@@ -683,3 +680,44 @@ class _ProxyRoute {
   final int port;
   bool get isHttp => const {'PROXY', 'HTTP', 'HTTPS'}.contains(type);
 }
+
+bool isLocalOrPrivateNetworkHost(String rawHost) {
+  var host = rawHost.trim().toLowerCase();
+  if (host.startsWith('[') && host.endsWith(']')) {
+    host = host.substring(1, host.length - 1);
+  }
+  final zoneIndex = host.indexOf('%');
+  if (zoneIndex >= 0) host = host.substring(0, zoneIndex);
+  if (host.isEmpty) return false;
+  if (host == 'localhost' ||
+      host.endsWith('.localhost') ||
+      host.endsWith('.local')) {
+    return true;
+  }
+  final address = InternetAddress.tryParse(host);
+  if (address == null) return false;
+  if (address.isLoopback || address.isLinkLocal) return true;
+  final bytes = address.rawAddress;
+  if (address.type == InternetAddressType.IPv4 && bytes.length == 4) {
+    return _isPrivateIpv4Bytes(bytes[0], bytes[1]);
+  }
+  if (address.type == InternetAddressType.IPv6 && bytes.length == 16) {
+    if (bytes.every((b) => b == 0)) return true;
+    if ((bytes[0] & 0xfe) == 0xfc) return true; // fc00::/7
+    final isV4Mapped =
+        bytes.sublist(0, 10).every((b) => b == 0) &&
+        bytes[10] == 0xff &&
+        bytes[11] == 0xff;
+    if (isV4Mapped) return _isPrivateIpv4Bytes(bytes[12], bytes[13]);
+  }
+  return false;
+}
+
+bool _isPrivateIpv4Bytes(int b0, int b1) =>
+    b0 == 0 ||
+    b0 == 10 ||
+    b0 == 127 ||
+    (b0 == 169 && b1 == 254) ||
+    (b0 == 172 && b1 >= 16 && b1 <= 31) ||
+    (b0 == 192 && b1 == 168) ||
+    (b0 == 100 && b1 >= 64 && b1 <= 127);

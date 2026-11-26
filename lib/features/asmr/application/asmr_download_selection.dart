@@ -3,6 +3,8 @@ import 'dart:collection';
 import '../../../core/immutable_collections.dart';
 import '../domain/asmr_models.dart';
 
+enum AsmrDownloadFileGroup { all, image, mp3, wav, txt, pdf }
+
 class AsmrDownloadSelectionModel {
   AsmrDownloadSelectionModel(List<AsmrTrackFile> roots)
     : rootNodes = immutableList(
@@ -16,6 +18,8 @@ class AsmrDownloadSelectionModel {
   final List<AsmrDownloadSelectionNode> rootNodes;
   final Map<String, AsmrDownloadSelectionNode> _nodesByPath =
       <String, AsmrDownloadSelectionNode>{};
+  final _filesByGroup =
+      <AsmrDownloadFileGroup, Set<AsmrDownloadSelectionNode>>{};
   ({int leafCount, int totalSizeBytes, bool hasUnknownSize})? _cachedSummary;
 
   bool? stateForPath(String path) => _nodesByPath[path]?.checkboxValue;
@@ -27,6 +31,31 @@ class AsmrDownloadSelectionModel {
     _cachedSummary = null;
     _setSubtree(node, shouldSelect);
     _rebuildAncestorState(node.parent);
+  }
+
+  /// Returns null when the group has no files to select.
+  bool? groupSelection(AsmrDownloadFileGroup group) {
+    if (group == AsmrDownloadFileGroup.all) {
+      if (!rootNodes.any((node) => node.totalLeafCount > 0)) return null;
+      return rootNodes.every((node) => node.selected);
+    }
+    return _filesByGroup[group]?.every((node) => node.selected);
+  }
+
+  void toggleGroup(AsmrDownloadFileGroup group) {
+    if (group == AsmrDownloadFileGroup.all) {
+      final selected = groupSelection(group);
+      if (selected == true) clearAll();
+      if (selected == false) selectAll();
+      return;
+    }
+    final files = _filesByGroup[group];
+    if (files == null) return;
+    final shouldSelect = files.any((node) => !node.selected);
+    _cachedSummary = null;
+    for (final root in rootNodes) {
+      _setGroupSelection(root, files, shouldSelect);
+    }
   }
 
   List<AsmrTrackFile> selectedDownloadRoots() {
@@ -105,6 +134,19 @@ class AsmrDownloadSelectionModel {
 
   void _index(AsmrDownloadSelectionNode node) {
     _nodesByPath[node.track.relativePath] = node;
+    if (!node.track.isFolder) {
+      if (node.track.isImage) {
+        (_filesByGroup[AsmrDownloadFileGroup.image] ??= {}).add(node);
+      }
+      final group = switch (node.track.resolvedExtension) {
+        '.mp3' => AsmrDownloadFileGroup.mp3,
+        '.wav' => AsmrDownloadFileGroup.wav,
+        '.txt' => AsmrDownloadFileGroup.txt,
+        '.pdf' => AsmrDownloadFileGroup.pdf,
+        _ => null,
+      };
+      if (group != null) (_filesByGroup[group] ??= {}).add(node);
+    }
     for (final child in node.children) {
       _index(child);
     }
@@ -120,18 +162,39 @@ class AsmrDownloadSelectionModel {
 
   void _rebuildAncestorState(AsmrDownloadSelectionNode? node) {
     while (node != null) {
-      if (node.children.isEmpty) {
-        node.indeterminate = false;
-      } else {
-        final allSelected = node.children.every((child) => child.selected);
-        final anySelected = node.children.any(
-          (child) => child.selected || child.indeterminate,
-        );
-        node.selected = allSelected;
-        node.indeterminate = !allSelected && anySelected;
-      }
+      _rebuildNodeState(node);
       node = node.parent;
     }
+  }
+
+  bool _setGroupSelection(
+    AsmrDownloadSelectionNode node,
+    Set<AsmrDownloadSelectionNode> files,
+    bool selected,
+  ) {
+    if (node.children.isEmpty) {
+      if (!files.contains(node) || node.selected == selected) return false;
+      node.selected = selected;
+      return true;
+    }
+    var changed = false;
+    for (final child in node.children) {
+      if (_setGroupSelection(child, files, selected)) changed = true;
+    }
+    // Update each affected folder once, after all its children have been updated.
+    if (changed) _rebuildNodeState(node);
+    return changed;
+  }
+
+  void _rebuildNodeState(AsmrDownloadSelectionNode node) {
+    if (node.children.isEmpty) {
+      node.indeterminate = false;
+      return;
+    }
+    node.selected = node.children.every((child) => child.selected);
+    node.indeterminate =
+        !node.selected &&
+        node.children.any((child) => child.selected || child.indeterminate);
   }
 
   void _collectSelectedRoots(

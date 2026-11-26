@@ -50,11 +50,19 @@ class MusicTrack {
 
   static const String remoteMetadataKindAsmrOne = 'asmr.one';
   static const String remoteMetadataKindJapaneseAsmr = 'jp-asmr';
+  static const String remoteMetadataKindRemoteSource = 'remote-source';
 
   /// Whether this track originates from the remote ASMR catalog.
   bool get isRemoteAsmr =>
       remoteMetadataKind == remoteMetadataKindAsmrOne ||
       remoteMetadataKind == remoteMetadataKindJapaneseAsmr;
+
+  /// Whether this track streams from a configured LAN or WebDAV media source.
+  bool get isRemoteSource =>
+      remoteMetadataKind == remoteMetadataKindRemoteSource;
+
+  /// Whether this track streams from any remote source rather than local storage.
+  bool get isRemoteMedia => isRemoteAsmr || isRemoteSource;
 
   String get remoteCircleName {
     final circleName = remoteMetadata?['circleName'];

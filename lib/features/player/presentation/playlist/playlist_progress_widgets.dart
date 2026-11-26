@@ -53,6 +53,7 @@ class SessionProgressBar extends StatelessWidget {
     required this.session,
     required this.playback,
     this.inlineTimecodes = false,
+    this.compactSeekTarget = false,
     this.timeSegmentLabels = const <TimeSegmentLabel>[],
     this.selectedSegmentId,
     this.onSeekStart,
@@ -63,16 +64,19 @@ class SessionProgressBar extends StatelessWidget {
   static final Set<_ProgressSliderFrameState> _mountedFrames =
       <_ProgressSliderFrameState>{};
 
-  static double get seekTargetHeight =>
+  static const _compactSeekTargetHeight = 20.0;
+
+  static double get _defaultSeekTargetHeight =>
       defaultTargetPlatform == TargetPlatform.android
       ? kMinInteractiveDimension
-      : 20.0;
+      : _compactSeekTargetHeight;
 
   static double preferredHeight(
     BuildContext context, {
     bool inlineTimecodes = false,
   }) {
     final timecodeHeight = MediaQuery.textScalerOf(context).scale(13) * 1.1;
+    final seekTargetHeight = _defaultSeekTargetHeight;
     return inlineTimecodes
         ? max(seekTargetHeight, timecodeHeight)
         : seekTargetHeight + max(20.0, timecodeHeight);
@@ -99,6 +103,7 @@ class SessionProgressBar extends StatelessWidget {
   final PlaybackSessionSnapshot session;
   final PlaybackFacade playback;
   final bool inlineTimecodes;
+  final bool compactSeekTarget;
   final List<TimeSegmentLabel> timeSegmentLabels;
   final String? selectedSegmentId;
   final VoidCallback? onSeekStart;
@@ -126,6 +131,9 @@ class SessionProgressBar extends StatelessWidget {
       onSeekCancel: onSeekCancel,
       onManualSeek: onManualSeek,
       inlineTimecodes: inlineTimecodes,
+      seekTargetHeight: compactSeekTarget
+          ? _compactSeekTargetHeight
+          : _defaultSeekTargetHeight,
     );
   }
 }
@@ -142,6 +150,7 @@ class _ProgressSliderAndTimecodes extends StatefulWidget {
     required this.onSeekCancel,
     required this.onManualSeek,
     required this.inlineTimecodes,
+    required this.seekTargetHeight,
   });
 
   final PlaybackSessionSnapshot session;
@@ -154,6 +163,7 @@ class _ProgressSliderAndTimecodes extends StatefulWidget {
   final VoidCallback? onSeekCancel;
   final ValueChanged<Duration>? onManualSeek;
   final bool inlineTimecodes;
+  final double seekTargetHeight;
 
   @override
   State<_ProgressSliderAndTimecodes> createState() =>
@@ -280,6 +290,7 @@ class _ProgressSliderAndTimecodesState
         onChanged: _handleSliderChanged,
         onChangeEnd: _handleSliderChangeEnd,
         inlineTimecodes: widget.inlineTimecodes,
+        seekTargetHeight: widget.seekTargetHeight,
         sliderKey: _sliderKey,
       ),
     );
@@ -546,6 +557,7 @@ class _ProgressSliderFrame extends StatefulWidget {
     required this.onChanged,
     required this.onChangeEnd,
     required this.inlineTimecodes,
+    required this.seekTargetHeight,
     required this.sliderKey,
   });
 
@@ -560,6 +572,7 @@ class _ProgressSliderFrame extends StatefulWidget {
   final ValueChanged<double> onChanged;
   final ValueChanged<double> onChangeEnd;
   final bool inlineTimecodes;
+  final double seekTargetHeight;
   final GlobalKey sliderKey;
 
   @override
@@ -620,8 +633,8 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
   }
 
   double _scrubScaleForOffset(Offset localPosition) {
-    final verticalDistance =
-        (localPosition.dy - SessionProgressBar.seekTargetHeight / 2).abs();
+    final verticalDistance = (localPosition.dy - widget.seekTargetHeight / 2)
+        .abs();
     if (verticalDistance >= 96.0) return 0.25;
     if (verticalDistance >= 48.0) return 0.5;
     return 1.0;
@@ -799,7 +812,7 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final sliderHeight = SessionProgressBar.seekTargetHeight;
+    final sliderHeight = widget.seekTargetHeight;
     final showFineScrubBadge = _sliderDragging && _scrubScale < 1.0;
     final fineScrubText = _scrubScale <= 0.25 ? '0.25×' : '0.5×';
     final slider = CompositedTransformTarget(

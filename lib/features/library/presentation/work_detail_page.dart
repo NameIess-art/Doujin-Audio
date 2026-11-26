@@ -16,6 +16,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
+import '../../../app/presentation/element_action_menu.dart';
 import '../../../app/presentation/work_detail_navigation.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_styles.dart';
@@ -50,12 +51,14 @@ import '../application/cover_artwork_cache_service.dart';
 import '../application/work_text_service.dart';
 import '../application/dlsite_metadata_service.dart';
 import '../domain/library_node.dart';
-import 'dlsite_metadata_review_page.dart';
 import 'audio_detail_sheet.dart' show showAudioDetailEditor;
 import 'library_providers.dart';
 import 'library_removal_feedback.dart';
 import '../../../core/widgets/page_translation_scope.dart';
 import '../../../core/widgets/windows_smooth_scroll_controller.dart';
+import '../../../core/widgets/work_review_panel.dart';
+import '../application/audio_detail_cache_service.dart';
+import 'work_detail_review_actions.dart';
 import 'work_image_viewer_page.dart';
 import 'work_text_viewer_page.dart';
 
@@ -63,6 +66,9 @@ const String workDetailRouteName = '/work-detail';
 
 abstract interface class RemoteWorkDetail {
   String get title;
+  String get folderName;
+  Object get navigationKey;
+  RemoteWorkDetail watchLatest(WidgetRef ref);
   String get workCode;
   String get rjCode;
   String get circleName;
@@ -80,8 +86,27 @@ abstract interface class RemoteWorkDetail {
   });
   String directoryErrorLabel(AppLanguageProvider i18n, Object error);
 
-  bool isFavorite(WidgetRef ref);
-  Future<void> toggleFavorite(BuildContext context, WidgetRef ref);
+  bool get supportsReview;
+  WorkReviewDraft watchReview(WidgetRef ref);
+  bool syncsReviewWithCloud(WidgetRef ref);
+  Future<void> saveReview(
+    BuildContext context,
+    WidgetRef ref,
+    WorkReviewDraft draft,
+  );
+  bool get supportsEditInfo;
+  Future<RemoteWorkDetail?> editInfo(BuildContext context, WidgetRef ref);
+  bool get supportsEntryMutation;
+  Future<bool> renameEntry(
+    BuildContext context,
+    WidgetRef ref,
+    WorkEntryItem item,
+  );
+  Future<bool> setEntryAsCover(
+    BuildContext context,
+    WidgetRef ref,
+    WorkEntryItem item,
+  );
   Future<void> download(BuildContext context);
   Future<bool> play(WidgetRef ref, WorkEntryItem item);
   Future<bool> addToPlaylist(WidgetRef ref, WorkEntryItem item);
@@ -145,6 +170,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   // Local state
   AudioDetailTarget? _localTarget;
   AudioDetail? _localDetail;
+  StreamSubscription<AudioDetailCacheChange>? _localDetailSubscription;
   FolderNode? _localFolderNode;
   List<WorkTextFile> _localTextFiles = const [];
   List<CoverImageReference> _localImageReferences = const [];
@@ -158,6 +184,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       'work_detail_data_${identityHashCode(this)}';
   final List<({int? request, VoidCallback update})> _pendingDataUpdates = [];
 
+  RemoteWorkDetail? _activeRemoteWork;
   WorkDirectorySource? _remoteDirectory;
   bool _loadingRemote = true;
   bool _requestingRemote = false;
@@ -264,8 +291,19 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           widget.initialCoverPath ??
           library.resolvedCoverPathForFolder(_localTarget!.targetPath) ??
           _localDetail?.cardCoverPath;
+      _localDetailSubscription = library.detailCacheService.changes.listen((
+        change,
+      ) {
+        final target = _localTarget;
+        if (!mounted || target == null || !change.affects(target)) return;
+        final updated = library.resolvedAudioDetail(target);
+        if (updated != null && !identical(updated, _localDetail)) {
+          setState(() => _localDetail = updated);
+        }
+      });
     } else {
-      _remoteDirectory = widget.remoteWork!.cachedDirectory(ref);
+      _activeRemoteWork = widget.remoteWork;
+      _remoteDirectory = _activeRemoteWork!.cachedDirectory(ref);
       _loadingRemote = _remoteDirectory == null;
     }
     _directory = _directoryInput?.resolved;
@@ -300,6 +338,14 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
         }
       },
     );
+  }
+
+  @override
+  void didUpdateWidget(covariant WorkDetailPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.isLocal && oldWidget.remoteWork != widget.remoteWork) {
+      _activeRemoteWork = widget.remoteWork;
+    }
   }
 
   Future<void> _loadLocalData({
@@ -623,6 +669,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     UiInteractionCoordinator.instance.cancelCommit(_dataCommitKey);
     UiInteractionCoordinator.instance.cancelCommit(_directoryCommitKey);
     _pendingDataUpdates.clear();
+    unawaited(_localDetailSubscription?.cancel());
     _scrollController.dispose();
     _directoryOpacity.dispose();
     _directoryFade.dispose();
@@ -709,7 +756,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
 
   Future<void> _loadRemoteData({bool forceRefresh = false}) async {
     if (_requestingRemote) return;
-    final work = widget.remoteWork!;
+    final work = _activeRemoteWork!;
     _requestingRemote = true;
     setState(() {
       _loadingRemote = true;
@@ -981,7 +1028,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       if (index < 0) throw StateError('The selected media is unavailable.');
       return playback.playDirect(tracks, startIndex: index);
     }
-    final remote = widget.remoteWork;
+    final remote = _activeRemoteWork;
     if (remote != null) return remote.play(ref, item);
     throw StateError('Playback is unavailable.');
   }
@@ -1015,7 +1062,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
               ? await ref
                     .read(playbackFacadeProvider)
                     .addTrackToPlaylist(item.track!)
-              : await widget.remoteWork!.addToPlaylist(ref, item);
+              : await _activeRemoteWork!.addToPlaylist(ref, item);
           if (mounted) {
             showAppSnackBar(
               context,
@@ -1037,15 +1084,33 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
             );
           }
         case WorkEntryAction.rename:
-          await _renameLocalEntry(item);
+          if (widget.isLocal) {
+            await _renameLocalEntry(item);
+          } else if (_activeRemoteWork case final remote?
+              when remote.supportsEntryMutation) {
+            if (await remote.renameEntry(context, ref, item) && mounted) {
+              await _loadRemoteData(forceRefresh: true);
+            }
+          }
         case WorkEntryAction.setCover:
-          await _setLocalImageAsCover(item.fullPathOrUrl);
-          if (mounted) {
-            showAppSnackBar(
-              context,
-              i18n.tr('audio_detail_cover_saved'),
-              tone: AppFeedbackTone.success,
-            );
+          if (widget.isLocal) {
+            await _setLocalImageAsCover(item.fullPathOrUrl);
+            if (mounted) {
+              showAppSnackBar(
+                context,
+                i18n.tr('audio_detail_cover_saved'),
+                tone: AppFeedbackTone.success,
+              );
+            }
+          } else if (_activeRemoteWork case final remote?
+              when remote.supportsEntryMutation) {
+            if (await remote.setEntryAsCover(context, ref, item) && mounted) {
+              showAppSnackBar(
+                context,
+                i18n.tr('audio_detail_cover_saved'),
+                tone: AppFeedbackTone.success,
+              );
+            }
           }
         case WorkEntryAction.openContainingFolder:
           if (widget.isLocal &&
@@ -1134,6 +1199,8 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     String? removalLabel,
   ) {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final canMutateEntry =
+        widget.isLocal || (_activeRemoteWork?.supportsEntryMutation ?? false);
     final entries = switch (type) {
       WorkEntryType.folder => [
         UnifiedMenuEntry<WorkEntryAction>.action(
@@ -1146,7 +1213,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           icon: Icons.content_copy_rounded,
           label: i18n.tr('copy_name'),
         ),
-        if (widget.isLocal)
+        if (canMutateEntry)
           UnifiedMenuEntry<WorkEntryAction>.action(
             value: WorkEntryAction.rename,
             icon: Icons.drive_file_rename_outline_rounded,
@@ -1169,7 +1236,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           icon: Icons.content_copy_rounded,
           label: i18n.tr('copy_name'),
         ),
-        if (widget.isLocal)
+        if (canMutateEntry)
           UnifiedMenuEntry<WorkEntryAction>.action(
             value: WorkEntryAction.rename,
             icon: Icons.drive_file_rename_outline_rounded,
@@ -1187,7 +1254,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           icon: Icons.content_copy_rounded,
           label: i18n.tr('copy_name'),
         ),
-        if (widget.isLocal)
+        if (canMutateEntry)
           UnifiedMenuEntry<WorkEntryAction>.action(
             value: WorkEntryAction.rename,
             icon: Icons.drive_file_rename_outline_rounded,
@@ -1205,7 +1272,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           icon: Icons.content_copy_rounded,
           label: i18n.tr('copy_name'),
         ),
-        if (widget.isLocal) ...[
+        if (canMutateEntry) ...[
           UnifiedMenuEntry<WorkEntryAction>.action(
             value: WorkEntryAction.rename,
             icon: Icons.drive_file_rename_outline_rounded,
@@ -1293,6 +1360,19 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           onSetAsCover: widget.isLocal
               ? (img) =>
                     _setLocalImageAsCover(img.path, sourcePath: img.sourcePath)
+              : (_activeRemoteWork?.supportsEntryMutation ?? false)
+              ? (img) async {
+                  final remote = _activeRemoteWork;
+                  if (remote == null) return;
+                  final entry = WorkEntryItem(
+                    name: img.name,
+                    relativePath: img.relativePath,
+                    type: WorkEntryType.image,
+                    fullPathOrUrl: img.path,
+                    imageItem: img,
+                  );
+                  await remote.setEntryAsCover(context, ref, entry);
+                }
               : null,
         );
 
@@ -1324,37 +1404,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     ).push<void>(buildAppPageRoute(context: context, child: page));
   }
 
-  // Local actions: Fetch info, Download, Pin
-  Future<void> _handleLocalFetchInfo() async {
-    final detail = _localDetail;
-    if (detail == null) return;
-    final query = ref
-        .read(libraryFacadeProvider)
-        .buildDlsiteMetadataQuery(detail);
-    if (!query.hasQuery) {
-      final i18n = ref.read(appLanguageProviderInstanceProvider);
-      showAppSnackBar(
-        context,
-        i18n.tr('audio_detail_fetch_missing_query'),
-        tone: AppFeedbackTone.warning,
-      );
-      return;
-    }
-    await Navigator.of(context).push<void>(
-      buildAppPageRoute(
-        context: context,
-        child: DlsiteMetadataReviewPage(
-          detail: detail,
-          rjCode: query.rjCode,
-          searchTitles: query.searchTitles,
-        ),
-      ),
-    );
-    if (mounted) {
-      unawaited(_loadLocalData(refresh: true));
-    }
-  }
-
+  // Local actions: Download, Edit
   Future<void> _handleLocalEdit() async {
     final detail = _localDetail;
     if (detail == null) return;
@@ -1373,6 +1423,20 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     await _loadLocalData(refresh: true);
   }
 
+  Future<void> _handleRemoteEdit(RemoteWorkDetail currentRemote) async {
+    final updated = await currentRemote.editInfo(context, ref);
+    if (!mounted || updated == null) return;
+    WorkDetailNavigationScope.maybeOf(
+      context,
+    )?.updateIdentity(currentRemote.navigationKey, updated.navigationKey);
+    setState(() {
+      _activeRemoteWork = updated;
+      _cancelDirectorySlide();
+      _currentPathSegments.clear();
+    });
+    await _loadRemoteData(forceRefresh: true);
+  }
+
   Future<void> _handleLocalDownload() async {
     await downloadAudioTargetFromAsmr(
       context: context,
@@ -1382,7 +1446,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   }
 
   Future<void> _toggleDlsiteMetadata() async {
-    final rjCode = widget.remoteWork?.rjCode ?? '';
+    final rjCode = _activeRemoteWork?.rjCode ?? '';
     if (_loadingDlsiteMetadata ||
         AudioDetail.findRjCodeInText(rjCode) == null) {
       return;
@@ -1443,8 +1507,53 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     );
   }
 
-  Future<void> _handleRemoteToggleFavorite() async {
-    await widget.remoteWork?.toggleFavorite(context, ref);
+  Future<void> _saveLocalUserReview(WorkReviewDraft draft) async {
+    final target = _localTarget;
+    if (target == null) return;
+    final saved = await saveLocalWorkUserReviewWithFeedback(
+      context,
+      ref,
+      target,
+      draft,
+    );
+    if (!mounted || saved == null) return;
+    setState(() => _localDetail = saved.detail);
+  }
+
+  Future<void> _openUserReviewEditor({
+    required String displayTitle,
+    required String displayRj,
+    required WorkReviewDraft current,
+    RemoteWorkDetail? activeRemote,
+  }) async {
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final remote = activeRemote ?? _activeRemoteWork;
+    if (remote != null) {
+      final draft = await showWorkReviewEditPanel(
+        context: context,
+        workTitle: displayTitle,
+        rjCode: displayRj,
+        initialStatus: current.listenStatus,
+        initialUserRating: current.userRating,
+        initialReviewText: current.reviewText,
+        syncsWithCloud: remote.syncsReviewWithCloud(ref),
+        translate: i18n.tr,
+      );
+      if (draft == null || !mounted) return;
+      await remote.saveReview(context, ref, draft);
+      return;
+    }
+    final target = _localTarget;
+    if (target == null) return;
+    final updated = await openLocalWorkReviewEditor(
+      context,
+      ref,
+      target,
+      fallbackTitle: displayTitle,
+      initialDetail: _localDetail,
+    );
+    if (!mounted || updated == null) return;
+    setState(() => _localDetail = updated);
   }
 
   @override
@@ -1608,8 +1717,12 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
+    final remote = _activeRemoteWork?.watchLatest(ref);
+    if (remote != null && !identical(remote, _activeRemoteWork)) {
+      _activeRemoteWork = remote;
+    }
     final hasDlsiteRj =
-        AudioDetail.findRjCodeInText(widget.remoteWork?.rjCode ?? '') != null;
+        AudioDetail.findRjCodeInText(remote?.rjCode ?? '') != null;
     String dlsiteTooltip = 'work_dlsite_show';
     if (!hasDlsiteRj) {
       dlsiteTooltip = 'work_dlsite_unavailable';
@@ -1648,8 +1761,17 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       displayTags = detail?.tags ?? const [];
       coverPath = _localManualCover ?? detail?.cardCoverPath;
     } else {
-      final work = widget.remoteWork!;
-      displayTitle = work.title;
+      final work = remote!;
+      final displayMode = ref.watch(
+        settingsStateProvider.select(
+          (state) => state.value?.workNameDisplay ?? WorkNameDisplay.workTitle,
+        ),
+      );
+      displayTitle =
+          displayMode == WorkNameDisplay.folderName &&
+              work.folderName.trim().isNotEmpty
+          ? work.folderName.trim()
+          : work.title;
       displayRj = work.workCode;
       displayCircle = work.circleName;
       hasSubtitle = work.hasSubtitle || (_directory?.hasSubtitle ?? false);
@@ -1718,7 +1840,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     final coverKey = (
       widget.isLocal,
       _localTarget,
-      widget.remoteWork,
+      remote?.navigationKey,
       coverPath,
     );
     if (_headerCoverKey != coverKey || _headerCoverWidget == null) {
@@ -1782,7 +1904,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                   ),
                 ),
 
-                // 2. Collapsible Details: Voice Actors, Tags, Action Buttons
+                // 2. Collapsible Details: Voice Actors, Tags, and Review
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: EdgeInsets.fromLTRB(
@@ -1801,25 +1923,56 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                           onCopy: (value) => _copyText(context, value),
                         ),
 
-                        Consumer(
-                          builder: (context, ref, _) {
-                            final remote = widget.remoteWork;
-                            final isFavorite = remote?.isFavorite(ref) ?? false;
-                            return WorkDetailActions(
-                              i18n: i18n,
-                              isLocal: widget.isLocal,
-                              isFavorite: isFavorite,
-                              accentColor: cs.primary,
-                              onFetchInfo: widget.isLocal && _localDetail == null
-                                  ? null
-                                  : _handleLocalFetchInfo,
-                              onDownload: remote == null
-                                  ? _handleLocalDownload
-                                  : () => remote.download(context),
-                              onToggleFavorite: _handleRemoteToggleFavorite,
-                            );
-                          },
-                        ),
+                        if (remote == null || remote.supportsReview)
+                          Consumer(
+                            builder: (context, ref, _) {
+                              final WorkReviewDraft review = remote != null
+                                  ? remote.watchReview(ref)
+                                  : (
+                                      listenStatus: _localDetail?.listenStatus,
+                                      userRating: _localDetail?.userRating,
+                                      reviewText: _localDetail?.reviewText ?? '',
+                                    );
+                              void applyDraft(WorkReviewDraft next) {
+                                if (remote != null) {
+                                  unawaited(remote.saveReview(context, ref, next));
+                                } else {
+                                  unawaited(_saveLocalUserReview(next));
+                                }
+                              }
+
+                              return WorkUserReviewSection(
+                                listenStatus: review.listenStatus,
+                                userRating: review.userRating,
+                                reviewText: review.reviewText,
+                                translate: i18n.tr,
+                                onStatusChanged: (status) => applyDraft((
+                                  listenStatus: status,
+                                  userRating: review.userRating,
+                                  reviewText: review.reviewText,
+                                )),
+                                onRatingChanged: (rating) => applyDraft((
+                                  listenStatus: review.listenStatus,
+                                  userRating: rating,
+                                  reviewText: review.reviewText,
+                                )),
+                                onOpenNoteEditor: () => unawaited(
+                                  _openUserReviewEditor(
+                                    displayTitle: displayTitle,
+                                    displayRj: displayRj,
+                                    current: review,
+                                    activeRemote: remote,
+                                  ),
+                                ),
+                                wrapCopyableNote: (context, note, child) =>
+                                    ElementActionMenu(
+                                      value: note,
+                                      onCopy: () => _copyText(context, note),
+                                      child: child,
+                                    ),
+                              );
+                            },
+                          ),
 
                         const SizedBox(height: 12),
                         const Divider(height: 1),
@@ -1862,7 +2015,8 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                       padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
                       child: OperationStatusBanner(
                         key: const ValueKey('work_detail_directory_error'),
-                        label: widget.remoteWork!.directoryErrorLabel(
+                        label: (remote ?? _activeRemoteWork!)
+                            .directoryErrorLabel(
                           i18n,
                           error,
                         ),
@@ -1885,6 +2039,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                           key: _loadingSkeletonKey,
                           child: _directorySkeleton(
                             constraints.remainingPaintExtent -
+                                4 -
                                 bottomOverlayInset,
                           ),
                         ),
@@ -2033,16 +2188,30 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (widget.isLocal) ...[
+                  AppOverlayIconButton(
+                    buttonKey: ValueKey<String>(
+                      widget.isLocal
+                          ? 'work_detail_download'
+                          : 'asmr_work_detail_download',
+                    ),
+                    onPressed: remote == null
+                        ? _handleLocalDownload
+                        : () => remote.download(context),
+                    tooltip: i18n.tr('download'),
+                    icon: const Icon(Icons.download_rounded, size: 20),
+                  ),
+                  const SizedBox(width: 6),
+                  if (widget.isLocal || (remote?.supportsEditInfo ?? false)) ...[
                     AppOverlayIconButton(
                       buttonKey: const ValueKey<String>('work_detail_edit'),
-                      onPressed: _localDetail == null ? null : _handleLocalEdit,
+                      onPressed: widget.isLocal
+                          ? (_localDetail == null ? null : _handleLocalEdit)
+                          : () => unawaited(_handleRemoteEdit(remote!)),
                       tooltip: i18n.tr('edit'),
                       icon: const Icon(Icons.edit_rounded, size: 20),
                     ),
                     const SizedBox(width: 6),
-                  ],
-                  if (!widget.isLocal) ...[
+                  ] else ...[
                     Semantics(
                       toggled: _showDlsiteMetadata,
                       child: AppOverlayIconButton(
@@ -2117,7 +2286,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       final cache = library.coverArtworkCacheService;
       final coverUi = ref.read(libraryCoverUiControllerProvider);
       final alternateUrls = <String>[
-        for (final url in [...?widget.remoteWork?.alternateCoverUrls])
+        for (final url in [...?_activeRemoteWork?.alternateCoverUrls])
           if (url != null && url.trim().isNotEmpty && url.trim() != remoteUrl)
             url.trim(),
       ];

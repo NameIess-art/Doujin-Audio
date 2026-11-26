@@ -7,6 +7,7 @@ class _AsmrWorkCover extends ConsumerStatefulWidget {
     required this.width,
     this.isSelected = false,
     this.duration,
+    this.listenStatus,
   });
 
   final String url;
@@ -14,6 +15,7 @@ class _AsmrWorkCover extends ConsumerStatefulWidget {
   final double width;
   final bool isSelected;
   final Duration? duration;
+  final WorkListenStatus? listenStatus;
 
   @override
   ConsumerState<_AsmrWorkCover> createState() => _AsmrWorkCoverState();
@@ -111,6 +113,17 @@ class _AsmrWorkCoverState extends ConsumerState<_AsmrWorkCover> {
                                 const CoverFallbackArtwork(),
                           ),
                   ),
+                  if (widget.listenStatus case final status?)
+                    Positioned(
+                      left: 4,
+                      top: 4,
+                      child: WorkListenStatusBadge(
+                        status: status,
+                        label: ref
+                            .read(appLanguageProviderInstanceProvider)
+                            .tr(workListenStatusTranslationKey(status)),
+                      ),
+                    ),
                   if (widget.duration != null &&
                       widget.duration! > Duration.zero)
                     Positioned(

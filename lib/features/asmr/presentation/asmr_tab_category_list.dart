@@ -126,6 +126,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   List<AsmrWork>? _lastFavoritesWorks;
   String? _lastFavoritesQuery;
   int? _lastFavoritesRevision;
+  AsmrFavoritesStatusFilter? _lastFavoritesFilter;
   AsmrCategoryViewState? _lastLoadState;
   final Map<String, Animation<double>> _loadingWorkAnimations = {};
   final Set<AnimationController> _loadingBatchControllers = {};
@@ -142,6 +143,16 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   Map<Key, int> _workKeyIndices = {};
   LibraryCoverUiController? _coverUi;
   BuildContext? _coverContext;
+  (AsmrCategoryType, String, int, Object?)? _lastNotifiedErrorKey;
+  bool _unavailableFeedbackScheduled = false;
+
+  Future<void> _handleRefresh() {
+    clearAsmrUnavailableNotice(
+      ref.read(asmrLibraryControllerProvider) ?? this,
+    );
+    _lastNotifiedErrorKey = null;
+    return widget.onRefresh();
+  }
 
   List<AsmrWork> _prepareVisibleWorks(
     List<AsmrWork> works,
@@ -479,6 +490,16 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
         canonicalElementQuery(state.activeQuery) != normalizedSearchQuery;
     final works = queryMismatch ? const <AsmrWork>[] : state.works;
     final isFavorites = widget.category == AsmrCategoryType.favorites;
+    final activeFavoritesFilter = isFavorites
+        ? ref.watch(
+            asmrLibraryGlobalStateProvider.select(
+              (s) =>
+                  s.value?.favoritesStatusFilter ??
+                  controller?.favoritesStatusFilter ??
+                  AsmrFavoritesStatusFilter.marked,
+            ),
+          )
+        : AsmrFavoritesStatusFilter.marked;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     if (snapshot.isLoading) {
       // Retained cards are not a new data commit. After reactivation, establish
@@ -490,7 +511,15 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     }
 
     if (isFavorites) {
-      if (_lastFavoritesRevision != state.revision &&
+      final filterChanged =
+          _lastFavoritesFilter != null &&
+          _lastFavoritesFilter != activeFavoritesFilter;
+      if (filterChanged) {
+        for (final entry in _collapsingWorks.values) {
+          entry.dispose();
+        }
+        _collapsingWorks.clear();
+      } else if (_lastFavoritesRevision != state.revision &&
           _lastFavoritesQuery == normalizedSearchQuery &&
           _lastFavoritesWorks != null &&
           !state.isLoading &&
@@ -536,6 +565,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       _lastFavoritesWorks = works;
       _lastFavoritesQuery = normalizedSearchQuery;
       _lastFavoritesRevision = state.revision;
+      _lastFavoritesFilter = activeFavoritesFilter;
     }
 
     final visibleWorks = _prepareVisibleWorks(works, state);
@@ -625,6 +655,55 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     if (showPlaceholder || visibleWorks.isEmpty) {
       _coverUi!.cancelBrowsePrefetch(this);
     }
+    final activeError = state.operationError ?? state.lastError;
+    if (!showPlaceholder &&
+        !state.isLoading &&
+        !state.isRefreshing &&
+        state.hasAttemptedLoad &&
+        _isActive) {
+      if (activeError == null && controller != null) {
+        clearAsmrUnavailableNotice(controller);
+        _lastNotifiedErrorKey = null;
+      } else if (activeError != null &&
+          shouldShowAsmrUnavailableFeedback(activeError)) {
+        final errorKey = (
+          widget.category,
+          normalizedSearchQuery,
+          state.revision,
+          activeError,
+        );
+        if (_lastNotifiedErrorKey != errorKey &&
+            !_unavailableFeedbackScheduled) {
+          _lastNotifiedErrorKey = errorKey;
+          final scopeOwner = controller ?? this;
+          if (consumeAsmrUnavailableNotice(scopeOwner, activeError)) {
+            _unavailableFeedbackScheduled = true;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _unavailableFeedbackScheduled = false;
+              if (!mounted || !_isActive) return;
+              showAsmrUnavailableFeedback(
+                context: context,
+                i18n: ref.read(appLanguageProviderInstanceProvider),
+                error: activeError,
+                onRetry: () {
+                  if (!mounted) return;
+                  if ((parseSearchElements(widget.searchQuery)?.any.length ??
+                              0) >
+                          1 &&
+                      state.hasMore) {
+                    clearAsmrUnavailableNotice(scopeOwner);
+                    _lastNotifiedErrorKey = null;
+                    unawaited(_loadMore());
+                  } else {
+                    unawaited(_handleRefresh());
+                  }
+                },
+              );
+            });
+          }
+        }
+      }
+    }
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final theme = Theme.of(context);
@@ -678,7 +757,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
             edgeOffset: widget.topInset,
             displacement: 32,
             triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,
-            onRefresh: widget.onRefresh,
+            onRefresh: _handleRefresh,
             child: PlaceholderContentTransition(
               showPlaceholder: showPlaceholder,
               placeholder: LibrarySkeletonListView(
@@ -778,37 +857,6 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                   }
 
                   Widget buildFooter(BuildContext context) {
-                    final partialError =
-                        state.operationError ?? state.lastError;
-                    if (visibleWorks.isNotEmpty &&
-                        partialError is AsmrPartialCatalogException) {
-                      return Padding(
-                        key: const ValueKey<String>('asmr_load_more_footer'),
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: OperationStatusBanner(
-                          key: const ValueKey<String>(
-                            'online_library_partial_failure',
-                          ),
-                          label: localizedAsmrCatalogErrorText(
-                            i18n,
-                            partialError,
-                          ),
-                          error: partialError,
-                          icon: Icons.cloud_off_rounded,
-                          tone: OperationStatusTone.warning,
-                          retryTooltip: i18n.tr('retry'),
-                          onRetry:
-                              (parseSearchElements(
-                                            widget.searchQuery,
-                                          )?.any.length ??
-                                          0) >
-                                      1 &&
-                                  state.hasMore
-                              ? _loadMore
-                              : () => unawaited(widget.onRefresh()),
-                        ),
-                      );
-                    }
                     return AnimatedSwitcher(
                       key: const ValueKey<String>('asmr_load_more_footer'),
                       duration: reduceMotion ? Duration.zero : kAppFadeDuration,
@@ -891,7 +939,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                                         state.lastError != null &&
                                             !state.isLoading &&
                                             !state.isRefreshing
-                                        ? () => unawaited(widget.onRefresh())
+                                        ? () => unawaited(_handleRefresh())
                                         : state.lastError == null &&
                                               widget.filters !=
                                                   emptySearchFilters
@@ -990,6 +1038,8 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                   final footer = RepaintBoundary(
                     child: Builder(builder: buildFooter),
                   );
+                  final showFavoritesFilterBar =
+                      isFavorites && controller != null && !widget.searchSession;
                   return workList = CustomScrollView(
                     key: PageStorageKey(widget.category),
                     controller: widget.scrollController,
@@ -1005,10 +1055,26 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                     ),
                     semanticChildCount: rowCount + 1,
                     slivers: [
+                      if (showFavoritesFilterBar)
+                        SliverPadding(
+                          padding: EdgeInsets.fromLTRB(
+                            LibraryLikeCardMetrics.listHorizontalPadding,
+                            widget.topInset,
+                            LibraryLikeCardMetrics.listHorizontalPadding,
+                            6,
+                          ),
+                          sliver: SliverToBoxAdapter(
+                            child: _AsmrFavoritesStatusFilterBar(
+                              selected: activeFavoritesFilter,
+                              i18n: i18n,
+                              onSelected: controller.setFavoritesStatusFilter,
+                            ),
+                          ),
+                        ),
                       SliverPadding(
                         padding: EdgeInsets.fromLTRB(
                           LibraryLikeCardMetrics.listHorizontalPadding,
-                          widget.topInset,
+                          showFavoritesFilterBar ? 0 : widget.topInset,
                           LibraryLikeCardMetrics.listHorizontalPadding,
                           0,
                         ),
@@ -1210,4 +1276,131 @@ class _SelectableAsmrWorkCardState extends State<_SelectableAsmrWorkCard> {
     onLongPress: widget.onLongPress,
     onToggleSelect: widget.onToggleSelect,
   );
+}
+
+class _AsmrFavoritesStatusFilterBar extends StatelessWidget {
+  const _AsmrFavoritesStatusFilterBar({
+    required this.selected,
+    required this.i18n,
+    required this.onSelected,
+  });
+
+  final AsmrFavoritesStatusFilter selected;
+  final AppLanguageProvider i18n;
+  final ValueChanged<AsmrFavoritesStatusFilter> onSelected;
+
+  String _labelFor(AsmrFavoritesStatusFilter filter) {
+    final status = filter.listenStatus;
+    if (status == null) return i18n.tr('work_status_all');
+    return i18n.tr(workListenStatusTranslationKey(status));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final height =
+        MediaQuery.textScalerOf(context).scale(12) *
+            (theme.textTheme.bodyMedium?.height ?? 1.4) +
+        14;
+
+    return HorizontalEdgeFadeScroll(
+      key: const ValueKey<String>('asmr_favorites_status_filter_bar'),
+      builder: (scrollController) => SizedBox(
+        height: height,
+        child: SingleChildScrollView(
+          controller: scrollController,
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              for (
+                var index = 0;
+                index < AsmrFavoritesStatusFilter.values.length;
+                index++
+              ) ...[
+                if (index > 0) const SizedBox(width: 6),
+                Builder(
+                  builder: (context) {
+                    final filter = AsmrFavoritesStatusFilter.values[index];
+                    final isActive = selected == filter;
+                    final bg = isActive
+                        ? cs.primary.withValues(alpha: isDark ? 0.24 : 0.14)
+                        : (isDark
+                              ? cs.surfaceContainerHighest.withValues(
+                                  alpha: 0.45,
+                                )
+                              : cs.surfaceContainerHigh.withValues(
+                                  alpha: 0.60,
+                                ));
+                    final fg = isActive ? cs.primary : cs.onSurfaceVariant;
+                    final border = isActive
+                        ? cs.primary.withValues(alpha: 0.55)
+                        : cs.outlineVariant.withValues(
+                            alpha: isDark ? 0.28 : 0.38,
+                          );
+
+                    return Material(
+                      color: Colors.transparent,
+                      child: AppEntryInkWell(
+                        key: ValueKey<String>(
+                          'asmr_favorites_filter_${filter.name}',
+                        ),
+                        onTap: () {
+                          unawaited(
+                            AppInteractionFeedback.trigger(
+                              AppInteractionFeedbackType.selection,
+                            ),
+                          );
+                          onSelected(filter);
+                        },
+                        borderRadius: BorderRadius.circular(999),
+                        child: Ink(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 11,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: bg,
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: border,
+                              width: isActive ? 1.0 : 0.8,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (filter.listenStatus case final status?) ...[
+                                Icon(
+                                  workListenStatusIcon(status),
+                                  size: 13,
+                                  color: fg,
+                                ),
+                                const SizedBox(width: 4),
+                              ],
+                              Text(
+                                _labelFor(filter),
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  fontSize: 12,
+                                  fontWeight: isActive
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
+                                  color: fg,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

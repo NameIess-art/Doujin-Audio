@@ -13,7 +13,9 @@ import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
 import '../application/library_facade.dart';
+import '../application/remote_library_controller.dart';
 import '../domain/library_node.dart';
+import '../domain/remote_media_source.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/ui/ui_operation_service.dart';
@@ -46,6 +48,8 @@ import '../../../app/presentation/main_tab_state_mixin.dart';
 import 'library_tab_ui_helpers.dart';
 import 'library_tab_empty_scan.dart';
 import 'library_search_page.dart';
+import 'remote_library_work_detail.dart';
+import 'remote_source_sheets.dart';
 export 'library_tab_tree_widgets.dart' show LibraryTreeItem;
 export 'library_tab_category_widgets.dart' show LibraryCategoryTermBox;
 
@@ -132,31 +136,135 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     }
   }
 
+  static const Object _localLibraryStackId = Object();
+
   Timer? _startupRefreshIdleTimer;
   bool _startupRefreshStarted = false;
   bool _startupRefreshWaiting = false;
   bool _isSelectionMode = false;
   bool _hasWatchedLibrarySort = false;
-  bool _libraryProjectionAvailable = false;
+  final ValueNotifier<bool> _localProjectionAvailable = ValueNotifier<bool>(
+    false,
+  );
+  final ValueNotifier<int> _selectionVersion = ValueNotifier<int>(0);
   final Set<String> _selectedLibraryPaths = <String>{};
+  final Set<String> _selectedRemoteWorkIds = <String>{};
+  String? _lastObservedSourceId;
+  List<String> _knownRemoteSourceIds = const <String>[];
+  int _renderedLibraryItemCount = 1;
+  bool _pendingLibraryIndexSync = false;
+  late final ValueNotifier<int> _activeLibraryIndex;
 
   void _handleProjectionAvailabilityChanged(bool available) {
-    if (_libraryProjectionAvailable == available) return;
-    setState(() => _libraryProjectionAvailable = available);
+    if (_localProjectionAvailable.value == available) return;
+    _localProjectionAvailable.value = available;
   }
 
-  final _scrollController = WindowsSmoothScrollController();
+  final _localScrollController = WindowsSmoothScrollController();
+  final Map<String, WindowsSmoothScrollController> _remoteScrollControllers =
+      <String, WindowsSmoothScrollController>{};
   final GlobalKey<GlassRefreshIndicatorState> _refreshIndicatorKey =
       GlobalKey();
   int? _cardSnapshotRequestRevision;
   String get _cardSnapshotCommitKey =>
       'library_card_snapshot_${identityHashCode(this)}';
 
+  WindowsSmoothScrollController _scrollControllerForRemote(String sourceId) =>
+      _remoteScrollControllers.putIfAbsent(
+        sourceId,
+        WindowsSmoothScrollController.new,
+      );
+
+  ScrollController _scrollControllerForSourceId(String? sourceId) =>
+      sourceId == null
+      ? _localScrollController
+      : _scrollControllerForRemote(sourceId);
+
+  int _resolveLibraryIndex(
+    String? selectedSourceId,
+    List<String> remoteSourceIds,
+  ) {
+    if (selectedSourceId == null) return 0;
+    final index = remoteSourceIds.indexOf(selectedSourceId);
+    return index >= 0 ? index + 1 : 0;
+  }
+
+  void _handleRemoteLibraryChanged(RemoteLibraryController controller) {
+    if (!mounted) return;
+    final nextSourceIds = <String>[
+      for (final source in controller.sources) source.id,
+    ];
+    final nextSelectedId = controller.selectedSourceId;
+    if (_lastObservedSourceId != nextSelectedId) {
+      _lastObservedSourceId = nextSelectedId;
+      if (_isSelectionMode) {
+        setState(() {
+          _isSelectionMode = false;
+          _selectedLibraryPaths.clear();
+          _selectedRemoteWorkIds.clear();
+          _selectionVersion.value++;
+        });
+      }
+    }
+
+    final activeIds = nextSourceIds.toSet();
+    final staleControllers = <WindowsSmoothScrollController>[];
+    for (final entry in _remoteScrollControllers.entries.toList()) {
+      if (!activeIds.contains(entry.key)) {
+        staleControllers.add(entry.value);
+        _remoteScrollControllers.remove(entry.key);
+      }
+    }
+    if (staleControllers.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        for (final scrollController in staleControllers) {
+          scrollController.dispose();
+        }
+      });
+    }
+
+    final nextIndex = _resolveLibraryIndex(nextSelectedId, nextSourceIds);
+    final sourcesChanged = !listEquals(_knownRemoteSourceIds, nextSourceIds);
+    if (!sourcesChanged) {
+      if (_activeLibraryIndex.value != nextIndex) {
+        _activeLibraryIndex.value = nextIndex;
+      }
+      return;
+    }
+
+    _knownRemoteSourceIds = nextSourceIds;
+    if (nextIndex < _renderedLibraryItemCount) {
+      if (_activeLibraryIndex.value != nextIndex) {
+        _activeLibraryIndex.value = nextIndex;
+      }
+      return;
+    }
+
+    if (_pendingLibraryIndexSync) return;
+    _pendingLibraryIndexSync = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pendingLibraryIndexSync = false;
+      if (!mounted) return;
+      final latest = ref.read(remoteLibraryControllerProvider);
+      final latestIds = <String>[
+        for (final source in latest.sources) source.id,
+      ];
+      _knownRemoteSourceIds = latestIds;
+      final resolved = _resolveLibraryIndex(latest.selectedSourceId, latestIds);
+      if (resolved < _renderedLibraryItemCount &&
+          _activeLibraryIndex.value != resolved) {
+        _activeLibraryIndex.value = resolved;
+      }
+    });
+  }
+
   @override
   int get tabIndex => widget.tabIndex;
 
   @override
-  ScrollController get mainScrollController => _scrollController;
+  ScrollController get mainScrollController => _scrollControllerForSourceId(
+    ref.read(remoteLibraryControllerProvider).selectedSourceId,
+  );
 
   void _openSearchPage() {
     Navigator.of(context).push(
@@ -185,10 +293,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           label: i18n.tr('sort_voice_actor'),
         ),
         SortOption(
-          value: LibrarySortCriterion.duration,
-          label: i18n.tr('sort_duration'),
-        ),
-        SortOption(
           value: LibrarySortCriterion.releaseDate,
           label: i18n.tr('sort_release_date'),
         ),
@@ -199,6 +303,10 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         SortOption(
           value: LibrarySortCriterion.playbackTime,
           label: i18n.tr('sort_playback_time'),
+        ),
+        SortOption(
+          value: LibrarySortCriterion.userRating,
+          label: i18n.tr('sort_user_rating'),
         ),
       ],
       selectedCriterion:
@@ -237,10 +345,11 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
 
   Future<void> _openBatchMetadataPage() async {
     if (!mounted) return;
+    final remoteSource = ref.read(remoteLibraryControllerProvider).selectedSource;
     await Navigator.of(context).push(
       buildAppPageRoute<void>(
         context: context,
-        child: const DlsiteMetadataBatchPage(),
+        child: DlsiteMetadataBatchPage(remoteSourceId: remoteSource?.id),
       ),
     );
   }
@@ -250,9 +359,23 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
     setState(() {
       _isSelectionMode = true;
+      _selectedRemoteWorkIds.clear();
       _selectedLibraryPaths
         ..clear()
         ..add(selectionKeyForLibraryNode(node));
+      _selectionVersion.value++;
+    });
+  }
+
+  void _enterRemoteSelectionMode(RemoteLibraryWork work) {
+    AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
+    setState(() {
+      _isSelectionMode = true;
+      _selectedLibraryPaths.clear();
+      _selectedRemoteWorkIds
+        ..clear()
+        ..add(work.workId);
+      _selectionVersion.value++;
     });
   }
 
@@ -260,6 +383,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     setState(() {
       _isSelectionMode = false;
       _selectedLibraryPaths.clear();
+      _selectedRemoteWorkIds.clear();
+      _selectionVersion.value++;
     });
   }
 
@@ -284,6 +409,35 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         _selectedLibraryPaths.remove(key);
         if (_selectedLibraryPaths.isEmpty) _isSelectionMode = false;
       }
+      _selectionVersion.value++;
+    });
+  }
+
+  void _toggleRemoteSelection(RemoteLibraryWork work) {
+    AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
+    setState(() {
+      if (!_selectedRemoteWorkIds.add(work.workId)) {
+        _selectedRemoteWorkIds.remove(work.workId);
+        if (_selectedRemoteWorkIds.isEmpty) _isSelectionMode = false;
+      }
+      _selectionVersion.value++;
+    });
+  }
+
+  void _toggleSelectAllRemote(List<RemoteLibraryWork> visibleWorks) {
+    if (visibleWorks.isEmpty) return;
+    final visibleIds = <String>[for (final w in visibleWorks) w.workId];
+    final allSelected = visibleIds.every(_selectedRemoteWorkIds.contains);
+    AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
+    setState(() {
+      if (allSelected) {
+        _selectedRemoteWorkIds.clear();
+      } else {
+        _selectedRemoteWorkIds
+          ..clear()
+          ..addAll(visibleIds);
+      }
+      _selectionVersion.value++;
     });
   }
 
@@ -303,6 +457,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           ..clear()
           ..addAll(selectableKeys);
       }
+      _selectionVersion.value++;
     });
   }
 
@@ -370,6 +525,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         iconColor: Theme.of(context).colorScheme.primary,
       );
     }
+    unawaited(
+      ref.read(remoteLibraryControllerProvider).syncAllConfiguredInBackground(),
+    );
     await _scheduleWatchedFoldersRefresh(silent: true, forceShowResult: true);
   }
 
@@ -461,6 +619,22 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     WidgetsBinding.instance.addObserver(this);
     HardwareKeyboard.instance.addHandler(_handleHardwareKey);
     _wasSelected = _isSelected;
+    final remoteController = ref.read(remoteLibraryControllerProvider);
+    _knownRemoteSourceIds = <String>[
+      for (final source in remoteController.sources) source.id,
+    ];
+    _lastObservedSourceId = remoteController.selectedSourceId;
+    _activeLibraryIndex = ValueNotifier<int>(
+      _resolveLibraryIndex(
+        remoteController.selectedSourceId,
+        _knownRemoteSourceIds,
+      ),
+    );
+    _renderedLibraryItemCount = _knownRemoteSourceIds.length + 1;
+    ref.listenManual<RemoteLibraryController>(
+      remoteLibraryControllerProvider,
+      (_, next) => _handleRemoteLibraryChanged(next),
+    );
     widget.activeTabIndexListenable?.addListener(_handleActiveTabChanged);
     widget.activeSectionListenable?.addListener(_handleActiveTabChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -630,7 +804,14 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     );
     _startupRefreshIdleTimer?.cancel();
     disposeTabState();
-    _scrollController.dispose();
+    _activeLibraryIndex.dispose();
+    _localProjectionAvailable.dispose();
+    _selectionVersion.dispose();
+    _localScrollController.dispose();
+    for (final scrollController in _remoteScrollControllers.values) {
+      scrollController.dispose();
+    }
+    _remoteScrollControllers.clear();
     super.dispose();
   }
 
@@ -645,8 +826,10 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final libraryFacade = ref.read(libraryFacadeProvider);
-    final libraryHeaderAudioCount = ref.watch(
-      libraryHeaderUiProvider.select((s) => s.audioCount),
+    ref.watch(
+      settingsStateProvider.select(
+        (state) => state.value?.pinnedLibraryPaths ?? const <String>[],
+      ),
     );
     final listStateStructureRevision = ref.watch(
       libraryListUiProvider.select((s) => s.structureRevision),
@@ -660,16 +843,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final listStateIsInitialized = ref.watch(
       libraryListUiProvider.select((s) => s.isInitialized),
     );
-    final listStateCanPullRefresh = ref.watch(
+    final canPullRefresh = ref.watch(
       libraryListUiProvider.select((s) => s.canPullRefresh),
     );
-    final pinnedLibraryPaths = ref
-        .watch(
-          settingsStateProvider.select(
-            (state) => state.value?.pinnedLibraryPaths ?? const <String>[],
-          ),
-        )
-        .toSet();
     final libraryRefreshOperationBusy = ref.watch(
       uiOperationForScopeProvider(
         UiOperationScope.libraryRefresh,
@@ -702,6 +878,13 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     }
     final bottomInset = MobileOverlayInset.of(context);
 
+    final remoteSources = ref.watch(
+      remoteLibraryControllerProvider.select((c) => c.sources),
+    );
+    final selectedRemoteSource = ref.watch(
+      remoteLibraryControllerProvider.select((c) => c.selectedSource),
+    );
+    _renderedLibraryItemCount = remoteSources.length + 1;
     final topTotalHeight =
         headerHeight + AppPageHeaderMetrics.firstContentSpacing;
     // Remove the extra 96px to make content flush with the bottom dock.
@@ -711,37 +894,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         (MediaQuery.orientationOf(context) == Orientation.landscape);
     final listTopPadding = topTotalHeight;
     final listBottomPadding = listBottomInset + 16.0;
-    // Reduced cacheExtent to significantly lower memory footprint and improve
-    // scroll/swipe performance.
-    const listCacheExtent = 320.0;
-    final canPullRefresh = listStateCanPullRefresh;
-    final rawSnapshotReady =
-        listStateIsInitialized &&
-        listStateStructureRevision == libraryFacade.structureRevision;
-
-    Widget emptyListBody() {
-      final relativeTop = listTopPadding;
-      final relativeBottom = listBottomPadding;
-
-      return LibraryEmptyState(
-        onImportLibrary: _addLibrary,
-        onImportFolder: _addFolder,
-        onImportFile: _addFiles,
-        isBusy: libraryRefreshBusy,
-        activeImportScope: activeImportScope,
-        bottomInset: relativeBottom,
-        topInset: relativeTop,
-        physics: canPullRefresh
-            ? AlwaysScrollableScrollPhysics(
-                parent: GlassRefreshIndicatorScrollPhysics(
-                  isIndicatorVisible: () =>
-                      _refreshIndicatorKey.currentState?.isIndicatorVisible ??
-                      false,
-                ),
-              )
-            : const ClampingScrollPhysics(),
-      );
-    }
 
     final page = ScrollActivityGate(
       onMetricsChanged: ref.read(libraryCoverUiControllerProvider).viewportChanged,
@@ -751,131 +903,30 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           clipBehavior: Clip.none,
           children: [
             buildScrollToTopTransition(
-              Consumer(
-                builder: (context, ref, content) {
-                  final libraryEmpty = libraryFacade.libraryCards.isEmpty;
-                  var hasSortedRows = false;
-                  var sortFailed = false;
-                  if (_hasWatchedLibrarySort ||
-                      (rawSnapshotReady &&
-                          !libraryEmpty &&
-                          TickerMode.valuesOf(context).enabled)) {
-                    _hasWatchedLibrarySort = true;
-                    hasSortedRows = ref.watch(
-                      librarySortedTreeUiProvider.select(
-                        (nodes) => nodes.isNotEmpty,
-                      ),
-                    );
-                    sortFailed = ref.watch(
-                      librarySortedSnapshotUiProvider.select(
-                        (snapshot) => snapshot.error != null,
-                      ),
+              AppFadeThroughIndexedStack.lazy(
+                key: const ValueKey<String>('library_source_stack'),
+                duration: kAppMotionFast,
+                indexListenable: _activeLibraryIndex,
+                itemCount: remoteSources.length + 1,
+                itemIds: <Object>[
+                  _localLibraryStackId,
+                  for (final source in remoteSources) source.id,
+                ],
+                contentRevision: (listTopPadding, listBottomPadding),
+                itemBuilder: (context, index) {
+                  if (index == 0) {
+                    return _buildLocalLibraryPane(
+                      topPadding: listTopPadding,
+                      bottomPadding: listBottomPadding,
                     );
                   }
-                  final hasSnapshot =
-                      (rawSnapshotReady && libraryEmpty) ||
-                      hasSortedRows ||
-                      sortFailed;
-                  final listReady = rawSnapshotReady && hasSnapshot;
-                  return AppPageContentTransition.deferred(
-                    prepared: listReady,
-                    isReady: listReady,
-                    // Mount the tree for row preparation under the same
-                    // skeleton that covered restoration and sorting.
-                    holdPlaceholder:
-                        !listStateIsInitialized ||
-                        !hasSnapshot ||
-                        (hasSortedRows && !_libraryProjectionAvailable),
-                    animatePlaceholder: true,
-                    placeholder: LibraryLoadingSkeleton(
-                      bottomInset: listBottomPadding,
-                      topInset: listTopPadding,
-                    ),
-                    builder: (_) => content!,
+                  final source = remoteSources[index - 1];
+                  return _buildRemoteLibraryPane(
+                    source: source,
+                    topPadding: listTopPadding,
+                    bottomPadding: listBottomPadding,
                   );
                 },
-                child: Consumer(
-                  builder: (context, ref, _) {
-                    final tree = ref.watch(librarySortedTreeUiProvider);
-                    final sortingError = ref.watch(
-                      librarySortedSnapshotUiProvider.select(
-                        (state) => state.error,
-                      ),
-                    );
-                    final emptyBody = sortingError == null
-                        ? emptyListBody()
-                        : const SizedBox.expand();
-                    return Stack(
-                      children: [
-                        GlassRefreshIndicator(
-                          key: _refreshIndicatorKey,
-                          lockChildWhileRefreshing: true,
-                          color: Theme.of(context).colorScheme.primary,
-                          backgroundColor: Theme.of(
-                            context,
-                          ).colorScheme.surfaceContainerHighest,
-                          onRefresh: _runLibraryPullRefresh,
-                          edgeOffset: listTopPadding,
-                          displacement: 32,
-                          triggerMode:
-                              GlassRefreshIndicatorTriggerMode.anywhere,
-                          child: PlaceholderContentTransition(
-                            key: const ValueKey('library_empty_transition'),
-                            showPlaceholder: tree.isEmpty,
-                            maintainContent: true,
-                            placeholder: emptyBody,
-                            content: LibraryTreeList(
-                              tree: tree,
-                              structureRevision: listStateStructureRevision,
-                              selectedPaths: _selectedLibraryPaths,
-                              isSelectionMode: _isSelectionMode,
-                              scrollController: _scrollController,
-                              i18n: i18n,
-                              topPadding: listTopPadding,
-                              bottomPadding: listBottomPadding,
-                              cacheExtent: listCacheExtent,
-                              physics: canPullRefresh
-                                  ? AlwaysScrollableScrollPhysics(
-                                      parent:
-                                          GlassRefreshIndicatorScrollPhysics(
-                                            isIndicatorVisible: () =>
-                                                _refreshIndicatorKey
-                                                    .currentState
-                                                    ?.isIndicatorVisible ??
-                                                false,
-                                          ),
-                                    )
-                                  : null,
-                              loadFolder: libraryFacade.loadLibraryFolderTree,
-                              currentStructureRevision: () =>
-                                  libraryFacade.structureRevision,
-                              onLongPress: _enterSelectionMode,
-                              onToggleSelect: _toggleLibrarySelection,
-                              onProjectionAvailabilityChanged:
-                                  _handleProjectionAvailabilityChanged,
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          top: listTopPadding + 16,
-                          left: 12,
-                          right: 12,
-                          child: AppDeferredFade(
-                            visible: sortingError != null,
-                            child: OperationStatusBanner(
-                              label: i18n.tr('operation_failed_retry'),
-                              error: sortingError,
-                              retryTooltip: i18n.tr('retry'),
-                              onRetry: () => ref.invalidate(
-                                librarySortedSnapshotUiProvider,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
               ),
             ),
             // Scan progress card
@@ -909,183 +960,420 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
               right: 0,
               child: AppHeaderTransition(
                 child: _isSelectionMode
-                    ? Consumer(
-                        builder: (context, ref, _) {
-                          final tree = ref.watch(librarySortedTreeUiProvider);
-                          final selectableCount = tree
-                              .where(isSelectableLibraryNode)
-                              .length;
-                          final selectedSelections =
-                              selectedLibraryNodeSelections(
-                                tree,
-                                _selectedLibraryPaths,
-                              );
-                          final allSelected =
-                              selectableCount > 0 &&
-                              selectedSelections.length >= selectableCount;
-                          return LibraryBatchSelectionHeader(
-                            keyPrefix: 'library',
-                            i18n: i18n,
-                            selectedCount: selectedSelections.length,
-                            allSelected: allSelected,
-                            onToggleSelectAll: selectableCount == 0
-                                ? null
-                                : () => _toggleSelectAllLibrary(tree),
-                            onEditInfo: selectedSelections.length == 1
-                                ? () {
-                                    final target =
-                                        selectedSelections.single.target;
-                                    _exitSelectionMode();
-                                    unawaited(
-                                      showAudioDetailEditor(
-                                        context,
-                                        ref,
-                                        target,
+                    ? (selectedRemoteSource != null
+                          ? Consumer(
+                              builder: (context, ref, _) {
+                                final settings = ref
+                                    .watch(settingsStateProvider)
+                                    .value;
+                                final removals = ref.watch(
+                                  undoableRemovalStateProvider,
+                                );
+                                final remoteWorks = ref.watch(
+                                  remoteLibraryControllerProvider.select(
+                                    (c) => c.worksFor(selectedRemoteSource.id),
+                                  ),
+                                );
+                                final visibleRemoteWorks = remoteWorks
+                                    .where(
+                                      (w) => !removals.isHidden(
+                                        remoteWorkRemovalKey(w),
                                       ),
+                                    )
+                                    .toList(growable: false);
+                                final sortedVisible = sortRemoteLibraryWorks(
+                                  visibleRemoteWorks,
+                                  criterion:
+                                      settings?.librarySortCriterion ??
+                                      LibrarySortCriterion.name,
+                                  ascending:
+                                      settings?.librarySortAscending ?? true,
+                                );
+                                final selectedWorks = sortedVisible
+                                    .where(
+                                      (w) => _selectedRemoteWorkIds.contains(
+                                        w.workId,
+                                      ),
+                                    )
+                                    .toList(growable: false);
+                                final allSelected =
+                                    sortedVisible.isNotEmpty &&
+                                    selectedWorks.length >=
+                                        sortedVisible.length;
+                                return LibraryBatchSelectionHeader(
+                                  keyPrefix: 'library',
+                                  i18n: i18n,
+                                  selectedCount: selectedWorks.length,
+                                  allSelected: allSelected,
+                                  onToggleSelectAll: sortedVisible.isEmpty
+                                      ? null
+                                      : () => _toggleSelectAllRemote(
+                                          sortedVisible,
+                                        ),
+                                  onEditInfo: selectedWorks.length == 1
+                                      ? () {
+                                          final work = selectedWorks.single;
+                                          _exitSelectionMode();
+                                          unawaited(
+                                            openRemoteWorkDetailEditor(
+                                              context,
+                                              ref,
+                                              work,
+                                            ),
+                                          );
+                                        }
+                                      : null,
+                                  onAddToPlaylist:
+                                      selectedWorks.isEmpty ||
+                                          !ref.watch(coreRuntimeReadyProvider)
+                                      ? null
+                                      : () => addRemoteBatchWorksToPlaylist(
+                                          context: context,
+                                          ref: ref,
+                                          works: selectedWorks,
+                                          exitSelectionMode: _exitSelectionMode,
+                                        ),
+                                  onCompleteMetadata: selectedWorks.isEmpty
+                                      ? null
+                                      : () {
+                                          final ids = selectedWorks
+                                              .map((w) => w.workId)
+                                              .toSet();
+                                          _exitSelectionMode();
+                                          unawaited(
+                                            Navigator.of(context).push(
+                                              buildAppPageRoute<void>(
+                                                context: context,
+                                                child: DlsiteMetadataBatchPage(
+                                                  remoteSourceId:
+                                                      selectedRemoteSource.id,
+                                                  initialRemoteWorkIds: ids,
+                                                  initialScope:
+                                                      DlsiteMetadataBatchScope
+                                                          .all,
+                                                ),
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                  onTogglePin: selectedWorks.isEmpty
+                                      ? null
+                                      : () => toggleRemoteBatchWorksPinned(
+                                          context: context,
+                                          ref: ref,
+                                          sourceId: selectedRemoteSource.id,
+                                          workIds: selectedWorks
+                                              .map((w) => w.workId)
+                                              .toList(growable: false),
+                                          exitSelectionMode: _exitSelectionMode,
+                                        ),
+                                  isPinned:
+                                      selectedWorks.isNotEmpty &&
+                                      selectedWorks.every((w) => w.isPinned),
+                                  onRemove: selectedWorks.isEmpty
+                                      ? null
+                                      : () => stageRemoteBatchWorksRemoval(
+                                          context: context,
+                                          ref: ref,
+                                          works: selectedWorks,
+                                          exitSelectionMode: _exitSelectionMode,
+                                        ),
+                                  onExit: _exitSelectionMode,
+                                );
+                              },
+                            )
+                          : Consumer(
+                              builder: (context, ref, _) {
+                                final pinnedLibraryPaths = ref
+                                    .watch(
+                                      settingsStateProvider.select(
+                                        (state) =>
+                                            state.value?.pinnedLibraryPaths ??
+                                            const <String>[],
+                                      ),
+                                    )
+                                    .toSet();
+                                final tree = ref.watch(
+                                  librarySortedTreeUiProvider,
+                                );
+                                final selectableCount = tree
+                                    .where(isSelectableLibraryNode)
+                                    .length;
+                                final selectedSelections =
+                                    selectedLibraryNodeSelections(
+                                      tree,
+                                      _selectedLibraryPaths,
                                     );
-                                  }
-                                : null,
-                            onAddToPlaylist:
-                                selectedSelections.isEmpty ||
-                                    !ref.watch(coreRuntimeReadyProvider)
-                                ? null
-                                : () => addLibraryBatchSelectionsToPlaylist(
-                                    context: context,
-                                    ref: ref,
-                                    selections: selectedSelections,
-                                    exitSelectionMode: _exitSelectionMode,
-                                  ),
-                            onCompleteMetadata: selectedSelections.isEmpty
-                                ? null
-                                : () => completeLibraryBatchSelectionsMetadata(
-                                    context: context,
-                                    ref: ref,
-                                    selections: selectedSelections,
-                                    exitSelectionMode: _exitSelectionMode,
-                                  ),
-                            onTogglePin: selectedSelections.isEmpty
-                                ? null
-                                : () => toggleLibraryBatchSelectionsPinned(
-                                    context: context,
-                                    ref: ref,
-                                    selections: selectedSelections,
-                                    exitSelectionMode: _exitSelectionMode,
-                                  ),
-                            isPinned:
-                                selectedSelections.isNotEmpty &&
-                                selectedSelections.every(
-                                  (s) => pinnedLibraryPaths.contains(
-                                    PathMatcher.normalize(s.path),
-                                  ),
+                                final allSelected =
+                                    selectableCount > 0 &&
+                                    selectedSelections.length >=
+                                        selectableCount;
+                                return LibraryBatchSelectionHeader(
+                                  keyPrefix: 'library',
+                                  i18n: i18n,
+                                  selectedCount: selectedSelections.length,
+                                  allSelected: allSelected,
+                                  onToggleSelectAll: selectableCount == 0
+                                      ? null
+                                      : () => _toggleSelectAllLibrary(tree),
+                                  onEditInfo: selectedSelections.length == 1
+                                      ? () {
+                                          final target =
+                                              selectedSelections.single.target;
+                                          _exitSelectionMode();
+                                          unawaited(
+                                            showAudioDetailEditor(
+                                              context,
+                                              ref,
+                                              target,
+                                            ),
+                                          );
+                                        }
+                                      : null,
+                                  onAddToPlaylist:
+                                      selectedSelections.isEmpty ||
+                                          !ref.watch(coreRuntimeReadyProvider)
+                                      ? null
+                                      : () => addLibraryBatchSelectionsToPlaylist(
+                                          context: context,
+                                          ref: ref,
+                                          selections: selectedSelections,
+                                          exitSelectionMode: _exitSelectionMode,
+                                        ),
+                                  onCompleteMetadata: selectedSelections.isEmpty
+                                      ? null
+                                      : () =>
+                                            completeLibraryBatchSelectionsMetadata(
+                                              context: context,
+                                              ref: ref,
+                                              selections: selectedSelections,
+                                              exitSelectionMode:
+                                                  _exitSelectionMode,
+                                            ),
+                                  onTogglePin: selectedSelections.isEmpty
+                                      ? null
+                                      : () =>
+                                            toggleLibraryBatchSelectionsPinned(
+                                              context: context,
+                                              ref: ref,
+                                              selections: selectedSelections,
+                                              exitSelectionMode:
+                                                  _exitSelectionMode,
+                                            ),
+                                  isPinned:
+                                      selectedSelections.isNotEmpty &&
+                                      selectedSelections.every(
+                                        (s) => pinnedLibraryPaths.contains(
+                                          PathMatcher.normalize(s.path),
+                                        ),
+                                      ),
+                                  onRemove: selectedSelections.isEmpty
+                                      ? null
+                                      : () => removeLibraryBatchSelections(
+                                          context: context,
+                                          ref: ref,
+                                          selections: selectedSelections,
+                                          exitSelectionMode: _exitSelectionMode,
+                                        ),
+                                  onExit: _exitSelectionMode,
+                                );
+                              },
+                            ))
+                    : Consumer(
+                        key: const ValueKey<String>('library_top_header_host'),
+                        builder: (context, ref, _) {
+                          final libraryHeaderAudioCount = ref.watch(
+                            libraryHeaderUiProvider.select((s) => s.audioCount),
+                          );
+                          final remoteSourceBusy =
+                              selectedRemoteSource != null &&
+                              ref.watch(
+                                remoteLibraryControllerProvider.select(
+                                  (c) => c.isLoading(selectedRemoteSource.id),
                                 ),
-                            onRemove: selectedSelections.isEmpty
-                                ? null
-                                : () => removeLibraryBatchSelections(
-                                    context: context,
-                                    ref: ref,
-                                    selections: selectedSelections,
-                                    exitSelectionMode: _exitSelectionMode,
+                              );
+                          final remoteWorks = selectedRemoteSource == null
+                              ? const <RemoteLibraryWork>[]
+                              : ref.watch(
+                                  remoteLibraryControllerProvider.select(
+                                    (c) => c.worksFor(selectedRemoteSource.id),
                                   ),
-                            onExit: _exitSelectionMode,
+                                );
+                          final removals = ref.watch(
+                            undoableRemovalStateProvider,
+                          );
+                          final visibleRemoteWorks =
+                              selectedRemoteSource == null
+                              ? const <RemoteLibraryWork>[]
+                              : remoteWorks
+                                    .where(
+                                      (w) => !removals.isHidden(
+                                        remoteWorkRemovalKey(w),
+                                      ),
+                                    )
+                                    .toList(growable: false);
+                          final remoteTrackTotal = selectedRemoteSource == null
+                              ? 0
+                              : visibleRemoteWorks.fold<int>(
+                                  0,
+                                  (sum, w) => sum + w.trackCount,
+                                );
+                          final headerTitle = selectedRemoteSource == null
+                              ? i18n.tr('music_library')
+                              : selectedRemoteSource.name;
+                          final headerStatsText = selectedRemoteSource == null
+                              ? i18n.tr('library_header_stats', {
+                                  'works': libraryFacade.libraryCards.length
+                                      .toString(),
+                                  'sessions': libraryHeaderAudioCount
+                                      .toString(),
+                                })
+                              : (remoteTrackTotal > 0
+                                    ? i18n.tr('library_header_stats', {
+                                        'works': visibleRemoteWorks.length
+                                            .toString(),
+                                        'sessions': remoteTrackTotal.toString(),
+                                      })
+                                    : i18n.tr('asmr_header_stats', {
+                                        'count': visibleRemoteWorks.length
+                                            .toString(),
+                                      }));
+                          return TopPageHeader(
+                            key: headerKey,
+                            icon: selectedRemoteSource == null
+                                ? Icons.library_music_rounded
+                                : (selectedRemoteSource.isLan
+                                      ? Icons.desktop_windows_rounded
+                                      : Icons.cloud_outlined),
+                            collapseController: _scrollControllerForSourceId(
+                              selectedRemoteSource?.id,
+                            ),
+                            topCapsuleTitle: headerTitle,
+                            topCapsuleData: headerStatsText,
+                            topRowTrailing: const HeaderFloatingButton(
+                              child: LibrarySourceMenuButton(),
+                            ),
+                            title: headerTitle,
+                            titleWidget: _buildHeaderLeftActions(
+                              i18n,
+                              localImportDisabled:
+                                  libraryRefreshBusy ||
+                                  selectedRemoteSource != null,
+                              batchMetadataDisabled:
+                                  selectedRemoteSource != null
+                                  ? remoteSourceBusy ||
+                                        !selectedRemoteSource.allowEdit
+                                  : libraryRefreshBusy,
+                            ),
+                            trailing: SizedBox(
+                              height: 38,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  if (isLandscape) ...[
+                                    HeaderFloatingButton(
+                                      child: IconButton(
+                                        key: const ValueKey(
+                                          'library_refresh_button',
+                                        ),
+                                        onPressed: selectedRemoteSource != null
+                                            ? (remoteSourceBusy
+                                                  ? null
+                                                  : () => unawaited(
+                                                      refreshRemoteSourceWithFeedback(
+                                                        context,
+                                                        ref,
+                                                        selectedRemoteSource.id,
+                                                        syncProgress: true,
+                                                        showLoadingSnackbar:
+                                                            true,
+                                                      ),
+                                                    ))
+                                            : (canPullRefresh &&
+                                                      !libraryRefreshBusy
+                                                  ? () => unawaited(
+                                                      _runLibraryPullRefresh(
+                                                        showSnackbar: true,
+                                                      ),
+                                                    )
+                                                  : null),
+                                        icon:
+                                            (selectedRemoteSource != null
+                                                ? remoteSourceBusy
+                                                : libraryRefreshBusy)
+                                            ? const SizedBox.square(
+                                                dimension: 18,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2.2,
+                                                    ),
+                                              )
+                                            : const Icon(Icons.refresh_rounded),
+                                        tooltip: i18n.tr(
+                                          'refresh_watched_folder',
+                                        ),
+                                        iconSize: 20,
+                                        padding: EdgeInsets.zero,
+                                        constraints:
+                                            const BoxConstraints.tightFor(
+                                              width: 38,
+                                              height: 38,
+                                            ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                  ],
+                                  HeaderFloatingButton(
+                                    child: IconButton(
+                                      key: const ValueKey<String>(
+                                        'library_search_button',
+                                      ),
+                                      onPressed: _openSearchPage,
+                                      icon: const Icon(Icons.search_rounded),
+                                      tooltip: i18n.tr('search'),
+                                      iconSize: 20,
+                                      padding: EdgeInsets.zero,
+                                      constraints:
+                                          const BoxConstraints.tightFor(
+                                            width: 38,
+                                            height: 38,
+                                          ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  const WorkPageTranslationButton(
+                                    buttonKey: 'library_translation',
+                                    compact: true,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  HeaderFloatingButton(
+                                    child: IconButton(
+                                      key: const ValueKey<String>(
+                                        'library_sort_button',
+                                      ),
+                                      onPressed:
+                                          (selectedRemoteSource != null
+                                              ? remoteSourceBusy
+                                              : libraryRefreshBusy)
+                                          ? null
+                                          : _openSortOptions,
+                                      icon: const Icon(Icons.sort_rounded),
+                                      tooltip: i18n.tr('sort_by'),
+                                      iconSize: 20,
+                                      padding: EdgeInsets.zero,
+                                      constraints:
+                                          const BoxConstraints.tightFor(
+                                            width: 38,
+                                            height: 38,
+                                          ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           );
                         },
-                      )
-                    : TopPageHeader(
-                        key: headerKey,
-                        icon: Icons.library_music_rounded,
-                        collapseController: _scrollController,
-                        topCapsuleTitle: i18n.tr('music_library'),
-                        topCapsuleData: i18n.tr('library_header_stats', {
-                          'works': libraryFacade.libraryCards.length.toString(),
-                          'sessions': libraryHeaderAudioCount.toString(),
-                        }),
-                        title: i18n.tr('music_library'),
-                        titleWidget: _buildHeaderLeftActions(
-                          i18n,
-                          libraryRefreshBusy,
-                        ),
-                        trailing: SizedBox(
-                          height: 38,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              if (isLandscape) ...[
-                                HeaderFloatingButton(
-                                  child: IconButton(
-                                    key: const ValueKey(
-                                      'library_refresh_button',
-                                    ),
-                                    onPressed:
-                                        canPullRefresh && !libraryRefreshBusy
-                                        ? () => unawaited(
-                                            _runLibraryPullRefresh(
-                                              showSnackbar: true,
-                                            ),
-                                          )
-                                        : null,
-                                    icon: libraryRefreshBusy
-                                        ? const SizedBox.square(
-                                            dimension: 18,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2.2,
-                                            ),
-                                          )
-                                        : const Icon(Icons.refresh_rounded),
-                                    tooltip: i18n.tr('refresh_watched_folder'),
-                                    iconSize: 20,
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints.tightFor(
-                                      width: 38,
-                                      height: 38,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                              ],
-                              HeaderFloatingButton(
-                                child: IconButton(
-                                  key: const ValueKey<String>(
-                                    'library_search_button',
-                                  ),
-                                  onPressed: _openSearchPage,
-                                  icon: const Icon(Icons.search_rounded),
-                                  tooltip: i18n.tr('search'),
-                                  iconSize: 20,
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints.tightFor(
-                                    width: 38,
-                                    height: 38,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              const WorkPageTranslationButton(
-                                buttonKey: 'library_translation',
-                                compact: true,
-                              ),
-                              const SizedBox(width: 8),
-                              HeaderFloatingButton(
-                                child: IconButton(
-                                  key: const ValueKey<String>(
-                                    'library_sort_button',
-                                  ),
-                                  onPressed: libraryRefreshBusy
-                                      ? null
-                                      : _openSortOptions,
-                                  icon: const Icon(Icons.sort_rounded),
-                                  tooltip: i18n.tr('sort_by'),
-                                  iconSize: 20,
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints.tightFor(
-                                    width: 38,
-                                    height: 38,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
                       ),
               ),
             ),
@@ -1093,13 +1381,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         ),
       ),
     );
-    final content = WorkPageTranslationHost(
-      child: BrowsePageScroll(
-        pageKey: 'library',
-        controller: _scrollController,
-        child: page,
-      ),
-    );
+    final content = WorkPageTranslationHost(child: page);
     return Builder(
       builder: (context) {
         _route = ModalRoute.of(context);
@@ -1119,14 +1401,227 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     );
   }
 
+  Widget _buildLocalLibraryPane({
+    required double topPadding,
+    required double bottomPadding,
+  }) {
+    const listCacheExtent = 320.0;
+    return BrowsePageScroll(
+      pageKey: 'library',
+      controller: _localScrollController,
+      child: Consumer(
+        builder: (context, ref, content) {
+          final libraryFacade = ref.read(libraryFacadeProvider);
+          final listStateStructureRevision = ref.watch(
+            libraryListUiProvider.select((s) => s.structureRevision),
+          );
+          final listStateIsInitialized = ref.watch(
+            libraryListUiProvider.select((s) => s.isInitialized),
+          );
+          final rawSnapshotReady =
+              listStateIsInitialized &&
+              listStateStructureRevision == libraryFacade.structureRevision;
+          final libraryEmpty = libraryFacade.libraryCards.isEmpty;
+          var hasSortedRows = false;
+          var sortFailed = false;
+          if (_hasWatchedLibrarySort ||
+              (rawSnapshotReady &&
+                  !libraryEmpty &&
+                  TickerMode.valuesOf(context).enabled)) {
+            _hasWatchedLibrarySort = true;
+            hasSortedRows = ref.watch(
+              librarySortedTreeUiProvider.select((nodes) => nodes.isNotEmpty),
+            );
+            sortFailed = ref.watch(
+              librarySortedSnapshotUiProvider.select(
+                (snapshot) => snapshot.error != null,
+              ),
+            );
+          }
+          final hasSnapshot =
+              (rawSnapshotReady && libraryEmpty) || hasSortedRows || sortFailed;
+          final listReady = rawSnapshotReady && hasSnapshot;
+          return ValueListenableBuilder<bool>(
+            valueListenable: _localProjectionAvailable,
+            child: content,
+            builder: (context, projectionAvailable, paneContent) =>
+                AppPageContentTransition.deferred(
+                  prepared: listReady,
+                  isReady: listReady,
+                  // Mount the tree for row preparation under the same
+                  // skeleton that covered restoration and sorting.
+                  holdPlaceholder:
+                      !listStateIsInitialized ||
+                      !hasSnapshot ||
+                      (hasSortedRows && !projectionAvailable),
+                  animatePlaceholder: true,
+                  placeholder: LibraryLoadingSkeleton(
+                    bottomInset: bottomPadding,
+                    topInset: topPadding,
+                  ),
+                  builder: (_) => paneContent!,
+                ),
+          );
+        },
+        child: Consumer(
+          builder: (context, ref, _) {
+            final i18n = ref.read(appLanguageProviderInstanceProvider);
+            final libraryFacade = ref.read(libraryFacadeProvider);
+            final listStateStructureRevision = ref.watch(
+              libraryListUiProvider.select((s) => s.structureRevision),
+            );
+            final listStateIsScanning = ref.watch(
+              libraryListUiProvider.select((s) => s.isScanning),
+            );
+            final canPullRefresh = ref.watch(
+              libraryListUiProvider.select((s) => s.canPullRefresh),
+            );
+            final libraryRefreshOperationBusy = ref.watch(
+              uiOperationForScopeProvider(
+                UiOperationScope.libraryRefresh,
+              ).select((s) => s.isBusy),
+            );
+            UiOperationScope? activeImportScope;
+            for (final scope in const <UiOperationScope>[
+              UiOperationScope.libraryImportFolder,
+              UiOperationScope.libraryImportLibrary,
+              UiOperationScope.libraryImportFiles,
+            ]) {
+              if (ref.watch(
+                uiOperationForScopeProvider(scope).select((s) => s.isBusy),
+              )) {
+                activeImportScope ??= scope;
+              }
+            }
+            final libraryRefreshBusy =
+                !ref.watch(coreRuntimeReadyProvider) ||
+                libraryRefreshOperationBusy ||
+                activeImportScope != null ||
+                listStateIsScanning;
+            final scrollPhysics = canPullRefresh
+                ? AlwaysScrollableScrollPhysics(
+                    parent: GlassRefreshIndicatorScrollPhysics(
+                      isIndicatorVisible: () =>
+                          _refreshIndicatorKey
+                              .currentState
+                              ?.isIndicatorVisible ??
+                          false,
+                    ),
+                  )
+                : null;
+            final tree = ref.watch(librarySortedTreeUiProvider);
+            final sortingError = ref.watch(
+              librarySortedSnapshotUiProvider.select((state) => state.error),
+            );
+            final emptyBody = sortingError == null
+                ? LibraryEmptyState(
+                    onImportLibrary: _addLibrary,
+                    onImportFolder: _addFolder,
+                    onImportFile: _addFiles,
+                    isBusy: libraryRefreshBusy,
+                    activeImportScope: activeImportScope,
+                    bottomInset: bottomPadding,
+                    topInset: topPadding,
+                    physics: scrollPhysics ?? const ClampingScrollPhysics(),
+                  )
+                : const SizedBox.expand();
+            return Stack(
+              children: [
+                GlassRefreshIndicator(
+                  key: _refreshIndicatorKey,
+                  lockChildWhileRefreshing: true,
+                  color: Theme.of(context).colorScheme.primary,
+                  backgroundColor: Theme.of(
+                    context,
+                  ).colorScheme.surfaceContainerHighest,
+                  onRefresh: _runLibraryPullRefresh,
+                  edgeOffset: topPadding,
+                  displacement: 32,
+                  triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,
+                  child: ValueListenableBuilder<int>(
+                    valueListenable: _selectionVersion,
+                    builder: (context, _, _) => PlaceholderContentTransition(
+                      key: const ValueKey('library_empty_transition'),
+                      showPlaceholder: tree.isEmpty,
+                      maintainContent: true,
+                      placeholder: emptyBody,
+                      content: LibraryTreeList(
+                        tree: tree,
+                        structureRevision: listStateStructureRevision,
+                        selectedPaths: Set<String>.unmodifiable(
+                          _selectedLibraryPaths,
+                        ),
+                        isSelectionMode: _isSelectionMode,
+                        scrollController: _localScrollController,
+                        i18n: i18n,
+                        topPadding: topPadding,
+                        bottomPadding: bottomPadding,
+                        cacheExtent: listCacheExtent,
+                        physics: scrollPhysics,
+                        loadFolder: libraryFacade.loadLibraryFolderTree,
+                        currentStructureRevision: () =>
+                            libraryFacade.structureRevision,
+                        onLongPress: _enterSelectionMode,
+                        onToggleSelect: _toggleLibrarySelection,
+                        onProjectionAvailabilityChanged:
+                            _handleProjectionAvailabilityChanged,
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: topPadding + 16,
+                  left: 12,
+                  right: 12,
+                  child: AppDeferredFade(
+                    visible: sortingError != null,
+                    child: OperationStatusBanner(
+                      label: i18n.tr('operation_failed_retry'),
+                      error: sortingError,
+                      retryTooltip: i18n.tr('retry'),
+                      onRetry: () =>
+                          ref.invalidate(librarySortedSnapshotUiProvider),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRemoteLibraryPane({
+    required RemoteMediaSource source,
+    required double topPadding,
+    required double bottomPadding,
+  }) {
+    return ValueListenableBuilder<int>(
+      valueListenable: _selectionVersion,
+      builder: (context, _, _) => RemoteLibraryBrowseView(
+        key: ValueKey<String>('remote_view_${source.id}'),
+        source: source,
+        scrollController: _scrollControllerForRemote(source.id),
+        topPadding: topPadding,
+        bottomPadding: bottomPadding,
+        isSelectionMode: _isSelectionMode,
+        selectedWorkIds: Set<String>.unmodifiable(_selectedRemoteWorkIds),
+        onEnterSelectionMode: _enterRemoteSelectionMode,
+        onToggleSelection: _toggleRemoteSelection,
+      ),
+    );
+  }
+
   Widget _buildHeaderLeftActions(
-    AppLanguageProvider i18n,
-    bool libraryRefreshBusy,
-  ) {
+    AppLanguageProvider i18n, {
+    required bool localImportDisabled,
+    required bool batchMetadataDisabled,
+  }) {
     return HeaderActionPill(
       children: [
         UnifiedPopupMenuButton<_LibraryAddAction>(
-          enabled: !libraryRefreshBusy,
+          enabled: !localImportDisabled,
           iconWidget: const BoldAddIcon(),
           tooltip: i18n.tr('add'),
           iconSize: 20,
@@ -1165,7 +1660,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         ),
         IconButton(
           key: const ValueKey<String>('library_edit_button'),
-          onPressed: libraryRefreshBusy ? null : _openLibraryManagementPage,
+          onPressed: localImportDisabled ? null : _openLibraryManagementPage,
           icon: const LibraryEditIcon(),
           tooltip: i18n.tr('edit_library'),
           iconSize: 20,
@@ -1174,7 +1669,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         ),
         IconButton(
           key: const ValueKey<String>('library_batch_metadata_button'),
-          onPressed: libraryRefreshBusy ? null : _openBatchMetadataPage,
+          onPressed: batchMetadataDisabled ? null : _openBatchMetadataPage,
           icon: const Icon(Icons.cloud_download_rounded),
           tooltip: i18n.tr('batch_metadata'),
           iconSize: 20,

@@ -1,4 +1,9 @@
 import '../../features/library/application/work_text_service.dart';
+import '../../features/library/application/lan_media_server_service.dart';
+import '../../features/library/application/remote_library_controller.dart';
+import '../../features/data_support/application/cross_platform_sync_service.dart';
+import '../../infrastructure/sqlite/sqlite_cross_platform_sync_repository.dart';
+import '../../core/media/audio_detail.dart';
 import '../../core/media/music_track.dart';
 import '../localization/app_language_provider.dart';
 import 'app_startup.dart';
@@ -42,6 +47,8 @@ import '../../features/player/application/notification_facade.dart';
 import '../../features/player/application/playback_facade.dart';
 import '../../features/player/domain/playback_track_cache.dart';
 import '../../features/player/application/playback_subtitle_service.dart';
+import '../../features/player/application/subtitle_ai_engine.dart';
+import '../../features/player/application/subtitle_model_store.dart';
 import '../../features/player/application/timer_facade.dart';
 import '../../features/settings/application/settings_repository.dart';
 import 'app_lifecycle_binding.dart';
@@ -60,6 +67,8 @@ import 'browse_page_state_store.dart';
 import 'timer_runtime_binding.dart';
 import 'asmr_download_runtime_binding.dart';
 import 'asmr_network_runtime_binding.dart';
+import 'work_review_sync_runtime_binding.dart';
+import 'work_smart_status_coordinator.dart';
 import '../../core/network/app_network.dart';
 
 typedef ProductionAppRuntime = ({
@@ -69,6 +78,10 @@ typedef ProductionAppRuntime = ({
   AsmrDownloadManager asmrDownloadManager,
   AsmrLibraryController asmrLibraryController,
   AsmrPlaybackCoordinator asmrPlaybackCoordinator,
+  WorkSmartStatusCoordinator workSmartStatusCoordinator,
+  CrossPlatformSyncService crossPlatformSyncService,
+  LanMediaServerService lanMediaServerService,
+  RemoteLibraryController remoteLibraryController,
   Future<void> Function() initializeRuntimeData,
 });
 
@@ -100,6 +113,7 @@ AppRuntimeGraph createAppRuntimeGraph({
   required SettingsRepository settings,
   AsmrDownloadManager? asmrDownloads,
   AsmrPlaybackSource? asmrPlaybackSource,
+  MusicTrack? Function(String)? remoteTrackResolver,
   LibraryScanCoordinator? libraryScans,
   LibraryScanLabels Function()? libraryScanLabels,
   PlaybackTrackCache? asmrPlaybackCacheService,
@@ -107,8 +121,12 @@ AppRuntimeGraph createAppRuntimeGraph({
   bool persistenceEnabled = true,
   ListeningActivityService? listeningActivity,
   RuntimeBinding? asmrNetworkBinding,
+  RuntimeBinding? workReviewSyncBinding,
+  RuntimeBinding? workSmartStatusBinding,
   Future<void> Function()? initializeSecondaryData,
   Future<void> Function()? initializeListeningHistory,
+  Future<void> Function()? onBackgroundSync,
+  Future<void> Function(bool fastShutdown)? stopLanServer,
   void Function()? disposeSecondaryData,
   Future<void> Function()? closeDatabase,
 }) {
@@ -124,12 +142,21 @@ AppRuntimeGraph createAppRuntimeGraph({
     library: library,
     playback: playback,
     asmrPlaybackSource: asmrPlaybackSource,
+    remoteTrackResolver: remoteTrackResolver,
   );
   final resolvedLibraryScans = libraryScans ?? LibraryScanCoordinator();
   final subtitles = PlaybackSubtitleService(
     trackResolver: audioPaths.trackByPath,
     onTrackLoaded: notifications.handleSubtitleTrackLoaded,
+    aiEngine: SubtitleAiEngine(
+      activeAsrModel: () => SubtitleModelStore.resolveAsrModel(
+        settings.selectedAsrModelId,
+      ),
+    ),
   );
+  settings.onTranslationSettingsChanged ??=
+      subtitles.translationService.configure;
+  subtitles.translationService.configure(settings.translationSettings);
   final warmup = AudioUiWarmupCoordinator(
     library: library,
     playback: playback,
@@ -194,6 +221,8 @@ AppRuntimeGraph createAppRuntimeGraph({
   playback.configurePersistence(enabled: persistenceEnabled);
   final bindings = <RuntimeBinding>[
     ?asmrNetworkBinding,
+    ?workReviewSyncBinding,
+    ?workSmartStatusBinding,
     LibraryRuntimeBinding.attach(
       library: library,
       playback: playback,
@@ -281,6 +310,8 @@ AppRuntimeGraph createAppRuntimeGraph({
     listeningActivity: listeningActivity,
     initializeSecondaryData: initializeSecondaryData,
     initializeListeningHistory: initializeListeningHistory,
+    onBackgroundSync: onBackgroundSync,
+    stopLanServer: stopLanServer,
     disposeSecondaryData: disposeSecondaryData,
   );
   playback.configureUserLaunchInitialization(
@@ -386,7 +417,56 @@ ProductionAppRuntime createProductionAppRuntime({
     launcher: PlaybackFacadeSessionLauncher(playbackFacade),
   );
   late final AppRuntimeGraph runtimeGraph;
-  final listeningActivity = ListeningActivityService(
+  late final ListeningActivityService listeningActivity;
+  final crossPlatformSyncService = CrossPlatformSyncService(
+    repository: SqliteCrossPlatformSyncRepository(database: database),
+    beforeExport: () async {
+      await listeningActivity.refresh();
+      await libraryFacade.flushPendingPersistence();
+      await playbackFacade.flushSessionStatePersistence();
+    },
+    onSyncApplied: (
+      updatedTrackPaths,
+      interestsChanged, {
+      updatedDetailTargets = const <(String, String)>{},
+    }) async {
+      if (updatedTrackPaths.isNotEmpty) {
+        await libraryFacade.reloadSyncedTracks(updatedTrackPaths);
+      }
+      if (updatedDetailTargets.isNotEmpty) {
+        final targets = <AudioDetailTarget>[
+          for (final (typeRaw, targetPath) in updatedDetailTargets)
+            if (AudioDetailTargetType.fromDbValue(typeRaw) case final type?)
+              AudioDetailTarget(targetType: type, targetPath: targetPath),
+        ];
+        if (targets.isNotEmpty) {
+          final loadedDetails = await libraryRepository.loadMany(targets);
+          for (final detail in loadedDetails) {
+            await libraryFacade.saveAudioDetail(
+              detail,
+              preserveExistingDuration: true,
+            );
+          }
+        }
+      }
+      await listeningActivity.refresh();
+      if (interestsChanged) {
+        await asmrLibraryController.reloadInterestPreferences();
+      }
+    },
+  );
+  final lanMediaServerService = LanMediaServerService(
+    library: libraryFacade,
+    syncService: crossPlatformSyncService,
+    readPinnedPaths: () =>
+        settingsRepository.slice.state.pinnedLibraryPaths.toSet(),
+    togglePinnedPaths: settingsRepository.toggleLibraryPathsPinned,
+  );
+  final remoteLibraryController = RemoteLibraryController(
+    syncService: crossPlatformSyncService,
+    playbackLauncher: PlaybackFacadeSessionLauncher(playbackFacade),
+  );
+  listeningActivity = ListeningActivityService(
     repository: SqliteListeningActivityRepository(database: database),
     readUsage: nativePlaybackRepository.readUsage,
     acknowledgeUsage: nativePlaybackRepository.acknowledgeUsage,
@@ -456,20 +536,55 @@ ProductionAppRuntime createProductionAppRuntime({
     await listeningActivity.seedHistory(legacyHistory);
   }
 
+  final workSmartStatusCoordinator = WorkSmartStatusCoordinator(
+    library: libraryFacade,
+    asmrLibrary: asmrLibraryController,
+    listeningActivity: listeningActivity,
+    playback: playbackFacade,
+    timer: timerFacade,
+    readPersistedState: () =>
+        database.loadAppSetting(WorkSmartStatusCoordinator.persistedSettingKey),
+    writePersistedState: (json) => database.saveAppSetting(
+      WorkSmartStatusCoordinator.persistedSettingKey,
+      json,
+    ),
+  );
+
   runtimeGraph = createAppRuntimeGraph(
     asmrNetworkBinding: AsmrNetworkRuntimeBinding(
       settings: settingsRepository,
       api: asmrApiService,
     ),
-    asmrPlaybackSource: asmrLibraryController,
-    listeningActivity: listeningActivity,
-    initializeSecondaryData: () => asmrLibraryController.initialize(
-      defaultLanguage: AsmrContentLanguage.fromAppLanguage(
-        appLanguageProvider.language,
-      ),
+    workReviewSyncBinding: WorkReviewSyncRuntimeBinding(
+      library: libraryFacade,
+      asmrLibrary: asmrLibraryController,
     ),
+    workSmartStatusBinding: workSmartStatusCoordinator,
+    asmrPlaybackSource: asmrLibraryController,
+    remoteTrackResolver: remoteLibraryController.resolveTrackByPath,
+    listeningActivity: listeningActivity,
+    initializeSecondaryData: () async {
+      await Future.wait<void>([
+        asmrLibraryController.initialize(
+          defaultLanguage: AsmrContentLanguage.fromAppLanguage(
+            appLanguageProvider.language,
+          ),
+        ),
+        crossPlatformSyncService.initialize(),
+        remoteLibraryController.initialize(),
+        lanMediaServerService.initialize(),
+      ]);
+      unawaited(crossPlatformSyncService.maybeAutoSyncInBackground());
+      unawaited(workSmartStatusCoordinator.initializeAndSweepStale());
+    },
     initializeListeningHistory: initializeListeningHistory,
+    onBackgroundSync: crossPlatformSyncService.maybeAutoSyncInBackground,
+    stopLanServer: (fastShutdown) =>
+        lanMediaServerService.stopForShutdown(fastShutdown: fastShutdown),
     disposeSecondaryData: () {
+      remoteLibraryController.dispose();
+      lanMediaServerService.dispose();
+      crossPlatformSyncService.dispose();
       asmrLibraryController.dispose();
       asmrApiService.close();
       japaneseAsmrApiService.close();
@@ -497,10 +612,14 @@ ProductionAppRuntime createProductionAppRuntime({
 
   Future<void> initializeRuntimeData() async {
     if (windowsRuntime != null) {
-      await windowsRuntime.initializeRuntime(runtimeGraph.runtime.start);
+      await Future.wait<void>([
+        remoteLibraryController.ensureCredentialsLoaded(),
+        windowsRuntime.initializeRuntime(runtimeGraph.runtime.start),
+      ]);
     } else {
       await Future.wait<void>([
         configurePlatformAudioSession(),
+        remoteLibraryController.ensureCredentialsLoaded(),
         runtimeGraph.runtime.start(),
       ]);
     }
@@ -513,6 +632,10 @@ ProductionAppRuntime createProductionAppRuntime({
     asmrDownloadManager: asmrDownloadManager,
     asmrLibraryController: asmrLibraryController,
     asmrPlaybackCoordinator: asmrPlaybackCoordinator,
+    workSmartStatusCoordinator: workSmartStatusCoordinator,
+    crossPlatformSyncService: crossPlatformSyncService,
+    lanMediaServerService: lanMediaServerService,
+    remoteLibraryController: remoteLibraryController,
     initializeRuntimeData: initializeRuntimeData,
   );
 }

@@ -24,6 +24,7 @@ import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../application/work_text_service.dart';
 import 'library_providers.dart';
+import '../../../core/translation/translation_service_settings.dart';
 import '../../../core/widgets/page_translation_scope.dart';
 import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 import 'translated_markdown_body.dart';
@@ -580,6 +581,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
     );
     final content = WorkPageTranslationHost(
       key: ValueKey(_loadGeneration),
+      scene: TextTranslationScene.script,
       child: page,
     );
     return Builder(

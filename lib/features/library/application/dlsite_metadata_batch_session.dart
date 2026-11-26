@@ -9,6 +9,7 @@ import '../domain/audio_library_category.dart';
 import 'dlsite_metadata_query.dart';
 import 'dlsite_metadata_service.dart';
 import 'library_facade.dart';
+import 'remote_library_controller.dart';
 
 enum DlsiteMetadataBatchLookupStatus {
   searching,
@@ -186,6 +187,55 @@ final class DlsiteMetadataBatchSession extends ChangeNotifier {
         );
       },
       onApplyCompleted: library.flushMetadataUpdates,
+    );
+  }
+
+  factory DlsiteMetadataBatchSession.forRemoteSource({
+    required Iterable<AudioLibraryCategoryEntry> entries,
+    required LibraryFacade library,
+    required RemoteLibraryController remoteController,
+    required String sourceId,
+    required AppLanguage language,
+  }) {
+    Future<List<DlsiteMetadata>> runLookup(
+      DlsiteMetadataQuery query, {
+      required bool forceRefresh,
+    }) {
+      final rjCode = query.rjCode;
+      return rjCode == null
+          ? library.searchPreferredMetadataByTitles(
+              query.searchTitles,
+              language: language,
+              forceRefresh: forceRefresh,
+            )
+          : library
+                .fetchPreferredMetadata(
+                  rjCode,
+                  language: language,
+                  forceRefresh: forceRefresh,
+                )
+                .then((metadata) => <DlsiteMetadata>[metadata]);
+    }
+
+    return DlsiteMetadataBatchSession(
+      entries: entries,
+      lookup: (query) => runLookup(query, forceRefresh: false),
+      forceRefreshLookup: (query) => runLookup(query, forceRefresh: true),
+      apply: (item) async {
+        final metadata = item.confirmedMetadata;
+        if (metadata == null) return;
+        final workId = item.entry.path;
+        final work = remoteController.workByUniqueKey('$sourceId::$workId');
+        if (work == null) {
+          throw StateError('Remote work $workId no longer exists');
+        }
+        await remoteController.saveWorkDetail(
+          work,
+          metadata: metadata,
+          saveCover: item.saveCover ?? false,
+          preserveDuration: true,
+        );
+      },
     );
   }
 

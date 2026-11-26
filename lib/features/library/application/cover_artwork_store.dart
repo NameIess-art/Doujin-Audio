@@ -309,6 +309,103 @@ final class CoverArtworkStore {
     }, coalesce: true);
   }
 
+  Future<({File file, IOSink sink, void Function() release})?> openStagingWrite({
+    CoverArtworkNamespace namespace = CoverArtworkNamespace.remote,
+  }) async {
+    final epoch = _clearEpoch;
+    final done = Completer<void>();
+    _activeFileWrites.add(done.future);
+    var released = false;
+    void release() {
+      if (released) return;
+      released = true;
+      _activeFileWrites.remove(done.future);
+      done.complete();
+    }
+
+    try {
+      await initialize();
+      if (epoch != _clearEpoch) {
+        release();
+        return null;
+      }
+      final outputDir = Directory(_namespaceDirectoryPath(namespace));
+      await outputDir.create(recursive: true);
+      if (epoch != _clearEpoch) {
+        release();
+        return null;
+      }
+      final stagingFile = File(
+        path.join(outputDir.path, 'staging_${++_partSequence}.part'),
+      );
+      final sink = stagingFile.openWrite();
+      return (file: stagingFile, sink: sink, release: release);
+    } catch (_) {
+      release();
+      rethrow;
+    }
+  }
+
+  Future<String?> commitStagedFile({
+    required String logicalKey,
+    required File stagedFile,
+    required String fileStem,
+    CoverArtworkNamespace namespace = CoverArtworkNamespace.remote,
+  }) {
+    if (logicalKey.isEmpty || fileStem.isEmpty) {
+      return Future<String?>.value();
+    }
+    final epoch = _clearEpoch;
+    return _enqueue<String?>(() async {
+      await initialize();
+      if (epoch != _clearEpoch) {
+        if (await stagedFile.exists()) {
+          try {
+            await stagedFile.delete();
+          } on FileSystemException {
+            // Ignore cleanup failure when storage was cleared concurrently.
+          }
+        }
+        return null;
+      }
+      final output = _artifactFile(namespace, '$fileStem.image');
+      final managedCount = _managedArtifacts.length;
+      if (!await _isUsableFile(output.path)) {
+        final existed = await output.exists();
+        if (existed) {
+          try {
+            await output.delete();
+          } on PathNotFoundException {
+            // Another concurrent writer already replaced the target.
+          }
+        }
+        try {
+          await stagedFile.rename(output.path);
+        } on FileSystemException {
+          if (!await _isUsableCoverFile(output.path)) {
+            await Future<void>.delayed(const Duration(milliseconds: 10));
+            if (!await _isUsableCoverFile(output.path)) rethrow;
+          }
+        }
+        if (!existed) _recordCreatedArtifact(output);
+      } else if (await stagedFile.exists()) {
+        try {
+          await stagedFile.delete();
+        } on FileSystemException {
+          // Ignore cleanup failure on duplicate staged artifact.
+        }
+      }
+      final key = _canonicalLogicalKey(logicalKey);
+      final stored = _storedValue(output.path);
+      if (_bindings[key] != stored ||
+          managedCount != _managedArtifacts.length) {
+        _bindings[key] = stored;
+        await _persistIndex();
+      }
+      return output.path;
+    }, coalesce: true);
+  }
+
   Future<String?> putFile({
     required String logicalKey,
     required String sourcePath,

@@ -52,12 +52,14 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
         return;
       }
       if (!mounted) return;
+      final i18n = ref.read(appLanguageProviderInstanceProvider);
+      if (shouldShowAsmrUnavailableFeedback(error)) {
+        showAsmrUnavailableFeedback(context: context, i18n: i18n, error: error);
+        return;
+      }
       showAppSnackBar(
         context,
-        localizedAsmrCatalogErrorText(
-          ref.read(appLanguageProviderInstanceProvider),
-          error,
-        ),
+        localizedAsmrCatalogErrorText(i18n, error),
         tone: AppFeedbackTone.destructive,
       );
     } finally {
@@ -107,12 +109,15 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
                 tagsLabel: i18n.tr('asmr_tags_label'),
                 releaseDateLabel: i18n.tr('card_info_release_date'),
                 ratingLabel: i18n.tr('card_info_rating'),
+                userRatingLabel: i18n.tr('work_user_rating'),
+                reviewNoteLabel: i18n.tr('work_review_note'),
                 listSeparator: '\u3001',
                 coverBuilder: (coverWidth) => _AsmrWorkCover(
                   workKey: widget.work.workKey,
                   url: _asmrWorkListCoverUrl(widget.work),
                   width: coverWidth,
                   duration: widget.work.duration,
+                  listenStatus: widget.work.listenStatus,
                   isSelected: widget.isSelected,
                 ),
                 accentColor: cs.primary,
@@ -156,6 +161,11 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
       secondaryActionIcon: Icons.download_rounded,
       onSecondaryAction: () =>
           unawaited(_downloadAsmrWorks(context, [widget.work])),
+      leadingActionLabel: i18n.tr('work_review_action'),
+      leadingActionTooltip: i18n.tr('work_review_action'),
+      leadingActionIcon: Icons.rate_review_rounded,
+      onLeadingAction: () =>
+          unawaited(openAsmrWorkReviewEditor(context, ref, widget.work)),
       child: cardContent,
     );
   }
@@ -169,5 +179,7 @@ LibraryLikeInfoMetadata _workMetadata(AsmrWork work) {
     tags: work.tags,
     releaseDate: work.releaseDate,
     rating: work.rating,
+    userRating: work.userRating,
+    hasReviewNote: work.reviewText.trim().isNotEmpty,
   );
 }

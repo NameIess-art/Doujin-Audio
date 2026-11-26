@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:doujin_audio/core/errors/native_result.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/core/network/remote_source_headers.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_playback_cache_service.dart';
 import 'package:doujin_audio/features/player/application/audio_state_services.dart'
     show TimerService;
@@ -866,6 +868,104 @@ void main() {
       expect(first, hasLength(catalog.tracks.length));
       expect(concurrentRequest, isNotNull);
       expect(await concurrentRequest!, hasLength(catalog.tracks.length));
+    },
+  );
+
+  test(
+    'remote source httpHeaders survive isolate queue building and invalidate cache on change',
+    () async {
+      addTearDown(RemoteSourceHeaderRegistry.instance.clear);
+      const lanStream = 'http://192.168.1.20:42871/api/v1/stream/file1/track.mp3';
+      const davStream = 'http://192.168.1.30:5005/Audio/work/01.mp3';
+      RemoteSourceHeaderRegistry.instance.replaceAll([
+        RemoteSourceHeaderRule.bearerToken(
+          id: 'lan-1',
+          baseUri: Uri.parse('http://192.168.1.20:42871'),
+          token: '123456',
+        ),
+        RemoteSourceHeaderRule.basicAuth(
+          id: 'dav-1',
+          baseUri: Uri.parse('http://192.168.1.30:5005/Audio/'),
+          username: 'alice',
+          password: 'secret',
+        ),
+      ]);
+      catalog.tracks
+        ..clear()
+        ..addAll([
+          MusicTrack(
+            path: lanStream,
+            displayName: 'LAN Track',
+            groupKey: 'remote-work:lan-1::w1',
+            groupTitle: 'LAN Work',
+            groupSubtitle: '',
+            isSingle: false,
+            remoteMetadataKind: MusicTrack.remoteMetadataKindRemoteSource,
+          ),
+          MusicTrack(
+            path: davStream,
+            displayName: 'WebDAV Track',
+            groupKey: 'remote-work:dav-1::w2',
+            groupTitle: 'DAV Work',
+            groupSubtitle: '',
+            isSingle: false,
+            remoteMetadataKind: MusicTrack.remoteMetadataKindRemoteSource,
+          ),
+        ]);
+      final session = register('remote-headers', queue: true);
+      expect(
+        await commands.prepareSession(
+          session,
+          nextPath: lanStream,
+        ),
+        true,
+      );
+      final queue1 = native.lastPreparedQueue!;
+      expect(queue1[0]['httpHeaders'], {
+        HttpHeaders.authorizationHeader: 'Bearer 123456',
+      });
+
+      final davSession = PlaybackSession(
+        id: 'remote-headers-dav',
+        currentTrackPath: davStream,
+        loopMode: SessionLoopMode.folderSequential,
+        nonSingleLoopMode: SessionLoopMode.folderSequential,
+        volume: 1,
+        createdAt: DateTime(2026),
+        state: const PlayerState(false, ProcessingState.idle),
+        customQueueTracks: [catalog.tracks[1]],
+      );
+      playback.registerSession(davSession);
+      expect(
+        await commands.prepareSession(
+          davSession,
+          nextPath: davStream,
+        ),
+        true,
+      );
+      expect(native.lastPreparedQueue!.single['httpHeaders'], {
+        HttpHeaders.authorizationHeader: 'Basic YWxpY2U6c2VjcmV0',
+      });
+
+      // Updating token in registry invalidates the cached native queue headers.
+      RemoteSourceHeaderRegistry.instance.upsertRule(
+        RemoteSourceHeaderRule.bearerToken(
+          id: 'lan-1',
+          baseUri: Uri.parse('http://192.168.1.20:42871'),
+          token: '654321',
+        ),
+      );
+      final queue2 = await commands.nativePlaybackQueueFor(
+        session,
+        currentPath: lanStream,
+      );
+      expect(queue2, hasLength(2));
+      expect(queue2[0]['httpHeaders'], {
+        HttpHeaders.authorizationHeader: 'Bearer 654321',
+      });
+      expect(queue2[1]['httpHeaders'], {
+        HttpHeaders.authorizationHeader: 'Basic YWxpY2U6c2VjcmV0',
+      });
     },
   );
 }

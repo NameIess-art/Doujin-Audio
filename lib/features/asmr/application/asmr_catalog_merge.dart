@@ -36,9 +36,13 @@ class AsmrCatalogCursor {
 }
 
 class AsmrPartialCatalogException implements Exception {
-  AsmrPartialCatalogException(Iterable<AsmrCatalogSource> sources)
-    : sources = List.unmodifiable(sources);
+  AsmrPartialCatalogException(
+    Iterable<AsmrCatalogSource> sources, {
+    Map<AsmrCatalogSource, Object> causes = const {},
+  }) : sources = List.unmodifiable(sources),
+       causes = Map.unmodifiable(causes);
   final List<AsmrCatalogSource> sources;
+  final Map<AsmrCatalogSource, Object> causes;
 }
 
 class AsmrMergedWorkPage extends AsmrWorkPage {
@@ -120,6 +124,8 @@ extension on AsmrRemoteCatalogService {
                   language: language,
                   token: token,
                   cancellationToken: cancellationToken,
+                  useSecondaryOneTimeout:
+                      includeJapanese && _usesJapaneseCatalog(category),
                 )
               : await (next._japanesePages?.putIfAbsent((
                       query,
@@ -223,13 +229,13 @@ extension on AsmrRemoteCatalogService {
       pageSize: pageSize,
       hasMore: hasMore,
       sourceTotalCount:
-          queries.length == 1 && next._totals.length == streams.length
+          queries.length == 1 && next._totals.isNotEmpty
           ? next._totals.values.fold<int>(0, (sum, count) => sum + count)
           : null,
       resourceUpdates: updates.values.toList(growable: false),
       partialError: failures.isEmpty
           ? null
-          : AsmrPartialCatalogException(failures.keys),
+          : AsmrPartialCatalogException(failures.keys, causes: failures),
     );
   }
 }

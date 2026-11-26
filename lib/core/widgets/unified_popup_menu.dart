@@ -168,6 +168,7 @@ class UnifiedPopupMenuButton<T> extends StatefulWidget {
     required this.entries,
     required this.onSelected,
     this.onTrailingSelected,
+    this.onOpened,
     this.iconSize = 28,
     this.enabled = true,
     this.selectAfterDismiss = true,
@@ -181,6 +182,7 @@ class UnifiedPopupMenuButton<T> extends StatefulWidget {
   final List<UnifiedMenuEntry<T>> entries;
   final ValueChanged<T> onSelected;
   final ValueChanged<T>? onTrailingSelected;
+  final VoidCallback? onOpened;
   final double iconSize;
   final bool enabled;
   final bool selectAfterDismiss;
@@ -243,7 +245,13 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
   @override
   void didUpdateWidget(covariant UnifiedPopupMenuButton<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!widget.enabled) unawaited(_removeOverlay(immediate: true));
+    if (!widget.enabled) {
+      unawaited(_removeOverlay(immediate: true));
+    } else if (_entry != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _entry?.markNeedsBuild();
+      });
+    }
   }
 
   @override
@@ -322,6 +330,7 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
     _dismissCallback = () => unawaited(_removeOverlay());
     _menuDismiss?.value = _dismissCallback;
     overlay.insert(entry);
+    widget.onOpened?.call();
     if (MediaQuery.maybeOf(context)?.disableAnimations ?? false) {
       controller.value = 1;
       UiInteractionCoordinator.instance.cancelInteraction(_interactionSource);
@@ -809,6 +818,9 @@ class _UnifiedPopupMenuContent<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final foreground = entry.destructive ? cs.error : cs.onSurface;
+    final effectiveColor = entry.enabled
+        ? foreground
+        : cs.onSurface.withValues(alpha: 0.38);
     const iconSize = 21.0;
     final icon = entry.iconWidget ?? Icon(entry.icon);
     return ConstrainedBox(
@@ -821,7 +833,7 @@ class _UnifiedPopupMenuContent<T> extends StatelessWidget {
                 entry.icon != null ||
                 entry.iconWidget != null) ...[
               IconTheme(
-                data: IconThemeData(size: iconSize, color: foreground),
+                data: IconThemeData(size: iconSize, color: effectiveColor),
                 child: reserveIconSpace
                     ? SizedBox.square(
                         dimension: iconSize,
@@ -838,9 +850,7 @@ class _UnifiedPopupMenuContent<T> extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: entry.enabled
-                      ? foreground
-                      : cs.onSurface.withValues(alpha: 0.38),
+                  color: effectiveColor,
                   fontWeight: FontWeight.w700,
                 ),
               ),

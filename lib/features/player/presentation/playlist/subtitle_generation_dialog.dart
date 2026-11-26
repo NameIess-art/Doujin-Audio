@@ -29,9 +29,15 @@ class SubtitleGenerationDialog extends ConsumerWidget {
         if (job == null) return const SizedBox.shrink();
         final running = job.status == SubtitleGenerationStatus.running;
         final progress = job.progress;
-        final model = job.kind == SubtitleDraftKind.script
-            ? _service.modelStore.snapshot(SubtitleModelStore.japaneseCtc)
-            : null;
+        final model = switch (job.kind) {
+          SubtitleDraftKind.script => _service.modelStore.snapshot(
+            SubtitleModelStore.japaneseCtc,
+          ),
+          SubtitleDraftKind.transcription => _service.modelStore.bundleSnapshot(
+            _service.activeAsrModel.bundleSpecs,
+          ),
+          SubtitleDraftKind.translation => null,
+        };
         final downloading =
             running && progress?.stage == 'download' && model?.active == true;
         final stageKey = switch (progress?.stage) {
@@ -39,25 +45,31 @@ class SubtitleGenerationDialog extends ConsumerWidget {
           'decoding' => 'subtitle_stage_decoding',
           'loading' => 'subtitle_stage_loading',
           'matching' => 'subtitle_stage_matching',
+          'transcribing' => 'subtitle_stage_transcribing',
           'translating' => 'subtitle_stage_translating',
           'saving' => 'subtitle_stage_saving',
           _ => 'subtitle_generating',
         };
         final resultKey = switch (job.status) {
-          SubtitleGenerationStatus.noMatch => 'subtitle_no_reliable_match',
+          SubtitleGenerationStatus.noMatch =>
+            job.kind == SubtitleDraftKind.transcription
+                ? 'subtitle_no_speech_detected'
+                : 'subtitle_no_reliable_match',
           SubtitleGenerationStatus.cancelled => 'subtitle_task_cancelled',
           SubtitleGenerationStatus.failed => 'subtitle_task_failed',
           _ => 'subtitle_generation_ready',
         };
         return AppDialog(
-          title: i18n.tr(
-            job.kind == SubtitleDraftKind.script
-                ? 'subtitle_script_generate'
-                : 'subtitle_translate',
-          ),
-          icon: job.kind == SubtitleDraftKind.script
-              ? Icons.auto_awesome_rounded
-              : Icons.translate_rounded,
+          title: i18n.tr(switch (job.kind) {
+            SubtitleDraftKind.script => 'subtitle_script_generate',
+            SubtitleDraftKind.transcription => 'subtitle_transcribe_generate',
+            SubtitleDraftKind.translation => 'subtitle_translate',
+          }),
+          icon: switch (job.kind) {
+            SubtitleDraftKind.script => Icons.auto_awesome_rounded,
+            SubtitleDraftKind.transcription => Icons.graphic_eq_rounded,
+            SubtitleDraftKind.translation => Icons.translate_rounded,
+          },
           scrollable: true,
           content: Column(
             mainAxisSize: MainAxisSize.min,

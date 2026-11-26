@@ -13,6 +13,7 @@ import '../../../core/media/path_matcher.dart';
 import '../../../core/media/search_query_utils.dart';
 import '../../../core/ui/app_interaction_feedback_settings.dart';
 import '../../asmr/domain/asmr_download.dart';
+import '../../player/application/subtitle_model_store.dart';
 import '../../player/domain/audio_effects.dart';
 import '../../../core/cache/app_cache_service.dart';
 import '../../../core/persistence/app_preferences.dart';
@@ -21,22 +22,46 @@ import 'settings_state.dart';
 class SettingsRepository {
   SettingsRepository({
     this.onNetworkRouteChanged,
+    this.onTranslationSettingsChanged,
     Future<String?> Function()? readProxyPassword,
     Future<void> Function(String?)? writeProxyPassword,
+    Future<String?> Function()? readTranslationApiKey,
+    Future<void> Function(String?)? writeTranslationApiKey,
   }) : _readProxyPassword = readProxyPassword ?? _readSecureProxyPassword,
-       _writeProxyPassword = writeProxyPassword ?? _writeSecureProxyPassword;
+       _writeProxyPassword = writeProxyPassword ?? _writeSecureProxyPassword,
+       _readTranslationApiKey =
+           readTranslationApiKey ?? _readSecureTranslationApiKey,
+       _writeTranslationApiKey =
+           writeTranslationApiKey ?? _writeSecureTranslationApiKey;
 
   static const proxyPasswordKey = 'network_proxy_password_v1';
+  static const translationApiKey = 'translation_llm_api_key_v1';
   static Future<String?> _readSecureProxyPassword() =>
       const FlutterSecureStorage().read(key: proxyPasswordKey);
   static Future<void> _writeSecureProxyPassword(String? value) => value == null
       ? const FlutterSecureStorage().delete(key: proxyPasswordKey)
       : const FlutterSecureStorage().write(key: proxyPasswordKey, value: value);
+  static Future<String?> _readSecureTranslationApiKey() =>
+      const FlutterSecureStorage().read(key: translationApiKey);
+  static Future<void> _writeSecureTranslationApiKey(String? value) =>
+      value == null
+      ? const FlutterSecureStorage().delete(key: translationApiKey)
+      : const FlutterSecureStorage().write(
+          key: translationApiKey,
+          value: value,
+        );
   final Future<void> Function(NetworkRouteSettings, String?)?
   onNetworkRouteChanged;
+  FutureOr<void> Function(TranslationServiceSettings, String?)?
+  onTranslationSettingsChanged;
   final Future<String?> Function() _readProxyPassword;
   final Future<void> Function(String?) _writeProxyPassword;
+  final Future<String?> Function() _readTranslationApiKey;
+  final Future<void> Function(String?) _writeTranslationApiKey;
   NetworkRouteSettings networkRouteSettings = const NetworkRouteSettings();
+  TranslationServiceSettings translationSettings =
+      const TranslationServiceSettings();
+  String selectedAsrModelId = SubtitleModelStore.defaultAsrModelId;
   String asmrApiDomain = asmrApiDomains.first;
 
   static const _playbackSettingsKey = 'playback_settings_v1';
@@ -122,6 +147,7 @@ class SettingsRepository {
         enforceImmediately: enforceCacheLimit,
       ),
       _applyNetworkRoute(),
+      _applyTranslationSettings(),
     ]);
     syncSlice(isInitialized: true);
   }
@@ -131,6 +157,12 @@ class SettingsRepository {
       networkRouteSettings = NetworkRouteSettings.fromJson(
         playback['networkRouteSettings'],
       );
+      translationSettings = TranslationServiceSettings.fromJson(
+        playback['translationSettings'],
+      );
+      selectedAsrModelId = SubtitleModelStore.resolveAsrModel(
+        playback['selectedAsrModelId'] as String?,
+      ).id;
       if (asmrApiDomains.contains(playback['asmrApiDomain'])) {
         asmrApiDomain = playback['asmrApiDomain'] as String;
       }
@@ -274,7 +306,10 @@ class SettingsRepository {
 
   Future<void> _resetPersistedState() async {
     _resetValues();
-    await _applyNetworkRoute();
+    await Future.wait<void>([
+      _applyNetworkRoute(),
+      _applyTranslationSettings(hasResolvedSecret: true),
+    ]);
     syncSlice();
   }
 
@@ -283,6 +318,8 @@ class SettingsRepository {
       _playbackSettingsKey,
       <String, Object?>{
         'networkRouteSettings': networkRouteSettings.toJson(),
+        'translationSettings': translationSettings.toJson(),
+        'selectedAsrModelId': selectedAsrModelId,
         'asmrApiDomain': asmrApiDomain,
         'startupPage': startupPage.name,
         'autoCheckUpdates': autoCheckUpdates,
@@ -354,6 +391,98 @@ class SettingsRepository {
       }
     }
     await onNetworkRouteChanged?.call(networkRouteSettings, secret);
+  }
+
+  Future<void> _applyTranslationSettings({
+    String? resolvedSecret,
+    bool hasResolvedSecret = false,
+  }) async {
+    String? secret = hasResolvedSecret ? resolvedSecret : null;
+    if (!hasResolvedSecret && translationSettings.apiKeyConfigured) {
+      try {
+        secret = await _readTranslationApiKey();
+        translationSettings = translationSettings.copyWith(
+          apiKeyConfigured: secret?.trim().isNotEmpty == true,
+        );
+      } catch (error, stackTrace) {
+        AppLogService.warning(
+          'settings_read_translation_api_key_failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+    }
+    await onTranslationSettingsChanged?.call(translationSettings, secret);
+  }
+
+  Future<void> setTranslationSettings(
+    TranslationServiceSettings value, {
+    String? apiKey,
+    bool clearApiKey = false,
+  }) {
+    String? previousKey;
+    String? committedSecret;
+    var secretChanged = false;
+    final trimmedKey = apiKey?.trim();
+    final hasNewKey = trimmedKey != null && trimmedKey.isNotEmpty;
+    return _change(
+      () async {
+        previousKey =
+            value.apiKeyConfigured ||
+                translationSettings.apiKeyConfigured ||
+                hasNewKey ||
+                clearApiKey
+            ? await _readTranslationApiKey()
+            : null;
+        final committed = value.copyWith(
+          apiBaseUrl: value.apiBaseUrl.trim(),
+          model: value.model.trim(),
+          customPrompt: value.customPrompt.trim(),
+          apiKeyConfigured:
+              !clearApiKey &&
+              (hasNewKey || previousKey?.trim().isNotEmpty == true),
+        );
+        committed.validate();
+        if (hasNewKey) {
+          await _writeTranslationApiKey(trimmedKey);
+          secretChanged = true;
+          committedSecret = trimmedKey;
+        } else if (clearApiKey &&
+            (previousKey != null || translationSettings.apiKeyConfigured)) {
+          await _writeTranslationApiKey(null);
+          secretChanged = true;
+          committedSecret = null;
+        } else {
+          committedSecret = previousKey;
+        }
+        translationSettings = committed;
+      },
+      forceSave: true,
+      onFailure: () async {
+        if (!secretChanged) return;
+        try {
+          await _writeTranslationApiKey(previousKey);
+        } catch (error, stackTrace) {
+          AppLogService.warning(
+            'settings_rollback_translation_api_key_failed',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        }
+      },
+      afterSave: (_) => _applyTranslationSettings(
+        resolvedSecret: committedSecret,
+        hasResolvedSecret: true,
+      ),
+    );
+  }
+
+  Future<void> setSelectedAsrModelId(String modelId) {
+    final normalized = SubtitleModelStore.resolveAsrModel(modelId).id;
+    return _setValue(
+      unchanged: () => selectedAsrModelId == normalized,
+      update: () => selectedAsrModelId = normalized,
+    );
   }
 
   Future<void> setNetworkRouteSettings(
@@ -876,6 +1005,8 @@ class SettingsRepository {
 
   void _restore(SettingsState snapshot) {
     networkRouteSettings = snapshot.networkRouteSettings;
+    translationSettings = snapshot.translationSettings;
+    selectedAsrModelId = snapshot.selectedAsrModelId;
     asmrApiDomain = snapshot.asmrApiDomain;
     autoCheckUpdates = snapshot.autoCheckUpdates;
     dlsiteMetadataLanguage = snapshot.dlsiteMetadataLanguage;
@@ -922,6 +1053,8 @@ class SettingsRepository {
 
   void _resetValues() {
     networkRouteSettings = const NetworkRouteSettings();
+    translationSettings = const TranslationServiceSettings();
+    selectedAsrModelId = SubtitleModelStore.defaultAsrModelId;
     asmrApiDomain = asmrApiDomains.first;
     autoCheckUpdates = false;
     dlsiteMetadataLanguage = ContentLanguagePreference.followPage;
@@ -1001,6 +1134,8 @@ class SettingsRepository {
     final previous = slice.state;
     return SettingsState(
       networkRouteSettings: networkRouteSettings,
+      translationSettings: translationSettings,
+      selectedAsrModelId: selectedAsrModelId,
       asmrApiDomain: asmrApiDomain,
       autoCheckUpdates: autoCheckUpdates,
       dlsiteMetadataLanguage: dlsiteMetadataLanguage,

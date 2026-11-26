@@ -91,12 +91,15 @@ class AsmrTagPreferences {
   final Map<String, double> learned = {};
   final Set<String> manualInterests = {};
   final Set<String> excluded = {};
+  final Map<String, int> selectionUpdatedAt = {};
+  final Map<String, Map<String, double>> deviceLearned = {};
   final Map<String, int> consumedSequences = {};
   ({Set<String> keys, Set<String> aliases})? _cachedExclusions;
   bool _catalogComplete = false;
   bool _catalogChanged = false;
   String? _storedCatalogKey;
   int? _updatedAtMs;
+  int? get updatedAtMs => _updatedAtMs;
 
   bool get catalogComplete => _catalogComplete;
   set catalogComplete(bool value) {
@@ -185,6 +188,17 @@ class AsmrTagPreferences {
         learned[tag.key] = (learned[tag.key] ?? 0) + (learned.remove(key) ?? 0);
         if (manualInterests.remove(key)) manualInterests.add(tag.key);
         if (excluded.remove(key)) excluded.add(tag.key);
+        if (selectionUpdatedAt.remove(key) case final int ts) {
+          final currentTs = selectionUpdatedAt[tag.key];
+          if (currentTs == null || ts > currentTs) {
+            selectionUpdatedAt[tag.key] = ts;
+          }
+        }
+        for (final weights in deviceLearned.values) {
+          if (weights.remove(key) case final double w) {
+            weights[tag.key] = (weights[tag.key] ?? 0) + w;
+          }
+        }
       }
       final merged = AsmrTag(
         key: tag.key,
@@ -258,7 +272,174 @@ class AsmrTagPreferences {
   void _setSelection(Set<String> selection, String key, bool value) {
     if (!tags.containsKey(key)) throw ArgumentError.value(key, 'key');
     final changed = value ? selection.add(key) : selection.remove(key);
-    if (changed) _updatedAtMs = DateTime.now().millisecondsSinceEpoch;
+    if (changed) {
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      _updatedAtMs = nowMs;
+      selectionUpdatedAt[key] = nowMs;
+      _cachedExclusions = null;
+    }
+  }
+
+  /// Snapshots this device's own learned weights (`learned - sum(otherPeers)`)
+  /// into [deviceLearned] so cross-device merges remain strictly idempotent.
+  Map<String, Map<String, double>> snapshotDeviceLearned(String localDeviceId) {
+    final otherSums = <String, double>{};
+    for (final entry in deviceLearned.entries) {
+      if (entry.key == localDeviceId) continue;
+      for (final item in entry.value.entries) {
+        if (item.value > 0 && item.value.isFinite) {
+          otherSums[item.key] = (otherSums[item.key] ?? 0) + item.value;
+        }
+      }
+    }
+    final own = <String, double>{};
+    for (final item in learned.entries) {
+      if (!item.value.isFinite || item.value <= 0) continue;
+      final delta = item.value - (otherSums[item.key] ?? 0);
+      if (delta > 1e-6) own[item.key] = delta;
+    }
+    if (own.isNotEmpty) {
+      deviceLearned[localDeviceId] = own;
+    }
+    return {
+      for (final entry in deviceLearned.entries)
+        if (entry.value.isNotEmpty) entry.key: Map<String, double>.of(entry.value),
+    };
+  }
+
+  bool mergeCrossPlatformSync({
+    required String localDeviceId,
+    required Iterable<AsmrTag> incomingTags,
+    required Set<String> peerManualInterests,
+    required Set<String> peerExcluded,
+    required Map<String, int> peerSelectionUpdatedAt,
+    required int? peerUpdatedAtMs,
+    required Map<String, Map<String, double>> peerDeviceLearned,
+  }) {
+    var changed = false;
+    snapshotDeviceLearned(localDeviceId);
+    final beforeTagCount = tags.length;
+    mergeTags(incomingTags);
+    if (tags.length != beforeTagCount) changed = true;
+
+    String canonicalKey(String rawKey) =>
+        tags.containsKey(rawKey) ? rawKey : resolve(rawKey);
+
+    for (final entry in peerDeviceLearned.entries) {
+      if (entry.key == localDeviceId || entry.value.isEmpty) continue;
+      final localPeerMap = deviceLearned.putIfAbsent(
+        entry.key,
+        () => <String, double>{},
+      );
+      for (final weightEntry in entry.value.entries) {
+        final value = weightEntry.value;
+        if (!value.isFinite || value <= 0) continue;
+        final resolvedKey = canonicalKey(weightEntry.key);
+        final existing = localPeerMap[resolvedKey] ?? 0;
+        if (value > existing + 1e-6) {
+          localPeerMap[resolvedKey] = value;
+          changed = true;
+        }
+      }
+    }
+
+    if (deviceLearned.isNotEmpty) {
+      final recomputed = <String, double>{};
+      for (final map in deviceLearned.values) {
+        for (final entry in map.entries) {
+          if (entry.value > 0 && entry.value.isFinite) {
+            final resolvedKey = canonicalKey(entry.key);
+            recomputed[resolvedKey] =
+                (recomputed[resolvedKey] ?? 0) + entry.value;
+          }
+        }
+      }
+      for (final entry in recomputed.entries) {
+        final current = learned[entry.key] ?? 0;
+        if (entry.value > current + 1e-6) {
+          learned[entry.key] = entry.value;
+          changed = true;
+        }
+      }
+    }
+
+    final mappedPeerManual = peerManualInterests.map(canonicalKey).toSet();
+    final mappedPeerExcluded = peerExcluded.map(canonicalKey).toSet();
+    final mappedPeerTimestamps = <String, int>{};
+    for (final entry in peerSelectionUpdatedAt.entries) {
+      final k = canonicalKey(entry.key);
+      final prev = mappedPeerTimestamps[k];
+      if (prev == null || entry.value > prev) {
+        mappedPeerTimestamps[k] = entry.value;
+      }
+    }
+
+    final allSelectionKeys = <String>{
+      ...manualInterests,
+      ...excluded,
+      ...selectionUpdatedAt.keys,
+      ...mappedPeerManual,
+      ...mappedPeerExcluded,
+      ...mappedPeerTimestamps.keys,
+    };
+    final fallbackLocalTs = _updatedAtMs ?? 0;
+    final fallbackPeerTs = peerUpdatedAtMs ?? 0;
+
+    for (final key in allSelectionKeys) {
+      if (!tags.containsKey(key)) continue;
+      final peerHasRecord =
+          mappedPeerTimestamps.containsKey(key) ||
+          mappedPeerManual.contains(key) ||
+          mappedPeerExcluded.contains(key);
+      if (!peerHasRecord) continue;
+
+      final localHasRecord =
+          selectionUpdatedAt.containsKey(key) ||
+          manualInterests.contains(key) ||
+          excluded.contains(key);
+      final localTs = selectionUpdatedAt[key] ?? (localHasRecord ? fallbackLocalTs : -1);
+      final peerTs = mappedPeerTimestamps[key] ?? fallbackPeerTs;
+
+      if (peerTs > localTs) {
+        final nextManual = mappedPeerManual.contains(key);
+        final nextExcluded = mappedPeerExcluded.contains(key);
+        if (manualInterests.contains(key) != nextManual) {
+          if (nextManual) {
+            manualInterests.add(key);
+          } else {
+            manualInterests.remove(key);
+          }
+          changed = true;
+        }
+        if (excluded.contains(key) != nextExcluded) {
+          if (nextExcluded) {
+            excluded.add(key);
+          } else {
+            excluded.remove(key);
+          }
+          _cachedExclusions = null;
+          changed = true;
+        }
+        selectionUpdatedAt[key] = peerTs;
+      } else if (peerTs == localTs) {
+        if (mappedPeerManual.contains(key) && manualInterests.add(key)) {
+          changed = true;
+        }
+        if (mappedPeerExcluded.contains(key) && excluded.add(key)) {
+          _cachedExclusions = null;
+          changed = true;
+        }
+      }
+    }
+
+    if (changed) {
+      final maxTs = peerUpdatedAtMs != null &&
+              (_updatedAtMs == null || peerUpdatedAtMs > _updatedAtMs!)
+          ? peerUpdatedAtMs
+          : DateTime.now().millisecondsSinceEpoch;
+      _updatedAtMs = maxTs;
+    }
+    return changed;
   }
 
   bool recordListeningBatch(
@@ -356,6 +537,11 @@ class AsmrTagPreferences {
       ..learned.addAll(learned)
       ..manualInterests.addAll(manualInterests)
       ..excluded.addAll(excluded)
+      ..selectionUpdatedAt.addAll(selectionUpdatedAt)
+      ..deviceLearned.addAll({
+        for (final entry in deviceLearned.entries)
+          entry.key: Map<String, double>.of(entry.value),
+      })
       ..consumedSequences.addAll(consumedSequences)
       .._updatedAtMs = _updatedAtMs
       .._catalogComplete = _catalogComplete
@@ -390,6 +576,8 @@ class AsmrTagPreferences {
     'learned': learned,
     'manualInterests': manualInterests.toList(),
     'excluded': excluded.toList(),
+    if (selectionUpdatedAt.isNotEmpty) 'selectionUpdatedAt': selectionUpdatedAt,
+    if (deviceLearned.isNotEmpty) 'deviceLearned': deviceLearned,
     'sequences': consumedSequences,
     'limit': limit,
     if (_updatedAtMs != null) updatedAtMsKey: _updatedAtMs,
@@ -438,6 +626,21 @@ class AsmrTagPreferences {
       );
     }
     state.excluded.addAll((json['excluded'] as List? ?? []).cast<String>());
+    state.selectionUpdatedAt.addAll(
+      (json['selectionUpdatedAt'] as Map? ?? {}).map(
+        (key, value) => MapEntry(key.toString(), (value as num).toInt()),
+      ),
+    );
+    final rawDeviceLearned = json['deviceLearned'];
+    if (rawDeviceLearned is Map) {
+      for (final entry in rawDeviceLearned.entries) {
+        final weights = entry.value;
+        if (weights is! Map) continue;
+        state.deviceLearned[entry.key.toString()] = weights.map(
+          (k, v) => MapEntry(k.toString(), (v as num).toDouble()),
+        );
+      }
+    }
     state.consumedSequences.addAll(
       (json['sequences'] as Map? ?? {}).map(
         (key, value) => MapEntry(key.toString(), (value as num).toInt()),

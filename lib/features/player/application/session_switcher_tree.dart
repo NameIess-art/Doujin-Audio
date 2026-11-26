@@ -182,7 +182,7 @@ List<SessionSwitcherNode> _buildQueueTree(_SwitcherRequest request) {
 
     for (final entry in request.queue!.entries) {
       final firstTrack = entry.tracks.firstOrNull;
-      final isAsmrEntry = firstTrack?.isRemoteAsmr ?? false;
+      final isAsmrEntry = firstTrack?.isRemoteMedia ?? false;
       final fallbackRoot = entry.workRootPath != null || firstTrack == null
           ? null
           : request.workRoots[firstTrack.path];
@@ -251,7 +251,7 @@ List<SessionSwitcherNode> _buildQueueTree(_SwitcherRequest request) {
     );
   }
   if (request.customQueueTracks == null ||
-      tracks.every((track) => track.isRemoteAsmr)) {
+      tracks.every((track) => track.isRemoteMedia)) {
     root.sortChildrenNaturally();
   }
   return root.children;
@@ -398,7 +398,7 @@ List<MusicTrack> orderTracksForSessionSwitcher(
 }) {
   if (preserveQueueOrder ||
       tracks.length < 2 ||
-      !tracks.every((track) => track.isRemoteAsmr)) {
+      !tracks.every((track) => track.isRemoteMedia)) {
     return tracks;
   }
   final sorted = List<MusicTrack>.of(tracks);
@@ -432,7 +432,7 @@ MusicTrack? resolveSessionSwitcherSelectedTrack({
     return null;
   }
   final queuedTrack = queueTracks[currentQueueIndex];
-  if (!queuedTrack.isRemoteAsmr) return null;
+  if (!queuedTrack.isRemoteMedia) return null;
   for (final track in displayedTracks) {
     if (sameSessionSwitcherTrack(track, queuedTrack)) return track;
   }
@@ -444,7 +444,7 @@ bool sameSessionSwitcherTrack(MusicTrack left, MusicTrack right) {
       PathMatcher.equalsNormalized(left.path, right.path)) {
     return true;
   }
-  if (!left.isRemoteAsmr || !right.isRemoteAsmr) {
+  if (!left.isRemoteMedia || !right.isRemoteMedia) {
     return false;
   }
   final leftRelative = left.remoteMetadata?['trackRelativePath']
@@ -461,8 +461,14 @@ bool sameSessionSwitcherTrack(MusicTrack left, MusicTrack right) {
           _normalizedRemoteRelativePath(rightRelative)) {
     return false;
   }
-  final leftWorkId = left.remoteMetadata?['id']?.toString().trim();
-  final rightWorkId = right.remoteMetadata?['id']?.toString().trim();
+  final leftWorkId =
+      (left.remoteMetadata?['id'] ?? left.remoteMetadata?['workKey'])
+          ?.toString()
+          .trim();
+  final rightWorkId =
+      (right.remoteMetadata?['id'] ?? right.remoteMetadata?['workKey'])
+          ?.toString()
+          .trim();
   if (leftWorkId?.isNotEmpty == true && rightWorkId?.isNotEmpty == true) {
     return leftWorkId == rightWorkId;
   }

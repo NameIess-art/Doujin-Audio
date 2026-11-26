@@ -42,6 +42,11 @@ final class SqliteListeningActivityRepository
   ];
 
   @override
+  Future<Map<String, int>> loadWorkTotalMilliseconds(
+    Iterable<String> workKeys,
+  ) => _database.loadListeningWorkTotalMilliseconds(workKeys);
+
+  @override
   Future<int> countHistory() => _database.countListeningHistory();
 
   @override

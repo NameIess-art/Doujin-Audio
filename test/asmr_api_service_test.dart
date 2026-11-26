@@ -559,6 +559,218 @@ void main() {
       await server.close(force: true);
     }
   });
+
+  test(
+    'putReview sends full review payload and supports query flags',
+    () async {
+      final captured = <({String method, Uri uri, Map<String, Object?> body})>[];
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final subscription = server.listen((request) async {
+        final rawBody = await utf8.decoder.bind(request).join();
+        captured.add((
+          method: request.method,
+          uri: request.uri,
+          body: rawBody.isEmpty
+              ? const <String, Object?>{}
+              : (jsonDecode(rawBody) as Map).cast<String, Object?>(),
+        ));
+        request.response.statusCode = 200;
+        request.response.headers.contentType = ContentType.json;
+        request.response.write('{"message":"ok"}');
+        await request.response.close();
+      });
+
+      final service = AsmrApiService(
+        baseUri: Uri.parse('http://${server.address.address}:${server.port}'),
+      );
+      try {
+        await service.putReview(
+          token: 'jwt-token',
+          workId: 123456,
+          progress: WorkListenStatus.listened,
+          userRating: 5,
+          reviewText: 'Loved it',
+        );
+        await service.putReviewProgress(
+          token: 'jwt-token',
+          workId: 123456,
+          progress: 'listening',
+        );
+
+        expect(captured, hasLength(2));
+        expect(captured[0].method, 'PUT');
+        expect(captured[0].uri.path, '/api/review');
+        expect(captured[0].uri.queryParameters, {'starOnly': 'false'});
+        expect(captured[0].body, {
+          'work_id': 123456,
+          'progress': 'listened',
+          'rating': 5,
+          'review_text': 'Loved it',
+        });
+
+        expect(captured[1].method, 'PUT');
+        expect(captured[1].uri.path, '/api/review');
+        expect(captured[1].uri.queryParameters, {
+          'starOnly': 'false',
+          'progressOnly': 'true',
+        });
+        expect(captured[1].body, {
+          'work_id': 123456,
+          'progress': 'listening',
+        });
+      } finally {
+        service.close();
+        await subscription.cancel();
+        await server.close(force: true);
+      }
+    },
+  );
+
+  test(
+    'isWorkCollected checks /api/workInfo and review 500 JSON skips mirror failover',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      var reviewAttempts = 0;
+      var gatewayAttempts = 0;
+      final subscription = server.listen((request) async {
+        if (request.uri.path == '/api/workInfo/100') {
+          request.response.statusCode = HttpStatus.ok;
+          request.response.headers.contentType = ContentType.json;
+          request.response.write('{"id":100}');
+        } else if (request.uri.path == '/api/workInfo/999999') {
+          request.response.statusCode = HttpStatus.notFound;
+          request.response.headers.contentType = ContentType.json;
+          request.response.write('{"error":"未找到该音声"}');
+        } else if (request.uri.path == '/api/review') {
+          final rawBody = await utf8.decoder.bind(request).join();
+          final body = (jsonDecode(rawBody) as Map).cast<String, Object?>();
+          if (body['work_id'] == 999999) {
+            reviewAttempts++;
+            request.response.statusCode = HttpStatus.internalServerError;
+            request.response.headers.contentType = ContentType.json;
+            request.response.write('{"error":"更新失败，服务器错误"}');
+          } else {
+            gatewayAttempts++;
+            if (gatewayAttempts == 1) {
+              request.response.statusCode = HttpStatus.badGateway;
+              request.response.write('Bad gateway');
+            } else {
+              request.response.statusCode = HttpStatus.ok;
+              request.response.headers.contentType = ContentType.json;
+              request.response.write('{"message":"ok"}');
+            }
+          }
+        }
+        await request.response.close();
+      });
+
+      final innerClient = HttpClient();
+      final client = _LoopbackRewriteClient(
+        innerClient,
+        Uri.parse('http://${server.address.address}:${server.port}'),
+      );
+      final service = AsmrApiService(httpClient: client);
+      try {
+        expect(await service.isWorkCollected(0), isFalse);
+        expect(await service.isWorkCollected(100), isTrue);
+        expect(await service.isWorkCollected(999999), isFalse);
+
+        await expectLater(
+          service.putReview(
+            token: 'jwt-token',
+            workId: 999999,
+            progress: WorkListenStatus.marked,
+          ),
+          throwsA(
+            isA<AsmrApiException>().having(
+              (error) => error.statusCode,
+              'statusCode',
+              HttpStatus.internalServerError,
+            ),
+          ),
+        );
+        expect(reviewAttempts, 1);
+
+        await service.putReviewProgress(
+          token: 'jwt-token',
+          workId: 100,
+          progress: 'marked',
+        );
+        expect(gatewayAttempts, 2);
+      } finally {
+        service.close();
+        await subscription.cancel();
+        await server.close(force: true);
+      }
+    },
+  );
+
+  test(
+    'mirror failover retains 5xx server error over trailing transport failure',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final subscription = server.listen((request) async {
+        request.response.statusCode = HttpStatus.badGateway;
+        request.response.write('Bad Gateway');
+        await request.response.close();
+      });
+
+      final innerClient = HttpClient();
+      final client = _TrailingSocketFailureClient(
+        innerClient,
+        Uri.parse('http://${server.address.address}:${server.port}'),
+      );
+      final service = AsmrApiService(httpClient: client);
+      try {
+        await expectLater(
+          service.fetchWorks(order: 'release', sort: 'desc'),
+          throwsA(
+            isA<AsmrApiException>()
+                .having((e) => e.statusCode, 'statusCode', HttpStatus.badGateway)
+                .having((e) => e.isServerError, 'isServerError', isTrue)
+                .having(
+                  (e) => e.source,
+                  'source',
+                  AsmrCatalogSource.asmrOne,
+                ),
+          ),
+        );
+      } finally {
+        service.close();
+        await subscription.cancel();
+        await server.close(force: true);
+      }
+    },
+  );
+}
+
+class _TrailingSocketFailureClient extends Fake implements HttpClient {
+  _TrailingSocketFailureClient(this._inner, this._target);
+
+  final HttpClient _inner;
+  final Uri _target;
+  int attempts = 0;
+
+  @override
+  Future<HttpClientRequest> openUrl(String method, Uri url) {
+    attempts++;
+    if (url.host == 'api.asmr.one') {
+      return Future<HttpClientRequest>.error(
+        const SocketException('Trailing mirror unreachable'),
+      );
+    }
+    return _inner.openUrl(
+      method,
+      url.replace(
+        scheme: _target.scheme,
+        host: _target.host,
+        port: _target.port,
+      ),
+    );
+  }
+
+  @override
+  void close({bool force = false}) => _inner.close(force: force);
 }
 
 class _PendingOpenClient extends Fake implements HttpClient {
@@ -582,4 +794,26 @@ class _AbortTrackingRequest extends Fake implements HttpClientRequest {
   void abort([Object? exception, StackTrace? stackTrace]) {
     aborted = true;
   }
+}
+
+class _LoopbackRewriteClient extends Fake implements HttpClient {
+  _LoopbackRewriteClient(this._inner, this._target);
+
+  final HttpClient _inner;
+  final Uri _target;
+
+  @override
+  Future<HttpClientRequest> openUrl(String method, Uri url) {
+    return _inner.openUrl(
+      method,
+      url.replace(
+        scheme: _target.scheme,
+        host: _target.host,
+        port: _target.port,
+      ),
+    );
+  }
+
+  @override
+  void close({bool force = false}) => _inner.close(force: force);
 }

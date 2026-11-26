@@ -41,8 +41,8 @@ void main() {
 
   tearDown(() => db.close());
 
-  test('schema starts from version 20', () {
-    expect(AppDatabase.schemaVersion, 20);
+  test('schema starts from version 23', () {
+    expect(AppDatabase.schemaVersion, 23);
   });
 
   test('clearAsmrTablesForTest removes all ASMR persistence rows', () async {
@@ -1397,6 +1397,7 @@ void main() {
     16,
     17,
     18,
+    20,
     AppDatabase.schemaVersion,
   ]) {
     test(
@@ -4165,6 +4166,35 @@ Future<void> _expectV18Indexes(Database db) async {
 }
 
 Future<void> _setRestoreSchemaVersion(Database db, int version) async {
+  if (version < 22) {
+    for (final table in [
+      'sync_track_states',
+      'sync_listening_day_ledger',
+      'sync_listening_work_ledger',
+      'sync_deleted_time_segments',
+    ]) {
+      await db.execute('DROP TABLE IF EXISTS $table');
+    }
+  }
+  if (version < 21) {
+    for (final column in [
+      'listen_status',
+      'user_rating',
+      'review_text',
+      'review_updated_at_ms',
+    ]) {
+      await db.execute('ALTER TABLE audio_details DROP COLUMN $column');
+      await db.execute('ALTER TABLE asmr_works DROP COLUMN $column');
+    }
+    for (final column in [
+      'progress',
+      'user_rating',
+      'review_text',
+      'has_review_payload',
+    ]) {
+      await db.execute('ALTER TABLE asmr_sync_operations DROP COLUMN $column');
+    }
+  }
   if (version < 19) {
     await db.execute('DROP INDEX idx_queue_work_path_match');
     await db.execute('DROP INDEX idx_queue_track_path_match');

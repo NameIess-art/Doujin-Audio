@@ -41,19 +41,10 @@ Future<bool> showConfirmActionDialog({
         ),
         actions: AppDialogActions(
           children: [
-            AppPillButton.outlined(
+            AppSecondaryButton(
               autofocus: isDestructive,
               onPressed: () => Navigator.of(ctx).pop(false),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: cs.primary,
-                minimumSize: const Size.fromHeight(48),
-                side: BorderSide(color: cs.outlineVariant),
-                shape: const StadiumBorder(),
-                textStyle: theme.textTheme.labelLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              child: Text(cancelLabel),
+              label: cancelLabel,
             ),
             AppPrimaryButton(
               onPressed: () {

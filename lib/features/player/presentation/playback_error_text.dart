@@ -1,11 +1,29 @@
 import '../../../app/localization/app_language_provider.dart';
 
+final RegExp _httpServerStatusPattern = RegExp(r'\b5\d\d\b');
+
 String localizedPlaybackErrorText(
   AppLanguageProvider i18n,
   String? error, {
   bool useAsmrOneText = false,
 }) {
   final normalized = error?.toLowerCase() ?? '';
+  final isServerError =
+      normalized.contains('server error') ||
+      normalized.contains('bad gateway') ||
+      normalized.contains('service unavailable') ||
+      normalized.contains('gateway timeout') ||
+      ((normalized.contains('http') ||
+              normalized.contains('status') ||
+              normalized.contains('unavailable (')) &&
+          _httpServerStatusPattern.hasMatch(normalized));
+  if (isServerError) {
+    return i18n.tr(
+      useAsmrOneText
+          ? 'asmr_playback_server_unavailable_retry'
+          : 'playback_failed_retry',
+    );
+  }
   final isNetworkError =
       normalized.contains('network') ||
       normalized.contains('socket') ||

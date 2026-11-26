@@ -91,6 +91,8 @@ void main() {
       final SearchFilters filters = (
         hasSubtitle: true,
         minimumRating: 4.5,
+        minimumUserRating: null,
+        listenStatus: null,
         minimumDuration: null,
         maximumDuration: const Duration(minutes: 40),
         firstReleaseDate: date,
@@ -1052,6 +1054,8 @@ void main() {
             filters: const (
               hasSubtitle: null,
               minimumRating: 4.5,
+              minimumUserRating: null,
+              listenStatus: null,
               minimumDuration: null,
               maximumDuration: null,
               firstReleaseDate: null,

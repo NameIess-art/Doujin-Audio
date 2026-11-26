@@ -41,6 +41,8 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
     ListeningActivityService? listeningActivity,
     Future<void> Function()? initializeSecondaryData,
     Future<void> Function()? initializeListeningHistory,
+    Future<void> Function()? onBackgroundSync,
+    Future<void> Function(bool fastShutdown)? stopLanServer,
     void Function()? disposeSecondaryData,
   }) : _persistence = persistence,
        _library = library,
@@ -58,6 +60,8 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
        _listeningActivity = listeningActivity,
        _initializeSecondaryData = initializeSecondaryData,
        _initializeListeningHistory = initializeListeningHistory,
+       _onBackgroundSync = onBackgroundSync,
+       _stopLanServer = stopLanServer,
        _disposeSecondaryData = disposeSecondaryData,
        _bindings = List<RuntimeBinding>.unmodifiable(bindings) {
     _runtime = AudioRuntimeCoordinator(
@@ -96,6 +100,8 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
     ListeningActivityService? listeningActivity,
     Future<void> Function()? initializeSecondaryData,
     Future<void> Function()? initializeListeningHistory,
+    Future<void> Function()? onBackgroundSync,
+    Future<void> Function(bool fastShutdown)? stopLanServer,
     void Function()? disposeSecondaryData,
   }) {
     return AppLifecycleBinding._(
@@ -116,6 +122,8 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
       listeningActivity: listeningActivity,
       initializeSecondaryData: initializeSecondaryData,
       initializeListeningHistory: initializeListeningHistory,
+      onBackgroundSync: onBackgroundSync,
+      stopLanServer: stopLanServer,
       disposeSecondaryData: disposeSecondaryData,
     );
   }
@@ -134,6 +142,8 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
   final ListeningActivityService? _listeningActivity;
   final Future<void> Function()? _initializeSecondaryData;
   final Future<void> Function()? _initializeListeningHistory;
+  final Future<void> Function()? _onBackgroundSync;
+  final Future<void> Function(bool fastShutdown)? _stopLanServer;
   final void Function()? _disposeSecondaryData;
   Future<void>? _secondaryInitialization;
   Future<void>? _listeningInitialization;
@@ -262,6 +272,9 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
       if (!_fastShutdown) await _playback.flushSessionStatePersistence();
     }
     _refreshListeningActivity();
+    if (!_fastShutdown && _onBackgroundSync != null) {
+      unawaited(_onBackgroundSync());
+    }
   }
 
   Future<void> _resumeForeground() async {
@@ -280,6 +293,9 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
     if (_closing) return;
     _timer.retryOverdueAutoResume();
     _refreshListeningActivity();
+    if (!_fastShutdown && _onBackgroundSync != null) {
+      unawaited(_onBackgroundSync());
+    }
   }
 
   void _refreshListeningActivity() {
@@ -355,6 +371,9 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
       for (final binding in _bindings.reversed) {
         await attempt(binding.dispose);
       }
+    }
+    if (_stopLanServer != null) {
+      await attempt(() => _stopLanServer(_fastShutdown));
     }
     if (_disposeSecondaryData != null) await attempt(_disposeSecondaryData);
     if (_disposeLibraryScans != null) await attempt(_disposeLibraryScans);

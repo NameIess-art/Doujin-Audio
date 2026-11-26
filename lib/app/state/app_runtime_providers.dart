@@ -18,6 +18,7 @@ import 'package:flutter_riverpod/misc.dart' show Override;
 import '../../core/translation/text_translation_service.dart';
 
 import '../application/app_persistence_coordinator.dart';
+import '../application/work_smart_status_coordinator.dart';
 import '../application/browse_page_state_store.dart';
 import '../application/audio_path_coordinator.dart';
 import '../../features/player/application/playback_queue_coordinator.dart';
@@ -65,6 +66,9 @@ final textTranslationServiceProvider = Provider<TextTranslationService>((ref) {
 final browsePageStateStoreProvider = Provider<BrowsePageStateStore>((ref) {
   return BrowsePageStateStore();
 });
+
+final workSmartStatusCoordinatorProvider =
+    Provider<WorkSmartStatusCoordinator?>((ref) => null);
 
 final appLanguageProviderInstanceProvider = Provider<AppLanguageProvider>((
   ref,

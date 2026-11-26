@@ -32,6 +32,7 @@ import '../../../core/translation/text_translation_service.dart';
 import '../../../core/widgets/swipe_reveal_card.dart';
 import '../../../core/widgets/unified_popup_menu.dart';
 import 'audio_detail_sheet.dart';
+import 'work_detail_review_actions.dart';
 import '../../../app/theme/app_styles.dart';
 
 import 'library_card_artwork.dart';
@@ -716,6 +717,23 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
           : null,
       leadingActionIcon: Icons.push_pin_rounded,
       leadingActionIconWidget: isPinned ? const PushPinOffIcon() : null,
+      onSecondaryLeadingAction: isRootFolder
+          ? () => unawaited(
+              openLocalWorkReviewEditor(
+                context,
+                ref,
+                AudioDetailTarget.libraryRootFolder(widget.folder.path),
+                fallbackTitle: folder.name,
+              ),
+            )
+          : null,
+      secondaryLeadingActionLabel: isRootFolder
+          ? i18n.tr('work_review_action')
+          : null,
+      secondaryLeadingActionTooltip: isRootFolder
+          ? i18n.tr('work_review_action')
+          : null,
+      secondaryLeadingActionIcon: Icons.rate_review_rounded,
       onRemove: () => _removeFolder(context),
       onWillReveal: _expansionController.collapse,
       child: cardContent,
@@ -879,6 +897,17 @@ class _TrackNodeWidget extends ConsumerWidget {
         ),
         leadingActionIcon: Icons.push_pin_rounded,
         leadingActionIconWidget: isPinned ? const PushPinOffIcon() : null,
+        onSecondaryLeadingAction: () => unawaited(
+          openLocalWorkReviewEditor(
+            context,
+            ref,
+            AudioDetailTarget.singleAudioFile(track.path),
+            fallbackTitle: track.displayName,
+          ),
+        ),
+        secondaryLeadingActionLabel: i18n.tr('work_review_action'),
+        secondaryLeadingActionTooltip: i18n.tr('work_review_action'),
+        secondaryLeadingActionIcon: Icons.rate_review_rounded,
         onRemove: () => _removeTrack(context, ref, track),
         child: Material(
           color: Colors.transparent,

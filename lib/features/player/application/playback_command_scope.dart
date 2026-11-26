@@ -2,7 +2,7 @@ part of 'playback_command_coordinator.dart';
 
 const PlaybackQueueResolver _playbackQueueResolver = PlaybackQueueResolver();
 String _folderKeyForTrack(MusicTrack track) {
-  if (!track.isRemoteAsmr) return track.groupKey;
+  if (!track.isRemoteMedia) return track.groupKey;
   final directory = track.remoteMetadata?['trackDirectoryPath'] as String?;
   final relativePath = track.remoteMetadata?['trackRelativePath'] as String?;
   // Remote URLs identify streams; the catalog metadata carries their folders.

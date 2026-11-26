@@ -51,6 +51,7 @@ class TopPageHeader extends StatefulWidget {
     this.topCapsuleLeading,
     this.topCapsuleTrailing,
     this.topCapsuleChild,
+    this.topRowTrailing,
   });
 
   final IconData? icon;
@@ -77,6 +78,7 @@ class TopPageHeader extends StatefulWidget {
   final Widget? topCapsuleLeading;
   final Widget? topCapsuleTrailing;
   final Widget? topCapsuleChild;
+  final Widget? topRowTrailing;
 
   @override
   State<TopPageHeader> createState() => _TopPageHeaderState();
@@ -336,7 +338,7 @@ class _TopPageHeaderState extends State<TopPageHeader> {
       return BackdropGroup(backdropKey: _rowBackdropKey, child: row);
     }
 
-    final topCapsuleWidget =
+    final baseTopCapsuleWidget =
         widget.topCapsuleChild ??
         (widget.topCapsuleTitle != null
             ? HeaderTopCapsule(
@@ -347,6 +349,16 @@ class _TopPageHeaderState extends State<TopPageHeader> {
                 trailing: widget.topCapsuleTrailing,
               )
             : null);
+    final topCapsuleWidget =
+        baseTopCapsuleWidget != null && widget.topRowTrailing != null
+        ? Row(
+            children: [
+              Expanded(child: baseTopCapsuleWidget),
+              const SizedBox(width: 8),
+              wrapButton(widget.topRowTrailing!),
+            ],
+          )
+        : baseTopCapsuleWidget;
 
     final secondaryCapsuleRow = buildSecondaryCapsuleRow();
 

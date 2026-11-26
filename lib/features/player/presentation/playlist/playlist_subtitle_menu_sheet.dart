@@ -10,7 +10,9 @@ import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/state/subtitle_settings_provider.dart';
 import '../../../../app/theme/app_design_tokens.dart';
 import '../../../../app/theme/app_styles.dart';
+import '../../../../core/logging/app_log_service.dart';
 import '../../../../core/media/path_matcher.dart';
+import '../../../../core/translation/translation_service_settings.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_dialog.dart';
 import '../../../../core/widgets/app_feedback.dart';
@@ -65,7 +67,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
   final GlobalKey _menuKey = GlobalKey();
   bool _importing = false;
   bool _importingSubtitleFile = false;
-  SubtitleModelSpec? _checkingModel;
+  String? _checkingModelKey;
   List<WorkTextFile>? _scriptFiles;
   List<({String sourcePath, String name})>? _subtitleFiles;
   bool _subtitleBusy = false;
@@ -463,7 +465,12 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
         if (!mounted || !confirmed) return;
       }
       if (!mounted) return;
-      if (!await _confirmModelDownload(SubtitleModelStore.japaneseCtc)) return;
+      if (!await _confirmModelsDownload(
+        const <SubtitleModelSpec>[SubtitleModelStore.japaneseCtc],
+        checkKey: 'script',
+      )) {
+        return;
+      }
       final downloadingInBackground = subtitles.modelStore
           .snapshot(SubtitleModelStore.japaneseCtc)
           .active;
@@ -535,8 +542,9 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
 
   Future<bool?> _confirmSubtitleOverwrite(
     PlaybackSubtitleService subtitles,
-    String trackPath,
-  ) async {
+    String trackPath, {
+    String messageKey = 'subtitle_import_overwrite_hint',
+  }) async {
     final exists = await subtitles.hasLocalSubtitleFile(trackPath);
     if (!mounted) return null;
     if (!exists) return false;
@@ -544,7 +552,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
     final confirmed = await showConfirmActionDialog(
       context: context,
       title: i18n.tr('subtitle_import_overwrite_title'),
-      message: i18n.tr('subtitle_import_overwrite_hint'),
+      message: i18n.tr(messageKey),
       cancelLabel: i18n.tr('cancel'),
       confirmLabel: i18n.tr('subtitle_import_overwrite'),
       isDestructive: false,
@@ -660,6 +668,19 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
           );
         }
 
+        final subtitlesForHint = ref.read(playbackSubtitleServiceProvider);
+        final customTranslation = subtitlesForHint.translationService
+            .usesCustomBackendFor(TextTranslationScene.subtitle);
+        final customModel = subtitlesForHint.translationService.settings.model
+            .trim();
+        final translateHint = customTranslation
+            ? i18n.tr('subtitle_translate_custom_hint', {
+                'model': customModel.isEmpty
+                    ? i18n.tr('translation_provider_custom')
+                    : customModel,
+              })
+            : i18n.tr('subtitle_translate_hint');
+
         return AppDialog(
           title: i18n.tr('subtitle_choose_language'),
           icon: Icons.translate_rounded,
@@ -669,7 +690,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                i18n.tr('subtitle_translate_hint'),
+                translateHint,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: cs.onSurfaceVariant,
                 ),
@@ -717,21 +738,87 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
     }
   }
 
-  Future<bool> _confirmModelDownload(SubtitleModelSpec spec) async {
+  Future<void> _transcribeAudio(PlaybackSubtitleService subtitles) async {
+    if (_importing ||
+        _subtitleBusy ||
+        _checkingModelKey != null ||
+        subtitles.generationJob?.status == SubtitleGenerationStatus.running) {
+      return;
+    }
+    final trackPath = _currentTrackPath;
+    final sessionId = widget.session.id;
+    try {
+      final overwrite = await _confirmSubtitleOverwrite(
+        subtitles,
+        trackPath,
+        messageKey: 'subtitle_transcribe_overwrite_hint',
+      );
+      if (overwrite == null || !mounted) return;
+      final asrSpecs = subtitles.activeAsrModel.bundleSpecs;
+      if (!await _confirmModelsDownload(
+        asrSpecs,
+        checkKey: 'transcribe',
+        titleKey: 'subtitle_asr_model_download_title',
+        messageKey: 'subtitle_asr_model_download_message',
+      )) {
+        return;
+      }
+      final downloadingInBackground = subtitles.modelStore
+          .bundleSnapshot(asrSpecs)
+          .active;
+      final settings = ref.read(subtitleSettingsProvider.notifier);
+      if (subtitles.startTranscriptionGeneration(
+        trackPath,
+        onApplied: () => settings.ensureSubtitlesEnabled(sessionId),
+      )) {
+        if (!downloadingInBackground) {
+          await _showGeneration(subtitles);
+        }
+      }
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'subtitle_transcribe_entry_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (mounted) {
+        showAppSnackBar(
+          context,
+          ref
+              .read(appLanguageProviderInstanceProvider)
+              .tr('subtitle_task_failed'),
+          tone: AppFeedbackTone.warning,
+          icon: Icons.error_outline_rounded,
+        );
+      }
+    }
+  }
+
+  Future<bool> _confirmModelsDownload(
+    List<SubtitleModelSpec> specs, {
+    required String checkKey,
+    String titleKey = 'subtitle_model_download_title',
+    String messageKey = 'subtitle_model_download_message',
+  }) async {
     final store = ref.read(playbackSubtitleServiceProvider).modelStore;
-    setState(() => _checkingModel = spec);
+    setState(() => _checkingModelKey = checkKey);
     late final SubtitleModelStatus status;
     try {
-      status = await store.status(spec);
+      status = await store.bundleStatus(specs);
     } finally {
-      if (mounted) setState(() => _checkingModel = null);
+      if (mounted) setState(() => _checkingModelKey = null);
     }
     if (!mounted) return false;
     if (status.ready) return true;
     final downloaded = await showAppDialog<bool>(
       context: context,
-      builder: (_) =>
-          SubtitleModelDownloadDialog(store: store, spec: spec, status: status),
+      builder: (_) => SubtitleModelDownloadDialog(
+        store: store,
+        specs: specs,
+        status: status,
+        titleKey: titleKey,
+        messageKey: messageKey,
+      ),
     );
     return mounted && downloaded == true;
   }
@@ -838,12 +925,12 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
         final generateEnabled =
             importEnabled &&
             !generationBusy &&
-            _checkingModel == null &&
+            _checkingModelKey == null &&
             generationUnavailableKey == null;
         final translateEnabled =
             importEnabled &&
             !generationBusy &&
-            _checkingModel == null &&
+            _checkingModelKey == null &&
             activeTrack?.cues.isNotEmpty == true &&
             subtitleLanguage != SubtitleLanguage.other;
         final isOffsetZero = activeOffset == Duration.zero;
@@ -1244,6 +1331,50 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                           color: cs.outlineVariant.withValues(alpha: 0.35),
                         ),
                         ListTile(
+                          key: const ValueKey('subtitle_transcribe_tile'),
+                          enabled: generateEnabled,
+                          leading: Icon(
+                            Icons.graphic_eq_rounded,
+                            color: generateEnabled
+                                ? cs.primary
+                                : cs.onSurface.withValues(alpha: 0.38),
+                          ),
+                          title: Text(
+                            i18n.tr('subtitle_transcribe_generate'),
+                            style: theme.textTheme.bodyLarge?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: generateEnabled
+                                  ? null
+                                  : cs.onSurface.withValues(alpha: 0.38),
+                            ),
+                          ),
+                          trailing: _checkingModelKey == 'transcribe'
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : Icon(
+                                  Icons.chevron_right_rounded,
+                                  size: 20,
+                                  color: generateEnabled
+                                      ? null
+                                      : cs.onSurface.withValues(alpha: 0.38),
+                                ),
+                          onTap: generateEnabled
+                              ? () => _transcribeAudio(subtitles)
+                              : null,
+                        ),
+                        Divider(
+                          height: 1,
+                          thickness: 0.5,
+                          indent: 16,
+                          endIndent: 16,
+                          color: cs.outlineVariant.withValues(alpha: 0.35),
+                        ),
+                        ListTile(
                           key: const ValueKey('subtitle_script_tile'),
                           enabled: generateEnabled,
                           leading: Icon(
@@ -1261,9 +1392,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                                   : cs.onSurface.withValues(alpha: 0.38),
                             ),
                           ),
-                          trailing:
-                              _checkingModel?.name ==
-                                  SubtitleModelStore.japaneseCtc.name
+                          trailing: _checkingModelKey == 'script'
                               ? const SizedBox(
                                   width: 20,
                                   height: 20,
@@ -1335,7 +1464,10 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                                 'subtitle_generation_ready',
                               ),
                               SubtitleGenerationStatus.noMatch => i18n.tr(
-                                'subtitle_no_reliable_match',
+                                generationJob.kind ==
+                                        SubtitleDraftKind.transcription
+                                    ? 'subtitle_no_speech_detected'
+                                    : 'subtitle_no_reliable_match',
                               ),
                               SubtitleGenerationStatus.cancelled => i18n.tr(
                                 'subtitle_task_cancelled',

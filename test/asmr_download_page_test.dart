@@ -119,6 +119,109 @@ void main() {
     );
 
     testWidgets(
+      'download file group capsules select collapsed files on $platform',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        final narrow = platform == TargetPlatform.android;
+        tester.view.physicalSize = Size(narrow ? 320 : 1000, 820);
+        tester.platformDispatcher.localesTestValue = const [Locale('zh')];
+        tester.platformDispatcher.textScaleFactorTestValue = narrow ? 1.6 : 1;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+          tester.platformDispatcher.clearLocalesTestValue();
+          tester.platformDispatcher.clearTextScaleFactorTestValue();
+        });
+        final manager = await _openReadyDownload(
+          tester,
+          additionalTracks: [
+            AsmrTrackFile.fromJson(const {
+              'title': 'Disc',
+              'type': 'folder',
+              'children': [
+                {'title': 'Second.MP3', 'type': 'audio', 'size': 2048},
+                {'title': 'Track.wav', 'type': 'audio', 'size': 4096},
+              ],
+            }),
+          ],
+        );
+        Finder group(String name) =>
+            find.byKey(ValueKey('asmr_download_file_group_$name'));
+        FilterChip chip(String name) => tester.widget<FilterChip>(group(name));
+
+        final groups = ['all', 'image', 'mp3', 'wav', 'txt', 'pdf'];
+        expect(
+          tester.widgetList<FilterChip>(find.byType(FilterChip)).map(
+            (chip) => (chip.label as Text).data,
+          ),
+          ['全选', '图片', 'mp3', 'wav', 'txt', 'pdf'],
+        );
+        expect(
+          find.byKey(const ValueKey('asmr_download_toggle_select_all')),
+          findsNothing,
+        );
+        final card = find.byKey(const ValueKey('asmr_download_summary'));
+        final destination = find.byKey(
+          const ValueKey('asmr_download_destination_path'),
+        );
+        final firstRow = find.byType(AsmrDownloadNodeTile).first;
+        expect(
+          tester.getTopLeft(firstRow).dy,
+          greaterThanOrEqualTo(tester.getBottomLeft(card).dy),
+        );
+        expect(firstRow.hitTestable(), findsOneWidget);
+        for (final name in groups) {
+          expect(
+            tester.getBottomLeft(group(name)).dy,
+            lessThanOrEqualTo(tester.getTopLeft(destination).dy),
+          );
+        }
+        final firstPosition = tester.getTopLeft(group('all'));
+        final lastPosition = tester.getTopLeft(group('pdf'));
+        expect(
+          lastPosition.dy,
+          narrow ? greaterThan(firstPosition.dy) : firstPosition.dy,
+        );
+        if (narrow) {
+          tester.view.physicalSize = const Size(390, 820);
+          tester.platformDispatcher.textScaleFactorTestValue = 1;
+          await tester.pumpAndSettle();
+          expect(
+            tester.getTopLeft(group('pdf')).dy,
+            tester.getTopLeft(group('all')).dy,
+          );
+          expect(firstRow.hitTestable(), findsOneWidget);
+        }
+        expect(chip('pdf').onSelected, isNull);
+        expect(find.text('Second.MP3'), findsNothing);
+        expect(chip('mp3').selected, isFalse);
+
+        await tester.tap(group('mp3'));
+        await tester.pumpAndSettle();
+        expect(chip('mp3').selected, isTrue);
+        expect(find.text('Second.MP3'), findsNothing);
+        await tester.tap(group('wav'));
+        await tester.pumpAndSettle();
+        expect(chip('all').selected, isTrue);
+        await tester.tap(group('mp3'));
+        await tester.pumpAndSettle();
+        expect(chip('mp3').selected, isFalse);
+        expect(chip('wav').selected, isTrue);
+        expect(chip('all').selected, isFalse);
+
+        await tester.tap(_downloadStartButton());
+        await tester.pump();
+        expect(chip('wav').onSelected, isNull);
+        manager.destinationCheck.complete(true);
+        await tester.pumpAndSettle();
+        expect(manager.selectedRoots!.single.relativePath, 'Disc/Track.wav');
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    testWidgets(
       'ready download keeps rows across route motion and updates live inputs on $platform',
       (tester) async {
         await _openReadyDownload(tester);
@@ -502,6 +605,7 @@ Future<_StartDownloadManager> _openReadyDownload(
   bool japanese = false,
   SettingsRepository? settings,
   int? batchTotal,
+  List<AsmrTrackFile> additionalTracks = const [],
   void Function(AsmrDownloadPageResult?)? onResult,
 }) async {
   final fixture = AppRuntimeWidgetTestFixture(
@@ -538,6 +642,7 @@ Future<_StartDownloadManager> _openReadyDownload(
       sourceId: work.sourceId,
       relativePath: japanese ? 'japaneseasmr.com/Track.mp3' : 'Track.mp3',
     ),
+    ...additionalTracks,
   ];
   controller.tree.complete(
     japanese

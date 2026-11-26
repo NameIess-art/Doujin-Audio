@@ -367,7 +367,7 @@ class _PlaybackQueueAudioEditPageState
     Set<String>? expanded,
   }) {
     final firstTrack = entry.tracks.firstOrNull;
-    if (root == null || firstTrack == null || firstTrack.isRemoteAsmr) {
+    if (root == null || firstTrack == null || firstTrack.isRemoteMedia) {
       return null;
     }
     final cachedFolder = ref
@@ -391,7 +391,7 @@ class _PlaybackQueueAudioEditPageState
       return _QueueEditorTree(entry.tracks, root, entry: entry);
     }
     final firstTrack = entry.tracks.firstOrNull;
-    if (root != null && firstTrack != null && !firstTrack.isRemoteAsmr) {
+    if (root != null && firstTrack != null && !firstTrack.isRemoteMedia) {
       final loadedFolder = await ref
           .read(libraryFacadeProvider)
           .loadLibraryFolderTree(root);
@@ -2367,7 +2367,7 @@ class _QueueAudioSourceListState extends ConsumerState<_QueueAudioSourceList>
               source.id,
               source.currentTrackPath,
             );
-            if (track != null && !track.isSingle && !track.isRemoteAsmr) {
+            if (track != null && !track.isSingle && !track.isRemoteMedia) {
               unawaited(_loadTree(source.id, track, null));
             }
           }
@@ -2794,7 +2794,7 @@ class _QueueAudioRowState extends ConsumerState<_QueueAudioRow> {
   }
 
   String _workTitle(WidgetRef ref, MusicTrack track) {
-    if (track.isRemoteAsmr) {
+    if (track.isRemoteMedia) {
       return ref.read(audioPathCoordinatorProvider).workTitleForTrack(track);
     }
 

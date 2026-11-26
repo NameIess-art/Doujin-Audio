@@ -1,11 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
 import '../logging/app_log_service.dart';
+import '../media/cross_platform_media_identity.dart';
 import '../media/music_track.dart';
 import '../media/path_matcher.dart';
 import 'persistence_records.dart';
@@ -19,13 +21,14 @@ part 'app_database_asmr.dart';
 part 'app_database_schema.dart';
 part 'app_database_row_codecs.dart';
 part 'app_database_listening.dart';
+part 'app_database_sync.dart';
 
 const int _sqliteInClauseBatchSize = 900;
 
 class AppDatabase {
   AppDatabase._({Future<Database> Function()? opener}) : _opener = opener;
 
-  static const int schemaVersion = 20;
+  static const int schemaVersion = 23;
   static const String fileName = 'audio_player.db';
 
   @visibleForTesting

@@ -751,6 +751,100 @@ void main() {
       expect((await freshDatabase.load(secondTarget))?.workTitle, 'Track Two');
     },
   );
+
+  test(
+    'saveUserReview writes SQLite and JSON while objective save preserves review',
+    () async {
+      await repository.save(
+        AudioDetail.empty(
+          target,
+        ).copyWith(rjCode: 'RJ010203', workTitle: 'Initial Title'),
+      );
+
+      final reviewTime = DateTime.utc(2026, 7, 1, 8);
+      final reviewed = await repository.saveUserReview(
+        target,
+        listenStatus: WorkListenStatus.replay,
+        userRating: 4,
+        reviewText: 'Worth revisiting',
+        updatedAt: reviewTime,
+      );
+
+      expect(reviewed.detail.listenStatus, WorkListenStatus.replay);
+      expect(reviewed.detail.userRating, 4);
+      expect(reviewed.detail.reviewText, 'Worth revisiting');
+      expect(reviewed.detail.reviewUpdatedAt, reviewTime);
+
+      final jsonMap =
+          jsonDecode(await documentFile.readAsString())
+              as Map<String, Object?>;
+      expect(jsonMap['listenStatus'], 'replay');
+      expect(jsonMap['userRating'], 4);
+      expect(jsonMap['reviewText'], 'Worth revisiting');
+
+      // Saving objective metadata without review fields keeps existing review.
+      final updatedObjective = await repository.save(
+        AudioDetail.empty(
+          target,
+        ).copyWith(rjCode: 'RJ010203', workTitle: 'Renamed Title'),
+      );
+      expect(updatedObjective.detail.workTitle, 'Renamed Title');
+      expect(updatedObjective.detail.listenStatus, WorkListenStatus.replay);
+      expect(updatedObjective.detail.userRating, 4);
+      expect(updatedObjective.detail.reviewText, 'Worth revisiting');
+    },
+  );
+
+  test(
+    'importBackupsMany merges user review independently using reviewUpdatedAt',
+    () async {
+      final olderTime = DateTime.utc(2026, 5, 1, 10);
+      final newerTime = DateTime.utc(2026, 5, 2, 10);
+      await repository.save(
+        AudioDetail.empty(target).copyWith(workTitle: 'Backup Title'),
+      );
+      await repository.saveUserReview(
+        target,
+        listenStatus: WorkListenStatus.marked,
+        userRating: 3,
+        reviewText: 'Older backup note',
+        updatedAt: olderTime,
+      );
+
+      await database.upsert(
+        (await database.load(target))!.copyWith(
+          listenStatus: WorkListenStatus.listened,
+          userRating: 5,
+          reviewText: 'Newer cloud note',
+          reviewUpdatedAt: newerTime,
+        ),
+      );
+
+      await repository.importBackupsMany([target]);
+      final keptNewer = await database.load(target);
+      expect(keptNewer?.listenStatus, WorkListenStatus.listened);
+      expect(keptNewer?.userRating, 5);
+      expect(keptNewer?.reviewText, 'Newer cloud note');
+
+      final newestTime = DateTime.utc(2026, 5, 3, 10);
+      const codec = AudioDetailJsonCodec();
+      final bytes = codec.encodeNew(
+        keptNewer!.copyWith(
+          listenStatus: WorkListenStatus.postponed,
+          userRating: 2,
+          reviewText: 'Newest JSON note',
+          reviewUpdatedAt: newestTime,
+        ),
+      );
+      await documentFile.writeAsBytes(bytes, flush: true);
+
+      await repository.importBackupsMany([target]);
+      final importedNewest = await database.load(target);
+      expect(importedNewest?.listenStatus, WorkListenStatus.postponed);
+      expect(importedNewest?.userRating, 2);
+      expect(importedNewest?.reviewText, 'Newest JSON note');
+    },
+  );
 }
 
 final class _ReadCountingDocumentStore implements JsonDocumentStore {

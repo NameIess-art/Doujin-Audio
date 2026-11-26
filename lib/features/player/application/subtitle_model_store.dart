@@ -17,6 +17,39 @@ class SubtitleModelSpec {
   final String sha256;
 }
 
+enum SubtitleAsrBackend { whisperWithVad, qwen3WithVad }
+
+class SubtitleAsrModelOption {
+  const SubtitleAsrModelOption({
+    required this.id,
+    required this.titleKey,
+    this.descriptionKey,
+    required this.backend,
+    required this.primaryModel,
+    this.vadModel,
+    this.supportedLanguages = const <String>['ja'],
+  });
+
+  final String id;
+  final String titleKey;
+  final String? descriptionKey;
+  final SubtitleAsrBackend backend;
+  final SubtitleModelSpec primaryModel;
+  final SubtitleModelSpec? vadModel;
+  final List<String> supportedLanguages;
+
+  List<SubtitleModelSpec> get bundleSpecs => <SubtitleModelSpec>[
+    ?vadModel,
+    primaryModel,
+  ];
+
+  int get totalBytes =>
+      bundleSpecs.fold<int>(0, (sum, spec) => sum + spec.bytes);
+
+  String get checkpointSignature =>
+      bundleSpecs.map((spec) => spec.sha256).join(':');
+}
+
 class SubtitleModelStatus {
   const SubtitleModelStatus({
     required this.ready,
@@ -67,6 +100,121 @@ class SubtitleModelStore extends ChangeNotifier {
     '12ebea2f51f2376a271f4115772c750000c1e3c2835f8c4021479fa1ee7b0a77',
   );
 
+  static const japaneseAsrVad = SubtitleModelSpec(
+    'whisper-vad-asmr-q4_k.gguf',
+    'https://huggingface.co/cstr/whisper-vad-encdec-asmr-GGUF/resolve/f7f32c7d5d1730830c7bb3b6521a185561e82357/whisper-vad-asmr-q4_k.gguf',
+    25418080,
+    'b5b984de4e390158f33f307104635423409c2638ab07977caf836b05671c455d',
+  );
+
+  static const japaneseAsr = SubtitleModelSpec(
+    'ggml-kotoba-whisper-v2.0-q5_0.bin',
+    'https://huggingface.co/kotoba-tech/kotoba-whisper-v2.0-ggml/resolve/e3a0cf6a62b95911703cfb97d819292e058f12c3/ggml-kotoba-whisper-v2.0-q5_0.bin',
+    537819875,
+    '4a3b92192b5d3578ff854a5876213e2e27af0c2d357492c2d14271e82c303658',
+  );
+
+  static const whisperLargeV3TurboQ8 = SubtitleModelSpec(
+    'ggml-large-v3-turbo-q8_0.bin',
+    'https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-turbo-q8_0.bin',
+    874188075,
+    '317eb69c11673c9de1e1f0d459b253999804ec71ac4c23c17ecf5fbe24e259a1',
+  );
+
+  static const whisperLargeV3Q5 = SubtitleModelSpec(
+    'ggml-large-v3-q5_0.bin',
+    'https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-q5_0.bin',
+    1081140203,
+    'd75795ecff3f83b5faa89d1900604ad8c780abd5739fae406de19f23ecd98ad1',
+  );
+
+  static const kotobaWhisperFp16 = SubtitleModelSpec(
+    'ggml-kotoba-whisper-v2.0.bin',
+    'https://huggingface.co/kotoba-tech/kotoba-whisper-v2.0-ggml/resolve/e3a0cf6a62b95911703cfb97d819292e058f12c3/ggml-kotoba-whisper-v2.0.bin',
+    1519521155,
+    'eff70a8a236e731abba774ba71e1f6d0fce53302137208c32207e694e0bf4546',
+  );
+
+  static const qwen3AsrJaAnimeQ4K = SubtitleModelSpec(
+    'qwen3-asr-1.7b-ja-anime-q4_k.gguf',
+    'https://huggingface.co/cstr/qwen3-asr-1.7b-ja-anime-GGUF/resolve/1906c1f812b598d5e9dae091c79656d73b41ec28/qwen3-asr-1.7b-ja-anime-q4_k.gguf',
+    1490917376,
+    'da00cec556885a60d47234b4def0dbdd08394df4d4df13866d7cd9726c23ccd9',
+  );
+
+  static const List<SubtitleModelSpec> japaneseAsrBundle = <SubtitleModelSpec>[
+    japaneseAsrVad,
+    japaneseAsr,
+  ];
+
+  static const defaultAsrModelId = 'kotoba-whisper-v2.0-ja';
+
+  static const kotobaWhisperJa = SubtitleAsrModelOption(
+    id: defaultAsrModelId,
+    titleKey: 'asr_model_kotoba_whisper_v2',
+    descriptionKey: 'asr_model_kotoba_whisper_v2_desc',
+    backend: SubtitleAsrBackend.whisperWithVad,
+    primaryModel: japaneseAsr,
+    vadModel: japaneseAsrVad,
+  );
+
+  static const whisperLargeV3TurboJa = SubtitleAsrModelOption(
+    id: 'whisper-large-v3-turbo-q8_0',
+    titleKey: 'asr_model_whisper_large_v3_turbo_q8',
+    descriptionKey: 'asr_model_whisper_large_v3_turbo_q8_desc',
+    backend: SubtitleAsrBackend.whisperWithVad,
+    primaryModel: whisperLargeV3TurboQ8,
+    vadModel: japaneseAsrVad,
+    supportedLanguages: <String>['ja', 'zh', 'en'],
+  );
+
+  static const whisperLargeV3Ja = SubtitleAsrModelOption(
+    id: 'whisper-large-v3-q5_0',
+    titleKey: 'asr_model_whisper_large_v3_q5',
+    descriptionKey: 'asr_model_whisper_large_v3_q5_desc',
+    backend: SubtitleAsrBackend.whisperWithVad,
+    primaryModel: whisperLargeV3Q5,
+    vadModel: japaneseAsrVad,
+    supportedLanguages: <String>['ja', 'zh', 'en'],
+  );
+
+  static const kotobaWhisperFp16Ja = SubtitleAsrModelOption(
+    id: 'kotoba-whisper-v2.0-fp16',
+    titleKey: 'asr_model_kotoba_whisper_v2_fp16',
+    descriptionKey: 'asr_model_kotoba_whisper_v2_fp16_desc',
+    backend: SubtitleAsrBackend.whisperWithVad,
+    primaryModel: kotobaWhisperFp16,
+    vadModel: japaneseAsrVad,
+  );
+
+  static const qwen3JaAnime = SubtitleAsrModelOption(
+    id: 'qwen3-asr-1.7b-ja-anime-q4_k',
+    titleKey: 'asr_model_qwen3_ja_anime_q4_k',
+    descriptionKey: 'asr_model_qwen3_ja_anime_q4_k_desc',
+    backend: SubtitleAsrBackend.qwen3WithVad,
+    primaryModel: qwen3AsrJaAnimeQ4K,
+    vadModel: japaneseAsrVad,
+    supportedLanguages: <String>['ja', 'zh', 'en'],
+  );
+
+  static const List<SubtitleAsrModelOption> builtInAsrModels =
+      <SubtitleAsrModelOption>[
+        kotobaWhisperJa,
+        whisperLargeV3TurboJa,
+        whisperLargeV3Ja,
+        kotobaWhisperFp16Ja,
+        qwen3JaAnime,
+      ];
+
+  static SubtitleAsrModelOption resolveAsrModel(String? id) {
+    if (id != null && id.isNotEmpty) {
+      for (final model in builtInAsrModels) {
+        if (model.id == id) return model;
+      }
+    }
+    return kotobaWhisperJa;
+  }
+
   final FileCachePlatformGateway _storage;
   final Future<Directory> Function() _directoryResolver;
   final HttpClient Function() _clientFactory;
@@ -86,6 +234,34 @@ class SubtitleModelStore extends ChangeNotifier {
         active: false,
       );
 
+  SubtitleModelDownloadSnapshot bundleSnapshot(List<SubtitleModelSpec> specs) {
+    if (specs.isEmpty) {
+      return const SubtitleModelDownloadSnapshot(
+        received: 0,
+        total: 1,
+        active: false,
+      );
+    }
+    if (specs.length == 1) return snapshot(specs.single);
+    var received = 0;
+    var total = 0;
+    var active = false;
+    Object? error;
+    for (final spec in specs) {
+      final item = snapshot(spec);
+      received += item.received.clamp(0, item.total);
+      total += item.total;
+      active = active || item.active;
+      error ??= item.error;
+    }
+    return SubtitleModelDownloadSnapshot(
+      received: received,
+      total: total,
+      active: active,
+      error: error,
+    );
+  }
+
   void cancelDownload(SubtitleModelSpec spec) {
     final active = _activeDownloads[spec.name];
     if (active == null) return;
@@ -94,6 +270,70 @@ class SubtitleModelStore extends ChangeNotifier {
     for (final entry in active.entries) {
       entry.cancelled = true;
     }
+  }
+
+  void cancelBundleDownload(List<SubtitleModelSpec> specs) {
+    for (final spec in specs) {
+      cancelDownload(spec);
+    }
+  }
+
+  Future<int> deleteBundle(
+    List<SubtitleModelSpec> specs, {
+    Set<String> retainedSpecNames = const <String>{},
+  }) async {
+    final targets = [
+      for (final spec in specs)
+        if (!retainedSpecNames.contains(spec.name)) spec,
+    ];
+    if (targets.isEmpty) return 0;
+    for (final spec in targets) {
+      cancelDownload(spec);
+    }
+    for (final spec in targets) {
+      final active = _activeDownloads[spec.name];
+      if (active != null) {
+        try {
+          await active.task;
+        } catch (_) {
+          // Wait for open file sinks to close before unlinking on Windows.
+        }
+      }
+    }
+    final directory = await _directoryResolver();
+    var deletedBytes = 0;
+    for (final spec in targets) {
+      final target = File(path.join(directory.path, spec.name));
+      final partial = File('${target.path}.download');
+      for (final file in <File>[target, partial]) {
+        if (await file.exists()) {
+          final size = await file.length();
+          await file.delete();
+          deletedBytes += size;
+        }
+        _verifiedFiles.remove(file.path);
+      }
+      _snapshots.remove(spec.name);
+    }
+    notifyListeners();
+    return deletedBytes;
+  }
+
+  Future<int> deleteAsrModel(SubtitleAsrModelOption option) async {
+    final retained = <String>{};
+    final vad = option.vadModel;
+    if (vad != null) {
+      for (final other in builtInAsrModels) {
+        if (other.id == option.id || other.vadModel?.name != vad.name) {
+          continue;
+        }
+        if ((await status(other.primaryModel)).ready) {
+          retained.add(vad.name);
+          break;
+        }
+      }
+    }
+    return deleteBundle(option.bundleSpecs, retainedSpecNames: retained);
   }
 
   Future<SubtitleModelStatus> status(SubtitleModelSpec spec) async {
@@ -108,6 +348,133 @@ class SubtitleModelStore extends ChangeNotifier {
       bytes: spec.bytes,
       availableBytes: usage?.availableBytes,
     );
+  }
+
+  Future<SubtitleModelStatus> bundleStatus(
+    List<SubtitleModelSpec> specs,
+  ) async {
+    if (specs.length == 1) return status(specs.single);
+    if (runtimeType != SubtitleModelStore) {
+      var totalBytes = 0;
+      var missingBytes = 0;
+      int? availableBytes;
+      for (final spec in specs) {
+        final item = await status(spec);
+        totalBytes += spec.bytes;
+        if (!item.ready) {
+          missingBytes += item.bytes > 0 ? item.bytes : spec.bytes;
+          availableBytes ??= item.availableBytes;
+        }
+      }
+      final allReady = missingBytes == 0;
+      return SubtitleModelStatus(
+        ready: allReady,
+        bytes: allReady ? totalBytes : missingBytes,
+        availableBytes: allReady ? null : availableBytes,
+      );
+    }
+    final directory = await _directoryResolver();
+    var totalBytes = 0;
+    var missingBytes = 0;
+    for (final spec in specs) {
+      totalBytes += spec.bytes;
+      final ready = await _valid(
+        File(path.join(directory.path, spec.name)),
+        spec,
+      );
+      if (!ready) missingBytes += spec.bytes;
+    }
+    final allReady = missingBytes == 0;
+    final usage = allReady ? null : await _storage.readStorageUsage();
+    return SubtitleModelStatus(
+      ready: allReady,
+      bytes: allReady ? totalBytes : missingBytes,
+      availableBytes: usage?.availableBytes,
+    );
+  }
+
+  Future<List<String>> ensureBundle(
+    List<SubtitleModelSpec> specs, {
+    void Function(double fraction, int received, int total)? onProgress,
+    bool Function()? isCancelled,
+  }) async {
+    if (isCancelled?.call() == true) {
+      throw const SubtitleModelDownloadCancelled();
+    }
+    if (specs.isEmpty) return const <String>[];
+    if (specs.length == 1) {
+      return <String>[
+        await ensure(
+          specs.single,
+          onProgress: onProgress,
+          isCancelled: isCancelled,
+        ),
+      ];
+    }
+    if (runtimeType == SubtitleModelStore) {
+      await _preflightBundleSpace(specs);
+    }
+    final total = specs.fold<int>(0, (sum, spec) => sum + spec.bytes);
+    final receivedByIndex = List<int>.generate(
+      specs.length,
+      (index) => snapshot(specs[index]).received.clamp(0, specs[index].bytes),
+    );
+    void notifyCombined() {
+      if (onProgress == null) return;
+      final sum = receivedByIndex.fold<int>(0, (acc, value) => acc + value);
+      onProgress(
+        total <= 0 ? 0.0 : (sum / total).clamp(0.0, 1.0),
+        sum,
+        total,
+      );
+    }
+
+    final paths = <String>[];
+    for (var index = 0; index < specs.length; index++) {
+      if (isCancelled?.call() == true) {
+        throw const SubtitleModelDownloadCancelled();
+      }
+      final spec = specs[index];
+      final modelPath = await ensure(
+        spec,
+        onProgress: onProgress == null
+            ? null
+            : (_, itemReceived, _) {
+                receivedByIndex[index] = itemReceived.clamp(0, spec.bytes);
+                notifyCombined();
+              },
+        isCancelled: isCancelled,
+      );
+      receivedByIndex[index] = spec.bytes;
+      notifyCombined();
+      paths.add(modelPath);
+    }
+    return paths;
+  }
+
+  Future<void> _preflightBundleSpace(List<SubtitleModelSpec> specs) async {
+    final directory = await _directoryResolver();
+    await directory.create(recursive: true);
+    var remaining = 0;
+    File? firstMissing;
+    for (final spec in specs) {
+      final target = File(path.join(directory.path, spec.name));
+      if (await _valid(target, spec)) continue;
+      firstMissing ??= target;
+      final partial = File('${target.path}.download');
+      final received = await partial.exists() ? await partial.length() : 0;
+      final usable = received <= spec.bytes ? received : 0;
+      remaining += spec.bytes - usable;
+    }
+    if (remaining <= 0) return;
+    final usage = await _storage.readStorageUsage();
+    final requiredBytes = remaining + 128 * 1024 * 1024;
+    if (usage != null && usage.availableBytes < requiredBytes) {
+      throw FileSystemException(
+        'Insufficient space for subtitle model',
+        firstMissing?.path,
+      );
+    }
   }
 
   static Future<Directory> _defaultDirectory() async {
@@ -400,6 +767,13 @@ class SubtitleModelStore extends ChangeNotifier {
         verified.sha256 == spec.sha256 &&
         verified.modified == stat.modified &&
         verified.changed == stat.changed) {
+      if (path.basename(file.path) == spec.name) {
+        _snapshots[spec.name] ??= SubtitleModelDownloadSnapshot(
+          received: spec.bytes,
+          total: spec.bytes,
+          active: false,
+        );
+      }
       return true;
     }
     final digest = await sha256.bind(file.openRead()).first;
@@ -412,6 +786,13 @@ class SubtitleModelStore extends ChangeNotifier {
       changed: stat.changed,
       sha256: spec.sha256,
     );
+    if (path.basename(file.path) == spec.name) {
+      _snapshots[spec.name] ??= SubtitleModelDownloadSnapshot(
+        received: spec.bytes,
+        total: spec.bytes,
+        active: false,
+      );
+    }
     return true;
   }
 }

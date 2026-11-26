@@ -84,19 +84,43 @@ class SqliteAsmrRepository implements AsmrPersistenceRepository {
     );
   }
   @override
+  Future<void> saveReviewState({
+    required AsmrWork work,
+    required bool favorite,
+    required bool reviewed,
+    AsmrSyncOperation? operation,
+  }) => _database.saveAsmrReviewState(
+    _workToRecord(work),
+    favorite: favorite,
+    reviewed: reviewed,
+    operation: operation == null ? null : _operationToRecord(operation),
+  );
+  @override
   Future<void> saveAccountSyncState({
     required List<AsmrWork> favoriteWorks,
     required List<AsmrWork> historyWorks,
     required List<AsmrSyncOperation> operations,
+    List<AsmrWork> reviewedWorks = const <AsmrWork>[],
   }) async {
-    final (favoriteRecords, historyRecords) =
-        favoriteWorks.length + historyWorks.length < _asmrWorkComputeThreshold
-        ? (_worksToRecords(favoriteWorks), _worksToRecords(historyWorks))
-        : await compute(_workListsToRecords, (favoriteWorks, historyWorks));
+    final totalCount =
+        favoriteWorks.length + historyWorks.length + reviewedWorks.length;
+    final (favoriteRecords, historyRecords, reviewedRecords) =
+        totalCount < _asmrWorkComputeThreshold
+        ? (
+            _worksToRecords(favoriteWorks),
+            _worksToRecords(historyWorks),
+            _worksToRecords(reviewedWorks),
+          )
+        : await compute(_workListsToRecords, (
+            favoriteWorks,
+            historyWorks,
+            reviewedWorks,
+          ));
     await _database.saveAsmrAccountSyncState(
       favoriteRecords,
       historyRecords,
       operations.map(_operationToRecord).toList(growable: false),
+      reviewedWorks: reviewedRecords,
     );
   }
   @override
@@ -116,9 +140,14 @@ List<AsmrWork> _worksFromRecords(List<AsmrWorkRecord> records) =>
 List<AsmrWorkRecord> _worksToRecords(List<AsmrWork> works) =>
     works.map(_workToRecord).toList(growable: false);
 
-(List<AsmrWorkRecord>, List<AsmrWorkRecord>) _workListsToRecords(
-  (List<AsmrWork>, List<AsmrWork>) lists,
-) => (_worksToRecords(lists.$1), _worksToRecords(lists.$2));
+(List<AsmrWorkRecord>, List<AsmrWorkRecord>, List<AsmrWorkRecord>)
+_workListsToRecords(
+  (List<AsmrWork>, List<AsmrWork>, List<AsmrWork>) lists,
+) => (
+  _worksToRecords(lists.$1),
+  _worksToRecords(lists.$2),
+  _worksToRecords(lists.$3),
+);
 
 AsmrWorkRecord _workToRecord(AsmrWork work) => AsmrWorkRecord(
   id: work.id,
@@ -144,6 +173,10 @@ AsmrWorkRecord _workToRecord(AsmrWork work) => AsmrWorkRecord(
   tags: work.tags,
   hasSubtitle: work.hasSubtitle,
   isFavorite: work.isFavorite,
+  listenStatus: work.listenStatus?.wireValue,
+  userRating: work.userRating,
+  reviewText: work.reviewText,
+  reviewUpdatedAt: work.reviewUpdatedAt,
 );
 
 AsmrWork _workFromRecord(AsmrWorkRecord record) => AsmrWork(
@@ -175,6 +208,10 @@ AsmrWork _workFromRecord(AsmrWorkRecord record) => AsmrWork(
   tags: record.tags,
   hasSubtitle: record.hasSubtitle,
   isFavorite: record.isFavorite,
+  listenStatus: WorkListenStatus.tryFromWireValue(record.listenStatus),
+  userRating: record.userRating,
+  reviewText: record.reviewText,
+  reviewUpdatedAt: record.reviewUpdatedAt,
 );
 
 AsmrSyncOperationRecord _operationToRecord(AsmrSyncOperation operation) =>
@@ -184,6 +221,10 @@ AsmrSyncOperationRecord _operationToRecord(AsmrSyncOperation operation) =>
       sourceId: operation.sourceId,
       createdAt: operation.createdAt,
       retryCount: operation.retryCount,
+      progress: operation.progress,
+      userRating: operation.userRating,
+      reviewText: operation.reviewText,
+      hasReviewPayload: operation.hasReviewPayload,
     );
 
 AsmrSyncOperation _operationFromRecord(AsmrSyncOperationRecord record) =>
@@ -193,4 +234,8 @@ AsmrSyncOperation _operationFromRecord(AsmrSyncOperationRecord record) =>
       sourceId: record.sourceId,
       createdAt: record.createdAt,
       retryCount: record.retryCount,
+      progress: record.progress,
+      userRating: record.userRating,
+      reviewText: record.reviewText,
+      hasReviewPayload: record.hasReviewPayload,
     );

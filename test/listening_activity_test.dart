@@ -1229,6 +1229,11 @@ final class _CountingRepository implements ListeningActivityRepository {
   }
 
   @override
+  Future<Map<String, int>> loadWorkTotalMilliseconds(
+    Iterable<String> workKeys,
+  ) => delegate.loadWorkTotalMilliseconds(workKeys);
+
+  @override
   Future<int> countHistory() => delegate.countHistory();
 
   @override

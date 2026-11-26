@@ -3,12 +3,19 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
-enum NetworkProbeStatus { untested, testing, success, failed }
+enum NetworkProbeStatus {
+  untested,
+  testing,
+  success,
+  serverUnavailable,
+  failed,
+}
 
 class NetworkProbeResult {
-  const NetworkProbeResult(this.status, {this.milliseconds});
+  const NetworkProbeResult(this.status, {this.milliseconds, this.statusCode});
   final NetworkProbeStatus status;
   final int? milliseconds;
+  final int? statusCode;
 }
 
 /// Page-scoped diagnostics; every run owns its connection and cancellation.
@@ -39,6 +46,7 @@ class NetworkServiceProbe extends ChangeNotifier {
         final request = await client.getUrl(uri);
         request.headers.set(HttpHeaders.userAgentHeader, 'DoujinAudio/1.0');
         final response = await request.close();
+        await response.listen(null).cancel();
         return response.statusCode;
       })().timeout(timeout);
       if (_disposed || !identical(_clients[key], client)) return;
@@ -46,8 +54,14 @@ class NetworkServiceProbe extends ChangeNotifier {
           ? NetworkProbeResult(
               NetworkProbeStatus.success,
               milliseconds: watch.elapsedMilliseconds,
+              statusCode: status,
             )
-          : const NetworkProbeResult(NetworkProbeStatus.failed);
+          : status >= 500 && status <= 599
+          ? NetworkProbeResult(
+              NetworkProbeStatus.serverUnavailable,
+              statusCode: status,
+            )
+          : NetworkProbeResult(NetworkProbeStatus.failed, statusCode: status);
     } catch (_) {
       if (_disposed || !identical(_clients[key], client)) return;
       _results[key] = const NetworkProbeResult(NetworkProbeStatus.failed);

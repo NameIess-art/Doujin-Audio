@@ -3,9 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../core/media/path_display.dart';
-import '../domain/asmr_models.dart';
+import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/shimmer_loading.dart';
 import '../../../core/widgets/top_page_header.dart';
+import '../application/asmr_download_selection.dart';
+import '../domain/asmr_models.dart';
 
 import 'asmr_download_format.dart';
 
@@ -19,8 +21,8 @@ class AsmrDownloadSummaryCard extends ConsumerWidget {
     this.selectedHasUnknownSize = false,
     this.customWorkFolderName,
     this.destinationRoot,
-    this.allSelected = false,
-    this.onToggleSelectAll,
+    this.fileGroups = const {},
+    this.onToggleFileGroup,
     this.hasActiveTask = false,
     this.onViewTasks,
   });
@@ -32,15 +34,16 @@ class AsmrDownloadSummaryCard extends ConsumerWidget {
   final bool selectedHasUnknownSize;
   final String? customWorkFolderName;
   final String? destinationRoot;
-  final bool allSelected;
-  final VoidCallback? onToggleSelectAll;
+  final Map<AsmrDownloadFileGroup, bool?> fileGroups;
+  final ValueChanged<AsmrDownloadFileGroup>? onToggleFileGroup;
   final bool hasActiveTask;
   final VoidCallback? onViewTasks;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final cs = Theme.of(context).colorScheme;
-    final primaryColor = Theme.of(context).colorScheme.primary;
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final toggleFileGroup = onToggleFileGroup;
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
 
@@ -177,7 +180,7 @@ class AsmrDownloadSummaryCard extends ConsumerWidget {
               Icon(
                 Icons.check_circle_outline_rounded,
                 size: 16,
-                color: primaryColor,
+                color: cs.primary,
               ),
               const SizedBox(width: 6),
               Expanded(
@@ -194,25 +197,52 @@ class AsmrDownloadSummaryCard extends ConsumerWidget {
                   ),
                 ),
               ),
-              if (onToggleSelectAll != null) ...[
-                const SizedBox(width: 8),
-                TextButton(
-                  key: const ValueKey<String>(
-                    'asmr_download_toggle_select_all',
-                  ),
-                  onPressed: onToggleSelectAll,
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    minimumSize: const Size(0, 32),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  child: Text(
-                    i18n.tr(allSelected ? 'deselect_all' : 'select_all'),
-                  ),
-                ),
-              ],
             ],
           ),
+          if (fileGroups.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            appNoPointerInkTheme(
+              context: context,
+              androidPressHighlight: true,
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  for (final group in AsmrDownloadFileGroup.values)
+                    FilterChip(
+                      key: ValueKey('asmr_download_file_group_${group.name}'),
+                      shape: const StadiumBorder(),
+                      label: Text(switch (group) {
+                        AsmrDownloadFileGroup.all => i18n.tr('select_all'),
+                        AsmrDownloadFileGroup.image => i18n.tr(
+                          'asmr_download_file_group_image',
+                        ),
+                        _ => group.name,
+                      }),
+                      labelStyle: theme.chipTheme.labelStyle?.copyWith(
+                        fontSize: theme.textTheme.labelSmall?.fontSize,
+                      ),
+                      color: appChipColor(
+                        colorScheme: cs,
+                        platform: theme.platform,
+                        background: cs.surface,
+                        selectedBackground: cs.secondaryContainer,
+                      ),
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.padded,
+                      padding: EdgeInsets.zero,
+                      labelPadding: const EdgeInsets.symmetric(horizontal: 8),
+                      showCheckmark: false,
+                      selected: fileGroups[group] == true,
+                      onSelected:
+                          fileGroups[group] == null || toggleFileGroup == null
+                          ? null
+                          : (_) => toggleFileGroup(group),
+                    ),
+                ],
+              ),
+            ),
+          ],
           if (currentWork.resources.any(
             (resource) => resource.source == AsmrCatalogSource.japaneseAsmr,
           )) ...[

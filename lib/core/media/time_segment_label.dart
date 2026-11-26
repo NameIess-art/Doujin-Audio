@@ -1,3 +1,4 @@
+import 'cross_platform_media_identity.dart';
 import 'path_matcher.dart';
 import 'music_track.dart';
 
@@ -84,6 +85,10 @@ class TimeSegmentLabel {
       if (sourceId.isNotEmpty && relativePath.isNotEmpty) {
         return 'asmr.one:$sourceId:$relativePath';
       }
+    }
+    if (track.isRemoteSource) {
+      final identity = CrossPlatformMediaIdentity.fromTrack(track);
+      if (identity != null) return identity.timeSegmentTrackKey;
     }
     return PathMatcher.normalize(track.path);
   }

@@ -54,7 +54,9 @@ class SessionDetailLayout extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final titleOverArtwork = !segmentPanelExpanded && (!isLandscape || isVideo);
+    final isAndroid = defaultTargetPlatform == TargetPlatform.android;
+    final titleOverArtwork =
+        !segmentPanelExpanded && (!isLandscape || (isVideo && !isAndroid));
     final heading = IgnorePointer(
       ignoring: !showCoverOverlays,
       child: AnimatedOpacity(
@@ -131,11 +133,7 @@ class SessionDetailLayout extends StatelessWidget {
           delegate: _LandscapeDetailLayoutDelegate(
             topPadding: padding.top,
             bottomPadding: padding.bottom,
-            alignCoverWithTitle:
-                defaultTargetPlatform == TargetPlatform.android,
-            leftFraction: defaultTargetPlatform == TargetPlatform.windows
-                ? 4 / 7
-                : 0.5,
+            alignCoverWithTitle: isAndroid,
           ),
           children: [
             LayoutId(
@@ -388,24 +386,21 @@ class _LandscapeDetailLayoutDelegate extends MultiChildLayoutDelegate {
     required this.topPadding,
     required this.bottomPadding,
     required this.alignCoverWithTitle,
-    required this.leftFraction,
   });
 
   final double topPadding;
   final double bottomPadding;
   final bool alignCoverWithTitle;
-  final double leftFraction;
 
   @override
   void performLayout(Size size) {
     const columnGap = 12.0;
     const menuProgressGap = 32.0;
     final availableWidth = max(0.0, size.width - columnGap);
-    final leftWidth = availableWidth * leftFraction;
-    final rightWidth = availableWidth - leftWidth;
+    final leftBaseWidth = availableWidth * (4 / 7);
     final progressSize = layoutChild(
       _LandscapeDetailSlot.progress,
-      BoxConstraints.tightFor(width: leftWidth * 0.8),
+      BoxConstraints.tightFor(width: leftBaseWidth * 0.8),
     );
     final primarySize = layoutChild(
       _LandscapeDetailSlot.primaryTransport,
@@ -423,26 +418,33 @@ class _LandscapeDetailLayoutDelegate extends MultiChildLayoutDelegate {
       min(centerY - topPadding, primaryTop - coverToPrimaryMinGap - centerY),
     );
     final centeredCoverHeight = min(
-      leftWidth * 3 / 4 * 0.7,
+      leftBaseWidth * 3 / 4 * 0.7,
       coverHalfSpace * 2,
     );
     final centeredCoverTop = centerY - centeredCoverHeight / 2;
     final headingTop = max(topPadding, centeredCoverTop - 64);
     final coverBottom = centeredCoverTop + centeredCoverHeight;
     final coverHeight = alignCoverWithTitle
-        ? min(coverBottom - headingTop, leftWidth * 3 / 4)
+        ? min(coverBottom - headingTop, leftBaseWidth * 3 / 4)
         : centeredCoverHeight;
     final coverTop = alignCoverWithTitle
         ? coverBottom - coverHeight
         : centeredCoverTop;
     final detailsTop = alignCoverWithTitle ? coverTop : headingTop;
-    final progressLeft = (leftWidth - progressSize.width) / 2;
+    final coverWidth = coverHeight * 4 / 3;
+    // Trim the dead right-side gutter inside the left column so the right pane
+    // starts right after the actual left content (cover / progress / segments).
+    final leftWidth = min(leftBaseWidth, max(progressSize.width, coverWidth));
+    final leftOffset = (leftBaseWidth - leftWidth) * 0.25;
+    final progressLeft = leftOffset + (leftWidth - progressSize.width) / 2;
+    final detailsLeft = leftOffset + leftWidth + columnGap;
+    final rightWidth = max(0.0, size.width - detailsLeft);
 
     layoutChild(
       _LandscapeDetailSlot.artwork,
       BoxConstraints.tight(Size(leftWidth, coverHeight)),
     );
-    positionChild(_LandscapeDetailSlot.artwork, Offset(0, coverTop));
+    positionChild(_LandscapeDetailSlot.artwork, Offset(leftOffset, coverTop));
     positionChild(
       _LandscapeDetailSlot.progress,
       Offset(progressLeft, progressTop),
@@ -460,7 +462,7 @@ class _LandscapeDetailLayoutDelegate extends MultiChildLayoutDelegate {
     );
     positionChild(
       _LandscapeDetailSlot.details,
-      Offset(leftWidth + columnGap, detailsTop),
+      Offset(detailsLeft, detailsTop),
     );
 
     layoutChild(
@@ -482,6 +484,5 @@ class _LandscapeDetailLayoutDelegate extends MultiChildLayoutDelegate {
   bool shouldRelayout(_LandscapeDetailLayoutDelegate oldDelegate) =>
       topPadding != oldDelegate.topPadding ||
       bottomPadding != oldDelegate.bottomPadding ||
-      alignCoverWithTitle != oldDelegate.alignCoverWithTitle ||
-      leftFraction != oldDelegate.leftFraction;
+      alignCoverWithTitle != oldDelegate.alignCoverWithTitle;
 }

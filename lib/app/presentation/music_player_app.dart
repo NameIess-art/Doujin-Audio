@@ -1,6 +1,7 @@
 import '../../core/widgets/drag_only_scrollbar.dart';
 import 'package:flutter/foundation.dart';
 import '../../features/asmr/presentation/asmr_providers.dart';
+import '../../features/library/presentation/library_providers.dart';
 import '../../features/settings/presentation/settings_providers.dart';
 import '../state/listening_activity_provider.dart';
 import 'dart:async';
@@ -28,6 +29,9 @@ import '../../core/cache/app_cache_service.dart';
 import '../../core/logging/app_log_service.dart';
 import '../../core/widgets/app_feedback.dart';
 import '../../core/widgets/app_transitions.dart';
+import '../../core/widgets/work_review_panel.dart';
+import '../../core/media/audio_detail.dart' show WorkListenStatus;
+import '../application/work_smart_status_coordinator.dart';
 import '../theme/theme_provider.dart';
 import '../../core/persistence/app_preferences.dart';
 import '../../features/settings/application/settings_state.dart';
@@ -53,6 +57,10 @@ Widget createAudioPlayerApp({
     :asmrDownloadManager,
     :asmrLibraryController,
     :asmrPlaybackCoordinator,
+    :workSmartStatusCoordinator,
+    :crossPlatformSyncService,
+    :lanMediaServerService,
+    :remoteLibraryController,
     :initializeRuntimeData,
   ) = createProductionAppRuntime(
     windowsRuntime: windowsRuntime,
@@ -62,6 +70,9 @@ Widget createAudioPlayerApp({
     overrides: [
       listeningActivityServiceProvider.overrideWithValue(
         runtimeGraph.listeningActivity!,
+      ),
+      workSmartStatusCoordinatorProvider.overrideWithValue(
+        workSmartStatusCoordinator,
       ),
       ...createAppRuntimeOverrides(
         persistence: runtimeGraph.persistence,
@@ -89,6 +100,15 @@ Widget createAudioPlayerApp({
       asmrLibraryControllerProvider.overrideWithValue(asmrLibraryController),
       asmrPlaybackCoordinatorProvider.overrideWithValue(
         asmrPlaybackCoordinator,
+      ),
+      crossPlatformSyncServiceProvider.overrideWith(
+        (ref) => crossPlatformSyncService,
+      ),
+      lanMediaServerServiceProvider.overrideWith(
+        (ref) => lanMediaServerService,
+      ),
+      remoteLibraryControllerProvider.overrideWith(
+        (ref) => remoteLibraryController,
       ),
     ],
     child: MusicPlayerApp(
@@ -146,6 +166,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
   late final AppOrientationController _orientationController;
   late final AppLanguageProvider _languageProvider;
   late final ValueNotifier<bool> _appTickersEnabled;
+  StreamSubscription<WorkAutoListenedPrompt>? _autoListenedSubscription;
   late final Widget Function(BuildContext, Widget) _windowsRootPageFrameBuilder =
       _buildWindowsRootPageFrame;
 
@@ -215,6 +236,10 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
     );
     _runtime = ref.read(audioRuntimeCoordinatorProvider);
     _orientationController = ref.read(appOrientationControllerProvider);
+    _autoListenedSubscription = ref
+        .read(workSmartStatusCoordinatorProvider)
+        ?.autoListenedPrompts
+        .listen(_handleAutoListenedPrompt);
     WidgetsBinding.instance.addObserver(this);
     UiInteractionCoordinator.instance.addListener(
       _scheduleSecondaryInitialization,
@@ -321,6 +346,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
     _runtimeBootstrapController.removeListener(_scheduleSecondaryInitialization);
     _runtimeBootstrapController.dispose();
     _workDetailNavigation.dispose();
+    unawaited(_autoListenedSubscription?.cancel());
     _appTickersEnabled.dispose();
     unawaited(
       _runtime.dispose().catchError((Object error, StackTrace stack) {
@@ -687,6 +713,48 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
         tone: outcome.succeeded
             ? AppFeedbackTone.success
             : AppFeedbackTone.destructive,
+      );
+    });
+    WidgetsBinding.instance.scheduleFrame();
+  }
+
+  void _handleAutoListenedPrompt(WorkAutoListenedPrompt prompt) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final navigatorContext = _navigatorKey.currentContext;
+      if (navigatorContext == null || !navigatorContext.mounted) return;
+      final language = _languageProvider;
+      showAppSnackBar(
+        navigatorContext,
+        language
+            .tr('work_auto_listened_toast')
+            .replaceAll('{title}', prompt.workTitle),
+        tone: AppFeedbackTone.success,
+        icon: Icons.task_alt_rounded,
+        isUndoAction: true,
+        actionLabel: language.tr('undo'),
+        onAction: () => unawaited(prompt.onUndo()),
+        secondaryActionLabel: language.tr('work_auto_listened_rate'),
+        onSecondaryAction: () {
+          if (!navigatorContext.mounted) return;
+          unawaited(() async {
+            final draft = await showWorkReviewEditPanel(
+              context: navigatorContext,
+              workTitle: prompt.workTitle,
+              initialStatus: WorkListenStatus.listened,
+              initialUserRating: prompt.userRating,
+              initialReviewText: prompt.reviewText,
+              syncsWithCloud: prompt.syncsWithCloud,
+              translate: language.tr,
+            );
+            if (draft == null) return;
+            await prompt.onSaveReview(
+              listenStatus: draft.listenStatus,
+              userRating: draft.userRating,
+              reviewText: draft.reviewText,
+            );
+          }());
+        },
       );
     });
     WidgetsBinding.instance.scheduleFrame();

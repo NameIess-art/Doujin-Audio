@@ -1,3 +1,5 @@
+import '../network/remote_source_headers.dart';
+
 /// A transport address and optional chapter range. The original URL remains the
 /// logical identity, because several chapters can share a single HLS stream.
 class PlaybackMediaReference {
@@ -96,6 +98,6 @@ class PlaybackMediaReference {
         host == 'pic.weeabo0.xyz') {
       return const {'Referer': 'https://japaneseasmr.com/'};
     }
-    return const {};
+    return RemoteSourceHeaderRegistry.instance.headersForUri(uri);
   }
 }

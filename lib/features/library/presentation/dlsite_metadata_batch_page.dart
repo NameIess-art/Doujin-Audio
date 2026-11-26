@@ -10,9 +10,11 @@ import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/audio_detail.dart';
+import '../../../core/media/music_track.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../application/dlsite_metadata_batch_session.dart';
 import '../domain/audio_library_category.dart';
+import '../domain/remote_media_source.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/page_header_inset.dart';
@@ -35,11 +37,15 @@ class DlsiteMetadataBatchPage extends ConsumerStatefulWidget {
     super.key,
     this.entries,
     this.initialTargets,
+    this.remoteSourceId,
+    this.initialRemoteWorkIds,
     this.initialScope = DlsiteMetadataBatchScope.anyMissing,
   });
 
   final List<AudioLibraryCategoryEntry>? entries;
   final Set<AudioDetailTarget>? initialTargets;
+  final String? remoteSourceId;
+  final Set<String>? initialRemoteWorkIds;
   final DlsiteMetadataBatchScope initialScope;
 
   @override
@@ -120,6 +126,14 @@ class _DlsiteMetadataBatchPageState
     final entries = widget.entries;
     if (entries != null) {
       _setEntries(entries);
+    } else if (widget.remoteSourceId != null) {
+      _setEntries(_buildRemoteEntries());
+      if (_entries.isEmpty) {
+        _loading = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) unawaited(_load());
+        });
+      }
     } else {
       _loading = true;
       final cachedSnapshot = ref.read(libraryFacadeProvider).categorySnapshot;
@@ -159,12 +173,67 @@ class _DlsiteMetadataBatchPageState
     }
   }
 
+  List<AudioLibraryCategoryEntry> _buildRemoteEntries() {
+    final sourceId = widget.remoteSourceId;
+    if (sourceId == null) return const <AudioLibraryCategoryEntry>[];
+    final works = ref.read(remoteLibraryControllerProvider).worksFor(sourceId);
+    final filterIds = widget.initialRemoteWorkIds;
+    return <AudioLibraryCategoryEntry>[
+      for (final w in works)
+        if (filterIds == null || filterIds.contains(w.workId))
+          _remoteWorkToCategoryEntry(w),
+    ];
+  }
+
+  static AudioLibraryCategoryEntry _remoteWorkToCategoryEntry(
+    RemoteLibraryWork w,
+  ) {
+    final folderName = w.folderName.trim().isNotEmpty
+        ? w.folderName.trim()
+        : w.title;
+    final target = AudioDetailTarget.libraryRootFolder(folderName);
+    final detail = AudioDetail(
+      target: target,
+      rjCode: w.rjCode,
+      workTitle: w.title,
+      circleName: w.circleName,
+      voiceActors: w.voiceActors,
+      tags: w.tags,
+      releaseDate: w.releaseDateMs == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(w.releaseDateMs!),
+      duration: w.durationMs > 0 ? Duration(milliseconds: w.durationMs) : null,
+      salesCount: w.salesCount,
+      rating: w.rating,
+    );
+    return AudioLibraryCategoryEntry(
+      target: target,
+      title: w.title,
+      path: w.workId,
+      isFolder: true,
+      detail: detail,
+      tracks: const <MusicTrack>[],
+    );
+  }
+
   Future<void> _load() async {
     setState(() {
       _error = null;
       _loading = true;
     });
     try {
+      if (widget.remoteSourceId != null) {
+        final ctrl = ref.read(remoteLibraryControllerProvider);
+        if (ctrl.worksFor(widget.remoteSourceId!).isEmpty) {
+          await ctrl.refreshSource(widget.remoteSourceId!);
+        }
+        if (!mounted) return;
+        setState(() {
+          _setEntries(_buildRemoteEntries());
+          _loading = false;
+        });
+        return;
+      }
       final snapshot = await ref
           .read(uiOperationServiceProvider)
           .run<AudioLibraryCategorySnapshot>(
@@ -207,11 +276,19 @@ class _DlsiteMetadataBatchPageState
             listen: false,
           ).read(appLanguageProviderInstanceProvider).language,
         );
-    final session = DlsiteMetadataBatchSession.forLibrary(
-      entries: queue,
-      library: ref.read(libraryFacadeProvider),
-      language: language,
-    );
+    final session = widget.remoteSourceId != null
+        ? DlsiteMetadataBatchSession.forRemoteSource(
+            entries: queue,
+            library: ref.read(libraryFacadeProvider),
+            remoteController: ref.read(remoteLibraryControllerProvider),
+            sourceId: widget.remoteSourceId!,
+            language: language,
+          )
+        : DlsiteMetadataBatchSession.forLibrary(
+            entries: queue,
+            library: ref.read(libraryFacadeProvider),
+            language: language,
+          );
     await Navigator.of(context).push<void>(
       buildAppPageRoute(
         context: context,
@@ -219,6 +296,13 @@ class _DlsiteMetadataBatchPageState
       ),
     );
     if (!mounted) return;
+    if (widget.remoteSourceId != null) {
+      setState(() {
+        _error = null;
+        _setEntries(_buildRemoteEntries());
+      });
+      return;
+    }
     if (widget.entries == null) {
       await _load();
     } else if (session.appliedCount > 0) {

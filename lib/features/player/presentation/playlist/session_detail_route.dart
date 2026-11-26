@@ -114,13 +114,8 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
     curve: kAppSpringCurve,
     reverseCurve: Curves.easeInCubic,
   );
-  Animation<Offset> get _sheetOffset => _sheetSlide ??= Tween<Offset>(
-    begin: const Offset(0, _sheetEntranceLiftFraction),
-    end: Offset.zero,
-  ).animate(_progress);
-  ValueNotifier<double>? _dragDismissOffset;
-  double _dragDismissFrom = 0;
-  double _dragDismissTo = 0;
+  Animation<Offset> get _sheetOffset => _sheetSlide ??=
+      _SheetEntranceOffsetAnimation(_progress, _sheetEntranceLiftFraction);
 
   bool _reducedMotion = false;
   bool _revealBehind = false;
@@ -327,7 +322,6 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
     } finally {
       if (!_disposed && (!popped || isCurrent)) {
         _clearFlight();
-        _clearDragDismissSlide();
         _closing = false;
         _setRevealBehind(false);
       }
@@ -493,17 +487,6 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
     return null;
   }
 
-  bool canRunCoverExitFlight() {
-    if (_reducedMotion || requiresPortraitRestore) return false;
-    final detail = detailCoverKey.currentState;
-    if (detail == null ||
-        detail.decodedImage == null ||
-        detail.bounds() == null) {
-      return false;
-    }
-    return _findCoverExitTarget() != null;
-  }
-
   void _prepareCoverExit() {
     final detail = detailCoverKey.currentState;
     final detailBounds = detail?.bounds();
@@ -592,46 +575,6 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
     _setRevealBehind(false);
   }
 
-  /// Drives coverless drag-dismiss slide-out from the route's reverse curve
-  /// so content-level TickerMode(enabled: false) cannot freeze the exit motion.
-  void startCoverlessDragDismissSlide({
-    required ValueNotifier<double> offsetNotifier,
-    required double from,
-    required double to,
-  }) {
-    if (_disposed || !isCurrent || _closing) return;
-    _clearDragDismissSlide();
-    _dragDismissOffset = offsetNotifier;
-    _dragDismissFrom = from;
-    _dragDismissTo = to;
-    _progress.addListener(_syncDragDismissSlide);
-  }
-
-  void clearCoverlessDragDismissSlide(ValueNotifier<double> offsetNotifier) {
-    if (identical(_dragDismissOffset, offsetNotifier)) {
-      _clearDragDismissSlide();
-    }
-  }
-
-  void _syncDragDismissSlide() {
-    final notifier = _dragDismissOffset;
-    if (_disposed || notifier == null) return;
-    final status = animation?.status;
-    if (status != AnimationStatus.reverse &&
-        status != AnimationStatus.dismissed) {
-      return;
-    }
-    final t = (1.0 - _progress.value).clamp(0.0, 1.0);
-    notifier.value = ui.lerpDouble(_dragDismissFrom, _dragDismissTo, t)!;
-  }
-
-  void _clearDragDismissSlide() {
-    if (_dragDismissOffset != null) {
-      _progressCurve?.removeListener(_syncDragDismissSlide);
-      _dragDismissOffset = null;
-    }
-  }
-
   void _setRevealBehind(bool value) {
     if (_revealBehind == value) return;
     _revealBehind = value;
@@ -644,7 +587,6 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
   @override
   void dispose() {
     _disposed = true;
-    _clearDragDismissSlide();
     final detailStream = _detailCoverStream;
     final detailListener = _detailCoverListener;
     if (detailStream != null && detailListener != null) {
@@ -655,6 +597,7 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
     final ready = _portraitReady;
     if (ready != null && !ready.isCompleted) ready.complete();
     animation?.removeStatusListener(_handleFlightStatus);
+    _sheetSlide = null;
     _progressCurve?.dispose();
     _progressCurve = null;
     _sourceImage?.dispose();
@@ -664,5 +607,24 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
     _flight.dispose();
     unawaited(_orientationController?.setPlaybackDetailVisible(false));
     super.dispose();
+  }
+}
+
+class _SheetEntranceOffsetAnimation extends Animation<Offset>
+    with AnimationWithParentMixin<double> {
+  _SheetEntranceOffsetAnimation(this.parent, this.liftFraction);
+
+  @override
+  final Animation<double> parent;
+  final double liftFraction;
+
+  @override
+  Offset get value {
+    final status = parent.status;
+    if (status == AnimationStatus.reverse ||
+        status == AnimationStatus.dismissed) {
+      return Offset.zero;
+    }
+    return Offset(0, liftFraction * (1.0 - parent.value));
   }
 }

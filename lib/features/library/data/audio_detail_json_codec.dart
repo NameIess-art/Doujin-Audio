@@ -495,6 +495,10 @@ final class AudioDetailJsonCodec {
       duration: _duration(json),
       salesCount: _integer(json, 'salesCount', minimum: 0),
       rating: _number(json, 'rating', minimum: 0, maximum: 5),
+      listenStatus: _listenStatus(json),
+      userRating: _userRating(json),
+      reviewText: AudioDetail.normalizeReviewText(_string(json, 'reviewText')),
+      reviewUpdatedAt: _date(json, 'reviewUpdatedAt'),
       createdAt: _date(json, 'createdAt'),
       updatedAt: _date(json, 'updatedAt'),
     );
@@ -504,6 +508,9 @@ final class AudioDetailJsonCodec {
     AudioDetail detail,
     Map<String, Object?> additionalFields,
   ) {
+    final normalizedReviewText = AudioDetail.normalizeReviewText(
+      detail.reviewText,
+    );
     return <String, Object?>{
       'schemaVersion': 1,
       'type': 'audio-detail',
@@ -520,6 +527,10 @@ final class AudioDetailJsonCodec {
       'durationMs': detail.duration?.inMilliseconds,
       'salesCount': detail.salesCount,
       'rating': detail.rating,
+      'listenStatus': detail.listenStatus?.wireValue,
+      'userRating': detail.userRating,
+      'reviewText': normalizedReviewText.isEmpty ? null : normalizedReviewText,
+      'reviewUpdatedAt': detail.reviewUpdatedAt?.toIso8601String(),
       'createdAt': detail.createdAt?.toIso8601String(),
       'updatedAt': detail.updatedAt?.toIso8601String(),
       ...additionalFields,
@@ -570,6 +581,28 @@ Duration? _duration(Map<String, Object?> json) {
   if (value == null) return null;
   final milliseconds = _integer(json, 'durationMs', minimum: 1);
   return Duration(milliseconds: milliseconds!);
+}
+
+WorkListenStatus? _listenStatus(Map<String, Object?> json) {
+  final value = json['listenStatus'];
+  if (value == null) return null;
+  if (value is! String) {
+    throw const FormatException('Invalid field: listenStatus');
+  }
+  if (value.trim().isEmpty) return null;
+  final parsed = WorkListenStatus.tryFromWireValue(value);
+  if (parsed == null) {
+    throw const FormatException('Invalid field: listenStatus');
+  }
+  return parsed;
+}
+
+int? _userRating(Map<String, Object?> json) {
+  final parsed = _integer(json, 'userRating', minimum: 1);
+  if (parsed != null && parsed > 5) {
+    throw const FormatException('Invalid field: userRating');
+  }
+  return parsed;
 }
 
 int? _integer(Map<String, Object?> json, String field, {required int minimum}) {

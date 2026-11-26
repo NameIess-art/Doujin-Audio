@@ -2258,7 +2258,7 @@ void main() {
         targetPath: '/library/TestWork',
       );
 
-      // 1. Edit mode: trailing is absent, title capsule must align with target name surface on right
+      // 1. Edit mode: trailing is the circular fetch-info button aligned with target name surface on right
       await tester.pumpWidget(
         fixture.build(
           DlsiteMetadataReviewPage.edit(detail: AudioDetail.empty(target)),
@@ -2270,14 +2270,24 @@ void main() {
         of: find.text(fixture.languageProvider.tr('audio_detail_edit_info')),
         matching: find.byType(HeaderFloatingSurface),
       );
+      final editFetchCircle = find.ancestor(
+        of: find.byKey(const ValueKey<String>('audio_detail_edit_fetch_info')),
+        matching: find.byType(HeaderFloatingButton),
+      );
       final editTargetSurface = find.byKey(
         const ValueKey<String>('dlsite_review_target_name'),
       );
       expect(editTitleSurface, findsOneWidget);
+      expect(editFetchCircle, findsOneWidget);
       expect(editTargetSurface, findsOneWidget);
       expect(
-        tester.getRect(editTitleSurface).right,
+        tester.getRect(editFetchCircle).right,
         tester.getRect(editTargetSurface).right,
+      );
+      expect(
+        tester.getRect(editFetchCircle).left -
+            tester.getRect(editTitleSurface).right,
+        8.0,
       );
 
       // 2. Fetch mode: without extra candidates, trailing is absent and must also align

@@ -6,6 +6,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -18,7 +19,6 @@ import '../../../../app/theme/app_styles.dart';
 import '../../../../core/media/music_track.dart';
 import '../../../../core/media/path_matcher.dart';
 import '../../../../core/media/subtitle_parser.dart';
-import '../../../../core/media/time_text_formatters.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/app_buttons.dart';
@@ -105,8 +105,10 @@ class _SessionVideoFullscreenPageState
     extends ConsumerState<SessionVideoFullscreenPage>
     with WidgetsBindingObserver {
   static const _controlsTimeout = Duration(seconds: 3);
-  static const _feedbackTimeout = Duration(milliseconds: 800);
-  static const _gestureThreshold = 8.0;
+  static const _feedbackTimeout = Duration(milliseconds: 550);
+  static const _panReleaseFeedbackTimeout = Duration(milliseconds: 400);
+  static const _skipAccumulationWindow = Duration(milliseconds: 900);
+  static const _gestureThreshold = 4.0;
   static const _controlRowHeight = 48.0;
   static const _controlRowSpacing = 8.0;
 
@@ -119,6 +121,7 @@ class _SessionVideoFullscreenPageState
   ({int epoch, int revision})? _activeCoverRevision;
   Timer? _controlsTimer;
   Timer? _feedbackTimer;
+  Timer? _skipAccumulationTimer;
   bool _controlsVisible = true;
   bool _tickerModeEnabled = true;
   bool _subtitleEnabled = false;
@@ -131,17 +134,22 @@ class _SessionVideoFullscreenPageState
   final _pastRestartThreshold = ValueNotifier<bool>(false);
   double _brightness = 0.5;
   final _volumePreview = ValueNotifier<double?>(null);
-  final _feedback = ValueNotifier<({IconData icon, String text})?>(null);
+  final _feedback =
+      ValueNotifier<({IconData icon, double? progress, Alignment alignment})?>(
+        null,
+      );
 
   Offset _panDelta = Offset.zero;
   _FullscreenVideoPanMode? _panMode;
   SessionVideoVerticalGestureSide? _panVerticalSide;
   Duration _panStartPosition = Duration.zero;
   Duration? _panSeekTarget;
+  Duration? _pendingSkipTarget;
   double _panStartVolumeDisplayValue = 1;
   double _panStartBrightness = 0.5;
   Size _panViewportSize = Size.zero;
   Offset? _doubleTapPosition;
+  double _doubleTapViewportWidth = 1;
   Offset? _lastPointerPosition;
   Offset? _hiddenAtPointerPosition;
 
@@ -210,6 +218,7 @@ class _SessionVideoFullscreenPageState
     WidgetsBinding.instance.removeObserver(this);
     _controlsTimer?.cancel();
     _feedbackTimer?.cancel();
+    _skipAccumulationTimer?.cancel();
     _pageFocus.dispose();
     UiInteractionCoordinator.instance
       ..cancelThrottledCommit('video_brightness:${widget.sessionId}')
@@ -353,12 +362,7 @@ class _SessionVideoFullscreenPageState
       final playing =
           _playback.sessionSnapshotById(widget.sessionId)?.playbackRequested ==
           true;
-      _setFeedback(
-        playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-        ref
-            .read(appLanguageProviderInstanceProvider)
-            .tr(playing ? 'pause' : 'play'),
-      );
+      _setFeedback(playing ? Icons.pause_rounded : Icons.play_arrow_rounded);
       unawaited(_playback.toggleSessionPlayPause(widget.sessionId));
       _scheduleControlsHide();
       return KeyEventResult.handled;
@@ -366,56 +370,16 @@ class _SessionVideoFullscreenPageState
     if (key == LogicalKeyboardKey.arrowLeft ||
         key == LogicalKeyboardKey.arrowRight) {
       final forward = key == LogicalKeyboardKey.arrowRight;
-      final gate = _positionGate;
-      if (gate != null &&
-          (gate.value.duration ?? Duration.zero) > Duration.zero) {
-        final target = sessionVideoSkipTarget(
-          position: gate.value.position,
-          duration: gate.value.duration ?? Duration.zero,
-          delta: Duration(seconds: forward ? 5 : -5),
-        );
-        unawaited(_playback.seekSession(widget.sessionId, target));
-      } else {
-        unawaited(
-          _playback.seekSessionByOffset(
-            widget.sessionId,
-            Duration(seconds: forward ? 5 : -5),
-          ),
-        );
-      }
-      _setFeedback(
-        forward ? Icons.forward_5_rounded : Icons.replay_5_rounded,
-        ref
-            .read(appLanguageProviderInstanceProvider)
-            .tr(
-              forward
-                  ? 'seek_forward_five_seconds'
-                  : 'seek_backward_five_seconds',
-            ),
+      _skipBy(
+        Duration(seconds: forward ? 5 : -5),
+        alignment: Alignment(forward ? 0.55 : -0.55, 0),
+        allowUnknownDurationOffset: true,
       );
-      _scheduleControlsHide();
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.arrowUp ||
         key == LogicalKeyboardKey.arrowDown) {
-      final currentGain =
-          _playback.sessionById(widget.sessionId)?.volume ??
-          _initialSession?.volume ??
-          1.0;
-      final currentDisplay = sessionVolumeDisplayValueFromGain(currentGain);
-      final delta = key == LogicalKeyboardKey.arrowUp ? 0.05 : -0.05;
-      final nextDisplay = (currentDisplay + delta).clamp(
-        0.0,
-        sessionVolumeDisplayMaximum,
-      );
-      final nextGain = sessionVolumeGainFromDisplayValue(nextDisplay);
-      _setFeedback(
-        sessionVolumeIcon(nextGain),
-        '${ref.read(appLanguageProviderInstanceProvider).tr('volume')} '
-        '${(nextDisplay * 100).round()}%',
-      );
-      unawaited(_playback.setSessionVolume(widget.sessionId, nextGain));
-      _scheduleControlsHide();
+      _stepVolume(key == LogicalKeyboardKey.arrowUp ? 0.05 : -0.05);
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.keyM) {
@@ -428,12 +392,10 @@ class _SessionVideoFullscreenPageState
           final nextGain =
               _playback.sessionById(widget.sessionId)?.volume ??
               (wasMuted ? 1.0 : 0.0);
-          final displayPct =
-              (sessionVolumeDisplayValueFromGain(nextGain) * 100).round();
+          final display = sessionVolumeDisplayValueFromGain(nextGain);
           _setFeedback(
             sessionVolumeIcon(nextGain),
-            '${ref.read(appLanguageProviderInstanceProvider).tr('volume')} '
-            '$displayPct%',
+            progress: display / sessionVolumeDisplayMaximum,
           );
         }),
       );
@@ -451,14 +413,105 @@ class _SessionVideoFullscreenPageState
     if (_controlsVisible) _scheduleControlsHide();
   }
 
-  void _setFeedback(IconData icon, String text, {bool persistent = false}) {
+  void _setFeedback(
+    IconData icon, {
+    double? progress,
+    Alignment alignment = Alignment.center,
+    bool persistent = false,
+    Duration timeout = _feedbackTimeout,
+  }) {
     _feedbackTimer?.cancel();
-    if (mounted) _feedback.value = (icon: icon, text: text);
+    if (mounted) {
+      _feedback.value = (
+        icon: icon,
+        progress: progress?.clamp(0.0, 1.0),
+        alignment: alignment,
+      );
+    }
     if (!persistent) {
-      _feedbackTimer = Timer(_feedbackTimeout, () {
+      _feedbackTimer = Timer(timeout, () {
         if (mounted) _feedback.value = null;
       });
     }
+  }
+
+  void _clearFeedback() {
+    _feedbackTimer?.cancel();
+    if (mounted && _feedback.value != null) {
+      _feedback.value = null;
+    }
+  }
+
+  IconData _brightnessIcon(double value) {
+    if (value < 0.35) return Icons.brightness_low_rounded;
+    if (value < 0.7) return Icons.brightness_medium_rounded;
+    return Icons.brightness_high_rounded;
+  }
+
+  void _stepVolume(double displayDelta) {
+    final currentGain =
+        _playback.sessionById(widget.sessionId)?.volume ??
+        _initialSession?.volume ??
+        1.0;
+    final currentDisplay = sessionVolumeDisplayValueFromGain(currentGain);
+    final nextDisplay = (currentDisplay + displayDelta).clamp(
+      0.0,
+      sessionVolumeDisplayMaximum,
+    );
+    final nextGain = sessionVolumeGainFromDisplayValue(nextDisplay);
+    _setFeedback(
+      sessionVolumeIcon(nextGain),
+      progress: nextDisplay / sessionVolumeDisplayMaximum,
+    );
+    unawaited(_playback.setSessionVolume(widget.sessionId, nextGain));
+    _scheduleControlsHide();
+  }
+
+  void _handlePointerSignal(PointerSignalEvent signal) {
+    if (defaultTargetPlatform != TargetPlatform.windows ||
+        _sliderInteracting ||
+        signal is! PointerScrollEvent ||
+        signal.scrollDelta.dy == 0) {
+      return;
+    }
+    GestureBinding.instance.pointerSignalResolver.register(signal, (event) {
+      if (!mounted || _sliderInteracting || event is! PointerScrollEvent) {
+        return;
+      }
+      _stepVolume(event.scrollDelta.dy < 0 ? 0.05 : -0.05);
+    });
+  }
+
+  void _skipBy(
+    Duration delta, {
+    required Alignment alignment,
+    bool allowUnknownDurationOffset = false,
+  }) {
+    final gate = _positionGate;
+    final duration = gate?.value.duration ?? Duration.zero;
+    if (gate != null && duration > Duration.zero) {
+      final base = _pendingSkipTarget ?? gate.value.position;
+      final target = sessionVideoSkipTarget(
+        position: base,
+        duration: duration,
+        delta: delta,
+      );
+      _pendingSkipTarget = target;
+      _skipAccumulationTimer?.cancel();
+      _skipAccumulationTimer = Timer(_skipAccumulationWindow, () {
+        _pendingSkipTarget = null;
+      });
+      unawaited(_playback.seekSession(widget.sessionId, target));
+    } else if (allowUnknownDurationOffset) {
+      unawaited(_playback.seekSessionByOffset(widget.sessionId, delta));
+    } else {
+      return;
+    }
+    _setFeedback(
+      delta.isNegative ? Icons.replay_5_rounded : Icons.forward_5_rounded,
+      alignment: alignment,
+    );
+    _scheduleControlsHide();
   }
 
   void _showOperationFailure() {
@@ -472,7 +525,7 @@ class _SessionVideoFullscreenPageState
   }
 
   void _handlePanStart(DragStartDetails details, Size viewportSize) {
-    if (_sliderInteracting) return;
+    if (_sliderInteracting || _temporarySpeedRequested) return;
     _controlsTimer?.cancel();
     _panDelta = Offset.zero;
     _panMode = null;
@@ -495,7 +548,7 @@ class _SessionVideoFullscreenPageState
   }
 
   void _handlePanUpdate(DragUpdateDetails details) {
-    if (_sliderInteracting) return;
+    if (_sliderInteracting || _temporarySpeedRequested) return;
     _panDelta += details.delta;
     if (_panMode == null) {
       if (_panDelta.distance < _gestureThreshold) return;
@@ -508,6 +561,7 @@ class _SessionVideoFullscreenPageState
                   : _FullscreenVideoPanMode.brightness
             : _FullscreenVideoPanMode.volume;
       }
+      _panDelta -= Offset.fromDirection(_panDelta.direction, _gestureThreshold);
     }
 
     switch (_panMode!) {
@@ -522,13 +576,11 @@ class _SessionVideoFullscreenPageState
         );
         _panSeekTarget = target;
         final delta = target - _panStartPosition;
-        final sign = delta.isNegative ? '-' : '+';
         _setFeedback(
           delta.isNegative
               ? Icons.fast_rewind_rounded
               : Icons.fast_forward_rounded,
-          '${formatDurationCompact(target)}  '
-          '$sign${formatDurationCompact(delta.abs())}',
+          progress: target.inMilliseconds / duration.inMilliseconds,
           persistent: true,
         );
         break;
@@ -543,9 +595,8 @@ class _SessionVideoFullscreenPageState
         _brightness = next;
         AppInteractionFeedback.continuous((next * 100).round());
         _setFeedback(
-          Icons.brightness_6_rounded,
-          '${ref.read(appLanguageProviderInstanceProvider).tr('brightness')} '
-          '${(next * 100).round()}%',
+          _brightnessIcon(next),
+          progress: (next - 0.05) / 0.95,
           persistent: true,
         );
         UiInteractionCoordinator.instance.scheduleThrottledCommit(
@@ -568,8 +619,7 @@ class _SessionVideoFullscreenPageState
         AppInteractionFeedback.continuous((displayValue * 100).round());
         _setFeedback(
           sessionVolumeIcon(volumeGain),
-          '${ref.read(appLanguageProviderInstanceProvider).tr('volume')} '
-          '${(displayValue * 100).round()}%',
+          progress: displayValue / sessionVolumeDisplayMaximum,
           persistent: true,
         );
         UiInteractionCoordinator.instance.scheduleThrottledCommit(
@@ -595,6 +645,8 @@ class _SessionVideoFullscreenPageState
     switch (mode) {
       case _FullscreenVideoPanMode.horizontalSeek:
         if (!cancelled && target != null) {
+          _skipAccumulationTimer?.cancel();
+          _pendingSkipTarget = null;
           unawaited(_playback.seekSession(widget.sessionId, target));
         }
         break;
@@ -619,9 +671,18 @@ class _SessionVideoFullscreenPageState
       case null:
         break;
     }
-    final feedback = _feedback.value;
-    if (feedback != null) {
-      _setFeedback(feedback.icon, feedback.text);
+    if (cancelled) {
+      _clearFeedback();
+    } else {
+      final feedback = _feedback.value;
+      if (feedback != null) {
+        _setFeedback(
+          feedback.icon,
+          progress: feedback.progress,
+          alignment: feedback.alignment,
+          timeout: _panReleaseFeedbackTimeout,
+        );
+      }
     }
     _scheduleControlsHide();
   }
@@ -639,10 +700,7 @@ class _SessionVideoFullscreenPageState
   void _handleDoubleTap() {
     final position = _doubleTapPosition;
     if (position == null) return;
-    final zone = sessionVideoGestureZone(
-      position.dx,
-      max(1, MediaQuery.sizeOf(context).width - 48),
-    );
+    final zone = sessionVideoGestureZone(position.dx, _doubleTapViewportWidth);
     if (zone == SessionVideoGestureZone.center) {
       final playing =
           _playback.sessionSnapshotById(widget.sessionId)?.playbackRequested ==
@@ -650,60 +708,32 @@ class _SessionVideoFullscreenPageState
       unawaited(
         AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
       );
-      _setFeedback(
-        playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-        ref
-            .read(appLanguageProviderInstanceProvider)
-            .tr(playing ? 'pause' : 'play'),
-      );
+      _setFeedback(playing ? Icons.pause_rounded : Icons.play_arrow_rounded);
       unawaited(_playback.toggleSessionPlayPause(widget.sessionId));
       _scheduleControlsHide();
       return;
     }
-    final gate = _positionGate;
-    if (gate == null ||
-        (gate.value.duration ?? Duration.zero) <= Duration.zero) {
-      return;
-    }
-    final delta = zone == SessionVideoGestureZone.left
-        ? const Duration(seconds: -5)
-        : const Duration(seconds: 5);
-    final target = sessionVideoSkipTarget(
-      position: gate.value.position,
-      duration: gate.value.duration ?? Duration.zero,
-      delta: delta,
-    );
     unawaited(
       AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
     );
-    _setFeedback(
-      zone == SessionVideoGestureZone.left
-          ? Icons.replay_5_rounded
-          : Icons.forward_5_rounded,
-      ref
-          .read(appLanguageProviderInstanceProvider)
-          .tr(
-            zone == SessionVideoGestureZone.left
-                ? 'seek_backward_five_seconds'
-                : 'seek_forward_five_seconds',
-          ),
+    final isLeft = zone == SessionVideoGestureZone.left;
+    _skipBy(
+      Duration(seconds: isLeft ? -5 : 5),
+      alignment: Alignment(isLeft ? -0.55 : 0.55, 0),
     );
-    unawaited(_playback.seekSession(widget.sessionId, target));
-    _scheduleControlsHide();
   }
 
   Future<void> _startTemporarySpeed() async {
-    if (_sliderInteracting || _temporarySpeedRequested) return;
+    if (_sliderInteracting || _temporarySpeedRequested || _panMode != null) {
+      return;
+    }
     _temporarySpeedRequested = true;
     final generation = ++_temporarySpeedGeneration;
     _controlsTimer?.cancel();
     unawaited(
       AppInteractionFeedback.trigger(AppInteractionFeedbackType.confirmation),
     );
-    final speedText = ref
-        .read(appLanguageProviderInstanceProvider)
-        .tr('temporary_double_speed');
-    _setFeedback(Icons.speed_rounded, speedText, persistent: true);
+    _setFeedback(Icons.speed_rounded, persistent: true);
     final ok = await _playback.setSessionTemporarySpeed(widget.sessionId, 2.0);
     if (generation != _temporarySpeedGeneration || !_temporarySpeedRequested) {
       await _playback.setSessionTemporarySpeed(widget.sessionId, null);
@@ -711,7 +741,7 @@ class _SessionVideoFullscreenPageState
     }
     if (!ok) {
       _temporarySpeedRequested = false;
-      _setFeedback(Icons.error_outline_rounded, speedText);
+      _setFeedback(Icons.error_outline_rounded);
       _showOperationFailure();
     }
   }
@@ -723,9 +753,8 @@ class _SessionVideoFullscreenPageState
     if (!shouldClear) return;
     final ok = await _playback.setSessionTemporarySpeed(widget.sessionId, null);
     if (!ok && showFailure) _showOperationFailure();
-    final feedback = _feedback.value;
-    if (feedback != null && mounted) {
-      _setFeedback(feedback.icon, feedback.text);
+    if (mounted) {
+      _clearFeedback();
       _scheduleControlsHide();
     }
   }
@@ -858,6 +887,8 @@ class _SessionVideoFullscreenPageState
       _activeTrackPath = activeSession.currentTrackPath;
       _activeCoverScope = coverScope;
       _activeCoverRevision = coverRevision;
+      _pendingSkipTarget = null;
+      _skipAccumulationTimer?.cancel();
       _coverFuture = library.playbackCoverPathFutureForTrack(track);
     }
     final baseControlTheme = ref.read(themeProviderInstanceProvider).darkTheme;
@@ -959,46 +990,56 @@ class _SessionVideoFullscreenPageState
                               ),
                             Positioned.fromRect(
                               rect: gestureRect,
-                              child: MouseRegion(
-                                cursor: _controlsVisible
-                                    ? SystemMouseCursors.click
-                                    : SystemMouseCursors.none,
-                                child: GestureDetector(
-                                  key: const ValueKey<String>(
-                                    'fullscreen_video_gesture_surface',
-                                  ),
-                                  excludeFromSemantics: true,
-                                  behavior: HitTestBehavior.opaque,
-                                  onTapDown: (details) =>
-                                      _lastPointerPosition =
-                                          gestureRect.topLeft +
-                                          details.localPosition,
-                                  onTap: _toggleControls,
-                                  onDoubleTapDown: (details) =>
-                                      _doubleTapPosition = details.localPosition,
-                                  onDoubleTap: _handleDoubleTap,
-                                  onLongPressStart: (_) =>
-                                      unawaited(_startTemporarySpeed()),
-                                  onLongPressEnd: (_) =>
-                                      unawaited(_restoreTemporarySpeed()),
-                                  onLongPressCancel: () =>
-                                      unawaited(_restoreTemporarySpeed()),
-                                  onPanStart: (details) => _handlePanStart(
-                                    details,
-                                    Size(
-                                      max(1, gestureRect.width),
-                                      max(1, gestureRect.height),
+                              child: Listener(
+                                behavior: HitTestBehavior.translucent,
+                                onPointerSignal: _handlePointerSignal,
+                                child: MouseRegion(
+                                  cursor: _controlsVisible
+                                      ? SystemMouseCursors.click
+                                      : SystemMouseCursors.none,
+                                  child: GestureDetector(
+                                    key: const ValueKey<String>(
+                                      'fullscreen_video_gesture_surface',
                                     ),
-                                  ),
-                                  onPanUpdate: _handlePanUpdate,
-                                  onPanEnd: (_) =>
-                                      _handlePanEnd(cancelled: false),
-                                  onPanCancel: () =>
-                                      _handlePanEnd(cancelled: true),
-                                  child: SessionVideoControlsTarget(
-                                    label: controlsLabel,
-                                    controlsVisible: _controlsVisible,
-                                    onToggle: _toggleControls,
+                                    excludeFromSemantics: true,
+                                    behavior: HitTestBehavior.opaque,
+                                    onTapDown: (details) =>
+                                        _lastPointerPosition =
+                                            gestureRect.topLeft +
+                                            details.localPosition,
+                                    onTap: _toggleControls,
+                                    onDoubleTapDown: (details) {
+                                      _doubleTapPosition =
+                                          details.localPosition;
+                                      _doubleTapViewportWidth = max(
+                                        1,
+                                        gestureRect.width,
+                                      );
+                                    },
+                                    onDoubleTap: _handleDoubleTap,
+                                    onLongPressStart: (_) =>
+                                        unawaited(_startTemporarySpeed()),
+                                    onLongPressEnd: (_) =>
+                                        unawaited(_restoreTemporarySpeed()),
+                                    onLongPressCancel: () =>
+                                        unawaited(_restoreTemporarySpeed()),
+                                    onPanStart: (details) => _handlePanStart(
+                                      details,
+                                      Size(
+                                        max(1, viewportSize.width),
+                                        max(1, viewportSize.height),
+                                      ),
+                                    ),
+                                    onPanUpdate: _handlePanUpdate,
+                                    onPanEnd: (_) =>
+                                        _handlePanEnd(cancelled: false),
+                                    onPanCancel: () =>
+                                        _handlePanEnd(cancelled: true),
+                                    child: SessionVideoControlsTarget(
+                                      label: controlsLabel,
+                                      controlsVisible: _controlsVisible,
+                                      onToggle: _toggleControls,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -1120,52 +1161,76 @@ class _SessionVideoFullscreenPageState
 
   Widget _buildFeedback() {
     return IgnorePointer(
-      child: Center(
-        child: ValueListenableBuilder<({IconData icon, String text})?>(
-          valueListenable: _feedback,
-          builder: (context, feedback, _) {
-            return AnimatedSwitcher(
-              switchOutCurve: kAppFadeCurve,
-              switchInCurve: kAppFadeCurve,
-              key: const ValueKey<String>('fullscreen_video_gesture_feedback'),
-              duration: MediaQuery.disableAnimationsOf(context)
-                  ? Duration.zero
-                  : kAppFadeDuration,
-              child: feedback == null
-                  ? const SizedBox.shrink(
-                      key: ValueKey<String>('fullscreen_video_feedback_empty'),
-                    )
-                  : Material(
+      child: ValueListenableBuilder<
+        ({IconData icon, double? progress, Alignment alignment})?
+      >(
+        valueListenable: _feedback,
+        builder: (context, feedback, _) {
+          final reducedMotion = MediaQuery.disableAnimationsOf(context);
+          final primaryColor = Theme.of(context).colorScheme.primary;
+          return AnimatedSwitcher(
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: ScaleTransition(
+                scale: Tween<double>(begin: 0.88, end: 1.0).animate(animation),
+                child: child,
+              ),
+            ),
+            key: const ValueKey<String>('fullscreen_video_gesture_feedback'),
+            duration: reducedMotion
+                ? Duration.zero
+                : const Duration(milliseconds: 180),
+            child: feedback == null
+                ? const SizedBox.shrink(
+                    key: ValueKey<String>('fullscreen_video_feedback_empty'),
+                  )
+                : Align(
+                    key: ValueKey<Alignment>(feedback.alignment),
+                    alignment: feedback.alignment,
+                    child: Material(
                       key: const ValueKey<String>(
                         'fullscreen_video_feedback_card',
                       ),
                       color: Colors.black.withValues(alpha: 0.68),
-                      borderRadius: BorderRadius.circular(18),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 22,
-                          vertical: 14,
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
+                      shape: const CircleBorder(),
+                      clipBehavior: Clip.antiAlias,
+                      child: SizedBox.square(
+                        dimension: 68,
+                        child: Stack(
+                          fit: StackFit.expand,
+                          alignment: Alignment.center,
                           children: [
-                            Icon(feedback.icon, color: Colors.white, size: 28),
-                            const SizedBox(width: 10),
-                            Text(
-                              feedback.text,
-                              style: const TextStyle(
+                            if (feedback.progress != null)
+                              Padding(
+                                padding: const EdgeInsets.all(4),
+                                child: CircularProgressIndicator(
+                                  value: feedback.progress!,
+                                  strokeWidth: 3,
+                                  strokeCap: StrokeCap.round,
+                                  backgroundColor: Colors.white.withValues(
+                                    alpha: 0.18,
+                                  ),
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    primaryColor,
+                                  ),
+                                ),
+                              ),
+                            Center(
+                              child: Icon(
+                                feedback.icon,
                                 color: Colors.white,
-                                fontSize: 18,
-                                fontWeight: FontWeight.w800,
+                                size: 30,
                               ),
                             ),
                           ],
                         ),
                       ),
                     ),
-            );
-          },
-        ),
+                  ),
+          );
+        },
       ),
     );
   }

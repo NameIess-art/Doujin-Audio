@@ -4,6 +4,7 @@ import com.doujin.audio.common.network.Socks5SocketFactory
 import com.doujin.audio.common.network.NetworkRouteDns
 import com.doujin.audio.common.network.NetworkRoute
 import com.doujin.audio.common.network.createClient
+import com.doujin.audio.common.network.isLocalOrPrivateHost
 import org.junit.Assert.*
 import org.junit.Test
 import java.net.ServerSocket
@@ -460,6 +461,110 @@ class NetworkRouteTest {
                 assertEquals("127.0.0.9", addresses.first().hostAddress)
                 exchange.get(3, TimeUnit.SECONDS)
             } finally {
+                executor.shutdownNow()
+            }
+        }
+    }
+
+    @Test
+    fun lanAndPrivateTargetsBypassConfiguredHttpSocksAndCustomDns() {
+        assertTrue(isLocalOrPrivateHost("127.0.0.1"))
+        assertTrue(isLocalOrPrivateHost("localhost"))
+        assertTrue(isLocalOrPrivateHost("nas.local"))
+        assertTrue(isLocalOrPrivateHost("192.168.1.50"))
+        assertTrue(isLocalOrPrivateHost("10.0.0.8"))
+        assertTrue(isLocalOrPrivateHost("172.16.5.4"))
+        assertTrue(isLocalOrPrivateHost("100.64.10.20"))
+        assertTrue(isLocalOrPrivateHost("[::1]"))
+        assertTrue(isLocalOrPrivateHost("[fd12:3456::1]"))
+        assertTrue(isLocalOrPrivateHost("[fe80::1%wlan0]"))
+        assertFalse(isLocalOrPrivateHost("172.32.0.1"))
+        assertFalse(isLocalOrPrivateHost("8.8.8.8"))
+        assertFalse(isLocalOrPrivateHost("api.asmr.one"))
+
+        val deadProxyPort = ServerSocket(0).use { it.localPort }
+        val customDnsLookups = mutableListOf<String>()
+        val customDns = object : Dns {
+            override fun lookup(hostname: String): List<InetAddress> {
+                customDnsLookups += hostname
+                return listOf(InetAddress.getByAddress(hostname, byteArrayOf(192.toByte(), 0, 2, 77)))
+            }
+        }
+
+        // HTTP proxy route bypasses proxySelector for private/LAN hosts while keeping proxy for public hosts.
+        val httpProxyClient = NetworkRoute("http", "127.0.0.1", deadProxyPort).createClient()
+        try {
+            assertEquals(listOf(Proxy.NO_PROXY), httpProxyClient.proxySelector.select(URI("http://192.168.1.25:42891/api/v1/info")))
+            assertEquals(listOf(Proxy.NO_PROXY), httpProxyClient.proxySelector.select(URI("http://nas.local:5005/webdav/")))
+            assertEquals(Proxy.Type.HTTP, httpProxyClient.proxySelector.select(URI("https://api.asmr.one/works")).single().type())
+        } finally {
+            httpProxyClient.connectionPool.evictAll()
+            httpProxyClient.dispatcher.executorService.shutdownNow()
+        }
+
+        // System proxy + custom DNS bypasses both proxySelector and custom DNS for LAN/loopback targets.
+        val systemClient = NetworkRoute(mode = "system", dns = "192.0.2.53").createClient(
+            systemProxySelector = object : ProxySelector() {
+                override fun select(uri: URI): List<Proxy> =
+                    listOf(Proxy(Proxy.Type.HTTP, InetSocketAddress.createUnresolved("127.0.0.1", deadProxyPort)))
+                override fun connectFailed(uri: URI, address: SocketAddress, error: IOException) {}
+            },
+            directDns = customDns,
+        )
+        try {
+            assertEquals(listOf(Proxy.NO_PROXY), systemClient.proxySelector.select(URI("http://10.1.2.3:42891/")))
+            val loopbackResolved = systemClient.dns.lookup("127.0.0.1")
+            assertEquals("127.0.0.1", loopbackResolved.first().hostAddress)
+            assertTrue(customDnsLookups.isEmpty())
+        } finally {
+            systemClient.connectionPool.evictAll()
+            systemClient.dispatcher.executorService.shutdownNow()
+        }
+
+        // System proxy with default DNS still bypasses proxySelector for LAN targets.
+        val defaultDnsSystemClient = NetworkRoute(mode = "system", dns = "").createClient(
+            systemProxySelector = object : ProxySelector() {
+                override fun select(uri: URI): List<Proxy> =
+                    listOf(Proxy(Proxy.Type.HTTP, InetSocketAddress.createUnresolved("127.0.0.1", deadProxyPort)))
+                override fun connectFailed(uri: URI, address: SocketAddress, error: IOException) {}
+            },
+        )
+        try {
+            assertEquals(
+                listOf(Proxy.NO_PROXY),
+                defaultDnsSystemClient.proxySelector.select(URI("http://192.168.1.20:17580/api/v1/stream/abc")),
+            )
+            assertEquals(
+                Proxy.Type.HTTP,
+                defaultDnsSystemClient.proxySelector.select(URI("https://api.asmr.one/works")).single().type(),
+            )
+        } finally {
+            defaultDnsSystemClient.connectionPool.evictAll()
+            defaultDnsSystemClient.dispatcher.executorService.shutdownNow()
+        }
+
+        // SOCKS5 socket factory connects directly to loopback/LAN server even when SOCKS5 proxy is unreachable.
+        ServerSocket(0, 1, InetAddress.getByName("127.0.0.1")).use { lanServer ->
+            val executor = Executors.newSingleThreadExecutor()
+            val socksClient = NetworkRoute("socks5", "127.0.0.1", deadProxyPort, true, "u", "p").createClient()
+            try {
+                val serve = executor.submit {
+                    lanServer.soTimeout = 5_000
+                    lanServer.accept().use { peer ->
+                        val reader = peer.getInputStream().bufferedReader()
+                        assertEquals("GET /ping HTTP/1.1", reader.readLine())
+                        generateSequence { reader.readLine()?.takeIf { it.isNotEmpty() } }.count()
+                        peer.getOutputStream().write("HTTP/1.1 200 OK\r\nContent-Length: 4\r\nConnection: close\r\n\r\npong".toByteArray())
+                    }
+                }
+                socksClient.newCall(Request.Builder().url("http://127.0.0.1:${lanServer.localPort}/ping").build()).execute().use { resp ->
+                    assertEquals(200, resp.code)
+                    assertEquals("pong", resp.body!!.string())
+                }
+                serve.get(5, TimeUnit.SECONDS)
+            } finally {
+                socksClient.connectionPool.evictAll()
+                socksClient.dispatcher.executorService.shutdownNow()
                 executor.shutdownNow()
             }
         }

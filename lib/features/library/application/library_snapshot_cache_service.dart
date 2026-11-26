@@ -150,6 +150,7 @@ LibraryCategoryFilterResult filterLibraryCategoryEntries(
     AudioLibraryCategoryType.tags => request.snapshot.tagTerms,
     AudioLibraryCategoryType.voiceActors => request.snapshot.voiceActorTerms,
     AudioLibraryCategoryType.circles => request.snapshot.circleTerms,
+    AudioLibraryCategoryType.status => request.snapshot.statusTerms,
     AudioLibraryCategoryType.all => const <String>[],
   };
   return (

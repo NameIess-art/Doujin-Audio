@@ -513,6 +513,8 @@ class _LibrarySearchCorpus {
     return matchesSearchMetadata(
       filters,
       rating: detail?.rating,
+      userRating: detail?.userRating,
+      listenStatus: detail?.listenStatus,
       duration: duration,
       releaseDate: detail?.releaseDate,
     );
@@ -527,6 +529,8 @@ class _LibrarySearchCorpus {
     final hasText = terms.all.isNotEmpty || terms.any.isNotEmpty;
     final hasMetadataFilters =
         filters.minimumRating != null ||
+        filters.minimumUserRating != null ||
+        filters.listenStatus != null ||
         filters.minimumDuration != null ||
         filters.maximumDuration != null ||
         filters.firstReleaseDate != null ||

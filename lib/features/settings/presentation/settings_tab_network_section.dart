@@ -476,6 +476,11 @@ class _NetworkSettingsControlsState
           ),
         ],
       ),
+      if (defaultTargetPlatform == TargetPlatform.windows)
+        _SettingsSectionCard(
+          title: i18n.tr('lan_server_title'),
+          children: const [_WindowsLanServerSettingsCard()],
+        ),
     ]);
   }
 
@@ -497,12 +502,17 @@ class _NetworkSettingsControlsState
       NetworkProbeStatus.untested => i18n.tr('network_untested'),
       NetworkProbeStatus.testing => i18n.tr('network_testing'),
       NetworkProbeStatus.success => '${result.milliseconds} ms',
+      NetworkProbeStatus.serverUnavailable =>
+        result.statusCode != null
+            ? '${i18n.tr('network_server_unavailable')} (${result.statusCode})'
+            : i18n.tr('network_server_unavailable'),
       NetworkProbeStatus.failed => i18n.tr('network_failed'),
     };
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final tokens = AppDesignTokens.of(context);
     final color = switch (result.status) {
+      NetworkProbeStatus.serverUnavailable => tokens.warning,
       NetworkProbeStatus.failed => cs.error,
       NetworkProbeStatus.success when result.milliseconds! < 300 =>
         tokens.success,
@@ -543,6 +553,252 @@ class _NetworkSettingsControlsState
           child: Text(i18n.tr('network_test')),
         ),
       ],
+    );
+  }
+}
+
+class _WindowsLanServerSettingsCard extends ConsumerStatefulWidget {
+  const _WindowsLanServerSettingsCard();
+
+  @override
+  ConsumerState<_WindowsLanServerSettingsCard> createState() =>
+      _WindowsLanServerSettingsCardState();
+}
+
+class _WindowsLanServerSettingsCardState
+    extends ConsumerState<_WindowsLanServerSettingsCard> {
+  late final TextEditingController _portController;
+  final FocusNode _portFocusNode = FocusNode();
+  bool _busy = false;
+  bool _showPin = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final server = ref.read(lanMediaServerServiceProvider);
+    _portController = TextEditingController(text: '${server.settings.port}');
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      await server.initialize();
+      if (!mounted || _portFocusNode.hasFocus) return;
+      final portText = '${server.settings.port}';
+      if (_portController.text != portText) {
+        _portController.text = portText;
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _portFocusNode.dispose();
+    _portController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _update(
+    Future<void> Function() action, {
+    String? errorKey,
+  }) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await action();
+    } on Object {
+      if (!mounted) return;
+      final i18n = ref.read(appLanguageProviderInstanceProvider);
+      showAppSnackBar(
+        context,
+        i18n.tr(errorKey ?? 'operation_failed_retry'),
+        tone: AppFeedbackTone.destructive,
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final server = ref.watch(lanMediaServerServiceProvider);
+    final cfg = server.settings;
+    final cs = Theme.of(context).colorScheme;
+    final activePort = server.boundPort ?? cfg.port;
+
+    return ColoredBox(
+      color: cs.surfaceContainerLow,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SwitchListTile(
+              key: const ValueKey('lan-server-enable-switch'),
+              contentPadding: EdgeInsets.zero,
+              title: Text(i18n.tr('lan_server_enable')),
+              subtitle: Text(
+                i18n.tr('lan_server_subtitle'),
+                style: TextStyle(color: cs.onSurfaceVariant),
+              ),
+              value: cfg.enabled,
+              onChanged: _busy
+                  ? null
+                  : (enabled) => _update(
+                      () => server.updateSettings(
+                        cfg.copyWith(enabled: enabled),
+                      ),
+                    ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              contextMenuBuilder: buildAppEditableTextMenu,
+              controller: _portController,
+              focusNode: _portFocusNode,
+              enabled: !_busy,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: InputDecoration(
+                labelText: i18n.tr('lan_server_port'),
+              ),
+            ),
+            const SizedBox(height: 12),
+            AppPillButton(
+              onPressed: _busy
+                  ? null
+                  : () {
+                      final parsed = int.tryParse(_portController.text.trim());
+                      if (parsed == null || parsed < 1024 || parsed > 65535) {
+                        showAppSnackBar(
+                          context,
+                          i18n.tr('network_invalid_value'),
+                          tone: AppFeedbackTone.destructive,
+                        );
+                        return;
+                      }
+                      unawaited(
+                        _update(
+                          () => server.updateSettings(
+                            cfg.copyWith(port: parsed),
+                          ),
+                        ),
+                      );
+                    },
+              child: Text(i18n.tr('confirm')),
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(i18n.tr('lan_server_require_pin')),
+              value: cfg.requireAccessCode,
+              onChanged: _busy
+                  ? null
+                  : (v) => _update(
+                      () => server.updateSettings(
+                        cfg.copyWith(requireAccessCode: v),
+                      ),
+                    ),
+            ),
+            if (cfg.requireAccessCode && server.accessCode.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    Text(
+                      '${i18n.tr('remote_source_access_code')}: '
+                      '${_showPin ? server.accessCode : '••••••'}',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      tooltip: i18n.tr(
+                        _showPin ? 'hide_password' : 'show_password',
+                      ),
+                      icon: Icon(
+                        _showPin
+                            ? Icons.visibility_off_outlined
+                            : Icons.visibility_outlined,
+                        size: 18,
+                      ),
+                      onPressed: () => setState(() => _showPin = !_showPin),
+                    ),
+                    IconButton(
+                      tooltip: i18n.tr('element_copy'),
+                      icon: const Icon(Icons.content_copy_rounded, size: 18),
+                      onPressed: () {
+                        Clipboard.setData(
+                          ClipboardData(text: server.accessCode),
+                        );
+                        showAppSnackBar(
+                          context,
+                          i18n.tr('copied_to_clipboard'),
+                          tone: AppFeedbackTone.success,
+                        );
+                      },
+                    ),
+                    IconButton(
+                      tooltip: i18n.tr('lan_server_regenerate_pin'),
+                      icon: const Icon(Icons.refresh_rounded, size: 18),
+                      onPressed: _busy
+                          ? null
+                          : () => _update(server.regenerateAccessCode),
+                    ),
+                  ],
+                ),
+              ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(i18n.tr('lan_server_allow_sync')),
+              value: cfg.allowSync,
+              onChanged: _busy
+                  ? null
+                  : (v) => _update(
+                      () => server.updateSettings(cfg.copyWith(allowSync: v)),
+                    ),
+            ),
+            SwitchListTile(
+              key: const ValueKey('lan-server-allow-edit-switch'),
+              contentPadding: EdgeInsets.zero,
+              title: Text(i18n.tr('lan_server_allow_edit')),
+              value: cfg.allowRemoteEdit,
+              onChanged: _busy
+                  ? null
+                  : (v) => _update(
+                      () => server.updateSettings(
+                        cfg.copyWith(allowRemoteEdit: v),
+                      ),
+                    ),
+            ),
+            if (server.isRunning && server.localAddresses.isNotEmpty) ...[
+              const Divider(height: 20),
+              Text(
+                i18n.tr('lan_server_addresses'),
+                style: Theme.of(
+                  context,
+                ).textTheme.labelLarge?.copyWith(color: cs.primary),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final ip in server.localAddresses)
+                    ActionChip(
+                      avatar: const Icon(Icons.copy_rounded, size: 14),
+                      label: Text('http://$ip:$activePort'),
+                      onPressed: () {
+                        final url = 'http://$ip:$activePort';
+                        Clipboard.setData(ClipboardData(text: url));
+                        showAppSnackBar(
+                          context,
+                          i18n.tr('copied_to_clipboard'),
+                          tone: AppFeedbackTone.success,
+                        );
+                      },
+                    ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }

@@ -231,6 +231,14 @@ class AsmrPreferencesStore {
     await _repository.saveWorkList('favorites', works);
   }
 
+  Future<List<AsmrWork>> loadReviewedWorks() async {
+    return _repository.loadWorkList('reviewed');
+  }
+
+  Future<void> saveReviewedWorks(List<AsmrWork> works) async {
+    await _repository.saveWorkList('reviewed', works);
+  }
+
   Future<List<AsmrWork>> loadHistoryWorks() async {
     return _repository.loadWorkList('history');
   }
@@ -261,11 +269,13 @@ class AsmrPreferencesStore {
     required List<AsmrWork> favoriteWorks,
     required List<AsmrWork> historyWorks,
     required List<AsmrSyncOperation> operations,
+    List<AsmrWork> reviewedWorks = const <AsmrWork>[],
   }) {
     return _repository.saveAccountSyncState(
       favoriteWorks: favoriteWorks,
       historyWorks: historyWorks,
       operations: operations,
+      reviewedWorks: reviewedWorks,
     );
   }
 
@@ -277,6 +287,18 @@ class AsmrPreferencesStore {
     works: works,
     favorite: favorite,
     operations: operations,
+  );
+
+  Future<void> saveReviewState({
+    required AsmrWork work,
+    required bool favorite,
+    required bool reviewed,
+    AsmrSyncOperation? operation,
+  }) => _repository.saveReviewState(
+    work: work,
+    favorite: favorite,
+    reviewed: reviewed,
+    operation: operation,
   );
 
   Future<DateTime?> loadLastSyncAt() async {

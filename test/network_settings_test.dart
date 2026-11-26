@@ -295,7 +295,11 @@ void main() {
         pending.complete();
         return;
       }
-      request.response.statusCode = request.uri.path == '/ok' ? 204 : 403;
+      request.response.statusCode = switch (request.uri.path) {
+        '/ok' => 204,
+        '/bad-gateway' => 502,
+        _ => 403,
+      };
       await request.response.close();
     });
     final probe = NetworkServiceProbe(
@@ -308,6 +312,9 @@ void main() {
     expect(probe.result('one').milliseconds, isNonNegative);
     await probe.test('two', uri('/forbidden'));
     expect(probe.result('two').status, NetworkProbeStatus.failed);
+    await probe.test('three', uri('/bad-gateway'));
+    expect(probe.result('three').status, NetworkProbeStatus.serverUnavailable);
+    expect(probe.result('three').statusCode, 502);
     expect(probe.result('one').status, NetworkProbeStatus.success);
     final test = probe.test('one', uri('/pending'));
     await pending.future;

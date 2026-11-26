@@ -8,6 +8,7 @@ import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/core/translation/text_translation_service.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
 import 'package:doujin_audio/features/player/application/subtitle_ai_engine.dart';
+import 'package:doujin_audio/features/player/application/subtitle_asr_postprocess.dart';
 import 'package:doujin_audio/features/player/application/subtitle_generation.dart';
 import 'package:doujin_audio/features/player/application/subtitle_model_store.dart';
 import 'package:flutter/services.dart';
@@ -318,4 +319,156 @@ void main() {
     },
     skip: !Platform.isWindows && !Platform.isAndroid,
   );
+
+  test(
+    'prepareTranscription saves partial checkpoint on cancel and resumes from nextFrame',
+    () async {
+      final models = _ResolvedBundleModels();
+      const sr = 16000;
+      const totalFrames = 90 * sr;
+      final secondWindowReached = Completer<void>();
+      final blockSecondWindow = Completer<void>();
+      final plannedOffsets = <int>[];
+      var cancelFlag = false;
+      final cancellation = Completer<void>();
+
+      SubtitleAiEngine buildEngine({required bool blockOnSecond}) {
+        return SubtitleAiEngine(
+          models: models,
+          stereoAudioDecoder: (_, output, _, _) async {
+            await output.writeAsBytes(List<int>.filled(totalFrames * 4, 0));
+          },
+          transcriptionDriverFactory: (_, _) async => _FakeAsrDriver(
+            onPlanWindow: (startFrame, frameCount, isFinal) async {
+              plannedOffsets.add(startFrame);
+              if (blockOnSecond && startFrame > 0) {
+                if (!secondWindowReached.isCompleted) {
+                  secondWindowReached.complete();
+                }
+                await blockSecondWindow.future;
+              }
+              return VadWindowPlan(
+                slices: [(startFrame: sr, endFrame: 3 * sr)],
+                nextFrameOffset: startFrame + frameCount,
+              );
+            },
+            onTranscribeSlice: (windowStartFrame, startFrame, endFrame) async {
+              final startSec = (windowStartFrame + startFrame) / sr;
+              final endSec = (windowStartFrame + endFrame) / sr;
+              return [
+                AsrRawSegment(
+                  text: windowStartFrame == 0 ? '最初の台詞です。' : '続きの台詞です。',
+                  startSeconds: startSec,
+                  endSeconds: endSec,
+                ),
+              ];
+            },
+          ),
+        );
+      }
+
+      final firstRun = buildEngine(blockOnSecond: true).prepareTranscription(
+        'content://media/track_resume.mp3',
+        isCancelled: () => cancelFlag,
+        cancellation: cancellation.future,
+      );
+      final cancelledAssertion = expectLater(
+        firstRun,
+        throwsA(isA<SubtitleTaskCancelled>()),
+      );
+      await secondWindowReached.future.timeout(const Duration(seconds: 2));
+      cancelFlag = true;
+      cancellation.complete();
+      await cancelledAssertion;
+      if (!blockSecondWindow.isCompleted) blockSecondWindow.complete();
+      expect(plannedOffsets, [0, 60 * sr]);
+
+      plannedOffsets.clear();
+      final draft = await buildEngine(
+        blockOnSecond: false,
+      ).prepareTranscription('content://media/track_resume.mp3');
+      expect(plannedOffsets, [60 * sr]);
+      expect(draft, isNotNull);
+      expect(draft!.kind, SubtitleDraftKind.transcription);
+      expect(draft.cues.map((c) => c.text).toList(), ['最初の台詞です。', '続きの台詞です。']);
+    },
+    skip: !Platform.isWindows && !Platform.isAndroid,
+  );
+
+  test(
+    'prepareTranscription returns null on silent audio and marks job noMatch',
+    () async {
+      final engine = SubtitleAiEngine(
+        models: _ResolvedBundleModels(),
+        stereoAudioDecoder: (_, output, _, _) async {
+          await output.writeAsBytes(List<int>.filled(16000 * 5 * 4, 0));
+        },
+        transcriptionDriverFactory: (_, _) async => _FakeAsrDriver(
+          onPlanWindow: (startFrame, frameCount, _) async => VadWindowPlan(
+            slices: const [],
+            nextFrameOffset: startFrame + frameCount,
+          ),
+          onTranscribeSlice: (_, _, _) async => const [],
+        ),
+      );
+      final service = PlaybackSubtitleService(
+        trackResolver: (_) => null,
+        aiEngine: engine,
+        subtitlesDirectoryResolver: () async => support,
+      );
+      addTearDown(service.dispose);
+      expect(service.startTranscriptionGeneration('silent.mp3'), isTrue);
+      await _waitUntil(
+        () => service.generationJob?.status == SubtitleGenerationStatus.noMatch,
+      );
+      expect(service.generationJob!.kind, SubtitleDraftKind.transcription);
+    },
+    skip: !Platform.isWindows && !Platform.isAndroid,
+  );
+}
+
+class _ResolvedBundleModels extends SubtitleModelStore {
+  @override
+  Future<String> ensure(
+    SubtitleModelSpec spec, {
+    void Function(double fraction, int received, int total)? onProgress,
+    bool Function()? isCancelled,
+  }) async => spec.name;
+}
+
+class _FakeAsrDriver implements SubtitleTranscriptionDriver {
+  _FakeAsrDriver({
+    required this.onPlanWindow,
+    required this.onTranscribeSlice,
+  });
+
+  final Future<VadWindowPlan> Function(
+    int windowStartFrame,
+    int frameCount,
+    bool isFinalWindow,
+  )
+  onPlanWindow;
+  final Future<List<AsrRawSegment>> Function(
+    int windowStartFrame,
+    int startFrame,
+    int endFrame,
+  )
+  onTranscribeSlice;
+
+  @override
+  Future<VadWindowPlan> planWindow({
+    required Uint8List stereoS16Le,
+    required int windowStartFrame,
+    required bool isFinalWindow,
+  }) => onPlanWindow(windowStartFrame, stereoS16Le.length ~/ 4, isFinalWindow);
+
+  @override
+  Future<List<AsrRawSegment>> transcribeSlice({
+    required int windowStartFrame,
+    required int startFrame,
+    required int endFrame,
+  }) => onTranscribeSlice(windowStartFrame, startFrame, endFrame);
+
+  @override
+  Future<void> close() async {}
 }

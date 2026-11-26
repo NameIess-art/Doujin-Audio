@@ -3,11 +3,27 @@ import 'package:path/path.dart' as path;
 
 import '../../../core/app_language.dart';
 import '../../../core/immutable_collections.dart';
+import '../../../core/media/audio_detail.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/natural_sort.dart';
 import '../../../core/media/path_matcher.dart';
 
+export '../../../core/media/audio_detail.dart' show WorkListenStatus;
+
 enum AsmrCatalogSource { asmrOne, japaneseAsmr }
+
+enum AsmrFavoritesStatusFilter {
+  marked(WorkListenStatus.marked),
+  listening(WorkListenStatus.listening),
+  listened(WorkListenStatus.listened),
+  replay(WorkListenStatus.replay),
+  postponed(WorkListenStatus.postponed),
+  all(null);
+
+  const AsmrFavoritesStatusFilter(this.listenStatus);
+
+  final WorkListenStatus? listenStatus;
+}
 
 final _workCodePattern = RegExp(r'^(RJ|UND|UN)[-_ ]?(\d+)$');
 final _dmmCodePattern = RegExp(r'^D_(\d+)$');
@@ -125,7 +141,9 @@ enum AsmrContentLanguage {
 enum AsmrSyncOperationType {
   favoriteAdd,
   favoriteRemove,
-  historyListening;
+  historyListening,
+  reviewUpsert,
+  reviewDelete;
 
   static AsmrSyncOperationType fromName(String? name) {
     return AsmrSyncOperationType.values.firstWhere(
@@ -153,28 +171,50 @@ class AsmrReviewRecord {
     required this.work,
     required this.progress,
     required this.updatedAt,
+    this.userRating,
+    this.reviewText = '',
   });
 
   final AsmrWork work;
   final String progress;
   final DateTime? updatedAt;
+  final int? userRating;
+  final String reviewText;
+
+  WorkListenStatus? get listenStatus =>
+      WorkListenStatus.tryFromWireValue(progress);
 
   bool get hasProtectedProgress =>
-      progress == 'marked' ||
-      progress == 'listened' ||
-      progress == 'replay' ||
-      progress == 'postponed';
+      listenStatus?.isProtectedFromAutoListening ?? false;
 
   factory AsmrReviewRecord.fromJson(
     Map<String, dynamic> json, {
     AsmrContentLanguage language = AsmrContentLanguage.zh,
   }) {
+    final updatedAt = AsmrWork._dateTimeOrNull(
+      json['updated_at'] ?? json['updatedAt'] ?? json['reviewUpdatedAt'],
+    );
+    final progress = (json['progress'] as String?) ?? '';
+    final listenStatus = WorkListenStatus.tryFromWireValue(progress);
+    final userRating = AsmrWork._userRatingOrNull(json['userRating']);
+    final reviewText = AudioDetail.normalizeReviewText(
+      (json['review_text'] as String?) ?? (json['reviewText'] as String?) ?? '',
+    );
+    final parsedWork = AsmrWork.fromJson(json, language: language);
     return AsmrReviewRecord(
-      work: AsmrWork.fromJson(json, language: language),
-      progress: (json['progress'] as String?) ?? '',
-      updatedAt: AsmrWork._dateTimeOrNull(
-        json['updated_at'] ?? json['updatedAt'],
+      work: parsedWork.copyWith(
+        listenStatus: listenStatus,
+        clearListenStatus: listenStatus == null,
+        isFavorite: listenStatus == WorkListenStatus.marked,
+        userRating: userRating,
+        clearUserRating: userRating == null,
+        reviewText: reviewText,
+        reviewUpdatedAt: updatedAt ?? parsedWork.reviewUpdatedAt,
       ),
+      progress: progress,
+      updatedAt: updatedAt,
+      userRating: userRating,
+      reviewText: reviewText,
     );
   }
 }
@@ -187,6 +227,10 @@ class AsmrSyncOperation {
     required this.sourceId,
     required this.createdAt,
     this.retryCount = 0,
+    this.progress,
+    this.userRating,
+    this.reviewText,
+    this.hasReviewPayload = false,
   });
 
   final AsmrSyncOperationType type;
@@ -194,14 +238,31 @@ class AsmrSyncOperation {
   final String sourceId;
   final DateTime createdAt;
   final int retryCount;
+  final String? progress;
+  final int? userRating;
+  final String? reviewText;
+  final bool hasReviewPayload;
 
-  AsmrSyncOperation copyWith({int? retryCount}) {
+  AsmrSyncOperation copyWith({
+    int? retryCount,
+    String? progress,
+    bool clearProgress = false,
+    int? userRating,
+    bool clearUserRating = false,
+    String? reviewText,
+    bool clearReviewText = false,
+    bool? hasReviewPayload,
+  }) {
     return AsmrSyncOperation(
       type: type,
       workId: workId,
       sourceId: sourceId,
       createdAt: createdAt,
       retryCount: retryCount ?? this.retryCount,
+      progress: clearProgress ? null : (progress ?? this.progress),
+      userRating: clearUserRating ? null : (userRating ?? this.userRating),
+      reviewText: clearReviewText ? null : (reviewText ?? this.reviewText),
+      hasReviewPayload: hasReviewPayload ?? this.hasReviewPayload,
     );
   }
 
@@ -211,6 +272,10 @@ class AsmrSyncOperation {
     'sourceId': sourceId,
     'createdAt': createdAt.toIso8601String(),
     'retryCount': retryCount,
+    'progress': progress,
+    'userRating': userRating,
+    'reviewText': reviewText,
+    'hasReviewPayload': hasReviewPayload,
   };
 
   factory AsmrSyncOperation.fromJson(Map<String, dynamic> json) {
@@ -222,6 +287,10 @@ class AsmrSyncOperation {
           AsmrWork._dateTimeOrNull(json['createdAt']) ??
           DateTime.fromMillisecondsSinceEpoch(0),
       retryCount: (json['retryCount'] as num?)?.toInt() ?? 0,
+      progress: json['progress'] as String?,
+      userRating: AsmrWork._userRatingOrNull(json['userRating']),
+      reviewText: json['reviewText'] as String?,
+      hasReviewPayload: json['hasReviewPayload'] as bool? ?? false,
     );
   }
 }
@@ -293,8 +362,21 @@ class AsmrWork {
     List<int> tagIds = const [],
     List<AsmrWorkResource>? resources,
     this.hasSubtitle = false,
-    this.isFavorite = false,
-  }) : voiceActors = immutableList(voiceActors),
+    bool isFavorite = false,
+    WorkListenStatus? listenStatus,
+    int? userRating,
+    String reviewText = '',
+    this.reviewUpdatedAt,
+  }) : listenStatus =
+           listenStatus ?? (isFavorite ? WorkListenStatus.marked : null),
+       isFavorite = listenStatus != null
+           ? listenStatus == WorkListenStatus.marked
+           : isFavorite,
+       userRating = userRating != null && userRating >= 1 && userRating <= 5
+           ? userRating
+           : null,
+       reviewText = AudioDetail.normalizeReviewText(reviewText),
+       voiceActors = immutableList(voiceActors),
        tags = immutableList(tags),
        tagIds = immutableList(tagIds),
        resources = _resolveResources(
@@ -375,6 +457,13 @@ class AsmrWork {
   final List<int> tagIds;
   final bool hasSubtitle;
   final bool isFavorite;
+  final WorkListenStatus? listenStatus;
+  final int? userRating;
+  final String reviewText;
+  final DateTime? reviewUpdatedAt;
+
+  bool get hasUserReview =>
+      listenStatus != null || userRating != null || reviewText.isNotEmpty;
 
   final List<AsmrWorkResource> resources;
   AsmrWorkResource? resourceFor(AsmrCatalogSource source) =>
@@ -429,10 +518,46 @@ class AsmrWork {
         ? this
         : other;
     final merged = preferred.mergeResources([...resources, ...other.resources]);
-    final favorite = isFavorite || other.isFavorite;
-    return merged.isFavorite == favorite
-        ? merged
-        : merged.copyWith(isFavorite: favorite);
+    final AsmrWork reviewSource;
+    if (!hasUserReview && !other.hasUserReview) {
+      final favorite = isFavorite || other.isFavorite;
+      return merged.isFavorite == favorite
+          ? merged
+          : merged.copyWith(isFavorite: favorite);
+    } else if (hasUserReview && !other.hasUserReview) {
+      reviewSource = this;
+    } else if (!hasUserReview && other.hasUserReview) {
+      reviewSource = other;
+    } else {
+      final selfTime = reviewUpdatedAt;
+      final otherTime = other.reviewUpdatedAt;
+      if (selfTime != null && otherTime != null) {
+        reviewSource = otherTime.isBefore(selfTime) ? this : other;
+      } else if (otherTime != null) {
+        reviewSource = other;
+      } else if (selfTime != null) {
+        reviewSource = this;
+      } else {
+        reviewSource = other;
+      }
+    }
+    if (merged.listenStatus == reviewSource.listenStatus &&
+        merged.isFavorite == reviewSource.isFavorite &&
+        merged.userRating == reviewSource.userRating &&
+        merged.reviewText == reviewSource.reviewText &&
+        merged.reviewUpdatedAt == reviewSource.reviewUpdatedAt) {
+      return merged;
+    }
+    return merged.copyWith(
+      listenStatus: reviewSource.listenStatus,
+      clearListenStatus: reviewSource.listenStatus == null,
+      isFavorite: reviewSource.isFavorite,
+      userRating: reviewSource.userRating,
+      clearUserRating: reviewSource.userRating == null,
+      reviewText: reviewSource.reviewText,
+      reviewUpdatedAt: reviewSource.reviewUpdatedAt,
+      clearReviewUpdatedAt: reviewSource.reviewUpdatedAt == null,
+    );
   }
 
   String get preferredCoverUrl {
@@ -443,7 +568,29 @@ class AsmrWork {
     return '';
   }
 
-  AsmrWork copyWith({bool? isFavorite, List<AsmrWorkResource>? resources}) {
+  AsmrWork copyWith({
+    bool? isFavorite,
+    List<AsmrWorkResource>? resources,
+    WorkListenStatus? listenStatus,
+    bool clearListenStatus = false,
+    int? userRating,
+    bool clearUserRating = false,
+    String? reviewText,
+    DateTime? reviewUpdatedAt,
+    bool clearReviewUpdatedAt = false,
+  }) {
+    final resolvedListenStatus = clearListenStatus
+        ? null
+        : listenStatus ??
+              (isFavorite == true && this.listenStatus == null
+                  ? WorkListenStatus.marked
+                  : (isFavorite == false &&
+                            this.listenStatus == WorkListenStatus.marked
+                        ? null
+                        : this.listenStatus));
+    final resolvedFavorite = resolvedListenStatus != null
+        ? resolvedListenStatus == WorkListenStatus.marked
+        : (isFavorite ?? false);
     return AsmrWork(
       id:
           (resources ?? this.resources)
@@ -469,7 +616,13 @@ class AsmrWork {
       tags: tags,
       tagIds: tagIds,
       hasSubtitle: hasSubtitle,
-      isFavorite: isFavorite ?? this.isFavorite,
+      isFavorite: resolvedFavorite,
+      listenStatus: resolvedListenStatus,
+      userRating: clearUserRating ? null : (userRating ?? this.userRating),
+      reviewText: reviewText ?? this.reviewText,
+      reviewUpdatedAt: clearReviewUpdatedAt
+          ? null
+          : (reviewUpdatedAt ?? this.reviewUpdatedAt),
       resources: resources ?? this.resources,
     );
   }
@@ -495,6 +648,10 @@ class AsmrWork {
     'tagIds': tagIds,
     'hasSubtitle': hasSubtitle,
     'isFavorite': isFavorite,
+    'listenStatus': listenStatus?.wireValue,
+    'userRating': userRating,
+    'reviewText': reviewText,
+    'reviewUpdatedAt': reviewUpdatedAt?.toIso8601String(),
     'workKey': workKey,
     'resources': resources
         .map((resource) => resource.toJson())
@@ -520,6 +677,12 @@ class AsmrWork {
         })
         .where((item) => item.isNotEmpty)
         .toList(growable: false);
+    final listenStatus = WorkListenStatus.tryFromWireValue(
+      (json['listenStatus'] as String?) ?? (json['progress'] as String?),
+    );
+    final isFavorite =
+        listenStatus == WorkListenStatus.marked ||
+        (listenStatus == null && (json['isFavorite'] as bool? ?? false));
     return AsmrWork(
       id: (json['id'] as num?)?.toInt() ?? 0,
       title: _localizedText(json, language, 'title'),
@@ -574,12 +737,30 @@ class AsmrWork {
           json['hasSubtitle'] as bool? ??
           json['has_subtitle'] as bool? ??
           false,
-      isFavorite: json['isFavorite'] as bool? ?? false,
+      isFavorite: isFavorite,
+      listenStatus: listenStatus,
+      userRating: _userRatingOrNull(json['userRating']),
+      reviewText: AudioDetail.normalizeReviewText(
+        (json['reviewText'] as String?) ??
+            (json['review_text'] as String?) ??
+            '',
+      ),
+      reviewUpdatedAt: _dateTimeOrNull(
+        json['reviewUpdatedAt'] ?? json['updated_at'] ?? json['updatedAt'],
+      ),
       resources: (json['resources'] as List?)
           ?.whereType<Map<Object?, Object?>>()
           .map((resource) => AsmrWorkResource.fromJson(resource.cast()))
           .toList(),
     );
+  }
+
+  static int? _userRatingOrNull(Object? value) {
+    if (value is num) {
+      final parsed = value.toInt();
+      if (parsed >= 1 && parsed <= 5) return parsed;
+    }
+    return null;
   }
 
   static List<String> voiceActorsFromJson(Map<String, dynamic> json) =>
@@ -893,6 +1074,7 @@ const Set<String> _asmrAudioExtensions = <String>{
   '.opus',
   '.wav',
   '.flac',
+  '.3gp',
   '.mp4',
   '.m4v',
   '.webm',
@@ -920,6 +1102,9 @@ const Set<String> _asmrImageExtensions = <String>{
   '.webp',
   '.gif',
   '.bmp',
+  '.avif',
+  '.heic',
+  '.heif',
 };
 
 String _asmrMatchingStem(String value) {

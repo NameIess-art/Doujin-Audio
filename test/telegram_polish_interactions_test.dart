@@ -249,10 +249,12 @@ void main() {
         await dismiss.moveBy(const Offset(0, 156));
         await tester.pump(const Duration(milliseconds: 16));
         expectStableSubtitle();
+        final releaseTop = tester.getTopLeft(timeline).dy;
         await dismiss.up();
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 32));
         expectStableSubtitle();
+        expect(tester.getTopLeft(timeline).dy, closeTo(releaseTop, 0.1));
         await tester.pumpAndSettle();
         expect(
           find.byKey(const ValueKey('session_detail_close_button')),

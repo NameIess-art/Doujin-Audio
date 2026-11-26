@@ -6,6 +6,7 @@ import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/core/widgets/app_buttons.dart';
 import 'package:doujin_audio/core/widgets/app_dialog.dart';
 import 'package:doujin_audio/core/widgets/app_glass_surface.dart';
+import 'package:doujin_audio/core/widgets/app_tap_highlight.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/unified_dropdown.dart';
 import 'package:doujin_audio/core/widgets/unified_popup_menu.dart';
@@ -765,9 +766,11 @@ void main() {
       ),
       findsOneWidget,
     );
+    final cancelButton = find.widgetWithText(TextButton, 'Cancel');
+    final saveButton = find.widgetWithText(FilledButton, 'Save');
     expect(
       tester
-          .widget<OutlinedButton>(find.widgetWithText(OutlinedButton, 'Cancel'))
+          .widget<TextButton>(cancelButton)
           .style
           ?.shape
           ?.resolve(const <WidgetState>{}),
@@ -775,14 +778,38 @@ void main() {
     );
     expect(
       tester
-          .widget<FilledButton>(find.widgetWithText(FilledButton, 'Save'))
+          .widget<FilledButton>(saveButton)
           .style
           ?.shape
           ?.resolve(const <WidgetState>{}),
       isA<StadiumBorder>(),
+    );
+    expect(
+      tester
+          .widget<TextButton>(cancelButton)
+          .style
+          ?.minimumSize
+          ?.resolve(const <WidgetState>{}),
+      const Size(48, 40),
+    );
+    expect(
+      tester
+          .widget<FilledButton>(saveButton)
+          .style
+          ?.minimumSize
+          ?.resolve(const <WidgetState>{}),
+      const Size(72, 40),
+    );
+    expect(
+      tester.getSize(cancelButton).height,
+      tester.getSize(saveButton).height,
+    );
+    expect(
+      tester.getRect(saveButton).left,
+      greaterThan(tester.getRect(cancelButton).right),
     );
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.tap(saveButton);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 60));
 
@@ -868,6 +895,88 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets(
+    'scrollable dialog paints row feedback above its surface',
+    (tester) async {
+      String? selection;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(
+            highlightColor: Colors.transparent,
+            splashColor: Colors.red,
+            splashFactory: AppTapHighlightFactory.forPlatform(
+              defaultTargetPlatform,
+            ),
+          ),
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () async {
+                  selection = await showAppDialog<String>(
+                    context: context,
+                    builder: (dialogContext) => AppDialog(
+                      title: 'Choose a model',
+                      scrollable: true,
+                      content: ListTile(
+                        title: const Text('Preferred model'),
+                        onTap: () => Navigator.pop(dialogContext, 'chosen'),
+                      ),
+                    ),
+                  );
+                },
+                child: const Text('Open model picker'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open model picker'));
+      await tester.pumpAndSettle();
+
+      final row = find.widgetWithText(ListTile, 'Preferred model');
+      final position = tester.getRect(row).centerLeft + const Offset(6, 0);
+      final boundary = tester.renderObject<RenderRepaintBoundary>(
+        find
+            .descendant(
+              of: find.byType(AppGlassSurface),
+              matching: find.byType(RepaintBoundary),
+            )
+            .first,
+      );
+      final pixel = boundary.globalToLocal(position);
+      Future<int> sample() async => (await tester.runAsync(() async {
+        final image = await boundary.toImage();
+        try {
+          final bytes = (await image.toByteData())!;
+          final offset = pixel.dy.floor() * image.width + pixel.dx.floor();
+          return bytes.getUint32(offset * 4);
+        } finally {
+          image.dispose();
+        }
+      }))!;
+
+      final before = await sample();
+      final press = await tester.startGesture(position);
+      await tester.pump(const Duration(milliseconds: 110));
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(await sample(), isNot(before));
+      await press.cancel();
+      await tester.pumpAndSettle();
+      expect(await sample(), before);
+      expect(selection, isNull);
+
+      await tester.tapAt(position);
+      await tester.pump();
+      expect(await sample(), isNot(before));
+      await tester.pumpAndSettle();
+      expect(selection, 'chosen');
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   testWidgets('shared app dialog dismisses when tapping background scrim', (
     tester,
   ) async {
@@ -945,14 +1054,12 @@ void main() {
     await tester.tap(find.text('Show'));
     await tester.pumpAndSettle();
 
-    final cancelCenter = tester.getCenter(
-      find.widgetWithText(OutlinedButton, 'Cancel'),
-    );
-    final confirmCenter = tester.getCenter(
+    final cancelRect = tester.getRect(find.widgetWithText(TextButton, 'Cancel'));
+    final confirmRect = tester.getRect(
       find.widgetWithText(FilledButton, 'Confirm'),
     );
-    expect(cancelCenter.dx, confirmCenter.dx);
-    expect(confirmCenter.dy, greaterThan(cancelCenter.dy));
+    expect(confirmRect.top, greaterThanOrEqualTo(cancelRect.bottom));
+    expect(confirmRect.right, closeTo(cancelRect.right, 0.5));
     expect(tester.takeException(), isNull);
   });
 

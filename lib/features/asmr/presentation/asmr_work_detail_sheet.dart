@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/presentation/work_detail_navigation.dart';
-import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
+import '../../../core/widgets/work_review_panel.dart';
 import '../../../app/localization/app_language_provider.dart';
 import '../../../core/ui/interaction_deferred_stream.dart';
 import '../../library/presentation/work_detail_entries.dart';
@@ -37,17 +37,38 @@ Future<void> showAsmrWorkDetailSheet(
 WorkDetailPage buildAsmrWorkDetailPage({Key? key, required AsmrWork work}) =>
     WorkDetailPage.forRemote(key: key, work: _AsmrWorkDetail(work));
 
-final _workFavoriteProvider = StreamProvider.autoDispose.family<bool?, String>((
-  ref,
-  workKey,
-) {
-  final controller = ref.watch(asmrLibraryControllerProvider);
-  if (controller == null) return Stream.value(null);
-  return interactionDeferredListenableStream(
-    source: controller,
-    read: () => controller.isFavorite(workKey),
-  ).distinct();
-});
+final _workReviewProvider = StreamProvider.autoDispose
+    .family<WorkReviewDraft?, AsmrWork>((ref, work) {
+      final controller = ref.watch(asmrLibraryControllerProvider);
+      if (controller == null) return Stream.value(null);
+      return interactionDeferredListenableStream(
+        source: controller,
+        read: () {
+          final reviewed = controller.reviewForWork(work);
+          if (reviewed != null) {
+            return (
+              listenStatus: reviewed.listenStatus,
+              userRating: reviewed.userRating,
+              reviewText: reviewed.reviewText,
+            );
+          }
+          if (controller.isFavorite(work.workKey)) {
+            return (
+              listenStatus: WorkListenStatus.marked,
+              userRating: work.userRating,
+              reviewText: work.reviewText,
+            );
+          }
+          return (
+            listenStatus: work.listenStatus == WorkListenStatus.marked
+                ? null
+                : work.listenStatus,
+            userRating: work.userRating,
+            reviewText: work.reviewText,
+          );
+        },
+      ).distinct();
+    });
 
 class _AsmrWorkDetail implements RemoteWorkDetail {
   const _AsmrWorkDetail(this.work);
@@ -56,6 +77,12 @@ class _AsmrWorkDetail implements RemoteWorkDetail {
 
   @override
   String get title => work.title;
+  @override
+  String get folderName => '';
+  @override
+  Object get navigationKey => ('asmr', work.workKey);
+  @override
+  RemoteWorkDetail watchLatest(WidgetRef ref) => this;
   @override
   String get workCode => work.workCode;
   @override
@@ -102,18 +129,59 @@ class _AsmrWorkDetail implements RemoteWorkDetail {
       localizedAsmrCatalogErrorText(i18n, error);
 
   @override
-  bool isFavorite(WidgetRef ref) =>
-      ref.watch(_workFavoriteProvider(work.workKey)).value ??
-      ref.read(asmrLibraryControllerProvider)?.isFavorite(work.workKey) ??
-      work.isFavorite;
+  bool get supportsReview => true;
 
   @override
-  Future<void> toggleFavorite(BuildContext context, WidgetRef ref) async {
-    unawaited(
-      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+  WorkReviewDraft watchReview(WidgetRef ref) {
+    final streamed = ref.watch(_workReviewProvider(work)).value;
+    if (streamed != null) return streamed;
+    return readAsmrWorkReviewDraft(
+      ProviderScope.containerOf(ref.context, listen: false),
+      work,
     );
-    await setAsmrWorksFavoriteWithFeedback(context, ref, [work]);
   }
+
+  @override
+  bool syncsReviewWithCloud(WidgetRef ref) {
+    final controller = ref.read(asmrLibraryControllerProvider);
+    return (controller?.isAsmrAccountLoggedIn ?? false) &&
+        work.resourceFor(AsmrCatalogSource.asmrOne) != null;
+  }
+
+  @override
+  Future<void> saveReview(
+    BuildContext context,
+    WidgetRef ref,
+    WorkReviewDraft draft,
+  ) async {
+    await saveAsmrWorkReviewWithFeedback(context, ref, work, draft);
+  }
+
+  @override
+  bool get supportsEditInfo => false;
+
+  @override
+  Future<RemoteWorkDetail?> editInfo(
+    BuildContext context,
+    WidgetRef ref,
+  ) async => null;
+
+  @override
+  bool get supportsEntryMutation => false;
+
+  @override
+  Future<bool> renameEntry(
+    BuildContext context,
+    WidgetRef ref,
+    WorkEntryItem item,
+  ) async => false;
+
+  @override
+  Future<bool> setEntryAsCover(
+    BuildContext context,
+    WidgetRef ref,
+    WorkEntryItem item,
+  ) async => false;
 
   @override
   Future<void> download(BuildContext context) async {

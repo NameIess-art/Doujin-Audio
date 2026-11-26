@@ -5,7 +5,7 @@ import '../../../core/media/subtitle_parser.dart';
 
 enum SubtitleLanguage { japanese, other, unknown }
 
-enum SubtitleDraftKind { script, translation }
+enum SubtitleDraftKind { script, transcription, translation }
 
 class SubtitleDraft {
   const SubtitleDraft({

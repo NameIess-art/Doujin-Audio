@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 
+import '../../../core/media/cover_image_format.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/cache/app_cache_service.dart';
 import '../../../core/state/audio_state_slice.dart';
@@ -142,6 +143,7 @@ class CoverArtworkCacheService {
     Future<String?> Function(String remoteUrl)? remoteCoverDownloader,
     Duration requestTimeout = const Duration(seconds: 15),
     Duration downloadIdleTimeout = const Duration(seconds: 30),
+    int maxRemoteCoverBytes = maxRemoteCoverFileBytes,
     DateTime Function()? now,
     Future<Directory> Function()? persistentDirectory,
     Future<Directory> Function()? temporaryDirectory,
@@ -171,6 +173,7 @@ class CoverArtworkCacheService {
     _remoteCovers = RemoteCoverCache(
       requestTimeout: requestTimeout,
       downloadIdleTimeout: downloadIdleTimeout,
+      maxRemoteCoverBytes: maxRemoteCoverBytes,
       artworkStore: _artworkStore,
       isClearingPersistentCache: () => _isClearingPersistentCache,
       download: remoteCoverDownloader,
@@ -688,6 +691,12 @@ class CoverArtworkCacheService {
 
   Future<String?> futureForRemoteCover(String url) =>
       _remoteCovers.resolve(url);
+
+  void invalidateRemoteCover(String url, {bool clearFailure = true}) {
+    final key = remoteCoverSearchKey(url);
+    if (key == null) return;
+    _remoteCovers.invalidate(key, clearFailure: clearFailure);
+  }
 
   void _remoteCoverRepaired(String key) {
     _resolvedTrackCovers.remove(key);

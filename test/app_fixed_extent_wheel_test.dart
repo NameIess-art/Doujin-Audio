@@ -31,6 +31,24 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      final wheelList = find.descendant(
+        of: find.byType(AppFixedExtentWheel),
+        matching: find.byType(ListWheelScrollView),
+      );
+      final fadeMask = find.ancestor(
+        of: wheelList,
+        matching: find.byType(AppWheelEdgeFadeMask),
+      );
+      expect(fadeMask, findsOneWidget);
+      expect(
+        tester
+            .widget<ShaderMask>(
+              find.descendant(of: fadeMask, matching: find.byType(ShaderMask)),
+            )
+            .blendMode,
+        BlendMode.dstIn,
+      );
+
       // Tap a visible neighboring item to select and focus the wheel.
       await tester.tap(find.text('Item 6'));
       await tester.pumpAndSettle();

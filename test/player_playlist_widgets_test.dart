@@ -10,6 +10,7 @@ import 'package:doujin_audio/features/player/presentation/playback_providers.dar
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -672,7 +673,7 @@ void main() {
               sessionId: 'Test',
               progress: const SizedBox(height: 44),
               transport: const SizedBox(height: 50),
-              subtitle: const SizedBox(),
+              subtitle: const SizedBox(key: ValueKey('detail_subtitle')),
               segmentPanelBuilder: (_) => const SizedBox(height: 220),
             ),
           ),
@@ -730,14 +731,30 @@ void main() {
             tester.widget<CoverArtworkFrame>(frameFinder).showShadow,
             isTrue,
           );
-          expect(
-            landscapeArtwork.contains(tester.getRect(filename).topLeft),
-            isTrue,
-          );
-          expect(
-            landscapeArtwork.contains(tester.getRect(credits).bottomRight),
-            isTrue,
-          );
+          final titleRect = tester.getRect(filename);
+          final creditsRect = tester.getRect(credits);
+          if (defaultTargetPlatform == TargetPlatform.android) {
+            final rightColumn = find.byKey(
+              const ValueKey('session_detail_right_column'),
+            );
+            for (final text in [filename, credits]) {
+              expect(
+                find.descendant(of: rightColumn, matching: text),
+                findsOneWidget,
+              );
+              expect(
+                tester.getRect(text).left,
+                greaterThan(landscapeArtwork.right),
+              );
+            }
+            expect(titleRect.top, closeTo(landscapeArtwork.top, 0.5));
+            expect(creditsRect.top, greaterThan(titleRect.bottom));
+            final subtitle = find.byKey(const ValueKey('detail_subtitle'));
+            expect(creditsRect.bottom, lessThan(tester.getRect(subtitle).top));
+          } else {
+            expect(landscapeArtwork.contains(titleRect.topLeft), isTrue);
+            expect(landscapeArtwork.contains(creditsRect.bottomRight), isTrue);
+          }
           await tester.pumpWidget(page(true, landscape: true));
           await tester.pumpAndSettle();
           expect(filename, findsOneWidget);
@@ -14827,7 +14844,7 @@ void main() {
   });
 
   for (final (platform, screenSize, headerHeight, hasSubtitles) in [
-    (TargetPlatform.android, const Size(2400, 1080), 40.0, false),
+    (TargetPlatform.android, const Size(2310, 1080), 40.0, false),
     (TargetPlatform.windows, const Size(2880, 1800), 48.0, false),
     (TargetPlatform.windows, const Size(3840, 2400), 48.0, false),
     (TargetPlatform.android, const Size(2400, 1080), 40.0, true),
@@ -14835,7 +14852,7 @@ void main() {
     (TargetPlatform.windows, const Size(3840, 2400), 48.0, true),
   ]) {
     testWidgets(
-      'landscape session detail displays 4:3 cover with platform column widths on ${platform.name} at ${screenSize.width / 3}, subtitles=$hasSubtitles',
+      'landscape session detail uses a 4:3 cover and 4:3 columns on ${platform.name} at ${screenSize.width / 3}, subtitles=$hasSubtitles',
       (tester) async {
         await _pumpSubtitleDetail(
           tester: tester,
@@ -14886,6 +14903,11 @@ void main() {
         );
         expect(coverRect.width / coverRect.height, closeTo(4 / 3, 0.001));
         final progressRect = tester.getRect(find.byType(SessionProgressBar));
+        expect(progressRect.height, closeTo(20, 0.5));
+        if (platform == TargetPlatform.android) {
+          expect(coverRect.width, closeTo(288, 0.5));
+          expect(coverRect.height, closeTo(216, 0.5));
+        }
         expect(progressRect.top - coverRect.bottom, greaterThan(5));
         final leftRect = tester.getRect(
           find.byKey(const ValueKey('session_detail_cover_area')),
@@ -14935,30 +14957,42 @@ void main() {
           }
 
           expect(primary.center.dx, closeTo(progress.center.dx, 0.5));
-          expect(progress.width, closeTo(left.width * 0.8, 0.5));
+          final expectedLeftBaseWidth = (bounds.width - 12) * 4 / 7;
+          expect(progress.width, closeTo(expectedLeftBaseWidth * 0.8, 0.5));
+          expect(
+            left.width,
+            closeTo(math.max(progress.width, cover.width), 0.5),
+          );
           expect(progress.center.dx, closeTo(left.center.dx, 0.5));
           expect(progress.top - cover.bottom, greaterThan(5));
         }
 
         expectCoverAndProgressLayout(coverRect, leftRect, progressRect);
+        final boundsRect = tester.getRect(
+          find.byKey(const ValueKey('session_detail_landscape_layout')),
+        );
+        final expectedLeftBaseWidth = (boundsRect.width - 12) * 4 / 7;
         final rightRect = tester.getRect(
           find.byKey(const ValueKey('session_detail_right_column')),
         );
-        final columnRatio = platform == TargetPlatform.windows ? 4 / 3 : 1.0;
-        expect(leftRect.width, closeTo(rightRect.width * columnRatio, 0.5));
+        expect(
+          leftRect.left - boundsRect.left,
+          closeTo((expectedLeftBaseWidth - leftRect.width) * 0.25, 0.5),
+        );
         expect(rightRect.left - leftRect.right, closeTo(12, 0.5));
+        expect(
+          rightRect.left - math.max(progressRect.right, coverRect.right),
+          closeTo(12, 0.5),
+        );
+        expect(rightRect.right, closeTo(boundsRect.right, 0.5));
         if (platform == TargetPlatform.windows) {
           expect(
             coverRect.width,
-            lessThanOrEqualTo(leftRect.width * 0.7 + 0.5),
+            lessThanOrEqualTo(expectedLeftBaseWidth * 0.7 + 0.5),
           );
           expect(
-            coverRect.left - leftRect.left,
-            greaterThanOrEqualTo(leftRect.width * 0.15 - 0.5),
-          );
-          expect(
-            leftRect.right - coverRect.right,
-            greaterThanOrEqualTo(leftRect.width * 0.15 - 0.5),
+            coverRect.left - boundsRect.left,
+            greaterThanOrEqualTo(expectedLeftBaseWidth * 0.10 - 0.5),
           );
         } else {
           expect(coverRect.width, lessThanOrEqualTo(leftRect.width));
@@ -15005,17 +15039,43 @@ void main() {
         }
 
         if (platform == TargetPlatform.android) {
-          tester.view.physicalSize = Size(screenSize.width, 810);
+          tester.view.physicalSize = const Size(1740, 810);
           await tester.pumpAndSettle();
+          final resizedBounds = tester.getRect(
+            find.byKey(const ValueKey('session_detail_landscape_layout')),
+          );
           final resizedCover = tester.getRect(coverFrameFinder);
+          final resizedLeft = tester.getRect(
+            find.byKey(const ValueKey('session_detail_cover_area')),
+          );
+          final resizedRight = tester.getRect(
+            find.byKey(const ValueKey('session_detail_right_column')),
+          );
+          final resizedProgress = tester.getRect(
+            find.byType(SessionProgressBar),
+          );
+          expect(resizedRight.left - resizedLeft.right, closeTo(12, 0.5));
+          expect(
+            resizedRight.left -
+                math.max(resizedProgress.right, resizedCover.right),
+            closeTo(12, 0.5),
+          );
+          expect(resizedRight.right, closeTo(resizedBounds.right, 0.5));
           expectCoverAndProgressLayout(
             resizedCover,
-            tester.getRect(
-              find.byKey(const ValueKey('session_detail_cover_area')),
-            ),
-            tester.getRect(find.byType(SessionProgressBar)),
+            resizedLeft,
+            resizedProgress,
           );
           expect(resizedCover.height, lessThan(coverRect.height));
+          expect(tester.getRect(secondary).right, lessThan(resizedRight.right));
+          final scroll = find.descendant(
+            of: secondary,
+            matching: find.byType(Scrollable),
+          );
+          expect(
+            tester.state<ScrollableState>(scroll).position.maxScrollExtent,
+            greaterThan(0),
+          );
           expect(tester.takeException(), isNull);
         } else {
           for (final resized in [
@@ -15025,6 +15085,9 @@ void main() {
           ]) {
             tester.view.physicalSize = resized;
             await tester.pumpAndSettle();
+            final resizedBounds = tester.getRect(
+              find.byKey(const ValueKey('session_detail_landscape_layout')),
+            );
             final resizedCover = tester.getRect(coverFrameFinder);
             final resizedLeft = tester.getRect(
               find.byKey(const ValueKey('session_detail_cover_area')),
@@ -15032,10 +15095,16 @@ void main() {
             final resizedRight = tester.getRect(
               find.byKey(const ValueKey('session_detail_right_column')),
             );
-            expect(resizedLeft.width, closeTo(resizedRight.width * 4 / 3, 0.5));
             final resizedProgress = tester.getRect(
               find.byType(SessionProgressBar),
             );
+            expect(resizedRight.left - resizedLeft.right, closeTo(12, 0.5));
+            expect(
+              resizedRight.left -
+                  math.max(resizedProgress.right, resizedCover.right),
+              closeTo(12, 0.5),
+            );
+            expect(resizedRight.right, closeTo(resizedBounds.right, 0.5));
             expectCoverAndProgressLayout(
               resizedCover,
               resizedLeft,
@@ -15089,13 +15158,17 @@ void main() {
         find.byKey(const ValueKey('session_detail_cover_area')),
       );
       expect(progressRect.center.dx, closeTo(leftRect.center.dx, 0.5));
-      expect(progressRect.width, closeTo(leftRect.width * 0.8, 0.5));
+      expect(progressRect.width, closeTo(leftRect.width, 0.5));
 
       // Right side contains subtitle panel and transport controls, but not progress bar
       final rightSideFinder = find.byKey(
         const ValueKey('session_detail_right_column'),
       );
       expect(rightSideFinder, findsWidgets);
+      expect(
+        tester.getRect(rightSideFinder).left - progressRect.right,
+        closeTo(12, 0.5),
+      );
 
       final subtitleInRightSide = find.descendant(
         of: rightSideFinder,

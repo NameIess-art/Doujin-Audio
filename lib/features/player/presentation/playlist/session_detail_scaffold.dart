@@ -87,21 +87,9 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
   bool _dragDismissClosing = false;
   bool _dragDismissCanStart = false;
   bool _dragDismissInteractionActive = false;
-  SessionDetailRoute? _boundDetailRoute;
-
   SessionDetailRoute? get _detailRoute {
     final route = readAppRoute(context);
     return route is SessionDetailRoute ? route : null;
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final route = _detailRoute;
-    if (!identical(_boundDetailRoute, route)) {
-      _boundDetailRoute?.clearCoverlessDragDismissSlide(_dragOffset);
-      _boundDetailRoute = route;
-    }
   }
 
   @override
@@ -176,8 +164,6 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
 
   @override
   void dispose() {
-    _boundDetailRoute?.clearCoverlessDragDismissSlide(_dragOffset);
-    _boundDetailRoute = null;
     _dragDismissInteractionActive = false;
     UiInteractionCoordinator.instance.cancelInteraction(_dragDismissInteraction);
     _dragResetController.dispose();
@@ -282,26 +268,6 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
         detailRoute.setExitReleaseVelocity(
           (velocity / viewportHeight).clamp(0.4, 6.0),
         );
-      }
-      if (!MediaQuery.disableAnimationsOf(context)) {
-        final velocityCarry = math.max(0.0, velocity) * 0.18;
-        final targetOffset = math.max(
-          offset + math.max(120.0, velocityCarry),
-          viewportHeight * 0.45,
-        );
-        if (detailRoute != null) {
-          detailRoute.startCoverlessDragDismissSlide(
-            offsetNotifier: _dragOffset,
-            from: offset,
-            to: targetOffset,
-          );
-        } else if (TickerMode.valuesOf(context).enabled) {
-          _dragResetAnimation = Tween<double>(begin: offset, end: targetOffset)
-              .chain(CurveTween(curve: Curves.easeOutCubic))
-              .animate(_dragResetController);
-          _dragResetController.duration = kAppMotionStandard;
-          _dragResetController.forward(from: 0);
-        }
       }
       widget.onClose();
       return;

@@ -269,6 +269,10 @@ AudioDetailRecord _audioDetailToRecord(AudioDetail detail) => AudioDetailRecord(
   duration: detail.duration,
   salesCount: detail.salesCount,
   rating: detail.rating,
+  listenStatus: detail.listenStatus?.wireValue,
+  userRating: detail.userRating,
+  reviewText: detail.reviewText,
+  reviewUpdatedAt: detail.reviewUpdatedAt,
   createdAt: detail.createdAt,
   updatedAt: detail.updatedAt,
 );
@@ -289,6 +293,10 @@ AudioDetail _audioDetailFromRecord(AudioDetailRecord record) => AudioDetail(
   duration: record.duration,
   salesCount: record.salesCount,
   rating: record.rating,
+  listenStatus: WorkListenStatus.tryFromWireValue(record.listenStatus),
+  userRating: record.userRating,
+  reviewText: record.reviewText,
+  reviewUpdatedAt: record.reviewUpdatedAt,
   createdAt: record.createdAt,
   updatedAt: record.updatedAt,
 );

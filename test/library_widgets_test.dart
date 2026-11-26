@@ -4089,7 +4089,14 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text(languageProvider.tr('sort_by_title')), findsOneWidget);
-    expect(find.text(languageProvider.tr('sort_duration')), findsOneWidget);
+    expect(
+      tester
+          .widgetList<RadioListTile<LibrarySortCriterion>>(
+            find.byType(RadioListTile<LibrarySortCriterion>),
+          )
+          .map((tile) => tile.value),
+      unorderedEquals(LibrarySortCriterion.values),
+    );
     expect(
       find.text(languageProvider.tr('sort_group_by_library')),
       findsOneWidget,
@@ -4131,11 +4138,10 @@ void main() {
     await tester.pump();
     await tester.tap(find.text(languageProvider.tr('sort_group_by_library')));
     await tester.pump();
-    tester
-        .widget<RadioGroup<LibrarySortCriterion>>(
-          find.byType(RadioGroup<LibrarySortCriterion>),
-        )
-        .onChanged(LibrarySortCriterion.duration);
+    final voiceActorOption = find.text(languageProvider.tr('sort_voice_actor'));
+    await tester.ensureVisible(voiceActorOption);
+    await tester.pump();
+    await tester.tap(voiceActorOption);
     await tester.pump();
     expect(settingsRepository.librarySortAscending, isTrue);
     expect(settingsRepository.libraryGroupByLibrary, isFalse);
@@ -4156,11 +4162,7 @@ void main() {
       LibrarySortCriterion.name,
     );
     expect(_selectedSortControls(tester), <String>{'ascending'});
-    tester
-        .widget<RadioGroup<LibrarySortCriterion>>(
-          find.byType(RadioGroup<LibrarySortCriterion>),
-        )
-        .onChanged(LibrarySortCriterion.duration);
+    await tester.tap(voiceActorOption);
     await tester.ensureVisible(
       find.text(languageProvider.tr('sort_descending')),
     );
@@ -4176,7 +4178,7 @@ void main() {
     expect(settingsRepository.libraryGroupByLibrary, isTrue);
     expect(
       settingsRepository.librarySortCriterion,
-      LibrarySortCriterion.duration,
+      LibrarySortCriterion.voiceActor,
     );
     expect(find.byTooltip(languageProvider.tr('edit_library')), findsOneWidget);
     expect(

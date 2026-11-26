@@ -14,6 +14,64 @@ import '../../asmr/application/asmr_auth_service.dart';
 import '../../asmr/application/asmr_preferences.dart';
 import '../../../core/persistence/app_preferences.dart';
 import '../../settings/application/app_update_service.dart';
+import '../domain/cross_platform_sync_models.dart';
+import 'cross_platform_sync_service.dart';
+
+const _portableTopLevelPreferenceKeys = <String>{
+  'app_language',
+  'themeMode',
+  'pureBlackTheme',
+  'barGlassEnabled',
+  'appThemeColor',
+  'customThemeColor',
+  'useSystemAccentColor',
+  'subtitle_background_opacity',
+  'subtitle_font_family',
+  'subtitle_font_color',
+  'subtitle_background_color',
+  'subtitle_border_depth',
+  'subtitle_font_size',
+};
+
+const _portablePlaybackSettingKeys = <String>{
+  'asmrApiDomain',
+  'dlsiteMetadataLanguage',
+  'startupPage',
+  'autoCheckUpdates',
+  'recordPlaybackProgress',
+  'smartListenStatusEnabled',
+  'autoPostponeStaleListening',
+  'allowVideoPlayback',
+  'asmrPlaybackCacheEnabled',
+  'hapticFeedbackEnabled',
+  'showLocalLibrary',
+  'showAsmrOne',
+  'showMyPage',
+  'workNameDisplay',
+  'listeningChartStyle',
+  'coverImageResolution',
+  'preferEmbeddedCover',
+  'asmrDownloadConflictPolicy',
+  'asmrDownloadRetryCount',
+  'asmrDownloadThreadCount',
+  'asmrDownloadSaveMetadata',
+  'asmrDownloadSaveCover',
+  'asmrDownloadFolderNameFields',
+  'librarySortCriterion',
+  'librarySortAscending',
+  'libraryGroupByLibrary',
+  'playlistSortCriterion',
+  'playlistSortAscending',
+  'playlistGroupByLibrary',
+  'searchHistoryFormat',
+  'asmrSearchHistory',
+  'audioDeviceDisconnectBehavior',
+  'audioFocusStrategy',
+  'transientAudioFocusLossBehavior',
+  'interruptionResumeBehavior',
+  'reduceAnimations',
+  'sleepModeAutoTrigger',
+};
 
 const _backupFormatVersion = 1;
 const _defaultMaximumBackupArchiveBytes = 512 * 1024 * 1024;
@@ -117,6 +175,32 @@ class BackupValidationResult {
   final BackupManifest manifest;
 }
 
+class BackupInspectionResult {
+  const BackupInspectionResult({
+    required this.manifest,
+    required this.isSamePlatform,
+    required this.hasAccountData,
+    this.accountName,
+  });
+
+  final BackupManifest manifest;
+  final bool isSamePlatform;
+  final bool hasAccountData;
+  final String? accountName;
+}
+
+class BackupMergeResult {
+  const BackupMergeResult({
+    required this.syncSummary,
+    required this.accountSynced,
+    required this.portableSettingsSynced,
+  });
+
+  final CrossPlatformSyncSummary syncSummary;
+  final bool accountSynced;
+  final bool portableSettingsSynced;
+}
+
 class PendingRestoreJournal {
   const PendingRestoreJournal({required this.phase, required this.createdAt});
 
@@ -193,6 +277,7 @@ class DataBackupService {
 
   Future<File> exportBackup(String outputPath) async {
     await _beforeExport?.call();
+    await _database.ensureSyncDeviceIdWhenListeningPresent();
     final workDirectory = await _newWorkDirectory('export');
     final databaseFile = File(path.join(workDirectory.path, _databaseName));
     final output = File(outputPath);
@@ -233,6 +318,165 @@ class DataBackupService {
     } finally {
       if (await temporaryOutput.exists()) await temporaryOutput.delete();
       await _deleteDirectory(workDirectory);
+    }
+  }
+
+  Future<BackupInspectionResult> inspectBackup(String sourcePath) async {
+    final source = File(sourcePath);
+    final validationDirectory = await _newWorkDirectory('validation');
+    try {
+      final decoded = await _decodeAndValidate(
+        source,
+        validationDirectory,
+        allowCrossPlatform: true,
+      );
+      final hasAccount =
+          decoded.account.hasCredentials ||
+          (decoded.account.token?.trim().isNotEmpty ?? false);
+      return BackupInspectionResult(
+        manifest: decoded.manifest,
+        isSamePlatform: decoded.manifest.platform == _platformName,
+        hasAccountData: hasAccount,
+        accountName: decoded.account.name?.trim().isNotEmpty == true
+            ? decoded.account.name!.trim()
+            : null,
+      );
+    } finally {
+      await _deleteDirectory(validationDirectory);
+    }
+  }
+
+  Future<BackupMergeResult> mergeBackup(
+    String sourcePath, {
+    required CrossPlatformSyncService syncService,
+    bool syncAccountAndPortableSettings = false,
+  }) async {
+    final source = File(sourcePath);
+    final validationDirectory = await _newWorkDirectory('validation');
+    try {
+      final decoded = await _decodeAndValidate(
+        source,
+        validationDirectory,
+        allowCrossPlatform: true,
+      );
+      final fallbackDeviceId =
+          'backup:${decoded.manifest.platform}:'
+          '${decoded.manifest.createdAt.toUtc().toIso8601String()}:'
+          '${decoded.manifest.files[_databaseName]?.sha256 ?? ''}';
+      final interestSettingKeys = <String>[
+        for (final entry
+            in AsmrPreferencesStore.interestCatalogKeys.entries) ...[
+          entry.key,
+          entry.value,
+        ],
+      ];
+      final extracted = await _database.extractPortableBackupData(
+        candidatePath: decoded.databaseFile.path,
+        fallbackDeviceId: fallbackDeviceId,
+        interestSettingKeys: interestSettingKeys,
+      );
+      final rawSync = extracted.syncSnapshot;
+      final bundle = CrossPlatformSyncBundle(
+        formatVersion: CrossPlatformSyncBundle.currentFormatVersion,
+        deviceId: rawSync.deviceId,
+        deviceName: decoded.manifest.platform,
+        platform: decoded.manifest.platform,
+        exportedAt: decoded.manifest.createdAt,
+        tracks: [
+          for (final row in rawSync.tracks)
+            SyncTrackStateEntry(
+              workKey: row.workKey,
+              relativePath: row.relativePath,
+              positionMs: row.positionMs,
+              lastPlayedAtMs: row.lastPlayedAtMs,
+              isFavorite: row.isFavorite,
+              favoriteUpdatedAtMs: row.favoriteUpdatedAtMs,
+              updatedAtMs: row.updatedAtMs,
+            ),
+        ],
+        deviceDayLedger: rawSync.deviceDayLedger,
+        deviceWorkDayLedger: rawSync.deviceWorkDayLedger,
+        history: [
+          for (final row in rawSync.history)
+            SyncHistoryWorkEntry(
+              workKey: row.workKey,
+              title: row.title,
+              subtitle: row.subtitle,
+              remoteCoverUrl: row.remoteCoverUrl,
+              lastPlayedAtMs: row.lastPlayedAtMs,
+            ),
+        ],
+        timeSegments: [
+          for (final row in rawSync.timeSegments)
+            SyncTimeSegmentEntry(
+              id: row.id,
+              workKey: row.workKey,
+              relativePath: row.relativePath,
+              name: row.name,
+              startMs: row.startMs,
+              endMs: row.endMs,
+              colorValue: row.colorValue,
+              createdAtMs: row.createdAtMs,
+              updatedAtMs: row.updatedAtMs,
+            ),
+        ],
+        deletedTimeSegments: rawSync.deletedTimeSegments,
+        interests: CrossPlatformSyncService.buildPortableInterestsJson(
+          deviceId: rawSync.deviceId,
+          interestSettings: rawSync.interestSettings,
+        ),
+        workStates: [
+          for (final row in rawSync.workStates)
+            SyncWorkStateEntry(
+              workKey: row.workKey,
+              rjCode: row.rjCode,
+              workTitle: row.workTitle,
+              circleName: row.circleName,
+              voiceActors: row.voiceActors,
+              tags: row.tags,
+              releaseDateMs: row.releaseDateMs,
+              salesCount: row.salesCount,
+              rating: row.rating,
+              detailUpdatedAtMs: row.detailUpdatedAtMs,
+              listenStatus: row.listenStatus,
+              userRating: row.userRating,
+              reviewText: row.reviewText,
+              reviewUpdatedAtMs: row.reviewUpdatedAtMs,
+            ),
+        ],
+      );
+      final summary = await syncService.applySyncBundle(bundle);
+
+      var portableSettingsSynced = false;
+      var accountSynced = false;
+      if (syncAccountAndPortableSettings) {
+        portableSettingsSynced = await _mergePortablePreferences(
+          decoded.preferences,
+        );
+        if (extracted.asmrContentLanguage != null ||
+            extracted.asmrVisibleCategories != null) {
+          await _database.applyPortableBackupDatabaseSettings(
+            asmrContentLanguage: extracted.asmrContentLanguage,
+            asmrVisibleCategories: extracted.asmrVisibleCategories,
+          );
+          portableSettingsSynced = true;
+        }
+        final hasAccount =
+            decoded.account.hasCredentials ||
+            (decoded.account.token?.trim().isNotEmpty ?? false);
+        if (hasAccount) {
+          await _accountStore.replaceFromBackup(decoded.account);
+          accountSynced = true;
+        }
+      }
+
+      return BackupMergeResult(
+        syncSummary: summary,
+        accountSynced: accountSynced,
+        portableSettingsSynced: portableSettingsSynced,
+      );
+    } finally {
+      await _deleteDirectory(validationDirectory);
     }
   }
 
@@ -350,6 +594,10 @@ class DataBackupService {
           interestCatalogKeys: AsmrPreferencesStore.interestCatalogKeys,
           keepLocalInterest: AsmrPreferencesStore.keepLocalInterestOnRestore,
         );
+      } else {
+        await _database.clearActiveSyncDeviceIdInCandidate(
+          decoded.databaseFile.path,
+        );
       }
       await _writeJournal(
         restoreDirectory,
@@ -386,13 +634,15 @@ class DataBackupService {
 
   Future<_DecodedBackup> _decodeAndValidate(
     File source,
-    Directory decodeDirectory,
-  ) async {
+    Directory decodeDirectory, {
+    bool allowCrossPlatform = false,
+  }) async {
     try {
       final workerRequest = <String, Object?>{
         'sourcePath': source.path,
         'decodeDirectoryPath': decodeDirectory.path,
         'platform': _platformName,
+        'allowCrossPlatform': allowCrossPlatform,
         'databaseSchemaVersion': AppDatabase.schemaVersion,
         'maximumArchiveBytes': _maximumArchiveBytes,
         'maximumExpandedBytes': _maximumExpandedBytes,
@@ -569,6 +819,98 @@ class DataBackupService {
   Future<void> _deleteDirectory(Directory directory) async {
     if (await directory.exists()) await directory.delete(recursive: true);
   }
+
+  Future<bool> _mergePortablePreferences(
+    Map<String, Object?> backupPreferences,
+  ) async {
+    var changed = false;
+    for (final key in _portableTopLevelPreferenceKeys) {
+      if (!backupPreferences.containsKey(key)) continue;
+      final value = backupPreferences[key];
+      final saved = switch (value) {
+        String s => await AppPreferences.setString(key, s),
+        bool b => await AppPreferences.setBool(key, b),
+        int i => await AppPreferences.setInt(key, i),
+        List<Object?> list when list.every((e) => e is String) =>
+          await AppPreferences.setStringList(key, list.cast<String>()),
+        _ => false,
+      };
+      if (saved) changed = true;
+    }
+    if (backupPreferences.containsKey('appThemeColor') &&
+        !backupPreferences.containsKey('customThemeColor')) {
+      await AppPreferences.remove('customThemeColor', ifPresent: true);
+    }
+
+    final rawIncomingPlayback = backupPreferences['playback_settings_v1'];
+    if (rawIncomingPlayback is String && rawIncomingPlayback.isNotEmpty) {
+      Map<String, Object?>? incomingPlayback;
+      try {
+        final parsed = jsonDecode(rawIncomingPlayback);
+        if (parsed is Map) {
+          incomingPlayback = Map<String, Object?>.from(parsed);
+        }
+      } on Object {
+        incomingPlayback = null;
+      }
+      if (incomingPlayback != null) {
+        final localPlayback =
+            await AppPreferences.readJson<Map<String, Object?>>(
+              'playback_settings_v1',
+              (raw) => raw is Map
+                  ? Map<String, Object?>.from(raw)
+                  : <String, Object?>{},
+            ) ??
+            <String, Object?>{};
+        final mergedPlayback = Map<String, Object?>.of(localPlayback);
+        for (final key in _portablePlaybackSettingKeys) {
+          if (incomingPlayback.containsKey(key)) {
+            mergedPlayback[key] = incomingPlayback[key];
+          }
+        }
+        final incomingTranslation = incomingPlayback['translationSettings'];
+        if (incomingTranslation is Map) {
+          final nextTranslation = Map<String, Object?>.from(
+            incomingTranslation,
+          );
+          final localTranslation = localPlayback['translationSettings'];
+          final keepLocalApiKeyFlag =
+              localTranslation is Map &&
+              localTranslation['apiKeyConfigured'] == true;
+          nextTranslation['apiKeyConfigured'] = keepLocalApiKeyFlag;
+          mergedPlayback['translationSettings'] = nextTranslation;
+        }
+        final incomingPresets = incomingPlayback['customEqPresets'];
+        if (incomingPresets is List) {
+          final mergedById = <String, Map<String, Object?>>{};
+          final localPresets = localPlayback['customEqPresets'];
+          if (localPresets is List) {
+            for (final item in localPresets.whereType<Map<Object?, Object?>>()) {
+              final map = Map<String, Object?>.from(item);
+              final id = map['id']?.toString() ?? '';
+              if (id.isNotEmpty) mergedById[id] = map;
+            }
+          }
+          for (final item
+              in incomingPresets.whereType<Map<Object?, Object?>>()) {
+            final map = Map<String, Object?>.from(item);
+            final id = map['id']?.toString() ?? '';
+            if (id.isNotEmpty) mergedById[id] = map;
+          }
+          mergedPlayback['customEqPresets'] = mergedById.values.toList(
+            growable: false,
+          );
+        }
+        if (await AppPreferences.writeJson(
+          'playback_settings_v1',
+          mergedPlayback,
+        )) {
+          changed = true;
+        }
+      }
+    }
+    return changed;
+  }
 }
 
 Future<void> _exportBackupArchive(Map<String, Object?> request) async {
@@ -730,8 +1072,10 @@ Future<Map<String, Object?>> _decodeBackupArchive(
     }
     final manifestJson = Map<String, Object?>.from(manifestRaw);
     final manifest = BackupManifest.fromJson(manifestJson);
+    final allowCrossPlatform = request['allowCrossPlatform'] == true;
     if (manifest.formatVersion != _backupFormatVersion ||
-        manifest.platform != request['platform'] ||
+        manifest.platform.trim().isEmpty ||
+        (!allowCrossPlatform && manifest.platform != request['platform']) ||
         manifest.databaseSchemaVersion >
             (request['databaseSchemaVersion']! as int) ||
         !manifest.containsSensitiveAccountData ||

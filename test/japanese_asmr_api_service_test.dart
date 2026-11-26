@@ -201,7 +201,7 @@ void main() {
       expect(first.works, hasLength(1));
       expect(first.partialError?.sources, [AsmrCatalogSource.japaneseAsmr]);
       expect(first.hasMore, isTrue);
-      expect(first.sourceTotalCount, isNull);
+      expect(first.sourceTotalCount, 1);
       jp.failure = false;
       final second = await _page(catalog, 2, cursor);
       expect(second.works.single.workCode, 'RJ000002');
@@ -652,6 +652,91 @@ void main() {
       expect(jp.calls, [1]);
     },
   );
+
+  test(
+    'unavailable ASMR.ONE times out fast, cools down across paging/recommendations/tracks, and preserves Japanese ASMR',
+    () async {
+      var now = DateTime(2026, 1, 1, 12);
+      final one = _OneApi({
+        1: [_work(1)],
+      })..beforeFetch = () => Completer<void>().future;
+      final jp = _JapaneseApi({
+        1: [for (var i = 1; i <= 40; i++) _work(100 + i, japanese: true)],
+        2: [_work(141, japanese: true)],
+      });
+      addTearDown(one.close);
+      addTearDown(jp.close);
+      final service = AsmrRemoteCatalogService(
+        apiService: one,
+        japaneseApiService: jp,
+        persistenceRepository: _EmptyRepository(),
+        now: () => now,
+        secondaryOneTimeout: const Duration(milliseconds: 25),
+      );
+      service.tagWeights = () => {'sleep': 1.0};
+
+      final cursor = AsmrCatalogCursor();
+      final first = await _page(service, 1, cursor) as AsmrMergedWorkPage;
+      expect(first.works, hasLength(40));
+      expect(first.sourceTotalCount, 41);
+      expect(first.partialError?.sources, [AsmrCatalogSource.asmrOne]);
+      expect(
+        first.partialError?.causes[AsmrCatalogSource.asmrOne],
+        isA<TimeoutException>(),
+      );
+      expect(one.fetchCalls, 1);
+
+      // Paging while ASMR.ONE is cooling down skips ASMR.ONE immediately.
+      final second = await _page(service, 2, cursor) as AsmrMergedWorkPage;
+      expect(second.works.map((w) => w.workCode), ['RJ000141']);
+      expect(second.sourceTotalCount, 41);
+      expect(second.partialError?.sources, [AsmrCatalogSource.asmrOne]);
+      expect(one.fetchCalls, 1);
+
+      // Recommendations skip dead ASMR.ONE and recall interest tags from Japanese ASMR.
+      AsmrPartialCatalogException? recPartialError;
+      int? recTotalCount;
+      final ranked = await service.loadRecommendations(
+        searchQuery: '',
+        language: AsmrContentLanguage.zh,
+        token: null,
+        favoriteWorks: const [],
+        historyWorks: const [],
+        refreshSeed: 1,
+        onPartialError: (error) => recPartialError = error,
+        onSourceTotalCount: (count) => recTotalCount = count,
+      );
+      expect(ranked, isNotEmpty);
+      expect(recTotalCount, 41);
+      expect(recPartialError?.sources, [AsmrCatalogSource.asmrOne]);
+      expect(one.fetchCalls, 1);
+      expect(jp.queries.any((q) => q.$1 == 'sleep'), isTrue);
+
+      // Dual-source work track tree prefers Japanese ASMR while ASMR.ONE is cooling down.
+      one.treeError = const AsmrApiException(
+        'Server error',
+        statusCode: 502,
+        source: AsmrCatalogSource.asmrOne,
+      );
+      final dualWork = _work(
+        10,
+      ).mergedWith(_work(10, japanese: true, code: 'RJ000010'));
+      final tree = await service.loadTrackTree(dualWork, token: null);
+      expect(tree.single.streamUrl, contains('eara-chapter='));
+      expect(one.treeCalls, 0);
+      expect(jp.treeCalls, 1);
+
+      // Manual refresh clears ASMR.ONE cooldown and probes ASMR.ONE again.
+      one.beforeFetch = null;
+      service.clearOneCatalogCooldown();
+      final recovered =
+          await _page(service, 1, AsmrCatalogCursor()) as AsmrMergedWorkPage;
+      expect(recovered.partialError, isNull);
+      expect(recovered.works, hasLength(40));
+      expect(recovered.works.first.workCode, 'RJ000001');
+      expect(one.fetchCalls, 2);
+    },
+  );
 }
 
 AsmrRemoteCatalogService _catalog(_OneApi one, _JapaneseApi jp) {
@@ -702,7 +787,11 @@ class _OneApi extends AsmrApiService {
   final Map<int, List<AsmrWork>> pages;
   Object? mediaError;
   Object? searchError;
+  Object? treeError;
+  Future<void> Function()? beforeFetch;
   int mediaProbes = 0;
+  int fetchCalls = 0;
+  int treeCalls = 0;
   @override
   Future<void> verifyMediaStream(
     String url, {
@@ -717,13 +806,17 @@ class _OneApi extends AsmrApiService {
     int workId, {
     String? token,
     AsmrRequestCancellationToken? cancellationToken,
-  }) async => [
-    AsmrTrackFile.fromJson(const {
-      'type': 'audio',
-      'title': 'one.m4a',
-      'mediaStreamUrl': 'https://media.example/one.m4a',
-    }),
-  ];
+  }) async {
+    treeCalls++;
+    if (treeError case final error?) throw error;
+    return [
+      AsmrTrackFile.fromJson(const {
+        'type': 'audio',
+        'title': 'one.m4a',
+        'mediaStreamUrl': 'https://media.example/one.m4a',
+      }),
+    ];
+  }
   @override
   Future<AsmrWorkPage> searchWorks({
     required String keyword,
@@ -753,12 +846,16 @@ class _OneApi extends AsmrApiService {
     String? token,
     AsmrContentLanguage language = AsmrContentLanguage.zh,
     AsmrRequestCancellationToken? cancellationToken,
-  }) async => AsmrWorkPage(
-    works: pages[page] ?? const [],
-    currentPage: page,
-    pageSize: pageSize,
-    totalCount: pages.values.fold(0, (sum, works) => sum + works.length),
-  );
+  }) async {
+    fetchCalls++;
+    await beforeFetch?.call();
+    return AsmrWorkPage(
+      works: pages[page] ?? const [],
+      currentPage: page,
+      pageSize: pageSize,
+      totalCount: pages.values.fold(0, (sum, works) => sum + works.length),
+    );
+  }
 }
 
 class _JapaneseApi extends JapaneseAsmrApiService {

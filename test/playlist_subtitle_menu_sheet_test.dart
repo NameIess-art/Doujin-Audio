@@ -1930,6 +1930,128 @@ void main() {
       expect(service.importedTrackPaths, [trackA]);
     },
   );
+
+  testWidgets(
+    'transcribe tile confirms overwrite, writes same-name SRT preserving translations, and handles noMatch',
+    (tester) async {
+      final directory = Directory.systemTemp.createTempSync(
+        'subtitle_transcribe_menu_',
+      );
+      addTearDown(() => directory.deleteSync(recursive: true));
+      final audioFile = File(p.join(directory.path, 'voice.mp3'))
+        ..writeAsBytesSync(const <int>[1, 2, 3, 4]);
+      final oldLrc = File(p.join(directory.path, 'voice.lrc'))
+        ..writeAsStringSync('[00:01.00]旧字幕\n[00:02.00]\n');
+      final existingTranslated = File(
+        p.join(directory.path, 'voice.mp3.translated.zh-CN.srt'),
+      )..writeAsStringSync('1\n00:00:01,000 --> 00:00:02,000\n旧字幕\n旧译文\n');
+
+      final engine = _StubTranscriptionEngine(
+        models: _ReadyModelStore(),
+        cues: const [
+          SubtitleCue(
+            start: Duration(seconds: 1),
+            end: Duration(seconds: 4),
+            text: '耳元で囁いています。',
+          ),
+        ],
+      );
+      final service = PlaybackSubtitleService(
+        trackResolver: (_) => null,
+        aiEngine: engine,
+        subtitlesDirectoryResolver: () async => directory,
+      );
+      addTearDown(service.dispose);
+      await tester.runAsync(() => service.load(audioFile.path));
+
+      final language = AppLanguageProvider();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(language),
+            playbackSubtitleServiceProvider.overrideWithValue(service),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: SubtitleMenuSheet(
+                session: _createSnapshot(trackPath: audioFile.path),
+                generationUnavailableReason: () => null,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final transcribeTile = find.byKey(
+        const ValueKey('subtitle_transcribe_tile'),
+      );
+      expect(tester.widget<ListTile>(transcribeTile).enabled, isTrue);
+
+      // 1) Cancel overwrite confirmation -> old LRC remains untouched.
+      await tester.ensureVisible(transcribeTile);
+      await tester.tap(transcribeTile);
+      await _waitForImportAction(
+        tester,
+        () => find.byType(AppDialog).evaluate().isNotEmpty,
+      );
+      expect(
+        find.text(language.tr('subtitle_transcribe_overwrite_hint')),
+        findsOneWidget,
+      );
+      await tester.tap(find.text(language.tr('cancel')));
+      await tester.pumpAndSettle();
+      expect(oldLrc.existsSync(), isTrue);
+      expect(service.generationJob, isNull);
+
+      // 2) Confirm overwrite -> writes voice.srt, removes old voice.lrc, keeps translation.
+      await tester.tap(transcribeTile);
+      await _waitForImportAction(
+        tester,
+        () => find.byType(AppDialog).evaluate().isNotEmpty,
+      );
+      await tester.tap(find.text(language.tr('subtitle_import_overwrite')));
+      await _waitForImportAction(
+        tester,
+        () =>
+            service.generationJob?.status == SubtitleGenerationStatus.completed,
+      );
+      await tester.pumpAndSettle();
+
+      final generatedSrt = File(p.join(directory.path, 'voice.srt'));
+      expect(generatedSrt.existsSync(), isTrue);
+      expect(generatedSrt.readAsStringSync(), contains('耳元で囁いています。'));
+      expect(oldLrc.existsSync(), isFalse);
+      expect(existingTranslated.existsSync(), isTrue);
+      expect(
+        service.trackSync(audioFile.path)?.cues.single.text,
+        '耳元で囁いています。',
+      );
+
+      // Close completed dialog.
+      await tester.tap(find.text(language.tr('close')));
+      await tester.pumpAndSettle();
+
+      // 3) Run again with empty cues -> shows speech-specific noMatch text.
+      engine.cues = const [];
+      await tester.ensureVisible(transcribeTile);
+      await tester.tap(transcribeTile);
+      await _waitForImportAction(
+        tester,
+        () => find.byType(AppDialog).evaluate().isNotEmpty,
+      );
+      await tester.tap(find.text(language.tr('subtitle_import_overwrite')));
+      await _waitForImportAction(
+        tester,
+        () => service.generationJob?.status == SubtitleGenerationStatus.noMatch,
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.text(language.tr('subtitle_no_speech_detected')),
+        findsWidgets,
+      );
+    },
+  );
 }
 
 final class _AsyncSubtitleFilePicker extends FilePickerPlatform {
@@ -1991,6 +2113,28 @@ class _CapturedTrackSubtitleService extends PlaybackSubtitleService {
           text: 'Imported',
         ),
       ],
+    );
+  }
+}
+
+class _StubTranscriptionEngine extends SubtitleAiEngine {
+  _StubTranscriptionEngine({required super.models, required this.cues});
+
+  List<SubtitleCue> cues;
+
+  @override
+  Future<SubtitleDraft?> prepareTranscription(
+    String trackPath, {
+    SubtitleProgressCallback? onProgress,
+    bool Function()? isCancelled,
+    Future<void>? cancellation,
+  }) async {
+    onProgress?.call(const SubtitleTaskProgress('transcribing', 0.5, '50%'));
+    if (cues.isEmpty) return null;
+    return SubtitleDraft(
+      cues: cues,
+      kind: SubtitleDraftKind.transcription,
+      sourceLanguage: 'ja',
     );
   }
 }

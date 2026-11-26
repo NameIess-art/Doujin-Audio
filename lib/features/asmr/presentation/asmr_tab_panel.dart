@@ -167,6 +167,10 @@ class _AsmrAccountPanelState extends ConsumerState<_AsmrAccountPanel> {
           AsmrApiException.isAuthenticationError(error) ||
           (error is AsmrApiException &&
               error.statusCode == HttpStatus.badRequest);
+      if (!isCredentialError && shouldShowAsmrUnavailableFeedback(error)) {
+        showAsmrUnavailableFeedback(context: context, i18n: i18n, error: error);
+        return;
+      }
       showAppSnackBar(
         context,
         isCredentialError
@@ -198,6 +202,17 @@ class _AsmrAccountPanelState extends ConsumerState<_AsmrAccountPanel> {
       final syncState = controller.syncViewState;
       final failed = syncState.phase == AsmrSyncPhase.failed;
       final authExpired = _isAuthExpired(syncState.lastError);
+      final serverUnavailable = AsmrApiException.isServerUnavailable(
+        syncState.lastError,
+      );
+      if (serverUnavailable) {
+        showAsmrUnavailableFeedback(
+          context: context,
+          i18n: ref.read(appLanguageProviderInstanceProvider),
+          error: syncState.lastError!,
+        );
+        return;
+      }
       showAppSnackBar(
         context,
         ref
@@ -457,6 +472,9 @@ class _AsmrAccountPanelState extends ConsumerState<_AsmrAccountPanel> {
     if (syncState.phase == AsmrSyncPhase.failed) {
       if (_isAuthExpired(syncState.lastError)) {
         return i18n.tr('asmr_token_expired');
+      }
+      if (AsmrApiException.isServerUnavailable(syncState.lastError)) {
+        return i18n.tr('asmr_one_server_unavailable_retry');
       }
       return i18n.tr('asmr_account_sync_failed');
     }

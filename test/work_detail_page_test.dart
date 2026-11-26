@@ -194,6 +194,22 @@ class _DeferredDetailAsmrController extends ChangeNotifier
   bool isFavorite(String workId) => false;
 
   @override
+  AsmrWork? reviewForWork(AsmrWork work) => null;
+
+  @override
+  bool get isAsmrAccountLoggedIn => false;
+
+  @override
+  Future<void> saveWorkReview(
+    AsmrWork work, {
+    required WorkListenStatus? listenStatus,
+    required int? userRating,
+    required String reviewText,
+    DateTime? updatedAt,
+    bool enqueueSync = true,
+  }) async {}
+
+  @override
   AsmrTrackTreeViewState trackTreeViewState(String workId) =>
       AsmrTrackTreeViewState(
         workKey: workId,
@@ -2730,7 +2746,7 @@ void main() {
       expect(tester.widget<TextField>(nameInput).controller?.text, 'notes');
       await tester.enterText(nameInput, 'Meeting notes');
       await tester.tap(
-        find.widgetWithText(TextButton, fixture.languageProvider.tr('save')),
+        find.widgetWithText(FilledButton, fixture.languageProvider.tr('save')),
       );
       await _settleDetail(tester);
       expect(renameForm, findsNothing);
@@ -3151,7 +3167,15 @@ void main() {
         final translationButton = find.byKey(
           const ValueKey<String>('work_detail_translation'),
         );
-        for (final button in [backButton, editButton, translationButton]) {
+        final downloadButton = find.byKey(
+          const ValueKey<String>('work_detail_download'),
+        );
+        for (final button in [
+          backButton,
+          downloadButton,
+          editButton,
+          translationButton,
+        ]) {
           expect(tester.getSize(button), const Size.square(38));
           final icon = find.descendant(of: button, matching: find.byType(Icon));
           final iconTheme = IconTheme.of(tester.element(icon));
@@ -3164,6 +3188,16 @@ void main() {
           expect(tester.getRect(icon).center, tester.getRect(button).center);
         }
         final header = find.byKey(const ValueKey('work_detail_page_header'));
+        expect(
+          find.descendant(of: header, matching: downloadButton),
+          findsOneWidget,
+        );
+        expect(
+          tester.widget<IconButton>(downloadButton).tooltip,
+          fixture.languageProvider.tr('download'),
+        );
+        final downloadRect = tester.getRect(downloadButton);
+        expect(downloadRect.right, lessThan(tester.getRect(editButton).left));
         expect(
           find.descendant(
             of: header,
@@ -3198,30 +3232,10 @@ void main() {
         expect(find.text('#Ear Cleaning'), findsOneWidget);
         expect(find.text('#Whisper'), findsOneWidget);
 
-        // Local action buttons: 补充信息, 下载
+        expect(tester.getRect(downloadButton.hitTestable()), downloadRect);
         expect(
           find.byKey(const ValueKey<String>('work_detail_fetch_info')),
-          findsOneWidget,
-        );
-        expect(
-          tester
-              .getRect(
-                find.byKey(const ValueKey<String>('work_detail_fetch_info')),
-              )
-              .height,
-          greaterThanOrEqualTo(46),
-        );
-        expect(
-          find.byKey(const ValueKey<String>('work_detail_download')),
-          findsOneWidget,
-        );
-        expect(
-          tester
-              .getRect(
-                find.byKey(const ValueKey<String>('work_detail_download')),
-              )
-              .height,
-          greaterThanOrEqualTo(46),
+          findsNothing,
         );
         expect(
           find.byKey(const ValueKey<String>('work_detail_pin')),
@@ -3235,6 +3249,25 @@ void main() {
         expect(
           find.text(fixture.languageProvider.tr('audio_detail_edit_info')),
           findsOneWidget,
+        );
+        final editHeader = find.byKey(
+          const ValueKey<String>('dlsite_review_header'),
+        );
+        final editFetchButton = find.descendant(
+          of: editHeader,
+          matching: find.byKey(
+            const ValueKey<String>('audio_detail_edit_fetch_info'),
+          ),
+        );
+        expect(editFetchButton, findsOneWidget);
+        final editFetchCircle = find.ancestor(
+          of: editFetchButton,
+          matching: find.byType(HeaderFloatingButton),
+        );
+        expect(editFetchCircle, findsOneWidget);
+        expect(
+          tester.getCenter(editFetchCircle).dx,
+          greaterThan(tester.getCenter(editHeader).dx),
         );
         expect(
           find.text(fixture.languageProvider.tr('dlsite_save_cover')),
@@ -3306,13 +3339,85 @@ void main() {
         );
         expect(savedDetail?.detail.workTitle, 'Edited local work title');
 
+        await tester.tap(editButton);
+        for (
+          var i = 0;
+          i < 40 && find.byType(DlsiteMetadataReviewPage).evaluate().isEmpty;
+          i++
+        ) {
+          await tester.pump(const Duration(milliseconds: 50));
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+        }
+        await _settleDetail(tester);
         await tester.tap(
-          find.byKey(const ValueKey<String>('work_detail_fetch_info')),
+          find.byKey(const ValueKey<String>('audio_detail_edit_fetch_info')),
         );
+        for (
+          var i = 0;
+          i < 40 && find.text('Fetched work title').evaluate().isEmpty;
+          i++
+        ) {
+          await tester.pump(const Duration(milliseconds: 50));
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+        }
         await _settleDetail(tester);
 
         expect(find.byType(DlsiteMetadataReviewPage), findsOneWidget);
         expect(find.text('Fetched work title'), findsOneWidget);
+        await tester.tap(
+          find.byKey(const ValueKey<String>('dlsite_review_confirm')),
+        );
+        for (
+          var i = 0;
+          i < 80 &&
+              find
+                  .text(fixture.languageProvider.tr('audio_detail_edit_info'))
+                  .evaluate()
+                  .isEmpty;
+          i++
+        ) {
+          await tester.pump(const Duration(milliseconds: 50));
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+        }
+        await _settleDetail(tester);
+
+        expect(
+          find.text(fixture.languageProvider.tr('audio_detail_edit_info')),
+          findsOneWidget,
+        );
+        expect(find.text('Fetched work title'), findsOneWidget);
+        await tester.tap(
+          find.descendant(
+            of: find.byKey(const ValueKey<String>('dlsite_review_header')),
+            matching: find.byIcon(Icons.arrow_back_rounded),
+          ),
+        );
+        for (
+          var i = 0;
+          i < 80 && find.byType(DlsiteMetadataReviewPage).evaluate().isNotEmpty;
+          i++
+        ) {
+          await tester.pump(const Duration(milliseconds: 50));
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+        }
+        await _settleDetail(tester);
+
+        expect(find.byType(WorkDetailPage), findsOneWidget);
+        final fetchedSavedDetail = await tester.runAsync(
+          () => fixture.runtimeGraph.library.loadAudioDetail(target),
+        );
+        expect(fetchedSavedDetail?.detail.workTitle, 'Fetched work title');
+        await tester.drag(find.byType(CustomScrollView), const Offset(0, 500));
+        await _settleDetail(tester);
+        expect(find.text('Fetched circle'), findsOneWidget);
       },
     );
 
@@ -3551,13 +3656,20 @@ void main() {
       expect(find.text('#Roleplay'), findsOneWidget);
       expect(find.text('根目录'), findsOneWidget);
 
-      // ASMR.ONE buttons: 下载, 收藏/取消收藏
+      final downloadButton = find.byKey(
+        const ValueKey<String>('asmr_work_detail_download'),
+      );
+      expect(tester.getSize(downloadButton), const Size.square(38));
       expect(
-        find.byKey(const ValueKey<String>('asmr_work_detail_download')),
-        findsOneWidget,
+        tester.getCenter(downloadButton).dy,
+        tester.getCenter(dlsiteButton).dy,
       );
       expect(
-        find.byKey(const ValueKey<String>('asmr_work_detail_favorite')),
+        tester.getRect(downloadButton).right,
+        lessThan(tester.getRect(dlsiteButton).left),
+      );
+      expect(
+        find.byKey(const ValueKey<String>('work_review_status_marked')),
         findsOneWidget,
       );
     });

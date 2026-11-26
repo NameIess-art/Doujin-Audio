@@ -2,6 +2,30 @@ import '../immutable_collections.dart';
 
 const Object _copyUnset = Object();
 
+enum WorkListenStatus {
+  marked('marked'),
+  listening('listening'),
+  listened('listened'),
+  replay('replay'),
+  postponed('postponed');
+
+  const WorkListenStatus(this.wireValue);
+
+  final String wireValue;
+
+  bool get isProtectedFromAutoListening => this != WorkListenStatus.listening;
+
+  static WorkListenStatus? tryFromWireValue(String? value) {
+    if (value == null) return null;
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return null;
+    for (final status in values) {
+      if (status.wireValue == trimmed) return status;
+    }
+    return null;
+  }
+}
+
 enum AudioDetailTargetType {
   libraryRootFolder('libraryRootFolder', 'library-root-folder'),
   singleAudioFile('singleAudioFile', 'single-audio-file');
@@ -75,6 +99,10 @@ class AudioDetail {
     this.duration,
     this.salesCount,
     this.rating,
+    this.listenStatus,
+    this.userRating,
+    this.reviewText = '',
+    this.reviewUpdatedAt,
     this.createdAt,
     this.updatedAt,
   }) : voiceActors = immutableList(voiceActors),
@@ -103,15 +131,25 @@ class AudioDetail {
   final Duration? duration;
   final int? salesCount;
   final double? rating;
+  final WorkListenStatus? listenStatus;
+  final int? userRating;
+  final String reviewText;
+  final DateTime? reviewUpdatedAt;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+
+  bool get hasUserReview =>
+      listenStatus != null ||
+      userRating != null ||
+      reviewText.trim().isNotEmpty;
 
   bool get isEmpty =>
       rjCode.isEmpty &&
       workTitle.isEmpty &&
       circleName.isEmpty &&
       voiceActors.isEmpty &&
-      tags.isEmpty;
+      tags.isEmpty &&
+      !hasUserReview;
 
   bool get hasMissingMetadata =>
       rjCode.trim().isEmpty ||
@@ -147,6 +185,10 @@ class AudioDetail {
     Object? duration = _copyUnset,
     Object? salesCount = _copyUnset,
     Object? rating = _copyUnset,
+    Object? listenStatus = _copyUnset,
+    Object? userRating = _copyUnset,
+    String? reviewText,
+    Object? reviewUpdatedAt = _copyUnset,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -169,17 +211,37 @@ class AudioDetail {
           ? this.salesCount
           : salesCount as int?,
       rating: rating == _copyUnset ? this.rating : rating as double?,
+      listenStatus: listenStatus == _copyUnset
+          ? this.listenStatus
+          : listenStatus as WorkListenStatus?,
+      userRating: userRating == _copyUnset
+          ? this.userRating
+          : userRating as int?,
+      reviewText: reviewText ?? this.reviewText,
+      reviewUpdatedAt: reviewUpdatedAt == _copyUnset
+          ? this.reviewUpdatedAt
+          : reviewUpdatedAt as DateTime?,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 
-  AudioDetail normalizedForSave(DateTime now, {bool touchUpdatedAt = true}) {
+  static String normalizeReviewText(String value) =>
+      value.replaceAll('\r\n', '\n').replaceAll('\r', '\n').trim();
+
+  AudioDetail normalizedForSave(
+    DateTime now, {
+    bool touchUpdatedAt = true,
+    bool touchReviewUpdatedAt = false,
+  }) {
     if (salesCount != null && salesCount! < 0) {
       throw const FormatException('Invalid audio detail field: salesCount');
     }
     if (rating != null && (!rating!.isFinite || rating! < 0 || rating! > 5)) {
       throw const FormatException('Invalid audio detail field: rating');
+    }
+    if (userRating != null && (userRating! < 1 || userRating! > 5)) {
+      throw const FormatException('Invalid audio detail field: userRating');
     }
     if (duration != null && duration! <= Duration.zero) {
       throw const FormatException('Invalid audio detail field: duration');
@@ -200,6 +262,10 @@ class AudioDetail {
       duration: duration,
       salesCount: salesCount,
       rating: rating,
+      listenStatus: listenStatus,
+      userRating: userRating,
+      reviewText: normalizeReviewText(reviewText),
+      reviewUpdatedAt: touchReviewUpdatedAt ? now : reviewUpdatedAt,
       createdAt: createdAt ?? (touchUpdatedAt ? now : null),
       updatedAt: touchUpdatedAt ? now : updatedAt,
     );

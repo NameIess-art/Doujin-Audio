@@ -79,7 +79,7 @@ class AppSearchSuggestionSection extends StatelessWidget {
                         title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: _searchSectionTitleStyle(theme),
+                        style: _searchSectionTitleStyle(theme, color: accent),
                       ),
                     ),
                     if (onClear != null) ...[
@@ -170,10 +170,14 @@ class AppSearchSuggestionSection extends StatelessWidget {
   );
 }
 
-TextStyle? _searchSectionTitleStyle(ThemeData theme) => theme
+TextStyle? _searchSectionTitleStyle(ThemeData theme, {Color? color}) => theme
     .textTheme
     .titleSmall
-    ?.copyWith(fontSize: 16, fontWeight: FontWeight.w700);
+    ?.copyWith(
+      fontSize: 16,
+      fontWeight: FontWeight.w700,
+      color: color ?? theme.colorScheme.primary,
+    );
 
 /// Builds compact element rows only as they enter the viewport.
 /// Item values are stable keys; labels may differ or be duplicated.

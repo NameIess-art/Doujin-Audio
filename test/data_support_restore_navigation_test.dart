@@ -5,8 +5,10 @@ import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/core/errors/native_result.dart';
 import 'package:doujin_audio/core/widgets/app_dialog.dart';
 import 'package:doujin_audio/core/widgets/app_feedback.dart';
+import 'package:doujin_audio/features/data_support/application/cross_platform_sync_service.dart';
 import 'package:doujin_audio/features/data_support/application/data_backup_service.dart';
 import 'package:doujin_audio/features/data_support/application/data_support_file_service.dart';
+import 'package:doujin_audio/features/data_support/domain/cross_platform_sync_models.dart';
 import 'package:doujin_audio/features/data_support/presentation/data_support_settings_controls.dart';
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
 import 'package:file_picker/file_picker.dart';
@@ -19,7 +21,13 @@ import 'support/app_runtime_test_fixture.dart';
 void main() {
   AppRuntimeTestFixture.initialize();
 
-  for (final outcome in ['success', 'cancel', 'failure', 'incompatible']) {
+  for (final outcome in [
+    'success',
+    'merge_sync',
+    'cancel',
+    'failure',
+    'incompatible',
+  ]) {
     testWidgets(
       'restore uses menu-bar progress and protects navigation on $outcome',
       (tester) async {
@@ -59,8 +67,6 @@ void main() {
         await tester.tap(
           find.byKey(const ValueKey('data-support-restore-backup')),
         );
-        await tester.pumpAndSettle();
-        await tester.tap(find.text(i18n.tr('select_backup')));
         for (var i = 0; i < 15 && files.pickCalls == 0; i++) {
           await tester.pump(const Duration(milliseconds: 100));
         }
@@ -75,6 +81,7 @@ void main() {
         if (outcome == 'cancel') {
           files.pendingPick.complete(null);
           await tester.pumpAndSettle();
+          expect(files.inspectCalls, 0);
           expect(files.stageCalls, 0);
           expect(progress, findsNothing);
           expect(find.text(i18n.tr('backup_ready_to_restore')), findsNothing);
@@ -90,12 +97,16 @@ void main() {
           return;
         }
         files.pendingPick.complete(
-          PlatformFile(name: 'backup.dabackup', size: 128, path: '/backup.dabackup'),
+          PlatformFile(
+            name: 'backup.dabackup',
+            size: 128,
+            path: '/backup.dabackup',
+          ),
         );
-        for (var i = 0; i < 15 && files.stageCalls == 0; i++) {
+        for (var i = 0; i < 15 && files.inspectCalls == 0; i++) {
           await tester.pump(const Duration(milliseconds: 100));
         }
-        expect(files.stageCalls, 1);
+        expect(files.inspectCalls, 1);
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 400));
         expect(progress, findsOneWidget);
@@ -112,32 +123,56 @@ void main() {
         );
         await navigator.maybePop();
         await tester.pump(const Duration(seconds: 6));
-        expect(files.stageCalls, 1);
+        expect(files.inspectCalls, 1);
         expect(progress, findsOneWidget);
         expect(find.byType(DataSupportSettingsControls), findsOneWidget);
 
         if (outcome == 'failure') {
-          files.pending.completeError(StateError('invalid backup'));
+          files.pendingInspect.completeError(StateError('invalid backup'));
         } else if (outcome == 'incompatible') {
-          files.pending.completeError(
-            const FormatException('incompatible_backup'),
+          files.pendingInspect.completeError(
+            const FormatException('unsupported_database_schema'),
           );
         } else {
-          files.pending.complete(
+          files.pendingInspect.complete(
+            BackupInspectionResult(
+              manifest: BackupManifest(
+                formatVersion: 1,
+                appVersion: '1.0.0',
+                databaseSchemaVersion: 23,
+                platform: outcome == 'merge_sync' ? 'android' : 'windows',
+                createdAt: DateTime.utc(2026, 11, 26),
+                containsSensitiveAccountData: true,
+                files: const {},
+              ),
+              isSamePlatform: outcome != 'merge_sync',
+              hasAccountData: false,
+            ),
+          );
+        }
+
+        if (outcome == 'success') {
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 400));
+          expect(find.byType(AppDialog), findsOneWidget);
+          await tester.tap(find.byKey(const ValueKey('backup-import-confirm')));
+          for (var i = 0; i < 15 && files.stageCalls == 0; i++) {
+            await tester.pump(const Duration(milliseconds: 100));
+          }
+          expect(files.stageCalls, 1);
+          files.pendingStage.complete(
             BackupValidationResult(
               manifest: BackupManifest(
                 formatVersion: 1,
                 appVersion: '1.0.0',
-                databaseSchemaVersion: 1,
+                databaseSchemaVersion: 23,
                 platform: 'windows',
-                createdAt: DateTime(2026),
-                containsSensitiveAccountData: false,
+                createdAt: DateTime.utc(2026, 11, 26),
+                containsSensitiveAccountData: true,
                 files: const {},
               ),
             ),
           );
-        }
-        if (outcome == 'success') {
           // The restore operation remains busy until the app closes, so the
           // obscured settings progress indicator intentionally keeps ticking.
           await tester.pump();
@@ -151,6 +186,35 @@ void main() {
           // Forced teardown dismisses the non-dismissible completion dialog.
           navigator.pop();
           await tester.pumpAndSettle();
+        } else if (outcome == 'merge_sync') {
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 400));
+          expect(
+            find.text(i18n.tr('backup_import_cross_platform_hint')),
+            findsOneWidget,
+          );
+          await tester.tap(find.byKey(const ValueKey('backup-import-confirm')));
+          for (var i = 0; i < 15 && files.mergeCalls == 0; i++) {
+            await tester.pump(const Duration(milliseconds: 100));
+          }
+          expect(files.mergeCalls, 1);
+          files.pendingMerge.complete(
+            const BackupMergeResult(
+              syncSummary: CrossPlatformSyncSummary(
+                trackStatesMerged: 2,
+                listeningDaysUpdated: 1,
+                timeSegmentsMerged: 3,
+                interestsChanged: false,
+                peersMerged: 1,
+              ),
+              accountSynced: false,
+              portableSettingsSynced: false,
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.text(i18n.tr('backup_ready_to_restore')), findsNothing);
+          expect(playback.clearCalls, 0);
+          expect(find.text(i18n.tr('operation_completed')), findsOneWidget);
         } else {
           if (outcome == 'incompatible') {
             // Feedback without an action animates until timeout.
@@ -190,9 +254,13 @@ void main() {
 
 class _DeferredRestoreFileService extends DataSupportFileService {
   final pendingPick = Completer<PlatformFile?>();
-  final pending = Completer<BackupValidationResult?>();
+  final pendingInspect = Completer<BackupInspectionResult>();
+  final pendingStage = Completer<BackupValidationResult>();
+  final pendingMerge = Completer<BackupMergeResult>();
   var pickCalls = 0;
+  var inspectCalls = 0;
   var stageCalls = 0;
+  var mergeCalls = 0;
 
   @override
   Future<PlatformFile?> pickBackupFile({required String dialogTitle}) {
@@ -201,9 +269,25 @@ class _DeferredRestoreFileService extends DataSupportFileService {
   }
 
   @override
-  Future<BackupValidationResult?> stageBackupFile(PlatformFile selected) {
+  Future<BackupInspectionResult> inspectBackupPath(String sourcePath) {
+    inspectCalls++;
+    return pendingInspect.future;
+  }
+
+  @override
+  Future<BackupValidationResult> stageRestorePath(String sourcePath) {
     stageCalls++;
-    return pending.future;
+    return pendingStage.future;
+  }
+
+  @override
+  Future<BackupMergeResult> mergeBackupPath(
+    String sourcePath, {
+    required CrossPlatformSyncService syncService,
+    bool syncAccountAndPortableSettings = false,
+  }) {
+    mergeCalls++;
+    return pendingMerge.future;
   }
 }
 

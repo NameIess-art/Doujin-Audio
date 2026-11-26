@@ -3,16 +3,22 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show compute;
+import 'package:flutter/foundation.dart'
+    show ValueListenable, ValueNotifier, compute;
 import 'package:meta/meta.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
 import '../logging/app_log_service.dart';
 import '../persistence/json_document_store.dart';
+import 'translation_service_settings.dart';
+
+export 'translation_service_settings.dart';
 
 const textTranslationBatchMaxCharacters = 4000;
 const textTranslationBatchMaxItems = 50;
+const textTranslationLlmBatchMaxCharacters = 1800;
+const textTranslationLlmBatchMaxItems = 20;
 const textTranslationCacheDirectoryName = 'page_translations';
 
 enum TextTranslationFailure {
@@ -20,6 +26,22 @@ enum TextTranslationFailure {
   invalidResponse,
   rateLimited,
   unusualTraffic,
+  unauthorized,
+  misconfigured,
+}
+
+class CustomTranslationTestOutcome {
+  const CustomTranslationTestOutcome({
+    this.sampleTranslation,
+    this.elapsedMilliseconds,
+    this.failure,
+  });
+
+  final String? sampleTranslation;
+  final int? elapsedMilliseconds;
+  final TextTranslationFailure? failure;
+
+  bool get isSuccess => failure == null && sampleTranslation != null;
 }
 
 class TextTranslationRequest {
@@ -85,7 +107,7 @@ class TextTranslationResult {
   final TextTranslationFailure? failure;
 }
 
-typedef _TranslationKey = (String, String, String);
+typedef _TranslationKey = (String, String, String, String);
 
 class TextTranslationService {
   TextTranslationService({
@@ -96,9 +118,13 @@ class TextTranslationService {
     DateTime Function()? now,
     Duration requestInterval = const Duration(milliseconds: 250),
     Duration requestTimeout = const Duration(seconds: 20),
+    Duration llmRequestTimeout = const Duration(seconds: 90),
     Duration diskWriteDebounce = const Duration(milliseconds: 500),
     int memoryCapacity = 1000,
     int diskCapacity = 3000,
+    TranslationServiceSettings initialSettings =
+        const TranslationServiceSettings(),
+    String? initialApiKey,
   }) : assert(memoryCapacity > 0),
        assert(diskCapacity >= memoryCapacity),
        _clientFactory = clientFactory ?? (() => HttpClient()),
@@ -110,9 +136,12 @@ class TextTranslationService {
        _now = now ?? DateTime.now,
        _requestInterval = requestInterval,
        _requestTimeout = requestTimeout,
+       _llmRequestTimeout = llmRequestTimeout,
        _diskWriteDebounce = diskWriteDebounce,
        _memoryCapacity = memoryCapacity,
-       _diskCapacity = diskCapacity;
+       _diskCapacity = diskCapacity,
+       _settings = initialSettings,
+       _apiKey = _normalizeSecret(initialApiKey);
 
   final HttpClient Function() _clientFactory;
   final Uri _endpoint;
@@ -122,9 +151,13 @@ class TextTranslationService {
   final DateTime Function() _now;
   final Duration _requestInterval;
   final Duration _requestTimeout;
+  final Duration _llmRequestTimeout;
   final Duration _diskWriteDebounce;
   final int _memoryCapacity;
   final int _diskCapacity;
+  TranslationServiceSettings _settings;
+  String? _apiKey;
+  final ValueNotifier<int> _configurationRevision = ValueNotifier<int>(0);
   final _memory = <_TranslationKey, String>{};
   final _recentlyAccessed = <_TranslationKey, String>{};
   final _pendingDiskAdditions = <_TranslationKey, String>{};
@@ -142,10 +175,39 @@ class TextTranslationService {
   DateTime? _lastRequestAt;
   DateTime? _cooldownUntil;
   TextTranslationFailure? _cooldownFailure;
+  DateTime? _llmCooldownUntil;
+  TextTranslationFailure? _llmCooldownFailure;
   bool _disposed = false;
   int _cacheEpoch = 0;
 
+  static String? _normalizeSecret(String? value) {
+    final trimmed = value?.trim();
+    return (trimmed == null || trimmed.isEmpty) ? null : trimmed;
+  }
+
   JsonDocumentStore get _store => _documentStore ??= DefaultJsonDocumentStore();
+
+  ValueListenable<int> get configurationRevision => _configurationRevision;
+
+  TranslationServiceSettings get settings => _settings;
+
+  bool usesCustomBackendFor(TextTranslationScene scene) =>
+      _settings.usesCustomFor(scene);
+
+  String backendSignatureFor(TextTranslationScene scene) =>
+      _settings.backendSignatureFor(scene);
+
+  void configure(TranslationServiceSettings settings, [String? apiKey]) {
+    final normalizedKey = _normalizeSecret(apiKey);
+    if (_settings == settings && _apiKey == normalizedKey) return;
+    _settings = settings;
+    _apiKey = normalizedKey;
+    _llmCooldownUntil = null;
+    _llmCooldownFailure = null;
+    if (!_disposed) {
+      _configurationRevision.value++;
+    }
+  }
 
   TextTranslationRequest newRequest() {
     final request = TextTranslationRequest();
@@ -158,8 +220,28 @@ class TextTranslationService {
     return request;
   }
 
-  String? cached(String text, String target, {String source = 'auto'}) {
-    final key = (text, source, target);
+  String? cached(String text, String target, {String source = 'auto'}) =>
+      _cachedInternal(text, target, source: source, scene: TextTranslationScene.browse);
+
+  String? cachedInScene(
+    String text,
+    String target, {
+    String source = 'auto',
+    TextTranslationScene scene = TextTranslationScene.browse,
+  }) {
+    if (runtimeType != TextTranslationService) {
+      return cached(text, target, source: source);
+    }
+    return _cachedInternal(text, target, source: source, scene: scene);
+  }
+
+  String? _cachedInternal(
+    String text,
+    String target, {
+    required String source,
+    required TextTranslationScene scene,
+  }) {
+    final key = (backendSignatureFor(scene), text, source, target);
     final value = _memory.remove(key);
     if (value != null) {
       _memory[key] = value;
@@ -177,11 +259,54 @@ class TextTranslationService {
     required String target,
     required TextTranslationRequest request,
     String source = 'auto',
+  }) => _enqueueTranslate(
+    texts,
+    target: target,
+    source: source,
+    scene: TextTranslationScene.browse,
+    contextBefore: const <String>[],
+    request: request,
+  );
+
+  Future<TextTranslationResult> translateInScene(
+    List<String> texts, {
+    required String target,
+    required TextTranslationRequest request,
+    String source = 'auto',
+    TextTranslationScene scene = TextTranslationScene.browse,
+    List<String> contextBefore = const <String>[],
+  }) {
+    if (runtimeType != TextTranslationService) {
+      return translate(texts, target: target, source: source, request: request);
+    }
+    return _enqueueTranslate(
+      texts,
+      target: target,
+      source: source,
+      scene: scene,
+      contextBefore: contextBefore,
+      request: request,
+    );
+  }
+
+  Future<TextTranslationResult> _enqueueTranslate(
+    List<String> texts, {
+    required String target,
+    required String source,
+    required TextTranslationScene scene,
+    required List<String> contextBefore,
+    required TextTranslationRequest request,
   }) async {
     if (_disposed || request.cancelled) return TextTranslationResult();
     final task = _operations.then(
-      (_) =>
-          _translate(texts, target: target, source: source, request: request),
+      (_) => _translate(
+        texts,
+        target: target,
+        source: source,
+        scene: scene,
+        contextBefore: contextBefore,
+        request: request,
+      ),
     );
     // A failed caller must not poison the queue for later page requests.
     _operations = task.then<void>((_) {}, onError: (Object _, StackTrace _) {});
@@ -196,16 +321,32 @@ class TextTranslationService {
     List<String> texts, {
     required String target,
     required String source,
+    required TextTranslationScene scene,
+    required List<String> contextBefore,
     required TextTranslationRequest request,
   }) async {
     final result = <String, String>{};
     final additions = <_TranslationKey, String>{};
     final epoch = _cacheEpoch;
+    final activeSettings = _settings;
+    final activeApiKey = _apiKey;
+    final useCustom = activeSettings.usesCustomFor(scene);
+    final backend = activeSettings.backendSignatureFor(scene);
     try {
       if (request.cancelled || _disposed) return TextTranslationResult();
+      if (useCustom && !activeSettings.isCustomReady) {
+        return TextTranslationResult(
+          failure: TextTranslationFailure.misconfigured,
+        );
+      }
       final unique = texts.where(canTranslateText).toSet();
       for (final text in unique) {
-        final value = cached(text, target, source: source);
+        final value = _cachedInternal(
+          text,
+          target,
+          source: source,
+          scene: scene,
+        );
         if (value != null) result[text] = value;
       }
       if (result.length == unique.length) {
@@ -213,7 +354,7 @@ class TextTranslationService {
       }
       final entries = await request._active(_readDisk());
       for (final text in unique.where((text) => !result.containsKey(text))) {
-        final key = (text, source, target);
+        final key = (backend, text, source, target);
         final value = entries.remove(key);
         if (value == null) continue;
         entries[key] = value;
@@ -223,12 +364,29 @@ class TextTranslationService {
       final missing = unique
           .where((text) => !result.containsKey(text))
           .toList();
-      for (final batch in textTranslationBatches(missing)) {
-        final cooldown = _cooldownUntil;
+      final batches = useCustom
+          ? textTranslationBatches(
+              missing,
+              maxItems: textTranslationLlmBatchMaxItems,
+              maxCharacters: textTranslationLlmBatchMaxCharacters,
+            )
+          : textTranslationBatches(missing);
+      var rollingContext = contextBefore
+          .map((line) => line.trim())
+          .where((line) => line.isNotEmpty)
+          .toList();
+      if (rollingContext.length > 4) {
+        rollingContext = rollingContext.sublist(rollingContext.length - 4);
+      }
+      for (final batch in batches) {
+        final cooldown = useCustom ? _llmCooldownUntil : _cooldownUntil;
+        final cooldownFailure = useCustom
+            ? _llmCooldownFailure
+            : _cooldownFailure;
         if (cooldown != null && _now().isBefore(cooldown)) {
           return TextTranslationResult(
             translations: result,
-            failure: _cooldownFailure,
+            failure: cooldownFailure,
           );
         }
         final last = _lastRequestAt;
@@ -238,14 +396,33 @@ class TextTranslationService {
             await request._active(Future<void>.delayed(delay));
           }
         }
-        final translated = await _fetch(batch, source, target, request);
+        final translated = useCustom
+            ? await _fetchOpenAiCompatible(
+                batch,
+                source,
+                target,
+                request,
+                contextBefore: rollingContext,
+                settings: activeSettings,
+                apiKey: activeApiKey,
+              )
+            : await _fetchGoogle(batch, source, target, request);
         for (var index = 0; index < batch.length; index++) {
-          final key = (batch[index], source, target);
+          final key = (backend, batch[index], source, target);
           result[batch[index]] = translated[index];
           _remember(key, translated[index]);
           entries.remove(key);
           entries[key] = translated[index];
           additions[key] = translated[index];
+        }
+        if (useCustom) {
+          rollingContext = [
+            ...rollingContext,
+            ...batch.map((line) => line.trim()).where((line) => line.isNotEmpty),
+          ];
+          if (rollingContext.length > 4) {
+            rollingContext = rollingContext.sublist(rollingContext.length - 4);
+          }
         }
         while (entries.length > _diskCapacity) {
           entries.remove(entries.keys.first);
@@ -276,6 +453,136 @@ class TextTranslationService {
     }
   }
 
+  Future<List<String>> fetchAvailableModels({
+    required String apiBaseUrl,
+    String? apiKey,
+    bool useSavedApiKeyIfEmpty = false,
+  }) async {
+    if (_disposed) return const <String>[];
+    final modelsUri = TranslationServiceSettings.resolveModelsUri(apiBaseUrl);
+    if (modelsUri == null) {
+      throw TextTranslationFailure.misconfigured;
+    }
+    final normalizedKey =
+        _normalizeSecret(apiKey) ?? (useSavedApiKeyIfEmpty ? _apiKey : null);
+    try {
+      final (status, body) = await _getJson(
+        modelsUri,
+        apiKey: normalizedKey,
+        timeout: _requestTimeout,
+      );
+      if (status == HttpStatus.unauthorized || status == HttpStatus.forbidden) {
+        throw TextTranslationFailure.unauthorized;
+      }
+      if (status == HttpStatus.ok) {
+        final parsed = _parseModelList(body);
+        if (parsed.isNotEmpty) return parsed;
+      }
+      if (status == HttpStatus.notFound) {
+        final tagsUri = TranslationServiceSettings.resolveOllamaTagsUri(
+          apiBaseUrl,
+        );
+        if (tagsUri != null && tagsUri != modelsUri) {
+          final (ollamaStatus, ollamaBody) = await _getJson(
+            tagsUri,
+            apiKey: normalizedKey,
+            timeout: _requestTimeout,
+          );
+          if (ollamaStatus == HttpStatus.ok) {
+            return _parseModelList(ollamaBody);
+          }
+        }
+      }
+      throw TextTranslationFailure.unavailable;
+    } on TextTranslationFailure {
+      rethrow;
+    } on FormatException {
+      throw TextTranslationFailure.invalidResponse;
+    } on IOException {
+      throw TextTranslationFailure.unavailable;
+    } on TimeoutException {
+      throw TextTranslationFailure.unavailable;
+    }
+  }
+
+  Future<CustomTranslationTestOutcome> testCustomConfiguration({
+    required TranslationServiceSettings settings,
+    String? apiKey,
+    bool useSavedApiKeyIfEmpty = false,
+    String target = 'zh-CN',
+  }) async {
+    if (_disposed) {
+      return const CustomTranslationTestOutcome(
+        failure: TextTranslationFailure.unavailable,
+      );
+    }
+    final candidate = settings.copyWith(
+      provider: TranslationProviderKind.openAiCompatible,
+    );
+    if (!candidate.isCustomReady) {
+      return const CustomTranslationTestOutcome(
+        failure: TextTranslationFailure.misconfigured,
+      );
+    }
+    final resolvedKey =
+        _normalizeSecret(apiKey) ?? (useSavedApiKeyIfEmpty ? _apiKey : null);
+    final request = newRequest();
+    final stopwatch = Stopwatch()..start();
+    try {
+      final translated = await _fetchOpenAiCompatible(
+        const <String>['お疲れ様でした。今日もゆっくり休んでね。'],
+        'ja',
+        target,
+        request,
+        contextBefore: const <String>[],
+        settings: candidate,
+        apiKey: resolvedKey,
+        recordCooldown: false,
+      );
+      stopwatch.stop();
+      return CustomTranslationTestOutcome(
+        sampleTranslation: translated.single,
+        elapsedMilliseconds: stopwatch.elapsedMilliseconds,
+      );
+    } on _TranslationError catch (error) {
+      return CustomTranslationTestOutcome(failure: error.failure);
+    } on IOException {
+      return const CustomTranslationTestOutcome(
+        failure: TextTranslationFailure.unavailable,
+      );
+    } on TimeoutException {
+      return const CustomTranslationTestOutcome(
+        failure: TextTranslationFailure.unavailable,
+      );
+    } finally {
+      request.cancel();
+    }
+  }
+
+  Future<(int, String)> _getJson(
+    Uri uri, {
+    required String? apiKey,
+    required Duration timeout,
+  }) async {
+    final client = _ensureClient();
+    HttpClientRequest? pendingRequest;
+    try {
+      pendingRequest = await client.getUrl(uri).timeout(timeout);
+      pendingRequest.headers.set(HttpHeaders.acceptHeader, 'application/json');
+      if (apiKey != null && apiKey.isNotEmpty) {
+        pendingRequest.headers.set(
+          HttpHeaders.authorizationHeader,
+          'Bearer $apiKey',
+        );
+      }
+      final response = await pendingRequest.close().timeout(timeout);
+      final body = await utf8.decoder.bind(response).join().timeout(timeout);
+      return (response.statusCode, body);
+    } finally {
+      pendingRequest?.abort();
+    }
+  }
+
   HttpClient _ensureClient() {
     final existing = _httpClient;
     if (existing != null) return existing;
@@ -284,7 +591,7 @@ class TextTranslationService {
     return _httpClient = client;
   }
 
-  Future<List<String>> _fetch(
+  Future<List<String>> _fetchGoogle(
     List<String> texts,
     String source,
     String target,
@@ -333,34 +640,11 @@ class TextTranslationService {
       final response = await request._active(
         pending.close().timeout(_requestTimeout),
       );
-      final bodyBuffer = StringBuffer();
-      final bodyCompleter = Completer<String>();
-      responseSubscription = utf8.decoder
-          .bind(response)
-          .listen(
-            bodyBuffer.write,
-            onError: (Object error, StackTrace stack) {
-              if (bodyCompleter.isCompleted) return;
-              if (error is FormatException) {
-                bodyCompleter.completeError(
-                  const _TranslationError(
-                    TextTranslationFailure.invalidResponse,
-                  ),
-                  stack,
-                );
-              } else {
-                bodyCompleter.completeError(error, stack);
-              }
-            },
-            onDone: () {
-              if (!bodyCompleter.isCompleted) {
-                bodyCompleter.complete(bodyBuffer.toString());
-              }
-            },
-            cancelOnError: true,
-          );
-      final body = await request._active(
-        bodyCompleter.future.timeout(_requestTimeout),
+      final body = await _readResponseBody(
+        response,
+        request: request,
+        timeout: _requestTimeout,
+        onSubscription: (sub) => responseSubscription = sub,
       );
       responseCompleted = true;
       if (request.cancelled) throw const _TranslationCancelled();
@@ -371,20 +655,10 @@ class TextTranslationService {
         final failure = unusual
             ? TextTranslationFailure.unusualTraffic
             : TextTranslationFailure.rateLimited;
-        var delay = Duration(minutes: unusual ? 5 : 1);
-        final retry = response.headers.value(HttpHeaders.retryAfterHeader);
-        final seconds = int.tryParse(retry ?? '');
-        Duration? requested;
-        if (seconds != null) {
-          requested = Duration(seconds: seconds);
-        } else if (retry != null) {
-          try {
-            requested = HttpDate.parse(retry).difference(_now());
-          } on FormatException {
-            // Invalid Retry-After values do not shorten the minimum cooldown.
-          }
-        }
-        if (requested != null && requested > delay) delay = requested;
+        final delay = _resolveCooldownDelay(
+          response,
+          minimum: Duration(minutes: unusual ? 5 : 1),
+        );
         _cooldownUntil = _now().add(delay);
         _cooldownFailure = failure;
         throw _TranslationError(failure);
@@ -392,7 +666,7 @@ class TextTranslationService {
       if (response.statusCode != HttpStatus.ok) {
         throw const _TranslationError(TextTranslationFailure.unavailable);
       }
-      return _parse(body, texts.length);
+      return _parseGoogle(body, texts.length);
     } finally {
       aborted = true;
       _lastRequestAt = _now();
@@ -402,6 +676,193 @@ class TextTranslationService {
         pendingRequest?.abort();
       }
     }
+  }
+
+  Future<List<String>> _fetchOpenAiCompatible(
+    List<String> texts,
+    String source,
+    String target,
+    TextTranslationRequest request, {
+    required List<String> contextBefore,
+    required TranslationServiceSettings settings,
+    required String? apiKey,
+    bool recordCooldown = true,
+  }) async {
+    if (request.cancelled || _disposed) throw const _TranslationCancelled();
+    final uri = TranslationServiceSettings.resolveChatCompletionsUri(
+      settings.apiBaseUrl,
+    );
+    final modelName = settings.model.trim();
+    if (uri == null || modelName.isEmpty) {
+      throw const _TranslationError(TextTranslationFailure.misconfigured);
+    }
+    final client = _ensureClient();
+    HttpClientRequest? pendingRequest;
+    StreamSubscription<String>? responseSubscription;
+    var aborted = false;
+    var responseCompleted = false;
+    request._abort = () {
+      aborted = true;
+      pendingRequest?.abort(const _TranslationCancelled());
+      unawaited(responseSubscription?.cancel());
+    };
+    try {
+      final pending = await request._active(
+        client
+            .postUrl(uri)
+            .then((req) {
+              if (aborted || request.cancelled || _disposed) {
+                req.abort(const _TranslationCancelled());
+                throw const _TranslationCancelled();
+              }
+              return pendingRequest = req;
+            })
+            .timeout(_requestTimeout),
+      );
+      pending.headers.contentType = ContentType(
+        'application',
+        'json',
+        charset: 'utf-8',
+      );
+      pending.headers.set(HttpHeaders.acceptHeader, 'application/json');
+      if (apiKey != null && apiKey.isNotEmpty) {
+        pending.headers.set(
+          HttpHeaders.authorizationHeader,
+          'Bearer $apiKey',
+        );
+      }
+      final targetLabel = _languageLabel(target);
+      final sourceLabel = source == 'auto'
+          ? 'auto-detected source language'
+          : _languageLabel(source);
+      final systemPrompt =
+          '${settings.effectivePrompt}\n\n'
+          'Strict output protocol:\n'
+          '- Source language: $sourceLabel\n'
+          '- Target language: $targetLabel\n'
+          '- Input is a JSON object with "items" (mapping string indices "0".."${texts.length - 1}" to source texts) '
+          'and optional "context" (preceding lines for reference only; do NOT include "context" in output).\n'
+          '- Output ONLY a valid JSON object with the exact same keys "0".."${texts.length - 1}" '
+          'mapped to their translated strings in $targetLabel. Never merge, split, omit, or add keys.';
+      final userPayload = <String, Object>{
+        if (contextBefore.isNotEmpty) 'context': contextBefore,
+        'items': <String, String>{
+          for (var i = 0; i < texts.length; i++) '$i': texts[i],
+        },
+      };
+      pending.add(
+        utf8.encode(
+          jsonEncode(<String, Object>{
+            'model': modelName,
+            'temperature': 0.3,
+            'stream': false,
+            'messages': <Map<String, String>>[
+              {'role': 'system', 'content': systemPrompt},
+              {'role': 'user', 'content': jsonEncode(userPayload)},
+            ],
+          }),
+        ),
+      );
+      final response = await request._active(
+        pending.close().timeout(_llmRequestTimeout),
+      );
+      final body = await _readResponseBody(
+        response,
+        request: request,
+        timeout: _llmRequestTimeout,
+        onSubscription: (sub) => responseSubscription = sub,
+      );
+      responseCompleted = true;
+      if (request.cancelled) throw const _TranslationCancelled();
+      if (response.statusCode == HttpStatus.unauthorized ||
+          response.statusCode == HttpStatus.forbidden) {
+        throw const _TranslationError(TextTranslationFailure.unauthorized);
+      }
+      if (response.statusCode == HttpStatus.tooManyRequests) {
+        if (recordCooldown) {
+          final delay = _resolveCooldownDelay(
+            response,
+            minimum: const Duration(seconds: 15),
+          );
+          _llmCooldownUntil = _now().add(delay);
+          _llmCooldownFailure = TextTranslationFailure.rateLimited;
+        }
+        throw const _TranslationError(TextTranslationFailure.rateLimited);
+      }
+      if (response.statusCode != HttpStatus.ok) {
+        throw const _TranslationError(TextTranslationFailure.unavailable);
+      }
+      return _parseOpenAiTranslations(body, texts.length);
+    } finally {
+      aborted = true;
+      if (recordCooldown) {
+        _lastRequestAt = _now();
+      }
+      request._abort = null;
+      await responseSubscription?.cancel();
+      if (!responseCompleted) {
+        pendingRequest?.abort();
+      }
+    }
+  }
+
+  Future<String> _readResponseBody(
+    HttpClientResponse response, {
+    required TextTranslationRequest request,
+    required Duration timeout,
+    required void Function(StreamSubscription<String>) onSubscription,
+  }) async {
+    final bodyBuffer = StringBuffer();
+    final bodyCompleter = Completer<String>();
+    final subscription = utf8.decoder
+        .bind(response)
+        .listen(
+          bodyBuffer.write,
+          onError: (Object error, StackTrace stack) {
+            if (bodyCompleter.isCompleted) return;
+            if (error is FormatException) {
+              bodyCompleter.completeError(
+                const _TranslationError(TextTranslationFailure.invalidResponse),
+                stack,
+              );
+            } else {
+              bodyCompleter.completeError(error, stack);
+            }
+          },
+          onDone: () {
+            if (!bodyCompleter.isCompleted) {
+              bodyCompleter.complete(bodyBuffer.toString());
+            }
+          },
+          cancelOnError: true,
+        );
+    onSubscription(subscription);
+    try {
+      return await request._active(bodyCompleter.future.timeout(timeout));
+    } finally {
+      await subscription.cancel();
+    }
+  }
+
+  Duration _resolveCooldownDelay(
+    HttpClientResponse response, {
+    required Duration minimum,
+  }) {
+    var delay = minimum;
+    final retry = response.headers.value(HttpHeaders.retryAfterHeader);
+    final seconds = int.tryParse(retry ?? '');
+    Duration? requested;
+    if (seconds != null) {
+      requested = Duration(seconds: seconds);
+    } else if (retry != null) {
+      try {
+        requested = HttpDate.parse(retry).difference(_now());
+      } on FormatException {
+        // Invalid Retry-After values do not shorten the minimum cooldown.
+      }
+    }
+    if (requested != null && requested > delay) delay = requested;
+    return delay;
   }
 
   void _remember(_TranslationKey key, String value) {
@@ -526,7 +987,8 @@ class TextTranslationService {
       if (peerDiskFuture != null) {
         unawaited(
           peerDiskFuture.then((entries) {
-            if (peer._disposed || !identical(peer._diskEntries, peerDiskFuture)) {
+            if (peer._disposed ||
+                !identical(peer._diskEntries, peerDiskFuture)) {
               return;
             }
             for (final entry in changes.entries) {
@@ -593,6 +1055,7 @@ class TextTranslationService {
   }
 
   void dispose() {
+    if (_disposed) return;
     _disposed = true;
     _flushDiskAdditions();
     for (final request in _requests.toList()) {
@@ -604,6 +1067,100 @@ class TextTranslationService {
     _recentlyAccessed.clear();
     _diskEntries = null;
     _cacheUsers.remove(this);
+    _configurationRevision.dispose();
+  }
+}
+
+String _languageLabel(String code) => switch (code) {
+  'zh' || 'zh-CN' => 'Simplified Chinese (简体中文)',
+  'zh-TW' || 'zh-HK' => 'Traditional Chinese (繁體中文)',
+  'en' => 'English',
+  'ja' => 'Japanese (日本語)',
+  _ => code,
+};
+
+List<String> _parseModelList(String body) {
+  final decoded = jsonDecode(body);
+  if (decoded is! Map) throw const FormatException('Invalid models payload');
+  final seen = <String>{};
+  final models = <String>[];
+  final data = decoded['data'] ?? decoded['models'];
+  if (data is! List) return models;
+  for (final item in data) {
+    if (item is Map) {
+      final raw = (item['id'] ?? item['name'])?.toString().trim() ?? '';
+      if (raw.isNotEmpty && seen.add(raw)) {
+        models.add(raw);
+      }
+    } else if (item is String && item.trim().isNotEmpty) {
+      final raw = item.trim();
+      if (seen.add(raw)) models.add(raw);
+    }
+  }
+  return models;
+}
+
+final RegExp _thinkingBlockPattern = RegExp(
+  r'<think>[\s\S]*?(?:</think>|$)',
+  caseSensitive: false,
+);
+final RegExp _codeFencePattern = RegExp(
+  r'^```(?:json)?\s*([\s\S]*?)\s*```$',
+  caseSensitive: false,
+);
+
+List<String> _parseOpenAiTranslations(String body, int count) {
+  try {
+    final decoded = jsonDecode(body);
+    if (decoded is! Map) throw const FormatException();
+    final choices = decoded['choices'];
+    String? rawContent;
+    if (choices is List && choices.isNotEmpty) {
+      final first = choices.first;
+      if (first is Map) {
+        final message = first['message'];
+        if (message is Map) {
+          final content = message['content'];
+          if (content is String) {
+            rawContent = content;
+          } else if (content is List) {
+            rawContent = content
+                .whereType<Map<Object?, Object?>>()
+                .map((part) => part['text']?.toString() ?? '')
+                .join();
+          }
+        }
+      }
+    }
+    if (rawContent == null || rawContent.trim().isEmpty) {
+      throw const FormatException();
+    }
+    var cleaned = rawContent.replaceAll(_thinkingBlockPattern, '').trim();
+    final fenced = _codeFencePattern.firstMatch(cleaned);
+    if (fenced != null) {
+      cleaned = fenced.group(1)!.trim();
+    }
+    final openBrace = cleaned.indexOf('{');
+    final closeBrace = cleaned.lastIndexOf('}');
+    if (openBrace < 0 || closeBrace <= openBrace) {
+      throw const FormatException();
+    }
+    var parsed = jsonDecode(cleaned.substring(openBrace, closeBrace + 1));
+    if (parsed is! Map) throw const FormatException();
+    if (parsed['items'] is Map && !parsed.containsKey('0')) {
+      parsed = parsed['items'] as Map;
+    }
+    final results = <String>[];
+    for (var i = 0; i < count; i++) {
+      final value = parsed['$i'];
+      if (value is! String || value.trim().isEmpty) {
+        throw const FormatException();
+      }
+      results.add(value.trim());
+    }
+    return results;
+  } on FormatException {
+    throw const _TranslationError(TextTranslationFailure.invalidResponse);
   }
 }
 
@@ -619,14 +1176,18 @@ Map<_TranslationKey, String> _decodeTranslationCache(
   if (rows is! List) return entries;
   for (final row in rows) {
     if (row is! List ||
-        row.length != 4 ||
+        (row.length != 4 && row.length != 5) ||
         !row.every((value) => value is String)) {
       continue;
     }
     final original = row[2] as String;
     final translated = row[3] as String;
-    if (canTranslateText(original) && translated.trim().isNotEmpty) {
-      entries[(original, row[1] as String, row[0] as String)] = translated;
+    final backend = row.length == 5 ? row[4] as String : 'google';
+    if (backend.isNotEmpty &&
+        canTranslateText(original) &&
+        translated.trim().isNotEmpty) {
+      entries[(backend, original, row[1] as String, row[0] as String)] =
+          translated;
     }
   }
   while (entries.length > capacity) {
@@ -658,14 +1219,27 @@ Uint8List _mergeTranslationCache(
         'version': 2,
         'entries': [
           for (final entry in entries.entries)
-            [entry.key.$3, entry.key.$2, entry.key.$1, entry.value],
+            if (entry.key.$1 == 'google')
+              [entry.key.$4, entry.key.$3, entry.key.$2, entry.value]
+            else
+              [
+                entry.key.$4,
+                entry.key.$3,
+                entry.key.$2,
+                entry.value,
+                entry.key.$1,
+              ],
         ],
       }),
     ),
   );
 }
 
-List<List<String>> textTranslationBatches(List<String> texts) {
+List<List<String>> textTranslationBatches(
+  List<String> texts, {
+  int maxItems = textTranslationBatchMaxItems,
+  int maxCharacters = textTranslationBatchMaxCharacters,
+}) {
   final batches = <List<String>>[];
   var current = <String>[];
   var characters = 0;
@@ -674,8 +1248,8 @@ List<List<String>> textTranslationBatches(List<String> texts) {
       throw ArgumentError.value(text.length, 'text.length');
     }
     if (current.isNotEmpty &&
-        (current.length == textTranslationBatchMaxItems ||
-            characters + text.length > textTranslationBatchMaxCharacters)) {
+        (current.length == maxItems ||
+            characters + text.length > maxCharacters)) {
       batches.add(current);
       current = [];
       characters = 0;
@@ -747,7 +1321,7 @@ bool canTranslateText(String text) =>
     _letters.hasMatch(text) &&
     !_workNumber.hasMatch(text.trim());
 
-List<String> _parse(String body, int count) {
+List<String> _parseGoogle(String body, int count) {
   try {
     final decoded = jsonDecode(body);
     if (decoded is! List || decoded.length != count) {

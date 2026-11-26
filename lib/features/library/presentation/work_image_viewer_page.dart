@@ -1126,9 +1126,8 @@ class _RemoteWorkImageState extends ConsumerState<_RemoteWorkImage> {
         ),
       ),
     );
-    final coverUi = ref.read(libraryCoverUiControllerProvider);
     Future<String?> loadImage() =>
-        coverUi.deferredRemoteCover(widget.url, context: context);
+        library.coverPathFutureForRemoteCover(widget.url);
     final requestKey = (widget.url, resolved, revision, _retryCount);
     if (_requestKey != requestKey) {
       _requestKey = requestKey;
@@ -1151,6 +1150,7 @@ class _RemoteWorkImageState extends ConsumerState<_RemoteWorkImage> {
       loadingBuilder: widget.loadingBuilder,
       fallbackBuilder: (_) => _ImageLoadErrorView(
         onRetry: () {
+          library.invalidateRemoteCover(widget.url);
           setState(() {
             _retryCount += 1;
           });

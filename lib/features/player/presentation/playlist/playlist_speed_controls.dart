@@ -10,6 +10,7 @@ import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/theme/app_design_tokens.dart';
 import '../../../../core/widgets/app_entry_ink_well.dart';
 import '../../../../core/widgets/app_feedback.dart';
+import '../../../../core/widgets/app_fixed_extent_wheel.dart';
 import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../application/playback_facade.dart';
@@ -268,63 +269,65 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
                   }
                   return false;
                 },
-                child: ListWheelScrollView.useDelegate(
-                  key: const ValueKey('playback_speed_wheel'),
-                  controller: _controller,
-                  itemExtent: 52,
-                  diameterRatio: 1.5,
-                  useMagnifier: true,
-                  magnification: 1.08,
-                  physics: const FixedExtentScrollPhysics(),
-                  onSelectedItemChanged: (index) {
-                    if (_suppressWheelEvents) return;
-                    _setSpeedIndex(index);
-                  },
-                  childDelegate: ListWheelChildBuilderDelegate(
-                    childCount: _speeds.length,
-                    builder: (context, index) {
-                      if (index < 0 || index >= _speeds.length) return null;
-                      final speed = _speeds[index];
-                      final selected = index == _selectedIndex;
-                      return AppEntryInkWell(
-                        borderRadius: BorderRadius.circular(
-                          AppDesignTokens.of(context).radiusCard,
-                        ),
-                        onTap: () {
-                          _scrollToSpeedIndex(
-                            index,
-                            duration: const Duration(milliseconds: 360),
-                          );
-                        },
-                        child: Center(
-                          child: AnimatedDefaultTextStyle(
-                            duration: MediaQuery.disableAnimationsOf(context)
-                                ? Duration.zero
-                                : const Duration(milliseconds: 190),
-                            curve: Curves.easeOutCubic,
-                            style: selected
-                                ? Theme.of(
-                                    context,
-                                  ).textTheme.headlineMedium!.copyWith(
-                                    color: cs.primary,
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 28,
-                                    letterSpacing: -0.5,
-                                  )
-                                : Theme.of(
-                                    context,
-                                  ).textTheme.titleMedium!.copyWith(
-                                    color: cs.onSurfaceVariant.withValues(
-                                      alpha: 0.45,
-                                    ),
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 17,
-                                  ),
-                            child: Text(formatSpeedValue(speed)),
-                          ),
-                        ),
-                      );
+                child: AppWheelEdgeFadeMask(
+                  child: ListWheelScrollView.useDelegate(
+                    key: const ValueKey('playback_speed_wheel'),
+                    controller: _controller,
+                    itemExtent: 52,
+                    diameterRatio: 1.5,
+                    useMagnifier: true,
+                    magnification: 1.08,
+                    physics: const FixedExtentScrollPhysics(),
+                    onSelectedItemChanged: (index) {
+                      if (_suppressWheelEvents) return;
+                      _setSpeedIndex(index);
                     },
+                    childDelegate: ListWheelChildBuilderDelegate(
+                      childCount: _speeds.length,
+                      builder: (context, index) {
+                        if (index < 0 || index >= _speeds.length) return null;
+                        final speed = _speeds[index];
+                        final selected = index == _selectedIndex;
+                        return AppEntryInkWell(
+                          borderRadius: BorderRadius.circular(
+                            AppDesignTokens.of(context).radiusCard,
+                          ),
+                          onTap: () {
+                            _scrollToSpeedIndex(
+                              index,
+                              duration: const Duration(milliseconds: 360),
+                            );
+                          },
+                          child: Center(
+                            child: AnimatedDefaultTextStyle(
+                              duration: MediaQuery.disableAnimationsOf(context)
+                                  ? Duration.zero
+                                  : const Duration(milliseconds: 190),
+                              curve: Curves.easeOutCubic,
+                              style: selected
+                                  ? Theme.of(
+                                      context,
+                                    ).textTheme.headlineMedium!.copyWith(
+                                      color: cs.primary,
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 28,
+                                      letterSpacing: -0.5,
+                                    )
+                                  : Theme.of(
+                                      context,
+                                    ).textTheme.titleMedium!.copyWith(
+                                      color: cs.onSurfaceVariant.withValues(
+                                        alpha: 0.45,
+                                      ),
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 17,
+                                    ),
+                              child: Text(formatSpeedValue(speed)),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
                   ),
                 ),
               ),

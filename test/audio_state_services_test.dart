@@ -170,7 +170,7 @@ void main() {
           'allowDuplicateWorks': false,
           'reduceAnimations': true,
           'dlsiteMetadataLanguage': ContentLanguagePreference.en.name,
-          'librarySortCriterion': LibrarySortCriterion.duration.name,
+          'librarySortCriterion': 'duration',
           'librarySortAscending': false,
           'libraryGroupByLibrary': true,
           'playlistSortCriterion': PlaylistSortCriterion.voiceActor.name,
@@ -212,7 +212,8 @@ void main() {
           json.decode(preferences.getString('playback_settings_v1')!)
               as Map<String, dynamic>;
       expect(savedPlayback.containsKey('allowDuplicateWorks'), isFalse);
-      expect(repository.librarySortCriterion, LibrarySortCriterion.duration);
+      expect(repository.librarySortCriterion, LibrarySortCriterion.name);
+      expect(savedPlayback['librarySortCriterion'], 'name');
       expect(repository.librarySortAscending, isFalse);
       expect(repository.libraryGroupByLibrary, isTrue);
       expect(

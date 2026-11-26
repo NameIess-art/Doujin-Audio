@@ -8,8 +8,8 @@ enum WorkNameDisplay { workTitle, folderName }
 enum LibrarySortCriterion {
   name,
   voiceActor,
-  duration,
   releaseDate,
+  userRating,
   addedAt,
   playbackTime,
 }

@@ -10,16 +10,24 @@ import '../../../../core/widgets/app_dialog.dart';
 import '../../application/subtitle_model_store.dart';
 
 class SubtitleModelDownloadDialog extends ConsumerStatefulWidget {
-  const SubtitleModelDownloadDialog({
+  SubtitleModelDownloadDialog({
     super.key,
     required this.store,
-    required this.spec,
+    SubtitleModelSpec? spec,
+    List<SubtitleModelSpec>? specs,
     required this.status,
-  });
+    this.titleKey = 'subtitle_model_download_title',
+    this.messageKey = 'subtitle_model_download_message',
+  }) : assert(spec != null || (specs != null && specs.isNotEmpty)),
+       specs = List<SubtitleModelSpec>.unmodifiable(
+         specs ?? <SubtitleModelSpec>[spec!],
+       );
 
   final SubtitleModelStore store;
-  final SubtitleModelSpec spec;
+  final List<SubtitleModelSpec> specs;
   final SubtitleModelStatus status;
+  final String titleKey;
+  final String messageKey;
 
   @override
   ConsumerState<SubtitleModelDownloadDialog> createState() =>
@@ -37,7 +45,7 @@ class _SubtitleModelDownloadDialogState
   @override
   void initState() {
     super.initState();
-    if (widget.store.snapshot(widget.spec).active) {
+    if (widget.store.bundleSnapshot(widget.specs).active) {
       _runInBackground = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) unawaited(_observeDownload(runInBackground: true));
@@ -49,7 +57,7 @@ class _SubtitleModelDownloadDialogState
   void dispose() {
     if (_waiting && !_runInBackground && !_cancelled) {
       _cancelled = true;
-      widget.store.cancelDownload(widget.spec);
+      widget.store.cancelBundleDownload(widget.specs);
     }
     super.dispose();
   }
@@ -64,7 +72,10 @@ class _SubtitleModelDownloadDialogState
       _lastError = null;
     });
     try {
-      await widget.store.ensure(widget.spec, isCancelled: () => _cancelled);
+      await widget.store.ensureBundle(
+        widget.specs,
+        isCancelled: () => _cancelled,
+      );
       _waiting = false;
       if (mounted) Navigator.of(context).pop(true);
     } on SubtitleModelDownloadCancelled {
@@ -93,7 +104,7 @@ class _SubtitleModelDownloadDialogState
 
   void _cancelDownload() {
     _cancelled = true;
-    widget.store.cancelDownload(widget.spec);
+    widget.store.cancelBundleDownload(widget.specs);
     Navigator.pop(context, false);
   }
 
@@ -107,7 +118,7 @@ class _SubtitleModelDownloadDialogState
     return ListenableBuilder(
       listenable: widget.store,
       builder: (context, _) {
-        final progress = widget.store.snapshot(widget.spec);
+        final progress = widget.store.bundleSnapshot(widget.specs);
         final downloading = progress.active || _waiting;
         final errorObject = progress.error ?? _lastError;
         final showError =
@@ -121,14 +132,14 @@ class _SubtitleModelDownloadDialogState
             ? errorObject.toString().trim()
             : '';
         return AppDialog(
-          title: i18n.tr('subtitle_model_download_title'),
+          title: i18n.tr(widget.titleKey),
           icon: Icons.download_rounded,
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                i18n.tr('subtitle_model_download_message', {
+                i18n.tr(widget.messageKey, {
                   'size': '${(widget.status.bytes / 1048576).ceil()} MiB',
                   'free': free,
                 }),

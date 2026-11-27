@@ -1053,9 +1053,9 @@ final class LibraryMetadataCoordinator {
     Future<List<DlsiteMetadata>> Function(LibraryMetadataSource) lookup,
   ) async {
     final sources = <({String name, LibraryMetadataSource source})>[
-      (name: 'DLsite', source: _metadataService),
       if (_asmrMetadataService case final source?)
         (name: 'ASMR.ONE', source: source),
+      (name: 'DLsite', source: _metadataService),
       if (_japaneseMetadataService case final source?)
         (name: 'Japanese ASMR', source: source),
     ];

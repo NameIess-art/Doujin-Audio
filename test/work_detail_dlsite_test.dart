@@ -448,7 +448,11 @@ void main() {
       await tester.tap(find.byKey(_button));
       expect(service.requests.last.language, AppLanguage.ja);
       final stale = service.requests.last;
-      await fixture.languageProvider.setLanguage(AppLanguage.en);
+      await tester.runAsync(
+        () => fixture.settings.setDlsiteMetadataLanguage(
+          ContentLanguagePreference.en,
+        ),
+      );
       await _settle(tester);
       expect(find.byKey(_loading), findsNothing);
       await tester.tap(find.byKey(_button));
@@ -460,6 +464,9 @@ void main() {
       service.requests.last.result.complete(
         _metadata(circle: 'English circle'),
       );
+      await _settle(tester);
+      expect(find.text('English circle'), findsOneWidget);
+      await fixture.languageProvider.setLanguage(AppLanguage.zh);
       await _settle(tester);
       expect(find.text('English circle'), findsOneWidget);
       expect(service.requests, hasLength(3));

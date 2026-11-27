@@ -8,6 +8,77 @@ import 'package:doujin_audio/core/media/dlsite_metadata.dart';
 import 'package:doujin_audio/features/library/application/dlsite_metadata_service.dart';
 
 void main() {
+  test(
+    'DLsite product requests use the locale and keep it when matching titles',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final transport = HttpClient();
+      addTearDown(() async {
+        transport.close(force: true);
+        await server.close(force: true);
+      });
+      const rjCode = 'RJ000123';
+      const titles = {
+        'ja_JP': '雨の図書館',
+        'zh_CN': '雨中的图书馆',
+        'en_US': 'Library in the Rain',
+      };
+      final locales = <String?>[];
+      server.listen((request) async {
+        if (request.uri.path == '/suggest/') {
+          request.response.write(
+            jsonEncode({
+              'work': [
+                {'workno': rjCode},
+              ],
+            }),
+          );
+        } else if (request.uri.path.endsWith('product.json')) {
+          final locale = request.uri.queryParameters['locale'];
+          locales.add(locale);
+          request.response.write(
+            jsonEncode({
+              'workno': rjCode,
+              'work_name': titles[locale] ?? titles['ja_JP'],
+              'maker_name': 'Circle',
+              'genres': [
+                {'name': 'ASMR'},
+              ],
+              'image_main': {'url': '//img.dlsite.jp/cover.jpg'},
+              'regist_date': '2026-10-03 00:00:00',
+              'creaters': {
+                'voice_by': [
+                  {'name': 'Voice'},
+                ],
+              },
+              'rate_average_star': 50,
+            }),
+          );
+        } else {
+          request.response.statusCode = HttpStatus.notFound;
+        }
+        await request.response.close();
+      });
+      final service = DlsiteMetadataService(
+        httpClient: _LocalDlsiteHttpClient(transport, server.port),
+      );
+
+      final candidates = await service.searchByTitleCandidates([
+        titles['ja_JP']!,
+      ], language: AppLanguage.zh);
+      expect(candidates.single.workTitle, titles['zh_CN']);
+      expect(
+        (await service.fetchByRjCode(
+          rjCode,
+          language: AppLanguage.en,
+        )).workTitle,
+        titles['en_US'],
+      );
+      expect((await service.fetchByRjCode(rjCode)).workTitle, titles['ja_JP']);
+      expect(locales, ['zh_CN', 'ja_JP', 'en_US']);
+    },
+  );
+
   for (final scenario in [
     'complete',
     'partial',

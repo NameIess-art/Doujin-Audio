@@ -254,7 +254,7 @@ const Map<String, String> appLanguageEn = {
   'sort_group_by_library': 'Group by library',
   'batch_metadata': 'Batch metadata',
   'batch_metadata_hint':
-      'DLsite takes priority; missing metadata is filled from ASMR.ONE, then Japanese ASMR.\nReview each work, then tap Confirm in the results list to save confirmed, non-excluded works and update existing fields.',
+      'Fetch from ASMR.ONE first, then fill missing information from DLsite and Japanese ASMR in that order.\nReview each work, then tap Confirm in the results list to save confirmed, non-excluded works and update existing fields.',
   'batch_metadata_no_metadata': 'Works with no metadata',
   'batch_metadata_any_missing': 'Works missing data',
   'batch_metadata_has_rj_code': 'Works with an RJ code',
@@ -541,7 +541,7 @@ const Map<String, String> appLanguageEn = {
   'audio_detail_fetch_info': 'Fetch data',
   'audio_detail_fetch_scope_title': 'Choose data to fetch',
   'audio_detail_fetch_scope_hint':
-      'Fetch from Online Audio Library, or DLsite if it fails. Choose which fields to save.',
+      'Fetch from ASMR.ONE first, then fill missing information from DLsite and Japanese ASMR in that order. Choose which fields to save.',
   'audio_detail_fetch_scope_all_hint':
       'Overwrite current details with fetched metadata.',
   'audio_detail_fetch_scope_missing_hint':

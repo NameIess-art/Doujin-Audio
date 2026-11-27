@@ -238,6 +238,9 @@ class WindowsPlaybackBridge
   }
 
   @override
+  ({int width, int height})? videoSizeForSession(String sessionId) => null;
+
+  @override
   VideoController? videoControllerForSession(String sessionId) {
     final session = _sessions[sessionId];
     final player = session?.player;

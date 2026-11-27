@@ -847,7 +847,7 @@ class _LocalSubtitleModelManageTile extends ConsumerStatefulWidget {
 
 class _LocalSubtitleModelManageTileState
     extends ConsumerState<_LocalSubtitleModelManageTile> {
-  Future<SubtitleModelStatus>? _statusFuture;
+  late Future<SubtitleModelStatus> _statusFuture;
   bool _deleting = false;
   late Listenable _mergedListenable;
   late int _modelRevision;
@@ -894,7 +894,7 @@ class _LocalSubtitleModelManageTileState
       return;
     }
     setState(() {
-      if (!progress.active && revision != _modelRevision) {
+      if (!progress.active && (_progress.active || revision != _modelRevision)) {
         _statusFuture = _store.bundleStatus(widget.specs);
       }
       _modelRevision = revision;
@@ -964,18 +964,15 @@ class _LocalSubtitleModelManageTileState
   Widget build(BuildContext context) {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
-    final totalBytes = widget.specs.fold<int>(
-      0,
-      (sum, spec) => sum + spec.bytes,
-    );
-    final sizeMiB = (totalBytes / 1048576).ceil();
+    final description = widget.description?.trim() ?? '';
     final progress = _progress;
     final inUse = _inUse;
 
     return FutureBuilder<SubtitleModelStatus>(
       future: _statusFuture,
       builder: (context, snapshot) {
-        final ready = snapshot.data?.ready ?? false;
+        final checking = snapshot.connectionState != ConnectionState.done;
+        final ready = !checking && snapshot.data?.ready == true;
         final downloading = progress.active;
 
         final Widget statusSubtitle;
@@ -994,17 +991,23 @@ class _LocalSubtitleModelManageTileState
               ),
             ],
           );
+        } else if (inUse) {
+          statusSubtitle = Text(i18n.tr('ai_model_status_in_use'));
+        } else if (description.isNotEmpty) {
+          statusSubtitle = Text(description);
+        } else if (checking || snapshot.hasError) {
+          statusSubtitle = const SizedBox.shrink();
         } else {
-          final baseStatus = inUse
-              ? i18n.tr('ai_model_status_in_use')
-              : ready
-              ? i18n.tr('ai_model_status_ready', {'size': '$sizeMiB MiB'})
-              : i18n.tr('ai_model_status_not_downloaded', {
-                  'size': '$sizeMiB MiB',
-                });
-          final desc = widget.description?.trim() ?? '';
+          final totalBytes = widget.specs.fold<int>(
+            0,
+            (sum, spec) => sum + spec.bytes,
+          );
+          final sizeMiB = (totalBytes / 1048576).ceil();
           statusSubtitle = Text(
-            desc.isEmpty || inUse ? baseStatus : '$baseStatus · $desc',
+            i18n.tr(
+              ready ? 'ai_model_status_ready' : 'ai_model_status_not_downloaded',
+              {'size': '$sizeMiB MiB'},
+            ),
           );
         }
 
@@ -1014,6 +1017,28 @@ class _LocalSubtitleModelManageTileState
             key: ValueKey('${widget.tileKey}_cancel'),
             onPressed: () => _store.cancelBundleDownload(widget.specs),
             child: Text(i18n.tr('cancel')),
+          );
+        } else if (checking) {
+          trailing = SizedBox(
+            width: 64,
+            height: 40,
+            child: Center(
+              child: SizedBox.square(
+                dimension: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  semanticsLabel: i18n.tr('loading_dot'),
+                ),
+              ),
+            ),
+          );
+        } else if (snapshot.hasError) {
+          trailing = IconButton(
+            tooltip: i18n.tr('retry'),
+            icon: const Icon(Icons.refresh_rounded),
+            onPressed: () => setState(() {
+              _statusFuture = _store.bundleStatus(widget.specs);
+            }),
           );
         } else if (ready) {
           trailing = IconButton(

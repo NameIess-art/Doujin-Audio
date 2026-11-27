@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:doujin_audio/core/translation/text_translation_service.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
@@ -108,10 +110,11 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
 
         final fakeTranslations = _StubCustomTranslationService();
+        final initialAsrCheck = Completer<void>();
         final subtitles = PlaybackSubtitleService(
           trackResolver: (_) => null,
           aiEngine: SubtitleAiEngine(
-            models: _ImmediateStatusModelStore(),
+            models: _TestModelStore(initialAsrCheck.future),
             translations: fakeTranslations,
           ),
         );
@@ -131,7 +134,34 @@ void main() {
         final i18n = fixture.languageProvider;
         await tester.ensureVisible(find.text(i18n.tr('section_ai_models')));
         await tester.tap(find.text(i18n.tr('section_ai_models')));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 500));
+
+        final asrTile = find.byKey(const ValueKey('manage_asr_model_tile'));
+        final asrDownload = find.descendant(
+          of: asrTile,
+          matching: find.widgetWithText(
+            FilledButton,
+            i18n.tr('asmr_download_action'),
+          ),
+        );
+        final asrChecking = find.descendant(
+          of: asrTile,
+          matching: find.byType(CircularProgressIndicator),
+        );
+        final asrDelete = find.descendant(
+          of: asrTile,
+          matching: find.byTooltip(i18n.tr('ai_model_delete_action')),
+        );
+        expect(asrChecking, findsOneWidget);
+        expect(asrDownload, findsNothing);
+        expect(asrDelete, findsNothing);
+
+        initialAsrCheck.complete();
         await pumpAndSettleWithAsync(tester);
+        expect(asrChecking, findsNothing);
+        expect(asrDownload, findsNothing);
+        expect(asrDelete, findsOneWidget);
 
         expect(
           find.text(i18n.tr('settings_group_translation_service')),
@@ -232,9 +262,15 @@ void main() {
           isFalse,
         );
 
-        final asrTile = find.byKey(const ValueKey('manage_asr_model_tile'));
         await tester.ensureVisible(asrTile);
         expect(asrTile, findsOneWidget);
+        expect(
+          find.descendant(
+            of: asrTile,
+            matching: find.text(i18n.tr('asr_model_kotoba_whisper_v2_desc')),
+          ),
+          findsOneWidget,
+        );
         expect(
           find.textContaining('Kotoba-Whisper v2.0 (Q5_0)'),
           findsWidgets,
@@ -264,7 +300,12 @@ void main() {
           SubtitleModelStore.whisperLargeV3TurboJa.id,
         );
         expect(
-          find.byKey(const ValueKey('manage_ctc_model_tile')),
+          find.descendant(
+            of: find.byKey(const ValueKey('manage_ctc_model_tile')),
+            matching: find.text(
+              i18n.tr('ai_model_status_not_downloaded', {'size': '366 MiB'}),
+            ),
+          ),
           findsOneWidget,
         );
         expect(tester.takeException(), isNull);
@@ -296,12 +337,18 @@ class _StubCustomTranslationService extends TextTranslationService {
   );
 }
 
-class _ImmediateStatusModelStore extends SubtitleModelStore {
+class _TestModelStore extends SubtitleModelStore {
+  _TestModelStore(this.initialAsrCheck);
+
+  final Future<void> initialAsrCheck;
+
   @override
-  Future<SubtitleModelStatus> status(SubtitleModelSpec spec) async =>
-      SubtitleModelStatus(
-        ready: false,
-        bytes: spec.bytes,
-        availableBytes: 4 * 1024 * 1024 * 1024,
-      );
+  Future<SubtitleModelStatus> status(SubtitleModelSpec spec) async {
+    if (spec == SubtitleModelStore.japaneseAsr) await initialAsrCheck;
+    return SubtitleModelStatus(
+      ready: SubtitleModelStore.kotobaWhisperJa.bundleSpecs.contains(spec),
+      bytes: spec.bytes,
+      availableBytes: 4 * 1024 * 1024 * 1024,
+    );
+  }
 }

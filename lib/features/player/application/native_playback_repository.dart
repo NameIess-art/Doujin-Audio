@@ -214,6 +214,9 @@ class NativePlaybackRepository {
   VideoController? videoControllerForSession(String sessionId) =>
       _bridge.videoControllerForSession(sessionId);
 
+  ({int width, int height})? videoSizeForSession(String sessionId) =>
+      _bridge.videoSizeForSession(sessionId);
+
   void attachVideoSurface(String sessionId) =>
       _bridge.attachVideoSurface(sessionId);
 

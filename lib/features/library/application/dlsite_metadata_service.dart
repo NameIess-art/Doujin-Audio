@@ -352,6 +352,11 @@ class DlsiteMetadataService implements LibraryMetadataSource {
     cancellation?.throwIfCancelled();
     final uri = Uri.https('www.dlsite.com', '/$site/api/=/product.json', {
       'workno': normalized,
+      'locale': switch (language) {
+        AppLanguage.zh => 'zh_CN',
+        AppLanguage.ja => 'ja_JP',
+        AppLanguage.en => 'en_US',
+      },
     });
     final metadata = await _fetchProductMetadata(
       uri,
@@ -514,7 +519,13 @@ class DlsiteMetadataService implements LibraryMetadataSource {
         if (resultsByRjCode.containsKey(rjCode)) continue;
         try {
           final metadata = await fetchByRjCode(rjCode, language: language);
-          final score = scoreDlsiteMetadataTitleMatch(metadata, keywords);
+          var score = scoreDlsiteMetadataTitleMatch(metadata, keywords);
+          if (score == 0 && language != AppLanguage.ja) {
+            // Local folder names can match the original title even when the
+            // requested metadata has a translated title.
+            final original = await fetchByRjCode(rjCode);
+            score = scoreDlsiteMetadataTitleMatch(original, keywords);
+          }
           if (score <= 0) continue;
           resultsByRjCode[rjCode] = _ScoredDlsiteMetadata(metadata, score);
         } on DlsiteMetadataException catch (error) {

@@ -1,9 +1,12 @@
 import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
 import 'package:doujin_audio/features/player/domain/audio_effects.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_video_widgets.dart';
+import 'package:doujin_audio/features/player/presentation/session_video_surface.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -78,6 +81,56 @@ void main() {
       }
     });
   }
+
+  group('Android fixed-aspect video surface sizing', () {
+    test('keeps identical logical size across portrait and landscape displays', () {
+      final portrait = resolveAndroidVideoSurfaceLogicalSize(
+        videoSize: (width: 1920, height: 1080),
+        displayPhysicalSize: const Size(1080, 2310),
+        devicePixelRatio: 3.0,
+      );
+      final landscape = resolveAndroidVideoSurfaceLogicalSize(
+        videoSize: (width: 1920, height: 1080),
+        displayPhysicalSize: const Size(2310, 1080),
+        devicePixelRatio: 3.0,
+      );
+      expect(portrait, const Size(640, 360));
+      expect(landscape, portrait);
+    });
+
+    test('caps 4K video to display bounds and preserves vertical video aspect', () {
+      final uhd = resolveAndroidVideoSurfaceLogicalSize(
+        videoSize: (width: 3840, height: 2160),
+        displayPhysicalSize: const Size(1080, 2310),
+        devicePixelRatio: 3.0,
+      );
+      final vertical = resolveAndroidVideoSurfaceLogicalSize(
+        videoSize: (width: 1080, height: 1920),
+        displayPhysicalSize: const Size(1080, 2310),
+        devicePixelRatio: 3.0,
+      );
+      expect(uhd, const Size(640, 360));
+      expect(vertical, const Size(360, 640));
+    });
+
+    test('parses videoWidth and videoHeight from native playback snapshots', () {
+      final snapshot = NativePlaybackSnapshot.fromMap(const <String, Object?>{
+        'sessionId': 's1',
+        'playing': true,
+        'playWhenReady': true,
+        'processingState': 'ready',
+        'positionMs': 1000,
+        'bufferedPositionMs': 2000,
+        'volume': 1.0,
+        'boostGain': 1.0,
+        'channelSwap': false,
+        'videoWidth': 1920,
+        'videoHeight': 1080,
+      });
+      expect(snapshot.videoWidth, 1920);
+      expect(snapshot.videoHeight, 1080);
+    });
+  });
 }
 
 PlaybackSessionSnapshot _session(

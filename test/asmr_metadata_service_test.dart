@@ -111,92 +111,95 @@ void main() {
       }
 
       void expectCalls({
-        bool asmrRequested = true,
+        bool dlsiteRequested = true,
         bool japaneseRequested = false,
       }) {
         expect(calls, [
-          'dlsite:${byTitle ? 'Sleep ASMR' : 'RJ123456'}:ja',
-          if (asmrRequested) 'asmr:${byTitle ? 'Sleep ASMR' : 'RJ123456'}:ja',
+          'asmr:${byTitle ? 'Sleep ASMR' : 'RJ123456'}:ja',
+          if (dlsiteRequested) 'dlsite:${byTitle ? 'Sleep ASMR' : 'RJ123456'}:ja',
           if (japaneseRequested)
             'japanese:${byTitle ? 'Sleep ASMR' : 'RJ123456'}',
         ]);
       }
 
-      test('complete DLsite metadata skips ASMR.ONE', () async {
+      test('complete ASMR.ONE metadata skips DLsite', () async {
         final result = await lookup();
 
-        expect(result, same(fallback));
-        expectCalls(asmrRequested: false);
+        expect(result.workTitle, completeWork.title);
+        expect(result.coverUrl, completeWork.coverUrl);
+        expectCalls(dlsiteRequested: false);
       });
 
-      test('DLsite failure falls back directly to ASMR.ONE', () async {
-        dlsite.error = StateError('DLsite unavailable');
+      test('ASMR.ONE failure falls back to DLsite', () async {
+        api.error = StateError('ASMR.ONE unavailable');
 
-        expect((await lookup()).workTitle, completeWork.title);
+        expect(await lookup(), same(fallback));
         expectCalls();
       });
 
-      test('no DLsite match falls back to ASMR.ONE', () async {
-        dlsite.error = const DlsiteMetadataException(
-          'No DLsite match',
-          kind: DlsiteMetadataFailureKind.notFound,
-        );
+      test('no ASMR.ONE match falls back to DLsite', () async {
+        api.works = [];
 
-        expect((await lookup()).workTitle, completeWork.title);
+        expect(await lookup(), same(fallback));
         expectCalls();
       });
 
       test(
-        'ASMR.ONE fills missing fields and preserves DLsite values',
+        'DLsite fills missing fields and preserves ASMR.ONE values',
         () async {
-          dlsite.metadata = fallback.copyWith(
-            releaseDate: null,
-            duration: null,
-            salesCount: null,
-            rating: null,
-          );
+          api.works = [_work(sourceId: 'RJ123456', title: 'Sleep ASMR')];
 
           final result = await lookup();
 
-          expect(result.workTitle, fallback.workTitle);
-          expect(result.circleName, fallback.circleName);
-          expect(result.voiceActors, fallback.voiceActors);
-          expect(result.tags, fallback.tags);
-          expect(result.coverUrl, fallback.coverUrl);
-          expect(result.releaseDate, completeWork.releaseDate);
-          expect(result.duration, completeWork.duration);
-          expect(result.salesCount, completeWork.dlCount);
-          expect(result.rating, completeWork.rating);
+          expect(result.workTitle, completeWork.title);
+          expect(result.circleName, completeWork.circleName);
+          expect(result.voiceActors, completeWork.voiceActors);
+          expect(result.tags, completeWork.tags);
+          expect(result.coverUrl, completeWork.coverUrl);
+          expect(result.releaseDate, fallback.releaseDate);
+          expect(result.duration, fallback.duration);
+          expect(result.salesCount, fallback.salesCount);
+          expect(result.rating, fallback.rating);
           expectCalls();
         },
       );
 
-      test('missing cover also requests ASMR.ONE supplementation', () async {
-        dlsite.metadata = fallback.copyWith(coverUrl: '');
+      test('missing cover also requests DLsite supplementation', () async {
+        api.works = [
+          _work(
+            sourceId: completeWork.rjCode,
+            title: completeWork.title,
+            releaseDate: completeWork.releaseDate,
+            duration: completeWork.duration,
+            dlCount: completeWork.dlCount,
+            rating: completeWork.rating,
+            coverUrl: '',
+          ),
+        ];
 
         final result = await lookup();
 
-        expect(result.coverUrl, completeWork.coverUrl);
-        expect(result.workTitle, fallback.workTitle);
-        expect(result.releaseDate, fallback.releaseDate);
+        expect(result.coverUrl, fallback.coverUrl);
+        expect(result.workTitle, completeWork.title);
+        expect(result.releaseDate, completeWork.releaseDate);
         expectCalls();
       });
 
-      test('ASMR.ONE failure retains available DLsite metadata', () async {
-        dlsite.metadata = fallback.copyWith(duration: null);
-        api.error = StateError('ASMR.ONE unavailable');
+      test('DLsite failure retains available ASMR.ONE metadata', () async {
+        api.works = [_work(sourceId: 'RJ123456', title: 'Sleep ASMR')];
+        dlsite.error = StateError('DLsite unavailable');
 
         final result = await lookup();
 
-        expect(result.workTitle, fallback.workTitle);
+        expect(result.workTitle, completeWork.title);
         expect(result.duration, isNull);
         expectCalls();
       });
 
-      test('both sources failing reports the ASMR.ONE failure', () async {
-        dlsite.error = StateError('DLsite unavailable');
-        final error = StateError('ASMR.ONE unavailable');
-        api.error = error;
+      test('both sources failing reports the DLsite failure', () async {
+        api.error = StateError('ASMR.ONE unavailable');
+        final error = StateError('DLsite unavailable');
+        dlsite.error = error;
 
         await expectLater(lookup(), throwsA(same(error)));
         expectCalls();
@@ -221,25 +224,25 @@ void main() {
           addTearDown(japanese!.close);
         });
 
-        test('complete DLsite metadata skips both later sources', () async {
-          expect(await lookup(), same(fallback));
-          expectCalls(asmrRequested: false);
+        test('complete ASMR.ONE metadata skips both later sources', () async {
+          expect((await lookup()).workTitle, completeWork.title);
+          expectCalls(dlsiteRequested: false);
         });
 
-        test('complete ASMR.ONE fallback skips Japanese ASMR', () async {
-          dlsite.error = StateError('DLsite unavailable');
+        test('complete DLsite fallback skips Japanese ASMR', () async {
+          api.error = StateError('ASMR.ONE unavailable');
 
-          expect((await lookup()).workTitle, completeWork.title);
+          expect(await lookup(), same(fallback));
           expectCalls();
         });
 
-        test('ASMR.ONE completing DLsite fields skips Japanese ASMR', () async {
-          dlsite.metadata = fallback.copyWith(duration: null);
+        test('DLsite completing ASMR.ONE fields skips Japanese ASMR', () async {
+          api.works = [_work(sourceId: 'RJ123456', title: 'Sleep ASMR')];
 
           final result = await lookup();
 
-          expect(result.workTitle, fallback.workTitle);
-          expect(result.duration, completeWork.duration);
+          expect(result.workTitle, completeWork.title);
+          expect(result.duration, fallback.duration);
           expectCalls();
         });
 
@@ -297,10 +300,10 @@ void main() {
 
             final result = await lookup();
 
-            expect(result.workTitle, fallback.workTitle);
-            expect(result.circleName, fallback.circleName);
-            expect(result.voiceActors, fallback.voiceActors);
-            expect(result.tags, fallback.tags);
+            expect(result.workTitle, completeWork.title);
+            expect(result.circleName, completeWork.circleName);
+            expect(result.voiceActors, completeWork.voiceActors);
+            expect(result.tags, completeWork.tags);
             expect(result.releaseDate, fallback.releaseDate);
             expect(result.duration, japanese!.works.single.duration);
             expect(result.salesCount, japanese!.works.single.dlCount);
@@ -317,7 +320,7 @@ void main() {
 
           final result = await lookup();
 
-          expect(result.workTitle, fallback.workTitle);
+          expect(result.workTitle, completeWork.title);
           expect(result.releaseDate, fallback.releaseDate);
           expect(result.salesCount, fallback.salesCount);
           expect(result.duration, isNull);
@@ -378,8 +381,8 @@ void main() {
 
               final result = await lookup();
 
-              expect(result.rjCode, 'RJ123456');
-              expect(result.workTitle, fallback.workTitle);
+              expect(result.rjCode, 'RJ234567');
+              expect(result.workTitle, completeWork.title);
               expect(result.releaseDate, isNull);
               expect(result.duration, isNull);
               expect(result.salesCount, isNull);

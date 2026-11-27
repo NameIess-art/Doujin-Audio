@@ -237,7 +237,7 @@ const Map<String, String> appLanguageZh = {
   'sort_group_by_library': '曲库分组',
   'batch_metadata': '批量补全信息',
   'batch_metadata_hint':
-      '优先使用 DLsite，缺失信息依次从 ASMR.ONE、Japanese ASMR 补充。\n逐项核对后，返回列表点击“确认”，保存已确认且未排除的作品，并更新已有字段。',
+      '优先使用 ASMR.ONE，缺失信息依次从 DLsite、Japanese ASMR 补充。\n逐项核对后，返回列表点击“确认”，保存已确认且未排除的作品，并更新已有字段。',
   'batch_metadata_no_metadata': '缺少全部信息的作品',
   'batch_metadata_any_missing': '有缺少信息的作品',
   'batch_metadata_has_rj_code': '填写了RJ号的作品',
@@ -504,7 +504,7 @@ const Map<String, String> appLanguageZh = {
   'audio_detail_duration_calculation_failed': '无法计算时长，请重试。',
   'audio_detail_fetch_info': '获取信息',
   'audio_detail_fetch_scope_title': '选择获取范围',
-  'audio_detail_fetch_scope_hint': '将优先通过在线作品库获取作品信息，失败时回退到 DLsite。请选择要写入的范围。',
+  'audio_detail_fetch_scope_hint': '优先使用 ASMR.ONE，缺失信息依次从 DLsite、Japanese ASMR 补充。请选择要写入的范围。',
   'audio_detail_fetch_scope_all_hint': '使用获取到的信息覆盖当前详细信息。',
   'audio_detail_fetch_scope_missing_hint': '只填写当前为空的详细信息，已有内容保持不变。',
   'metadata_scope_all': '全部信息',

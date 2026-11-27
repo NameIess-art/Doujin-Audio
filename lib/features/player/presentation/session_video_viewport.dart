@@ -305,15 +305,18 @@ class _SessionVideoViewportState extends State<SessionVideoViewport> {
     if (renderObject is! RenderBox ||
         !renderObject.attached ||
         !renderObject.hasSize ||
-        renderObject.debugNeedsLayout ||
         renderObject.size.isEmpty) {
       return null;
     }
-    if (ancestor != null &&
-        (!ancestor.attached ||
-            (ancestor is RenderBox &&
-                (!ancestor.hasSize || ancestor.debugNeedsLayout)))) {
-      return null;
+    if (ancestor != null) {
+      if (!ancestor.attached ||
+          !identical(renderObject.owner, ancestor.owner)) {
+        return null;
+      }
+      if (ancestor is RenderBox &&
+          (!ancestor.hasSize || ancestor.size.isEmpty)) {
+        return null;
+      }
     }
     final rect = MatrixUtils.transformRect(
       renderObject.getTransformTo(ancestor),

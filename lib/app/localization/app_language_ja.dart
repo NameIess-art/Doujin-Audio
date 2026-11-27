@@ -240,7 +240,7 @@ const Map<String, String> appLanguageJa = {
   'sort_group_by_library': 'ライブラリ別',
   'batch_metadata': '作品情報を一括補完',
   'batch_metadata_hint':
-      'DLsite を優先し、不足情報を ASMR.ONE、Japanese ASMR の順に補完します。\n各作品を確認後、結果一覧の「確認」で、確認済みかつ除外されていない作品を保存し、既存の項目も更新します。',
+      'ASMR.ONE を優先し、不足情報を DLsite、Japanese ASMR の順に補完します。\n各作品を確認後、結果一覧の「確認」で、確認済みかつ除外されていない作品を保存し、既存の項目も更新します。',
   'batch_metadata_no_metadata': '作品情報なし',
   'batch_metadata_any_missing': '作品情報に空欄あり',
   'batch_metadata_has_rj_code': 'RJ番号あり',
@@ -511,7 +511,7 @@ const Map<String, String> appLanguageJa = {
   'audio_detail_fetch_info': '作品情報を取得',
   'audio_detail_fetch_scope_title': '取得範囲',
   'audio_detail_fetch_scope_hint':
-      'オンライン音声ライブラリ、取得失敗時は DLsite から取得。書き込む項目を選択してください。',
+      'ASMR.ONE を優先し、不足情報を DLsite、Japanese ASMR の順に補完します。書き込む項目を選択してください。',
   'audio_detail_fetch_scope_all_hint': '取得した情報で全項目を上書き。',
   'audio_detail_fetch_scope_missing_hint': '空欄のみ補完。入力済みの情報は保持。',
   'metadata_scope_all': '全項目',

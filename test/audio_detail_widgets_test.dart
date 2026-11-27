@@ -1735,7 +1735,7 @@ void main() {
   );
 
   test(
-    'preferred title metadata preserves DLsite values before ASMR.ONE',
+    'preferred title metadata preserves ASMR.ONE values and fills gaps from DLsite',
     () async {
       final fixture = AppRuntimeWidgetTestFixture(
         dlsiteMetadataService: _FakeDlsiteMetadataService(),
@@ -1750,9 +1750,9 @@ void main() {
             language: AppLanguage.zh,
           )).single;
 
-      expect(metadata.workTitle, 'Fetched title');
+      expect(metadata.workTitle, 'ASMR fetched title');
       expect(metadata.circleName, 'Circle');
-      expect(metadata.voiceActors, ['Voice']);
+      expect(metadata.voiceActors, ['ASMR Voice']);
       expect(metadata.releaseDate, DateTime(2024, 5, 6));
       expect(
         metadata.duration,

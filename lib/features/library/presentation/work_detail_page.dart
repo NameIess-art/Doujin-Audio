@@ -220,19 +220,18 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   @override
   void initState() {
     super.initState();
-    _dlsiteLanguage = ref.read(appLanguageProviderInstanceProvider).language;
     if (!widget.isLocal) {
-      ref.listenManual(appLanguageStateProvider, (_, next) {
-        final language = next.value?.language;
-        if (language == null || language == _dlsiteLanguage) return;
-        setState(() {
-          _dlsiteLanguage = language;
-          _dlsiteRequest++;
-          _dlsiteMetadata = null;
-          _showDlsiteMetadata = false;
-          _loadingDlsiteMetadata = false;
-        });
-      });
+      _dlsiteLanguage = _resolveDlsiteLanguage();
+      ref.listenManual(
+        appLanguageStateProvider,
+        (_, _) => _syncDlsiteLanguage(),
+      );
+      ref.listenManual(
+        settingsStateProvider.select(
+          (state) => state.value?.dlsiteMetadataLanguage,
+        ),
+        (_, _) => _syncDlsiteLanguage(),
+      );
     }
     _directoryFade = AnimationController(
       vsync: this,
@@ -1445,7 +1444,27 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     );
   }
 
+  AppLanguage _resolveDlsiteLanguage() => ref
+      .read(settingsRepositoryProvider)
+      .slice
+      .state
+      .dlsiteMetadataLanguage
+      .resolve(ref.read(appLanguageProviderInstanceProvider).language);
+
+  void _syncDlsiteLanguage() {
+    final language = _resolveDlsiteLanguage();
+    if (language == _dlsiteLanguage) return;
+    setState(() {
+      _dlsiteLanguage = language;
+      _dlsiteRequest++;
+      _dlsiteMetadata = null;
+      _showDlsiteMetadata = false;
+      _loadingDlsiteMetadata = false;
+    });
+  }
+
   Future<void> _toggleDlsiteMetadata() async {
+    _syncDlsiteLanguage();
     final rjCode = _activeRemoteWork?.rjCode ?? '';
     if (_loadingDlsiteMetadata ||
         AudioDetail.findRjCodeInText(rjCode) == null) {
@@ -1456,12 +1475,12 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       return;
     }
     final request = ++_dlsiteRequest;
-    final language = ref.read(appLanguageProviderInstanceProvider).language;
+    final language = _dlsiteLanguage;
     setState(() => _loadingDlsiteMetadata = true);
     bool isCurrent() =>
         mounted &&
         request == _dlsiteRequest &&
-        language == ref.read(appLanguageProviderInstanceProvider).language;
+        language == _resolveDlsiteLanguage();
     try {
       final metadata = await ref
           .read(libraryFacadeProvider)

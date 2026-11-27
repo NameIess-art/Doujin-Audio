@@ -41,6 +41,8 @@ class NativePlaybackSnapshot {
     this.hasRetainedUrisPayload = false,
     this.transportCommandId,
     this.stopAfterCurrentTrack = false,
+    this.videoWidth,
+    this.videoHeight,
     this.resumePauseBatch = const [],
   }) : retainedUris = immutableList(retainedUris),
        audioEffects = audioEffects ?? AudioEffectsState.flat,
@@ -73,6 +75,8 @@ class NativePlaybackSnapshot {
   final bool hasRetainedUrisPayload;
   final int? transportCommandId;
   final bool stopAfterCurrentTrack;
+  final int? videoWidth;
+  final int? videoHeight;
   final List<NativePlaybackSnapshot> resumePauseBatch;
 
   NativePlaybackSnapshot copyWith({
@@ -110,6 +114,8 @@ class NativePlaybackSnapshot {
     int? transportCommandId,
     bool clearTransportCommandId = false,
     bool? stopAfterCurrentTrack,
+    int? videoWidth,
+    int? videoHeight,
     List<NativePlaybackSnapshot>? resumePauseBatch,
   }) {
     return NativePlaybackSnapshot(
@@ -149,6 +155,8 @@ class NativePlaybackSnapshot {
       resumePauseBatch: resumePauseBatch ?? this.resumePauseBatch,
       stopAfterCurrentTrack:
           stopAfterCurrentTrack ?? this.stopAfterCurrentTrack,
+      videoWidth: videoWidth ?? this.videoWidth,
+      videoHeight: videoHeight ?? this.videoHeight,
     );
   }
 
@@ -200,6 +208,8 @@ class NativePlaybackSnapshot {
       hasRetainedUrisPayload: map.containsKey('retainedUris'),
       transportCommandId: (map['transportCommandId'] as num?)?.toInt(),
       stopAfterCurrentTrack: map['stopAfterCurrentTrack'] as bool? ?? false,
+      videoWidth: (map['videoWidth'] as num?)?.toInt(),
+      videoHeight: (map['videoHeight'] as num?)?.toInt(),
     );
   }
 }
@@ -400,6 +410,8 @@ abstract interface class NativePlaybackBridgeBase {
 
   VideoController? videoControllerForSession(String sessionId);
 
+  ({int width, int height})? videoSizeForSession(String sessionId);
+
   void attachVideoSurface(String sessionId);
 
   void detachVideoSurface(String sessionId);
@@ -421,6 +433,24 @@ class NativePlaybackBridge
 
   @override
   VideoController? videoControllerForSession(String sessionId) => null;
+
+  @override
+  ({int width, int height})? videoSizeForSession(String sessionId) =>
+      _videoSizes[sessionId];
+
+  final Map<String, ({int width, int height})> _videoSizes =
+      <String, ({int width, int height})>{};
+
+  NativePlaybackSnapshot _recordSnapshot(NativePlaybackSnapshot snapshot) {
+    final width = snapshot.videoWidth;
+    final height = snapshot.videoHeight;
+    if (width != null && width > 0 && height != null && height > 0) {
+      _videoSizes[snapshot.sessionId] = (width: width, height: height);
+    } else if (snapshot.path == null && snapshot.uri == null) {
+      _videoSizes.remove(snapshot.sessionId);
+    }
+    return snapshot;
+  }
 
   @override
   void attachVideoSurface(String sessionId) {}
@@ -518,13 +548,16 @@ class NativePlaybackBridge
               }
             } else if (eventType == 'resumePauseBatch') {
               final batch = (event['sessions'] as List)
-                  .map((value) => NativePlaybackSnapshot.fromMap(value as Map))
+                  .map(
+                    (value) =>
+                        _recordSnapshot(NativePlaybackSnapshot.fromMap(value as Map)),
+                  )
                   .toList(growable: false);
               if (batch.isNotEmpty) {
                 _controller.add(batch.last.copyWith(resumePauseBatch: batch));
               }
             } else if (eventType == null) {
-              _controller.add(NativePlaybackSnapshot.fromMap(event));
+              _controller.add(_recordSnapshot(NativePlaybackSnapshot.fromMap(event)));
             } else {
               AppLogService.warning(
                 'native_playback_unknown_event type=$eventType',
@@ -818,6 +851,7 @@ class NativePlaybackBridge
 
   @override
   Future<NativeResult<void>> removeSession(String sessionId) {
+    _videoSizes.remove(sessionId);
     return _invokeVoid(NativePlaybackMethod.removeSession, {
       'sessionId': sessionId,
     });
@@ -839,6 +873,7 @@ class NativePlaybackBridge
 
   @override
   Future<NativeResult<void>> clearAll() {
+    _videoSizes.clear();
     return _invokeVoid(NativePlaybackMethod.clearAll);
   }
 
@@ -861,9 +896,16 @@ class NativePlaybackBridge
   Future<NativeResult<NativePlaybackBundleSnapshot>> snapshot() {
     return _invokeValue(
       NativePlaybackMethod.snapshot,
-      (value) => value is Map
-          ? NativePlaybackBundleSnapshot.fromMap(value)
-          : NativePlaybackBundleSnapshot(sessions: <NativePlaybackSnapshot>[]),
+      (value) {
+        if (value is! Map) {
+          return NativePlaybackBundleSnapshot(
+            sessions: <NativePlaybackSnapshot>[],
+          );
+        }
+        final bundle = NativePlaybackBundleSnapshot.fromMap(value);
+        bundle.sessions.forEach(_recordSnapshot);
+        return bundle;
+      },
     );
   }
 
@@ -924,7 +966,9 @@ class NativePlaybackBridge
     Map<String, Object?>? arguments,
   ]) async {
     return _invokeValue<NativePlaybackSnapshot>(method, (value) {
-      if (value is Map) return NativePlaybackSnapshot.fromMap(value);
+      if (value is Map) {
+        return _recordSnapshot(NativePlaybackSnapshot.fromMap(value));
+      }
       return null;
     }, arguments);
   }

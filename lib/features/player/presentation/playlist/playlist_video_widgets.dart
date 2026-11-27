@@ -70,20 +70,29 @@ Future<void> showSessionVideoFullscreen(
     return;
   }
   final navigatorRenderObject = navigatorContext.findRenderObject();
-  var cachedInlineRect = handoff?.resolveInlineRect(
+  final initialInlineRect = handoff?.resolveInlineRect(
     ancestor: navigatorRenderObject,
   );
-  var cachedNavigatorSize =
+  final initialNavigatorSize =
       navigatorRenderObject is RenderBox && navigatorRenderObject.hasSize
       ? navigatorRenderObject.size
       : null;
+  var cachedInlineRect = initialInlineRect;
+  var cachedNavigatorSize = initialNavigatorSize;
   if (handoff != null && !handoff.borrowSurface()) {
     await lease.release();
     return;
   }
 
+  late final _SessionVideoFullscreenRoute route;
   Rect? resolveInlineRect(Size viewportSize) {
     if (handoff == null) return null;
+    if (route.animation?.status == AnimationStatus.forward) {
+      // Keep entrance anchored to the pre-push rect; if OS rotation resizes
+      // the window mid-entrance, snap to fullscreen rather than jumping to
+      // the newly laid-out landscape column behind the route.
+      return initialNavigatorSize == viewportSize ? initialInlineRect : null;
+    }
     RenderObject? targetAncestor;
     if (navigator.mounted) {
       final currentNavigatorContext = navigator.context;
@@ -101,7 +110,7 @@ Future<void> showSessionVideoFullscreen(
   }
 
   try {
-    final route = _SessionVideoFullscreenRoute(
+    route = _SessionVideoFullscreenRoute(
       transitionDuration: reducedMotion ? Duration.zero : kAppPagePushDuration,
       reverseTransitionDuration: reducedMotion
           ? Duration.zero
@@ -238,6 +247,7 @@ class _SessionVideoFullscreenPageState
   Animation<double> _routeFade = kAlwaysCompleteAnimation;
   Animation<double> get _routeGeometry =>
       _curvedRouteGeometry ?? kAlwaysCompleteAnimation;
+  final ValueNotifier<bool> _routeTransitionActive = ValueNotifier<bool>(false);
   bool _routeOpaque = true;
   PlaybackSessionSnapshot? _initialSession;
   PlaybackPositionUiGate? _positionGate;
@@ -328,6 +338,7 @@ class _SessionVideoFullscreenPageState
     _boundRouteAnimation = next;
     if (next == null) {
       _routeFade = kAlwaysCompleteAnimation;
+      _routeTransitionActive.value = false;
       _routeOpaque = true;
       return;
     }
@@ -335,14 +346,17 @@ class _SessionVideoFullscreenPageState
     _routeFade = next.drive(CurveTween(curve: kAppFadeCurve));
     _curvedRouteGeometry = CurvedAnimation(
       parent: next,
-      curve: kAppSpringCurve,
-      reverseCurve: Curves.easeOutCubic.flipped,
+      curve: Curves.fastOutSlowIn,
+      reverseCurve: Curves.fastOutSlowIn.flipped,
     );
-    _routeOpaque = next.status == AnimationStatus.completed;
+    final settled = next.status == AnimationStatus.completed;
+    _routeTransitionActive.value = !settled;
+    _routeOpaque = settled;
   }
 
   void _handleRouteStatusChanged(AnimationStatus status) {
     final opaque = status == AnimationStatus.completed;
+    _routeTransitionActive.value = !opaque;
     if (_routeOpaque == opaque || !mounted) return;
     setState(() => _routeOpaque = opaque);
   }
@@ -381,6 +395,7 @@ class _SessionVideoFullscreenPageState
     _boundRouteAnimation?.removeStatusListener(_handleRouteStatusChanged);
     _curvedRouteGeometry?.dispose();
     _curvedRouteGeometry = null;
+    _routeTransitionActive.dispose();
     _controlsTimer?.cancel();
     _feedbackTimer?.cancel();
     _skipAccumulationTimer?.cancel();
@@ -1079,6 +1094,7 @@ class _SessionVideoFullscreenPageState
           revision: coverRevision.revision,
         ),
         queueColorValue: activeSession.playbackQueue?.colorValue,
+        transitionActive: _routeTransitionActive,
         child: PopScope<void>(
           canPop: _allowPop,
           onPopInvokedWithResult: (didPop, _) {

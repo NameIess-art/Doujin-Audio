@@ -16,6 +16,7 @@ import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ShuffleOrder
+import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 import kotlin.random.Random
 
@@ -887,10 +888,41 @@ internal class NativePlaybackSession(
             "error" to p?.playerError?.message
         )
         if (discardedQueuePrefix) result["discardedQueuePrefix"] = true
+        videoDimensionsSnapshot(p)?.let { (videoWidth, videoHeight) ->
+            result["videoWidth"] = videoWidth
+            result["videoHeight"] = videoHeight
+        }
         if (includeRetainedUris) {
             result["retainedUris"] = queueStructure.retainedUris
         }
         return result
+    }
+
+    private fun videoDimensionsSnapshot(player: ExoPlayer?): Pair<Int, Int>? {
+        if (player == null) return null
+        val active = player.videoSize
+        if (active.width > 0 && active.height > 0) {
+            val ratio = active.pixelWidthHeightRatio
+                .takeIf { it.isFinite() && it > 0f } ?: 1f
+            val displayWidth = (active.width * ratio).roundToInt().coerceAtLeast(1)
+            return displayWidth to active.height
+        }
+        for (group in player.currentTracks.groups) {
+            if (group.type != C.TRACK_TYPE_VIDEO) continue
+            for (i in 0 until group.length) {
+                if (group.isSelected && !group.isTrackSelected(i)) continue
+                val format = group.getTrackFormat(i)
+                if (format.width <= 0 || format.height <= 0) continue
+                val ratio = format.pixelWidthHeightRatio
+                    .takeIf { it.isFinite() && it > 0f } ?: 1f
+                val rotated = format.rotationDegrees == 90 || format.rotationDegrees == 270
+                val rawWidth = if (rotated) format.height else format.width
+                val rawHeight = if (rotated) format.width else format.height
+                val displayWidth = (rawWidth * ratio).roundToInt().coerceAtLeast(1)
+                return displayWidth to rawHeight
+            }
+        }
+        return null
     }
 
     fun progressAnchorSnapshot(): NativePlaybackProgressAnchor = progressAnchor

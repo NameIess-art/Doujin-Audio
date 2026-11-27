@@ -286,17 +286,16 @@ class _AboutLinkTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final tokens = AppDesignTokens.of(context);
-    final rowRadius = BorderRadius.circular(tokens.radiusCard);
+    const shape = RoundedRectangleBorder(borderRadius: AppRadius.borderSmall);
 
     return Material(
       color: Colors.transparent,
-      shape: RoundedRectangleBorder(borderRadius: rowRadius),
+      shape: shape,
       child: AppEntryInkWell(
-        borderRadius: rowRadius,
+        customBorder: shape,
         onTap: onTap,
         child: ListTile(
-          shape: RoundedRectangleBorder(borderRadius: rowRadius),
+          shape: shape,
           leading: _AboutIconContainer(icon: icon),
           title: Text(title, style: TextStyle(color: cs.onSurface)),
           trailing: Icon(Icons.open_in_new_rounded, color: cs.onSurfaceVariant),

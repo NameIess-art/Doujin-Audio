@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../theme/app_design_tokens.dart';
 import '../theme/app_styles.dart';
 
 class AppSettingsGroupCard extends StatelessWidget {
@@ -16,60 +15,30 @@ class AppSettingsGroupCard extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: 3,
       children: [
-        for (var index = 0; index < children.length; index++)
-          AppSettingsCard(
-            isFirst: index == 0,
-            isLast: index == children.length - 1,
-            bottomSpacing: index == children.length - 1 ? 0 : 3,
-            child: children[index],
-          ),
+        for (final child in children) AppSettingsCard(child: child),
       ],
     );
   }
 }
 
 class AppSettingsCard extends StatelessWidget {
-  const AppSettingsCard({
-    super.key,
-    required this.child,
-    required this.isFirst,
-    required this.isLast,
-    this.bottomSpacing,
-  });
+  const AppSettingsCard({super.key, required this.child});
 
   final Widget child;
-  final bool isFirst;
-  final bool isLast;
-  final double? bottomSpacing;
 
   @override
   Widget build(BuildContext context) {
-    final tokens = AppDesignTokens.of(context);
-    final outerRadius = tokens.radiusCard;
-    const innerRadius = AppRadius.small;
-    final shape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.only(
-        topLeft: Radius.circular(isFirst ? outerRadius : innerRadius),
-        topRight: Radius.circular(isFirst ? outerRadius : innerRadius),
-        bottomLeft: Radius.circular(isLast ? outerRadius : innerRadius),
-        bottomRight: Radius.circular(isLast ? outerRadius : innerRadius),
-      ),
-    );
-    return Padding(
-      padding: EdgeInsets.only(bottom: bottomSpacing ?? (isLast ? 0 : 3)),
-      child: Card(
-        clipBehavior: Clip.antiAlias,
-        color: Colors.transparent,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        margin: EdgeInsets.zero,
-        shape: shape,
-        child: ListTileTheme.merge(
-          shape: shape,
-          child: child,
-        ),
-      ),
+    const shape = RoundedRectangleBorder(borderRadius: AppRadius.borderSmall);
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      color: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      shape: shape,
+      child: ListTileTheme.merge(shape: shape, child: child),
     );
   }
 }

@@ -330,21 +330,12 @@ void main() {
           ),
           findsOneWidget,
         );
-        expect(
-          find.descendant(
-            of: feedback,
-            matching: find.text(
-              fixture.languageProvider.tr('online_library_partial_failure'),
-            ),
-          ),
-          findsOneWidget,
+        final retryIcon = find.descendant(
+          of: feedback,
+          matching: find.byIcon(Icons.refresh_rounded),
         );
-        await tester.tap(
-          find.descendant(
-            of: feedback,
-            matching: find.text(fixture.languageProvider.tr('retry')),
-          ),
-        );
+        expect(retryIcon, findsOneWidget);
+        await tester.tap(retryIcon);
         await tester.pumpAndSettle();
         await tester.pump(interaction.idleDelay);
         await tester.pumpAndSettle();
@@ -352,7 +343,7 @@ void main() {
         expect(find.text('Published work'), findsOneWidget);
         expect(
           find.text(
-            fixture.languageProvider.tr('online_library_partial_failure'),
+            fixture.languageProvider.tr('japanese_asmr_unavailable_title'),
           ),
           findsNothing,
         );
@@ -366,6 +357,7 @@ void main() {
     testWidgets(
       'ASMR.ONE server error shows header feedback once and displays Japanese ASMR total count on $platform',
       (tester) async {
+        SharedPreferences.setMockInitialValues(const {'app_language': 'zh'});
         final controller = _PresentationController(createTestAsmrServices())
           ..workCount = 40
           ..combinedTotalCount = 5821
@@ -383,6 +375,7 @@ void main() {
         final fixture = AppRuntimeWidgetTestFixture();
         addTearDown(controller.dispose);
         addTearDown(fixture.dispose);
+        await fixture.languageProvider.setLanguage(AppLanguage.zh);
         await tester.pumpWidget(
           fixture.build(
             const AsmrTab(),
@@ -405,21 +398,18 @@ void main() {
         expect(
           find.descendant(
             of: feedback,
-            matching: find.text(
-              fixture.languageProvider.tr('asmr_one_unavailable_title'),
-            ),
+            matching: find.text('ASMR.ONE 服务器异常'),
           ),
           findsOneWidget,
         );
         expect(
           find.descendant(
             of: feedback,
-            matching: find.text(
-              fixture.languageProvider.tr('asmr_one_server_unavailable_partial'),
-            ),
+            matching: find.byIcon(Icons.refresh_rounded),
           ),
           findsOneWidget,
         );
+        expect(tester.widget<AppFeedbackSurface>(feedback).title, isNull);
         expect(find.text('Published work 1'), findsOneWidget);
         await tester.pump(const Duration(seconds: 5));
         await tester.pumpAndSettle();

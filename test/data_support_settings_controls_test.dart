@@ -10,6 +10,7 @@ import 'package:doujin_audio/app/application/app_runtime_lifecycle.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/presentation/app_settings_group_card.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/app/theme/app_styles.dart';
 import 'package:doujin_audio/app/theme/theme_provider.dart';
 import 'package:doujin_audio/core/ui/ui_operation_service.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
@@ -20,6 +21,8 @@ import 'package:doujin_audio/features/data_support/application/data_support_file
 import 'package:doujin_audio/features/data_support/application/storage_usage_service.dart';
 import 'package:doujin_audio/features/data_support/presentation/data_support_settings_controls.dart';
 import 'package:doujin_audio/features/data_support/presentation/storage_usage_card.dart';
+import 'package:doujin_audio/features/library/application/remote_library_controller.dart';
+import 'package:doujin_audio/features/library/presentation/library_providers.dart';
 import 'package:doujin_audio/features/settings/application/app_update_service.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -30,7 +33,7 @@ void main() {
   const cardKeys = <ValueKey<String>>[
     ValueKey('data-support-export-backup'),
     ValueKey('data-support-restore-backup'),
-    ValueKey('data-support-webdav-sync-config'),
+    ValueKey('data-support-webdav-sync'),
     ValueKey('data-support-export-diagnostics'),
     ValueKey('data-support-privacy-summary'),
   ];
@@ -91,6 +94,11 @@ void main() {
             ),
             appUpdateServiceProvider.overrideWithValue(AppUpdateService()),
             uiOperationServiceProvider.overrideWithValue(operationService),
+            remoteLibraryControllerProvider.overrideWith(
+              (ref) => RemoteLibraryController(
+                syncService: ref.watch(crossPlatformSyncServiceProvider),
+              ),
+            ),
             dataSupportStorageUsageServiceProvider.overrideWithValue(
               storageService(),
             ),
@@ -122,7 +130,10 @@ void main() {
       final cards = find.byType(Card);
       for (final card in tester.widgetList<Card>(cards)) {
         expect(card.color, Colors.transparent);
-        expect((card.shape! as RoundedRectangleBorder).side, BorderSide.none);
+        expect(
+          card.shape,
+          const RoundedRectangleBorder(borderRadius: AppRadius.borderSmall),
+        );
       }
       for (var index = 0; index < cardKeys.length - 1; index++) {
         final gap =
@@ -130,17 +141,6 @@ void main() {
             tester.getBottomRight(cards.at(index)).dy;
         expect(gap, closeTo(3, 0.001));
       }
-      final firstCardShape =
-          tester.widget<Card>(cards.first).shape! as RoundedRectangleBorder;
-      final firstBorderRadius = firstCardShape.borderRadius as BorderRadius;
-      expect(firstBorderRadius.topLeft, const Radius.circular(12));
-      expect(firstBorderRadius.bottomLeft, const Radius.circular(6));
-      final lastCardShape =
-          tester.widget<Card>(cards.last).shape! as RoundedRectangleBorder;
-      final lastBorderRadius = lastCardShape.borderRadius as BorderRadius;
-      expect(lastBorderRadius.topLeft, const Radius.circular(6));
-      expect(lastBorderRadius.bottomLeft, const Radius.circular(12));
-
       final firstCard = find.byKey(cardKeys.first);
       final firstCardContext = tester.element(firstCard);
       final firstCardIcon = tester.widget<Icon>(
@@ -244,6 +244,11 @@ void main() {
           ),
           appUpdateServiceProvider.overrideWithValue(AppUpdateService()),
           uiOperationServiceProvider.overrideWithValue(operationService),
+          remoteLibraryControllerProvider.overrideWith(
+            (ref) => RemoteLibraryController(
+              syncService: ref.watch(crossPlatformSyncServiceProvider),
+            ),
+          ),
           audioRuntimeCoordinatorProvider.overrideWithValue(_NoopRuntime()),
           dataSupportFileServiceProvider.overrideWithValue(fakeFileService),
           dataSupportStorageUsageServiceProvider.overrideWithValue(

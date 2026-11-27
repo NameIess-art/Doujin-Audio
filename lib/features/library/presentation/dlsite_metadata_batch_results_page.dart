@@ -162,12 +162,19 @@ class _DlsiteMetadataBatchResultsPageState
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
-    final topInset = AppPageHeaderMetrics.contentTopInset(context);
+    final topInset = AppPageHeaderMetrics.contentTopInset(
+      context,
+      contentHeight: AppPageHeaderMetrics.expandedContentHeight,
+    );
 
     return AnimatedBuilder(
       animation: widget.session,
       builder: (context, _) {
-        final items = widget.session.items;
+        final session = widget.session;
+        final items = session.items;
+        final done = session.completedLookupCount;
+        final confirmed = session.confirmedCount + session.appliedCount;
+        final colorScheme = Theme.of(context).colorScheme;
         final visibleIndices = <int>[
           for (var i = 0; i < items.length; i++)
             if (_matchesFilter(items[i])) i,
@@ -202,31 +209,15 @@ class _DlsiteMetadataBatchResultsPageState
                             ),
                             padding: EdgeInsets.fromLTRB(
                               horizontalPadding,
-                              AppPageHeaderMetrics.contentTopInset(context),
+                              topInset,
                               horizontalPadding,
                               78 +
                                   MediaQuery.paddingOf(context).bottom +
                                   MobileOverlayInset.of(context),
                             ),
-                            itemCount: visibleIndices.length + 1,
+                            itemCount: visibleIndices.length,
                             itemBuilder: (context, listIndex) {
-                              if (listIndex == 0) {
-                                return _BatchResultsSummaryBar(
-                                  session: widget.session,
-                                  filter: _filter,
-                                  savingAll: _savingAll,
-                                  onFilterChanged: (next) {
-                                    setState(() => _filter = next);
-                                  },
-                                  onConfirmAllMatched: () {
-                                    widget.session.confirmAllMatched();
-                                  },
-                                  onRetryFailed: () {
-                                    widget.session.retryAllFailed();
-                                  },
-                                );
-                              }
-                              final index = visibleIndices[listIndex - 1];
+                              final index = visibleIndices[listIndex];
                               final item = items[index];
                               final entry = item.entry;
                               final targetKey =
@@ -258,6 +249,7 @@ class _DlsiteMetadataBatchResultsPageState
                                   ),
                                   minHeight: 48,
                                   verticalPadding: 2,
+                                  titleMaxLines: 2,
                                   reserveSubtitleSpace: true,
                                   title: title,
                                   subtitle: entry.detail.rjCode.isEmpty
@@ -380,17 +372,82 @@ class _DlsiteMetadataBatchResultsPageState
                       key: const ValueKey<String>(
                         'batch_metadata_results_header',
                       ),
-                      icon: Icons.cloud_download_rounded,
-                      title: i18n.tr('batch_metadata'),
-                      leading: AppHeaderBackButton(
-                        enabled: !_savingAll,
-                        onPressed: _requestClose,
+                      topCapsuleChild: Row(
+                        spacing: AppSpacing.xs,
+                        children: [
+                          HeaderFloatingButton(
+                            child: AppHeaderBackButton(
+                              enabled: !_savingAll,
+                              onPressed: _requestClose,
+                            ),
+                          ),
+                          Expanded(
+                            child: HeaderTopCapsule(
+                              title: i18n.tr('batch_metadata'),
+                              leading: Icon(
+                                Icons.cloud_download_rounded,
+                                color: colorScheme.primary,
+                                size: AppPageHeaderMetrics.titleIconSize,
+                              ),
+                              data: i18n.tr('batch_results_progress', {
+                                'done': '$done',
+                                'total': '${items.length}',
+                                'confirmed': '$confirmed',
+                              }),
+                              compactData: '$done/${items.length}·$confirmed',
+                            ),
+                          ),
+                        ],
+                      ),
+                      titleWidget:
+                          HeaderSegmentedCategoryBar<_BatchResultsFilter>(
+                            items: _BatchResultsFilter.values,
+                            selected: _filter,
+                            onSelected: (filter) =>
+                                setState(() => _filter = filter),
+                            labelBuilder: (filter) =>
+                                i18n.tr('batch_filter_${filter.name}'),
+                            accentColor: colorScheme.primary,
+                          ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        spacing: AppSpacing.xs,
+                        children: [
+                          HeaderFloatingButton(
+                            child: IconButton(
+                              key: const ValueKey<String>(
+                                'batch_metadata_confirm_found',
+                              ),
+                              icon: const Icon(Icons.done_all_rounded),
+                              tooltip: i18n.tr('batch_results_confirm_found'),
+                              onPressed:
+                                  _savingAll ||
+                                      session.exactMatchFoundCount == 0
+                                  ? null
+                                  : session.confirmAllMatched,
+                            ),
+                          ),
+                          if (session.failedLookupCount > 0)
+                            HeaderFloatingButton(
+                              child: IconButton(
+                                key: const ValueKey<String>(
+                                  'batch_metadata_retry_failed',
+                                ),
+                                icon: const Icon(Icons.refresh_rounded),
+                                tooltip: i18n.tr('batch_results_retry_failed'),
+                                onPressed: _savingAll
+                                    ? null
+                                    : session.retryAllFailed,
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                   ),
                   Positioned(
                     right: 16,
-                    bottom: 16 +
+                    bottom:
+                        16 +
                         MediaQuery.paddingOf(context).bottom +
                         MobileOverlayInset.of(context),
                     child: AppPageContentTransition(
@@ -415,126 +472,6 @@ class _DlsiteMetadataBatchResultsPageState
           ),
         );
       },
-    );
-  }
-}
-
-class _BatchResultsSummaryBar extends StatelessWidget {
-  const _BatchResultsSummaryBar({
-    required this.session,
-    required this.filter,
-    required this.savingAll,
-    required this.onFilterChanged,
-    required this.onConfirmAllMatched,
-    required this.onRetryFailed,
-  });
-
-  final DlsiteMetadataBatchSession session;
-  final _BatchResultsFilter filter;
-  final bool savingAll;
-  final ValueChanged<_BatchResultsFilter> onFilterChanged;
-  final VoidCallback onConfirmAllMatched;
-  final VoidCallback onRetryFailed;
-
-  @override
-  Widget build(BuildContext context) {
-    final i18n = ProviderScope.containerOf(
-      context,
-      listen: false,
-    ).read(appLanguageProviderInstanceProvider);
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
-    final total = session.items.length;
-    final done = session.completedLookupCount;
-    final confirmedTotal = session.confirmedCount + session.appliedCount;
-    final exactMatchCount = session.exactMatchFoundCount;
-    final failedLookupCount = session.failedLookupCount;
-
-    Widget filterPill(_BatchResultsFilter value, String keyName, String label) {
-      final selected = filter == value;
-      return ChoiceChip(
-        key: ValueKey<String>(keyName),
-        label: Text(label),
-        selected: selected,
-        visualDensity: VisualDensity.compact,
-        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        onSelected: (_) => onFilterChanged(value),
-      );
-    }
-
-    return Padding(
-      key: const ValueKey<String>('batch_metadata_summary_bar'),
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            i18n.tr('batch_results_progress', {
-              'done': done.toString(),
-              'total': total.toString(),
-              'confirmed': confirmedTotal.toString(),
-            }),
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: cs.onSurfaceVariant,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              filterPill(
-                _BatchResultsFilter.all,
-                'batch_metadata_filter_all',
-                i18n.tr('batch_filter_all'),
-              ),
-              filterPill(
-                _BatchResultsFilter.review,
-                'batch_metadata_filter_review',
-                i18n.tr('batch_filter_review'),
-              ),
-              filterPill(
-                _BatchResultsFilter.confirmed,
-                'batch_metadata_filter_confirmed',
-                i18n.tr('batch_filter_confirmed'),
-              ),
-              filterPill(
-                _BatchResultsFilter.failed,
-                'batch_metadata_filter_failed',
-                i18n.tr('batch_filter_failed'),
-              ),
-            ],
-          ),
-          if (exactMatchCount > 0 || failedLookupCount > 0) ...[
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 6,
-              children: [
-                if (exactMatchCount > 0)
-                  ActionChip(
-                    key: const ValueKey<String>('batch_metadata_confirm_found'),
-                    avatar: const Icon(Icons.done_all_rounded, size: 16),
-                    label: Text(i18n.tr('batch_results_confirm_found')),
-                    visualDensity: VisualDensity.compact,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    onPressed: savingAll ? null : onConfirmAllMatched,
-                  ),
-                if (failedLookupCount > 0)
-                  ActionChip(
-                    key: const ValueKey<String>('batch_metadata_retry_failed'),
-                    avatar: const Icon(Icons.refresh_rounded, size: 16),
-                    label: Text(i18n.tr('batch_results_retry_failed')),
-                    visualDensity: VisualDensity.compact,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    onPressed: savingAll ? null : onRetryFailed,
-                  ),
-              ],
-            ),
-          ],
-        ],
-      ),
     );
   }
 }

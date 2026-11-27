@@ -54,7 +54,14 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
       if (!mounted) return;
       final i18n = ref.read(appLanguageProviderInstanceProvider);
       if (shouldShowAsmrUnavailableFeedback(error)) {
-        showAsmrUnavailableFeedback(context: context, i18n: i18n, error: error);
+        showAsmrUnavailableFeedback(
+          context: context,
+          i18n: i18n,
+          error: error,
+          onRetry: () {
+            if (mounted && !_runningAction) unawaited(_runAction(play: play));
+          },
+        );
         return;
       }
       showAppSnackBar(

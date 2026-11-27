@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/app/theme/app_styles.dart';
 import 'package:doujin_audio/app/theme/theme_provider.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
@@ -12,7 +13,9 @@ import 'package:doujin_audio/core/network/remote_source_headers.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:doujin_audio/core/persistence/json_document_store.dart';
+import 'package:doujin_audio/core/ui/undoable_removal_service.dart';
 import 'package:doujin_audio/core/widgets/app_entry_ink_well.dart';
+import 'package:doujin_audio/core/widgets/app_feedback.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/widgets/duration_overlay.dart';
 import 'package:doujin_audio/core/widgets/library_like_cards.dart';
@@ -44,6 +47,7 @@ import 'package:doujin_audio/features/player/presentation/playlist/session_detai
 import 'package:doujin_audio/features/settings/presentation/settings_providers.dart';
 import 'package:doujin_audio/infrastructure/sqlite/sqlite_cross_platform_sync_repository.dart';
 import 'package:doujin_audio/infrastructure/sqlite/sqlite_library_repository.dart';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -288,6 +292,264 @@ void main() {
     );
     expect(pinnedSorted.first.rjCode, 'RJ334397');
   });
+
+  testWidgets(
+    'LAN discovery places selectable results in a column to the right of scan',
+    (tester) async {
+      final width = defaultTargetPlatform == TargetPlatform.android
+          ? 320.0
+          : 960.0;
+      await tester.binding.setSurfaceSize(Size(width, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final i18n = AppLanguageProvider();
+      final themeProvider = ThemeProvider();
+      addTearDown(i18n.dispose);
+      addTearDown(themeProvider.dispose);
+
+      const servers = [
+        LanDiscoveredServer(
+          serverId: 'first',
+          name: 'PC 1',
+          host: '192.168.0.2',
+          port: 42871,
+          authRequired: true,
+          allowSync: true,
+        ),
+        LanDiscoveredServer(
+          serverId: 'second',
+          name: 'Media server with a long display name',
+          host: '192.168.0.3',
+          port: 42871,
+          authRequired: true,
+          allowSync: true,
+        ),
+      ];
+      var scans = 0;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(i18n),
+          ],
+          child: MaterialApp(
+            theme: themeProvider.darkTheme,
+            home: Scaffold(
+              body: Builder(
+                builder: (context) => TextButton(
+                  onPressed: () => showAddOrEditRemoteSourceDialog(
+                    context,
+                    discoverLan: () async => ++scans == 1 ? [] : servers,
+                  ),
+                  child: Text(i18n.tr('remote_source_add')),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text(i18n.tr('remote_source_add')));
+      await tester.pumpAndSettle();
+
+      final scan = find.widgetWithText(
+        TextButton,
+        i18n.tr('remote_source_discover'),
+      );
+      final fields = find.byType(TextField);
+      final scanLeft = tester.getTopLeft(scan).dx;
+      expect(scanLeft, tester.getTopLeft(fields.first).dx);
+      expect(scans, 1);
+      expect(find.text('自动扫描同一局域网下已开启共享的电脑'), findsNothing);
+      expect(find.byType(ActionChip), findsNothing);
+
+      await tester.tap(scan);
+      await tester.pumpAndSettle();
+
+      final results = find.byType(ActionChip);
+      expect(results, findsNWidgets(2));
+      final firstResult = tester.getRect(results.first);
+      final secondResult = tester.getRect(results.last);
+      final scanRect = tester.getRect(scan);
+      expect(scanRect.left, scanLeft);
+      expect(firstResult.left, greaterThan(scanRect.right));
+      expect(firstResult.left, secondResult.left);
+      expect(secondResult.top, greaterThan(firstResult.bottom));
+      expect(
+        secondResult.right,
+        lessThanOrEqualTo(tester.getRect(fields.first).right),
+      );
+      expect(
+        find.descendant(
+          of: results.last,
+          matching: find.text(servers.last.host),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(results.last);
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.widget<TextField>(fields.at(0)).controller!.text,
+        servers.last.name,
+      );
+      expect(
+        tester.widget<TextField>(fields.at(1)).controller!.text,
+        servers.last.baseUrl,
+      );
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'remote source removal uses title-bar undo before deleting credentials',
+    (tester) async {
+      final i18n = AppLanguageProvider();
+      final sync = CrossPlatformSyncService();
+      final removalService = UndoableRemovalService();
+      final registry = RemoteSourceHeaderRegistry();
+      final source = RemoteMediaSource(
+        id: 'media-pc',
+        type: RemoteMediaSourceType.windowsLan,
+        name: 'Media PC',
+        baseUrl: 'http://192.168.1.50:42871',
+        secretConfigured: true,
+        pinnedWorkIds: ['work-1'],
+        createdAtMs: 1,
+      );
+      const sourcesKey = 'remote_media_sources_v1';
+      final storedSources = jsonEncode([source.toJson()]);
+      String? secret = 'test-access-code';
+      var failCredentialDeletion = false;
+      final controller = RemoteLibraryController(
+        syncService: sync,
+        supportDirectoryProvider: () async => tempDir,
+        httpClientFactory: () =>
+            _ControllableProbeHttpClient(isOnline: () => true),
+        readSecret: (_) async => secret,
+        writeSecret: (_, value) async {
+          if (value == null && failCredentialDeletion) {
+            throw StateError('Credential storage unavailable');
+          }
+          secret = value;
+        },
+        headerRegistry: registry,
+      );
+      addTearDown(controller.dispose);
+      addTearDown(sync.dispose);
+      addTearDown(i18n.dispose);
+      addTearDown(removalService.dispose);
+      await tester.runAsync(() async {
+        await AppPreferences.setString(sourcesKey, storedSources);
+        await controller.initialize();
+      });
+      controller.selectSource(source.id);
+      final sourceUri = Uri.parse(source.baseUrl);
+      final openLabel = i18n.tr('remote_source_manage');
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(i18n),
+            remoteLibraryControllerProvider.overrideWith((_) => controller),
+            undoableRemovalServiceProvider.overrideWithValue(removalService),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: Padding(
+                padding: const EdgeInsets.only(top: 24),
+                child: Builder(
+                  key: const ValueKey<String>('main_page_canvas'),
+                  builder: (context) => TopPageHeader(
+                    title: i18n.tr('music_library'),
+                    trailing: TextButton(
+                      onPressed: () => showManageRemoteSourcesDialog(context),
+                      child: Text(openLabel),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text(openLabel));
+      await tester.pumpAndSettle();
+      final sourceRow = find.widgetWithText(ListTile, source.name);
+      final delete = find.descendant(
+        of: sourceRow,
+        matching: find.byTooltip(i18n.tr('delete')),
+      );
+      await tester.tap(delete);
+      await tester.pumpAndSettle();
+
+      expect(sourceRow, findsNothing);
+      expect(find.byKey(const ValueKey('app_dialog_surface')), findsOneWidget);
+      expect(find.text(i18n.tr('remote_source_empty')), findsOneWidget);
+      expect(controller.selectedSource, isNull);
+      expect(AppPreferences.getStringSync(sourcesKey), storedSources);
+      expect(
+        registry.headersForUri(sourceUri)[HttpHeaders.authorizationHeader],
+        'Bearer test-access-code',
+      );
+      final undo = find.text('${i18n.tr('undo')} (5s)');
+      expect(undo.hitTestable(), findsOneWidget);
+      final banner = find.byType(AppFeedbackSurface);
+      expect(
+        tester.getTopLeft(banner).dy,
+        closeTo(
+          24 +
+              AppPageHeaderMetrics.mainTabPadding.top +
+              AppPageHeaderMetrics.secondRowOffset,
+          0.5,
+        ),
+      );
+
+      await tester.tap(undo);
+      await tester.pumpAndSettle();
+      expect(sourceRow, findsOneWidget);
+      expect(controller.selectedSource?.toJson(), source.toJson());
+      expect(secret, 'test-access-code');
+
+      Future<void> removeAndWaitForCommit() async {
+        await tester.tap(delete);
+        await tester.pumpAndSettle();
+        await tester.pump(kUndoableRemovalFeedbackDuration);
+        await tester.pumpAndSettle();
+        expect(removalService.state.pendingCount, 0);
+        for (
+          var attempts = 0;
+          attempts < 20 && removalService.state.committingCount > 0;
+          attempts++
+        ) {
+          await pumpAndSettleWithAsync(tester);
+        }
+        expect(removalService.state.committingCount, 0);
+      }
+
+      failCredentialDeletion = true;
+      await removeAndWaitForCommit();
+      expect(find.textContaining(i18n.tr('removal_failed')), findsOneWidget);
+      expect(sourceRow, findsOneWidget);
+      expect(AppPreferences.getStringSync(sourcesKey), storedSources);
+      expect(secret, 'test-access-code');
+
+      failCredentialDeletion = false;
+      await removeAndWaitForCommit();
+      expect(banner, findsNothing);
+      expect(sourceRow, findsNothing);
+      expect(controller.sources, isEmpty);
+      expect(AppPreferences.getStringSync(sourcesKey), '[]');
+      expect(registry.headersForUri(sourceUri), isEmpty);
+      expect(secret, isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets(
     'TopPageHeader top-right source menu, RemoteWorkCardTile, and edit dialog render cleanly under full app theme',
@@ -570,18 +832,6 @@ void main() {
       await tester.tap(find.text(i18n.tr('remote_source_manage')));
       await tester.pumpAndSettle();
       final sourceRow = find.widgetWithText(ListTile, source.name);
-      await tester.tap(
-        find.descendant(
-          of: sourceRow,
-          matching: find.byTooltip(i18n.tr('delete')),
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(find.text(i18n.tr('remote_source_manage')), findsOneWidget);
-      expect(find.text(i18n.tr('remote_source_edit_title')), findsNothing);
-      await tester.tap(find.text(i18n.tr('cancel')));
-      await tester.pumpAndSettle();
-
       await tester.tap(
         find.descendant(of: sourceRow, matching: find.text(source.name)),
       );

@@ -73,6 +73,9 @@ class AppRadius {
   static const double dialog = 20.0;
   static const double pill = 999.0;
 
+  static const BorderRadius borderSmall = BorderRadius.all(
+    Radius.circular(small),
+  );
   static const BorderRadius borderMedium = BorderRadius.all(
     Radius.circular(medium),
   );

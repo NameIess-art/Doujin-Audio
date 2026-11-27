@@ -430,11 +430,6 @@ class _NetworkSettingsControlsState
                   '${i18n.tr('network_current_proxy')}: $currentProxy',
                   style: TextStyle(color: cs.onSurfaceVariant),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  i18n.tr('network_new_connections'),
-                  style: TextStyle(color: cs.onSurfaceVariant),
-                ),
               ],
             ),
           ),
@@ -454,21 +449,28 @@ class _NetworkSettingsControlsState
                   isInvalid: isDnsInvalid,
                 ),
                 const SizedBox(height: 12),
-                AppPillButton(
-                  onPressed: _saving ? null : _applyDns,
-                  child: Text(i18n.tr('network_apply_dns')),
+                Row(
+                  spacing: AppSpacing.xs,
+                  children: [
+                    Expanded(
+                      child: AppPillButton(
+                        onPressed: _saving ? null : _applyDns,
+                        child: Text(i18n.tr('network_apply_dns')),
+                      ),
+                    ),
+                    Expanded(
+                      child: TextButton(
+                        onPressed: _saving
+                            ? null
+                            : () => _applyDns(reset: true),
+                        child: Text(i18n.tr('network_reset_dns')),
+                      ),
+                    ),
+                  ],
                 ),
-                TextButton(
-                  onPressed: _saving ? null : () => _applyDns(reset: true),
-                  child: Text(i18n.tr('network_reset_dns')),
-                ),
+                const SizedBox(height: AppSpacing.xs),
                 Text(
                   '${i18n.tr('network_current_dns')}: ${route.customDnsServer.isEmpty ? i18n.tr('network_system_dns') : route.customDnsServer}',
-                  style: TextStyle(color: cs.onSurfaceVariant),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  i18n.tr('network_dns_proxy_note'),
                   style: TextStyle(color: cs.onSurfaceVariant),
                 ),
               ],

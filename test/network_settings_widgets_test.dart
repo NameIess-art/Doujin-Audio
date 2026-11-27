@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:doujin_audio/core/network/network_route_settings.dart';
@@ -33,7 +34,7 @@ void main() {
         tester.view.devicePixelRatio = 1;
         tester.view.physicalSize = platform == TargetPlatform.windows
             ? const Size(960, 600)
-            : const Size(390, 844);
+            : const Size(390, 780);
         addTearDown(tester.view.resetDevicePixelRatio);
         addTearDown(tester.view.resetPhysicalSize);
         final fixture = AppRuntimeWidgetTestFixture();
@@ -159,25 +160,38 @@ void main() {
           AppProxyMode.http,
         );
         expect(fixture.settings.networkRouteSettings.proxyPort, 8080);
+        Future<void> tapDnsAction(Finder action) async {
+          await Scrollable.ensureVisible(tester.element(action), alignment: 0.5);
+          await tester.pumpAndSettle();
+          await tester.tap(action);
+        }
+
         await tester.ensureVisible(field('network_dns_ip'));
         await tester.enterText(field('network_dns_ip'), 'invalid');
-        final applyDns = find.text(i18n.tr('network_apply_dns'));
-        await tester.ensureVisible(applyDns);
-        await tester.tap(applyDns);
+        final applyDns = find.widgetWithText(
+          FilledButton,
+          i18n.tr('network_apply_dns'),
+        );
+        final resetDns = find.widgetWithText(
+          TextButton,
+          i18n.tr('network_reset_dns'),
+        );
+        final applyBounds = tester.getRect(applyDns);
+        final resetBounds = tester.getRect(resetDns);
+        expect(applyBounds.right, lessThan(resetBounds.left));
+        expect(applyBounds.center.dy, closeTo(resetBounds.center.dy, 0.5));
+        await tapDnsAction(applyDns);
         await tester.pumpAndSettle();
         expect(find.text(i18n.tr('network_invalid_value')), findsOneWidget);
         expect(fixture.settings.networkRouteSettings.customDnsServer, isEmpty);
         await tester.enterText(field('network_dns_ip'), '1.1.1.1');
-        await tester.ensureVisible(applyDns);
-        await tester.tap(applyDns);
+        await tapDnsAction(applyDns);
         await pumpAndSettleWithAsync(tester);
         expect(
           fixture.settings.networkRouteSettings.customDnsServer,
           '1.1.1.1',
         );
-        final reset = find.text(i18n.tr('network_reset_dns'));
-        await tester.ensureVisible(reset);
-        await tester.tap(reset);
+        await tapDnsAction(resetDns);
         await pumpAndSettleWithAsync(tester);
         expect(fixture.settings.networkRouteSettings.customDnsServer, isEmpty);
         expect(tester.takeException(), isNull);
@@ -214,4 +228,21 @@ class _ProbeHeaders extends Fake implements HttpHeaders {
 class _ProbeResponse extends Fake implements HttpClientResponse {
   @override
   int get statusCode => HttpStatus.noContent;
+
+  @override
+  StreamSubscription<List<int>> listen(
+    void Function(List<int>)? onData, {
+    Function? onError,
+    void Function()? onDone,
+    bool? cancelOnError,
+  }) {
+    final body = StreamController<List<int>>(onCancel: () async {});
+    unawaited(body.close());
+    return body.stream.listen(
+      onData,
+      onError: onError,
+      onDone: onDone,
+      cancelOnError: cancelOnError,
+    );
+  }
 }

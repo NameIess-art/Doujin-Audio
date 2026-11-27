@@ -458,17 +458,9 @@ void main() {
       ListeningDayRecord(date: '2026-11-24', totalMs: 600000, works: []),
     ]);
 
-    final secrets = <String, String>{};
     CrossPlatformSyncService buildService(AppDatabase db) => CrossPlatformSyncService(
       repository: SqliteCrossPlatformSyncRepository(database: db),
-      readSecret: (k) async => secrets[k],
-      writeSecret: (k, v) async {
-        if (v == null) {
-          secrets.remove(k);
-        } else {
-          secrets[k] = v;
-        }
-      },
+      readSecret: (_) async => 'p',
       webDavClientFactory: ({required baseUri, username, password}) =>
           WebDavClient(baseUri: baseUri, username: username, password: password),
     );
@@ -481,30 +473,44 @@ void main() {
     });
 
     final syncUrl = 'http://127.0.0.1:${webDavServer.port}/sync/';
-    await serviceA.saveWebDavSettings(
-      WebDavSyncSettings(url: syncUrl, username: 'u', autoSyncEnabled: true),
-      password: 'p',
+    const configKey = 'cross_platform_webdav_sync_v1';
+    final legacySettings = jsonEncode(
+      WebDavSyncSettings(
+        url: syncUrl,
+        username: 'u',
+        passwordConfigured: true,
+        autoSyncEnabled: true,
+      ).toJson(),
     );
+    await AppPreferences.setString(configKey, legacySettings);
     await serviceA.syncWithWebDav();
     expect(shards.keys.where((k) => k.endsWith('.dasync')), hasLength(1));
 
     // Clear peer marker prefs to simulate Device B's own SharedPreferences store.
     SharedPreferences.setMockInitialValues(<String, Object>{});
     await AppPreferences.init();
-    await serviceB.saveWebDavSettings(
-      WebDavSyncSettings(url: syncUrl, username: 'u', autoSyncEnabled: true),
-      password: 'p',
-    );
+    await AppPreferences.setString(configKey, legacySettings);
 
     final firstPull = await serviceB.syncWithWebDav();
-    expect(firstPull.peersMerged, 1);
+    expect(firstPull?.peersMerged, 1);
     expect(_daysMap(await dbB.loadListeningDays())['2026-11-24'], 600000);
     expect(peerDownloads, 1);
 
     // Second WebDAV sync sees identical ETag for Device A's shard -> skips GET download!
     final secondPull = await serviceB.syncWithWebDav();
-    expect(secondPull.peersMerged, 0);
+    expect(secondPull?.peersMerged, 0);
     expect(peerDownloads, 1);
+
+    await serviceB.setWebDavSyncEnabled(false);
+    expect(await serviceB.syncWithWebDav(), isNull);
+    expect(serviceB.webDavSettings.url, syncUrl);
+    expect(serviceB.webDavSettings.passwordConfigured, isTrue);
+    await serviceB.setWebDavSyncEnabled(true, sourceId: 'missing-source');
+    final restarted = buildService(dbB);
+    addTearDown(restarted.dispose);
+    await restarted.initialize();
+    expect(restarted.webDavSettings.sourceId, 'missing-source');
+    expect(await restarted.syncWithWebDav(resolveSource: (_) => null), isNull);
   });
 
   test('merges work-level reviews, listenStatus (including status clear), and metadata across platforms via .dasync v23', () async {

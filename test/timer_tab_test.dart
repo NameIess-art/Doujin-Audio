@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
@@ -566,9 +567,11 @@ void main() {
   );
 
   testWidgets(
-    'compact timer entry fits a 320 logical pixel Android screen',
+    'compact timer entry selects the 45-minute preset',
     (tester) async {
-      await tester.binding.setSurfaceSize(const Size(320, 800));
+      await tester.binding.setSurfaceSize(
+        Size(defaultTargetPlatform == TargetPlatform.android ? 320 : 960, 800),
+      );
       addTearDown(() => tester.binding.setSurfaceSize(null));
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
@@ -590,9 +593,31 @@ void main() {
       await tester.tap(find.text('Open timer'));
       await tester.pumpAndSettle();
       expect(find.byType(TimerTab), findsOneWidget);
+
+      final preset = find.byKey(const ValueKey('timer_preset_45m'));
+      await tester.tap(preset);
+      await tester.pumpAndSettle();
+
+      expect(fixture.timer.state.draftDuration, const Duration(minutes: 45));
+      final minuteWheel = tester.widget<ListWheelScrollView>(
+        find.byType(ListWheelScrollView).at(1),
+      );
+      final minuteController =
+          minuteWheel.controller as FixedExtentScrollController;
+      expect(minuteController.selectedItem % 60, 45);
+      final presetMaterial = find
+          .ancestor(of: preset, matching: find.byType(Material))
+          .first;
+      expect(
+        tester.widget<Material>(presetMaterial).color,
+        Theme.of(tester.element(preset)).colorScheme.primaryContainer,
+      );
       expect(tester.takeException(), isNull);
     },
-    variant: TargetPlatformVariant.only(TargetPlatform.android),
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 
   testWidgets(

@@ -366,6 +366,7 @@ class CrossPlatformSyncBundle {
 
 class WebDavSyncSettings {
   const WebDavSyncSettings({
+    this.sourceId = '',
     this.url = '',
     this.username = '',
     this.passwordConfigured = false,
@@ -373,29 +374,30 @@ class WebDavSyncSettings {
     this.lastSyncedAtMs,
   });
 
+  final String sourceId;
   final String url;
   final String username;
   final bool passwordConfigured;
   final bool autoSyncEnabled;
   final int? lastSyncedAtMs;
 
-  bool get isConfigured => url.trim().isNotEmpty;
+  bool get isConfigured => sourceId.isNotEmpty || url.trim().isNotEmpty;
 
   WebDavSyncSettings copyWith({
-    String? url,
-    String? username,
-    bool? passwordConfigured,
+    String? sourceId,
     bool? autoSyncEnabled,
     int? lastSyncedAtMs,
   }) => WebDavSyncSettings(
-    url: url ?? this.url,
-    username: username ?? this.username,
-    passwordConfigured: passwordConfigured ?? this.passwordConfigured,
+    sourceId: sourceId ?? this.sourceId,
+    url: url,
+    username: username,
+    passwordConfigured: passwordConfigured,
     autoSyncEnabled: autoSyncEnabled ?? this.autoSyncEnabled,
     lastSyncedAtMs: lastSyncedAtMs ?? this.lastSyncedAtMs,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
+    if (sourceId.isNotEmpty) 'sourceId': sourceId,
     'url': url,
     'username': username,
     'passwordConfigured': passwordConfigured,
@@ -405,6 +407,7 @@ class WebDavSyncSettings {
 
   factory WebDavSyncSettings.fromJson(Map<String, Object?> json) =>
       WebDavSyncSettings(
+        sourceId: json['sourceId']?.toString() ?? '',
         url: json['url']?.toString() ?? '',
         username: json['username']?.toString() ?? '',
         passwordConfigured: json['passwordConfigured'] == true,

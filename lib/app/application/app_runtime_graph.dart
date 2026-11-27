@@ -574,11 +574,11 @@ ProductionAppRuntime createProductionAppRuntime({
         remoteLibraryController.initialize(),
         lanMediaServerService.initialize(),
       ]);
-      unawaited(crossPlatformSyncService.maybeAutoSyncInBackground());
+      unawaited(remoteLibraryController.maybeAutoSyncInBackground());
       unawaited(workSmartStatusCoordinator.initializeAndSweepStale());
     },
     initializeListeningHistory: initializeListeningHistory,
-    onBackgroundSync: crossPlatformSyncService.maybeAutoSyncInBackground,
+    onBackgroundSync: remoteLibraryController.maybeAutoSyncInBackground,
     stopLanServer: (fastShutdown) =>
         lanMediaServerService.stopForShutdown(fastShutdown: fastShutdown),
     disposeSecondaryData: () {

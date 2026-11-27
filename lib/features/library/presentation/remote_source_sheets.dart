@@ -19,7 +19,6 @@ import '../../../core/widgets/app_entry_ink_well.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/async_cover_image.dart';
-import '../../../core/widgets/confirm_action_dialog.dart';
 import '../../../core/widgets/duration_overlay.dart';
 import '../../../core/widgets/glass_refresh_indicator.dart';
 import '../../../core/widgets/library_like_cards.dart';
@@ -40,17 +39,20 @@ import 'remote_library_work_detail.dart';
 Future<void> showAddOrEditRemoteSourceDialog(
   BuildContext context, {
   RemoteMediaSource? existing,
+  Future<List<LanDiscoveredServer>> Function() discoverLan =
+      LanDiscoveryClient.discover,
 }) {
   return showAppDialog<void>(
     context: context,
-    builder: (_) => _RemoteSourceEditDialog(existing: existing),
+    builder: (_) =>
+        _RemoteSourceEditDialog(existing: existing, discoverLan: discoverLan),
   );
 }
 
 Future<void> showManageRemoteSourcesDialog(BuildContext context) {
   return showAppDialog<void>(
     context: context,
-    builder: (_) => const _ManageRemoteSourcesDialog(),
+    builder: (_) => _ManageRemoteSourcesDialog(feedbackContext: context),
   );
 }
 
@@ -1112,9 +1114,10 @@ class RemoteWorkCardTile extends ConsumerWidget {
 }
 
 class _RemoteSourceEditDialog extends ConsumerStatefulWidget {
-  const _RemoteSourceEditDialog({this.existing});
+  const _RemoteSourceEditDialog({this.existing, required this.discoverLan});
 
   final RemoteMediaSource? existing;
+  final Future<List<LanDiscoveredServer>> Function() discoverLan;
 
   @override
   ConsumerState<_RemoteSourceEditDialog> createState() =>
@@ -1163,7 +1166,7 @@ class _RemoteSourceEditDialogState
     if (_discovering) return;
     setState(() => _discovering = true);
     try {
-      final list = await LanDiscoveryClient.discover();
+      final list = await widget.discoverLan();
       if (mounted) setState(() => _discovered = list);
     } finally {
       if (mounted) setState(() => _discovering = false);
@@ -1304,13 +1307,9 @@ class _RemoteSourceEditDialogState
               if (_type == RemoteMediaSourceType.windowsLan) ...[
                 const SizedBox(height: 12),
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  spacing: AppSpacing.xs,
                   children: [
-                    Expanded(
-                      child: Text(
-                        i18n.tr('remote_source_lan_discover_hint'),
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ),
                     TextButton.icon(
                       onPressed: _discovering ? null : _discoverLan,
                       icon: _discovering
@@ -1321,28 +1320,47 @@ class _RemoteSourceEditDialogState
                           : const Icon(Icons.radar_rounded, size: 16),
                       label: Text(i18n.tr('remote_source_discover')),
                     ),
+                    if (_discovered.isNotEmpty)
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          spacing: AppSpacing.xxs,
+                          children: [
+                            for (final server in _discovered)
+                              ActionChip(
+                                avatar: Icon(
+                                  Icons.desktop_windows_rounded,
+                                  size: 15,
+                                  color: tokens.success,
+                                ),
+                                label: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      server.name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    if (server.host != server.name)
+                                      Text(
+                                        server.host,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .labelSmall,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                  ],
+                                ),
+                                tooltip: '${server.name} (${server.baseUrl})',
+                                onPressed: () => _applyDiscovered(server),
+                              ),
+                          ],
+                        ),
+                      ),
                   ],
                 ),
-                if (_discovered.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: [
-                        for (final server in _discovered)
-                          ActionChip(
-                            avatar: Icon(
-                              Icons.desktop_windows_rounded,
-                              size: 15,
-                              color: tokens.success,
-                            ),
-                            label: Text('${server.name} (${server.host})'),
-                            onPressed: () => _applyDiscovered(server),
-                          ),
-                      ],
-                    ),
-                  ),
               ],
               const SizedBox(height: 12),
               TextField(
@@ -1432,7 +1450,9 @@ class _RemoteSourceEditDialogState
 }
 
 class _ManageRemoteSourcesDialog extends ConsumerWidget {
-  const _ManageRemoteSourcesDialog();
+  const _ManageRemoteSourcesDialog({required this.feedbackContext});
+
+  final BuildContext feedbackContext;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1499,19 +1519,29 @@ class _ManageRemoteSourcesDialog extends ConsumerWidget {
                             size: 19,
                             color: cs.error,
                           ),
-                          onPressed: () async {
-                            final ok = await showConfirmActionDialog(
-                              context: context,
-                              title: i18n.tr('delete'),
-                              message: source.name,
-                              cancelLabel: i18n.tr('cancel'),
-                              confirmLabel: i18n.tr('delete'),
-                              icon: Icons.delete_outline_rounded,
-                            );
-                            if (ok) {
-                              await controller.removeSource(source.id);
-                            }
-                          },
+                          onPressed: () => showUndoableRemovalFeedback(
+                            feedbackContext.mounted ? feedbackContext : context,
+                            overlay: Overlay.of(context, rootOverlay: true),
+                            service: ref.read(undoableRemovalServiceProvider),
+                            action: UndoableRemovalAction(
+                              key: UndoableRemovalKey(
+                                'remote_source',
+                                source.id,
+                              ),
+                              prepare: () =>
+                                  controller.stageSourceRemoval(source.id),
+                              commit: () => controller.removeSource(source.id),
+                              undo: () =>
+                                  controller.cancelSourceRemoval(source.id),
+                            ),
+                            message: i18n.tr('removed_prefix', {
+                              'name': source.name,
+                            }),
+                            batchMessage: (count) =>
+                                i18n.tr('items_removed_count', {'count': count}),
+                            undoLabel: i18n.tr('undo'),
+                            failureMessage: i18n.tr('removal_failed'),
+                          ),
                         ),
                       ],
                     ),

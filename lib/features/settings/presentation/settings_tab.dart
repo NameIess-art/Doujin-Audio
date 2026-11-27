@@ -247,23 +247,13 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                             maxWidth: tokens.readableContentMaxWidth,
                           ),
                           child: SettingsTileTheme.categories(
-                            child: Column(
+                            child: AppSettingsGroupCard(
                               children: [
-                                for (
-                                  var index = 0;
-                                  index < _SettingsCategory.values.length;
-                                  index++
-                                )
+                                for (final category in _SettingsCategory.values)
                                   _SettingsCategoryTile(
-                                    category: _SettingsCategory.values[index],
+                                    category: category,
                                     i18n: i18n,
-                                    isFirst: index == 0,
-                                    isLast:
-                                        index ==
-                                        _SettingsCategory.values.length - 1,
-                                    onTap: () => _openSettingsCategory(
-                                      _SettingsCategory.values[index],
-                                    ),
+                                    onTap: () => _openSettingsCategory(category),
                                   ),
                               ],
                             ),
@@ -384,52 +374,45 @@ class _SettingsCategoryTile extends StatelessWidget {
   const _SettingsCategoryTile({
     required this.category,
     required this.i18n,
-    required this.isFirst,
-    required this.isLast,
     required this.onTap,
   });
 
   final _SettingsCategory category;
   final AppLanguageProvider i18n;
-  final bool isFirst;
-  final bool isLast;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    return AppSettingsCard(
-      isFirst: isFirst,
-      isLast: isLast,
-      child: AppEntryInkWell(
-        onTap: onTap,
-        child: ListTile(
-          leading: _settingsIcon(category.icon, cs.primary),
-          title: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                i18n.tr(category.labelKeyFor(defaultTargetPlatform)),
-                softWrap: true,
-                overflow: TextOverflow.visible,
-                style: theme.textTheme.titleMedium,
-              ),
-              Text(
-                i18n.tr(category.subtitleKeyFor(defaultTargetPlatform)),
-                maxLines: 1,
-                softWrap: true,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodyMedium,
-              ),
-            ],
-          ),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-          minTileHeight: SettingsTileTheme.minTileHeight,
-          minVerticalPadding: 0,
-          titleAlignment: ListTileTitleAlignment.center,
+    return AppEntryInkWell(
+      borderRadius: AppRadius.borderSmall,
+      onTap: onTap,
+      child: ListTile(
+        leading: _settingsIcon(category.icon, cs.primary),
+        title: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              i18n.tr(category.labelKeyFor(defaultTargetPlatform)),
+              softWrap: true,
+              overflow: TextOverflow.visible,
+              style: theme.textTheme.titleMedium,
+            ),
+            Text(
+              i18n.tr(category.subtitleKeyFor(defaultTargetPlatform)),
+              maxLines: 1,
+              softWrap: true,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodyMedium,
+            ),
+          ],
         ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+        minTileHeight: SettingsTileTheme.minTileHeight,
+        minVerticalPadding: 0,
+        titleAlignment: ListTileTitleAlignment.center,
       ),
     );
   }

@@ -1227,6 +1227,7 @@ class HeaderTopCapsule extends StatelessWidget {
     super.key,
     required this.title,
     this.data,
+    this.compactData,
     this.dataCount,
     this.leading,
     this.trailing,
@@ -1235,6 +1236,9 @@ class HeaderTopCapsule extends StatelessWidget {
 
   final String title;
   final String? data;
+
+  /// Shown when the title and full [data] exceed the available width.
+  final String? compactData;
 
   /// Animates the number at the `{count}` placeholder in [data].
   final int? dataCount;
@@ -1248,24 +1252,21 @@ class HeaderTopCapsule extends StatelessWidget {
     final cs = theme.colorScheme;
     final textTheme = theme.textTheme;
     final isWindows = theme.platform == TargetPlatform.windows;
+    final titleStyle = appPageHeaderTitleStyle(context);
+    final dataStyle = textTheme.bodySmall?.copyWith(
+      fontWeight: isWindows ? null : FontWeight.w600,
+      color: cs.onSurfaceVariant.withValues(alpha: isWindows ? 1 : 0.85),
+      fontSize: 13,
+      letterSpacing: 0,
+    );
     final titleText = Text(
       title,
       maxLines: 1,
       softWrap: false,
-      style: appPageHeaderTitleStyle(context),
+      style: titleStyle,
     );
     final dataText = trailing == null && data != null && data!.isNotEmpty
-        ? _buildDataText(
-            data!,
-            textTheme.bodySmall?.copyWith(
-              fontWeight: isWindows ? null : FontWeight.w600,
-              color: cs.onSurfaceVariant.withValues(
-                alpha: isWindows ? 1 : 0.85,
-              ),
-              fontSize: 13,
-              letterSpacing: 0,
-            ),
-          )
+        ? _buildDataText(data!, dataStyle)
         : null;
 
     return HeaderFloatingSurface(
@@ -1277,25 +1278,61 @@ class HeaderTopCapsule extends StatelessWidget {
           if (leading != null) _HeaderTitleIcon(child: leading!),
           Expanded(
             child: LayoutBuilder(
-              builder: (context, constraints) => FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: AlignmentDirectional.centerStart,
-                child: ConstrainedBox(
-                  // Keep the count at the far edge when both strings fit.
-                  constraints: BoxConstraints(minWidth: constraints.maxWidth),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      titleText,
-                      if (dataText != null) ...[
-                        const SizedBox(width: 8),
-                        dataText,
+              builder: (context, constraints) {
+                Widget? visibleData = dataText;
+                if (dataText != null && compactData != null) {
+                  final defaultStyle = DefaultTextStyle.of(context).style;
+                  final textDirection = Directionality.of(context);
+                  final textScaler = MediaQuery.textScalerOf(context);
+                  final locale = Localizations.maybeLocaleOf(context);
+                  double measure(String text, TextStyle? style) =>
+                      TextPainter.computeWidth(
+                        text: TextSpan(
+                          text: text,
+                          style: defaultStyle.merge(style),
+                        ),
+                        textDirection: textDirection,
+                        textScaler: textScaler,
+                        locale: locale,
+                        maxLines: 1,
+                      );
+
+                  final fullData = dataCount == null
+                      ? data!
+                      : data!.replaceFirst('{count}', '$dataCount');
+                  if (measure(title, titleStyle) +
+                          AppSpacing.xs +
+                          measure(fullData, dataStyle) >
+                      constraints.maxWidth) {
+                    visibleData = Text(
+                      compactData!,
+                      maxLines: 1,
+                      softWrap: false,
+                      style: dataStyle,
+                      semanticsLabel: fullData,
+                    );
+                  }
+                }
+                return FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: AlignmentDirectional.centerStart,
+                  child: ConstrainedBox(
+                    // Keep the count at the far edge when both strings fit.
+                    constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        titleText,
+                        if (visibleData != null) ...[
+                          const SizedBox(width: AppSpacing.xs),
+                          visibleData,
+                        ],
                       ],
-                    ],
+                    ),
                   ),
-                ),
-              ),
+                );
+              },
             ),
           ),
           if (trailing != null) ...[const SizedBox(width: 8), trailing!],

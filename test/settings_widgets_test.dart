@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/gestures.dart';
@@ -12,6 +14,7 @@ import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:doujin_audio/core/widgets/app_bottom_sheet.dart';
 import 'package:doujin_audio/core/widgets/app_buttons.dart';
 import 'package:doujin_audio/core/widgets/app_dialog.dart';
+import 'package:doujin_audio/core/widgets/app_entry_ink_well.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/unified_dropdown.dart';
 import 'package:doujin_audio/core/widgets/operation_feedback.dart';
@@ -27,8 +30,11 @@ import 'package:doujin_audio/features/settings/presentation/subtitle_window_sett
 import 'package:doujin_audio/features/settings/presentation/asmr_download_folder_name_settings_sheet.dart';
 import 'package:doujin_audio/features/data_support/application/storage_usage_service.dart';
 import 'package:doujin_audio/features/data_support/application/cross_platform_sync_service.dart';
+import 'package:doujin_audio/features/library/application/remote_library_controller.dart';
+import 'package:doujin_audio/features/library/domain/remote_media_source.dart';
 import 'package:doujin_audio/features/library/presentation/library_providers.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
+import 'package:doujin_audio/core/network/webdav_client.dart';
 import 'package:doujin_audio/features/settings/presentation/about_page.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
@@ -796,7 +802,7 @@ void main() {
   );
 
   testWidgets(
-    'WebDAV settings test connection from the leading icon action',
+    'WebDAV sync switch reuses a connected source and stops when disabled',
     (tester) async {
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = defaultTargetPlatform == TargetPlatform.windows
@@ -806,12 +812,44 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       final harness = AppRuntimeWidgetTestFixture();
       addTearDown(harness.dispose);
-      final syncService = _DeferredWebDavSyncService();
+      final syncAttempts = <WebDavSyncSource>[];
+      final uploaded = <Uri>[];
+      final secrets = <String, String>{};
+      final temp = (await tester.runAsync(
+        () => Directory.systemTemp.createTemp('webdav_sync_settings_'),
+      ))!;
+      addTearDown(() => temp.delete(recursive: true));
+      final syncService = CrossPlatformSyncService(
+        webDavClientFactory: ({required baseUri, username, password}) {
+          syncAttempts.add((
+            baseUri: baseUri,
+            username: username ?? '',
+            password: password,
+          ));
+          return _SettingsWebDavClient(baseUri: baseUri, onUpload: uploaded.add);
+        },
+      );
+      final remoteLibrary = RemoteLibraryController(
+        syncService: syncService,
+        supportDirectoryProvider: () async => temp,
+        readSecret: (key) async => secrets[key],
+        writeSecret: (key, value) async {
+          if (value != null) secrets[key] = value;
+        },
+        webDavClientFactory: ({required baseUri, username, password}) =>
+            _SettingsWebDavClient(baseUri: baseUri),
+      );
+      await tester.runAsync(() async {
+        await AppPreferences.init();
+        await syncService.initialize();
+        await remoteLibrary.initialize();
+      });
       await tester.pumpWidget(
         harness.build(
           const SettingsTab(),
           overrides: [
             crossPlatformSyncServiceProvider.overrideWith((_) => syncService),
+            remoteLibraryControllerProvider.overrideWith((_) => remoteLibrary),
           ],
         ),
       );
@@ -828,48 +866,50 @@ void main() {
       await tester.ensureVisible(category);
       await tester.tap(category);
       await tester.pumpAndSettle();
-      final configure = find.byKey(
-        const ValueKey('data-support-webdav-sync-config'),
-      );
-      await tester.ensureVisible(configure);
-      await tester.tap(configure);
-      final dialog = find.byType(AppDialog);
-      await pumpUntilFound(tester, dialog);
+      final toggle = find.byKey(const ValueKey('data-support-webdav-sync'));
+      SwitchListTile syncTile() => tester.widget<SwitchListTile>(toggle);
+      await Scrollable.ensureVisible(tester.element(toggle), alignment: 0.5);
       await tester.pumpAndSettle();
+      expect(syncTile().value, isFalse);
+      expect(syncTile().onChanged, isNull);
 
-      final url = find
-          .descendant(of: dialog, matching: find.byType(TextField))
-          .first;
-      final testButton = find.byType(AppConnectionTestButton);
-      final confirm = find.text(i18n.tr('confirm'));
-      expect(find.text(i18n.tr('network_test')), findsNothing);
-      expect(find.byTooltip(i18n.tr('network_test')), findsOneWidget);
-      expect(find.byIcon(Icons.network_check_rounded), findsOneWidget);
-      expect(tester.getTopLeft(testButton).dx, tester.getTopLeft(url).dx);
-      expect(
-        tester.getCenter(testButton).dy,
-        closeTo(tester.getCenter(confirm).dy, 1),
-      );
+      late RemoteMediaSource source;
+      await tester.runAsync(() async {
+        source = await remoteLibrary.addOrUpdateSource(
+          type: RemoteMediaSourceType.webDav,
+          name: 'NAS',
+          baseUrl: 'https://dav.example.test/library/',
+          username: 'listener',
+          secret: 'media-source-password',
+        );
+        await remoteLibrary.refreshSource(source.id);
+      });
+      await tester.pumpAndSettle();
+      expect(syncTile().onChanged, isNotNull);
+      await tester.tap(toggle);
+      await pumpAndSettleWithAsync(tester);
+      expect(syncTile().value, isTrue);
+      expect(find.byType(AppDialog), findsNothing);
+      expect(syncService.webDavSettings.sourceId, source.id);
+      expect(syncService.webDavSettings.url, isEmpty);
+      expect(syncAttempts.single, (
+        baseUri: Uri.parse('https://dav.example.test/library/.dasync/'),
+        username: 'listener',
+        password: 'media-source-password',
+      ));
+      expect(uploaded.single.path, '/library/.dasync/devices/noop-device.dasync');
 
-      const endpoint = 'https://dav.example.com/sync';
-      await tester.enterText(url, endpoint);
-      await tester.tap(testButton);
-      await tester.pump();
-      expect(syncService.testedUrl, endpoint);
-      expect(
-        find.descendant(
-          of: testButton,
-          matching: find.byType(CircularProgressIndicator),
-        ),
-        findsOneWidget,
-      );
-      syncService.connection.complete();
-      await pumpUntilFound(
-        tester,
-        find.text(i18n.tr('remote_source_test_success')),
-      );
-      expect(dialog, findsOneWidget);
-      await tester.pump(const Duration(seconds: 3));
+      await tester.tap(toggle);
+      await pumpAndSettleWithAsync(tester);
+      expect(syncTile().value, isFalse);
+      expect(syncService.webDavSettings.sourceId, source.id);
+      expect(secrets.values, ['media-source-password']);
+      await tester.runAsync(() async {
+        await remoteLibrary.pullRefreshAndSync(source.id);
+        await remoteLibrary.syncAllConfiguredInBackground();
+        await remoteLibrary.maybeAutoSyncInBackground();
+      });
+      expect(uploaded, hasLength(1));
       await tester.pumpWidget(const SizedBox.shrink());
     },
     variant: const TargetPlatformVariant({
@@ -1248,7 +1288,7 @@ void main() {
   );
 
   testWidgets(
-    'settings options have no fill or border and retain shaped ink',
+    'settings options and their ink use small corners without fill or border',
     (tester) async {
       final harness = AppRuntimeWidgetTestFixture();
       addTearDown(harness.dispose);
@@ -1267,18 +1307,19 @@ void main() {
           );
           expect(card.color, Colors.transparent);
           expect(card.surfaceTintColor, Colors.transparent);
-          expect((card.shape! as RoundedRectangleBorder).side, BorderSide.none);
+          expect(
+            card.shape,
+            const RoundedRectangleBorder(borderRadius: AppRadius.borderSmall),
+          );
           final tiles = find.descendant(
             of: settingsCard,
             matching: find.byType(ListTile),
           );
           for (final tileElement in tiles.evaluate()) {
+            final tile = find.byWidget(tileElement.widget);
             final ink = tester.widget<InkWell>(
               find
-                  .descendant(
-                    of: find.byWidget(tileElement.widget),
-                    matching: find.byType(InkWell),
-                  )
+                  .descendant(of: tile, matching: find.byType(InkWell))
                   .first,
             );
             expect(ink.customBorder, isA<RoundedRectangleBorder>());
@@ -1287,6 +1328,11 @@ void main() {
               (card.shape! as RoundedRectangleBorder).borderRadius,
               reason: 'The item highlight must follow its card corners.',
             );
+            for (final entryInk in tester.widgetList<AppEntryInkWell>(
+              find.ancestor(of: tile, matching: find.byType(AppEntryInkWell)),
+            )) {
+              expect(entryInk.borderRadius, AppRadius.borderSmall);
+            }
           }
         }
       }
@@ -1298,6 +1344,7 @@ void main() {
         'section_common',
         'section_appearance',
         'section_playback',
+        'section_ai_models',
         'section_asmr_download',
         isWindows ? 'settings_group_data' : 'section_data_storage',
         'section_network',
@@ -1473,20 +1520,13 @@ void main() {
       closeTo(8, 0.001),
     );
     expect(rootCard.color, Colors.transparent);
-    final rootBorderRadius =
-        (rootCard.shape! as RoundedRectangleBorder).borderRadius
-            as BorderRadius;
-    expect(rootBorderRadius.topLeft, const Radius.circular(12));
-    expect(rootBorderRadius.bottomLeft, const Radius.circular(6));
+    const smallShape = RoundedRectangleBorder(borderRadius: AppRadius.borderSmall);
+    expect(rootCard.shape, smallShape);
     final aboutCard = find.ancestor(
       of: find.widgetWithText(ListTile, i18n.tr('about')),
       matching: find.byType(Card),
     );
-    final lastCardShape =
-        tester.widget<Card>(aboutCard.first).shape! as RoundedRectangleBorder;
-    final lastBorderRadius = lastCardShape.borderRadius as BorderRadius;
-    expect(lastBorderRadius.topLeft, const Radius.circular(6));
-    expect(lastBorderRadius.bottomLeft, const Radius.circular(12));
+    expect(tester.widget<Card>(aboutCard.first).shape, smallShape);
 
     await tester.tap(rootTile);
     await tester.pumpAndSettle();
@@ -1506,23 +1546,12 @@ void main() {
       findsOneWidget,
       reason: 'Settings secondary-page items should reuse the card style.',
     );
-    final detailCardShape =
-        tester
-                .widget<Card>(
-                  find
-                      .ancestor(of: detailTile, matching: find.byType(Card))
-                      .first,
-                )
-                .shape!
-            as RoundedRectangleBorder;
-    final detailBorderRadius = detailCardShape.borderRadius as BorderRadius;
-    expect(detailBorderRadius.topLeft, const Radius.circular(12));
+    final detailCard = tester.widget<Card>(
+      find.ancestor(of: detailTile, matching: find.byType(Card)),
+    );
+    expect(detailCard.shape, smallShape);
     expect(
-      tester
-          .widget<Card>(
-            find.ancestor(of: detailTile, matching: find.byType(Card)).first,
-          )
-          .color,
+      detailCard.color,
       Colors.transparent,
     );
     expect(
@@ -2736,19 +2765,28 @@ final class _DeferredFolderNameSettingsRepository extends SettingsRepository {
   }
 }
 
-class _DeferredWebDavSyncService extends CrossPlatformSyncService {
-  final connection = Completer<void>();
-  String? testedUrl;
+class _SettingsWebDavClient extends WebDavClient {
+  _SettingsWebDavClient({required super.baseUri, this.onUpload});
+
+  final ValueChanged<Uri>? onUpload;
 
   @override
-  Future<void> testWebDavConnection({
-    required String url,
-    required String username,
-    String? password,
-  }) {
-    testedUrl = url;
-    return connection.future;
-  }
+  Future<void> testConnection() async {}
+
+  @override
+  Future<List<WebDavEntry>> listDirectory(
+    Uri directoryUri, {
+    int depth = 1,
+    bool includeSelf = false,
+    int maxResponseBytes = 16 * 1024 * 1024,
+  }) async => const [];
+
+  @override
+  Future<void> ensureDirectory(Uri directoryUri) async {}
+
+  @override
+  Future<void> putBytesAtomic(Uri fileUri, Uint8List bytes) async =>
+      onUpload?.call(fileUri);
 }
 
 class _UnavailableStorageGateway extends FileCachePlatformGateway {

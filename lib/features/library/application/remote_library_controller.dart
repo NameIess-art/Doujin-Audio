@@ -84,6 +84,7 @@ class RemoteLibraryController extends ChangeNotifier {
       WebDavMediaSourceAdapter();
 
   final List<RemoteMediaSource> _sources = <RemoteMediaSource>[];
+  final Set<String> _pendingSourceRemovals = <String>{};
   List<RemoteMediaSource> _sourcesView = const <RemoteMediaSource>[];
   final Map<String, String> _secretsBySourceId = <String, String>{};
   final Map<String, List<RemoteLibraryWork>> _worksBySourceId =
@@ -123,9 +124,12 @@ class RemoteLibraryController extends ChangeNotifier {
   List<RemoteMediaSource> get sources => _sourcesView;
 
   void _refreshSourcesView() {
-    _sourcesView = List<RemoteMediaSource>.unmodifiable(_sources);
+    _sourcesView = List<RemoteMediaSource>.unmodifiable(
+      _sources.where((source) => !_pendingSourceRemovals.contains(source.id)),
+    );
   }
-  String? get selectedSourceId => _selectedSourceId;
+
+  String? get selectedSourceId => selectedSource?.id;
   RemoteMediaSource? get selectedSource => _selectedSourceId == null
       ? null
       : sourceById(_selectedSourceId!);
@@ -138,7 +142,7 @@ class RemoteLibraryController extends ChangeNotifier {
       _activeRemoteTracksByUrl[trackPath];
 
   RemoteMediaSource? sourceById(String id) {
-    for (final source in _sources) {
+    for (final source in _sourcesView) {
       if (source.id == id) return source;
     }
     return null;
@@ -443,10 +447,38 @@ class RemoteLibraryController extends ChangeNotifier {
     return saved;
   }
 
+  bool stageSourceRemoval(String sourceId) {
+    if (sourceById(sourceId) == null) return false;
+    _pendingSourceRemovals.add(sourceId);
+    _refreshSourcesView();
+    notifyListeners();
+    return true;
+  }
+
+  void cancelSourceRemoval(String sourceId) {
+    if (!_pendingSourceRemovals.remove(sourceId)) return;
+    _refreshSourcesView();
+    notifyListeners();
+  }
+
   Future<void> removeSource(String sourceId) async {
     await initialize();
-    _sources.removeWhere((s) => s.id == sourceId);
+    final index = _sources.indexWhere((source) => source.id == sourceId);
+    if (index < 0) return;
+    final source = _sources.removeAt(index);
     _refreshSourcesView();
+    try {
+      if (!await _persistSources()) {
+        throw StateError('Could not save remote media sources');
+      }
+      await _writeSecret(_remoteSourceSecretKey(sourceId), null);
+    } catch (_) {
+      _sources.insert(min(index, _sources.length), source);
+      _refreshSourcesView();
+      await _persistSources();
+      rethrow;
+    }
+    _pendingSourceRemovals.remove(sourceId);
     _secretsBySourceId.remove(sourceId);
     _worksBySourceId.remove(sourceId);
     _loadingBySourceId.remove(sourceId);
@@ -458,9 +490,7 @@ class RemoteLibraryController extends ChangeNotifier {
     if (_selectedSourceId == sourceId) {
       _selectedSourceId = null;
     }
-    await _writeSecret(_remoteSourceSecretKey(sourceId), null);
     await _deleteCachedWorksOnDisk(sourceId);
-    await _persistSources();
     _syncHeaderRules();
     notifyListeners();
   }
@@ -588,6 +618,72 @@ class RemoteLibraryController extends ChangeNotifier {
     );
   }
 
+  bool get webDavSyncEnabled {
+    final settings = _syncService.webDavSettings;
+    if (!settings.autoSyncEnabled) return false;
+    return settings.sourceId.isEmpty
+        ? settings.isConfigured
+        : sourceById(settings.sourceId)?.isWebDav == true;
+  }
+
+  bool get canEnableWebDavSync =>
+      _webDavSyncSourceToEnable != null ||
+      _syncService.webDavSettings.url.trim().isNotEmpty;
+
+  RemoteMediaSource? get _webDavSyncSourceToEnable {
+    final selected = selectedSource;
+    if (selected != null && selected.isWebDav && canEnterSource(selected.id)) {
+      return selected;
+    }
+    final bound = sourceById(_syncService.webDavSettings.sourceId);
+    if (bound != null && bound.isWebDav && canEnterSource(bound.id)) {
+      return bound;
+    }
+    RemoteMediaSource? candidate;
+    for (final source in sources) {
+      if (!source.isWebDav || !canEnterSource(source.id)) continue;
+      if (candidate != null) return null;
+      candidate = source;
+    }
+    return candidate;
+  }
+
+  Future<void> setWebDavSyncEnabled(bool enabled) async {
+    await ensureCredentialsLoaded();
+    await _syncService.initialize();
+    await _syncService.setWebDavSyncEnabled(
+      enabled,
+      sourceId: enabled ? _webDavSyncSourceToEnable?.id ?? '' : null,
+    );
+    if (enabled) {
+      unawaited(
+        _syncService.maybeAutoSyncInBackground(
+          minInterval: Duration.zero,
+          resolveSource: _resolveWebDavSyncSource,
+        ),
+      );
+    }
+  }
+
+  WebDavSyncSource? _resolveWebDavSyncSource(String sourceId) {
+    final source = sourceById(sourceId);
+    if (_disposed || source == null || !source.isWebDav) return null;
+    return (
+      baseUri: WebDavClient.normalizeDirectoryUri(
+        Uri.parse(source.baseUrl),
+      ).resolve('.dasync/'),
+      username: source.username,
+      password: _secretsBySourceId[sourceId],
+    );
+  }
+
+  Future<void> maybeAutoSyncInBackground() async {
+    await ensureCredentialsLoaded();
+    await _syncService.maybeAutoSyncInBackground(
+      resolveSource: _resolveWebDavSyncSource,
+    );
+  }
+
   /// Unified pull-to-refresh entry point: exchanges `.dasync` progress/reviews/stats
   /// with the remote source first (best-effort if sync is disabled or read-only),
   /// then refreshes the remote work catalog.
@@ -612,25 +708,19 @@ class RemoteLibraryController extends ChangeNotifier {
         }
       }
     } else {
-      try {
-        final CrossPlatformSyncSummary summary;
-        if (_syncService.webDavSettings.isConfigured) {
-          summary = await _syncService.syncWithWebDav();
-        } else {
-          final syncDirUri = WebDavClient.normalizeDirectoryUri(
-            Uri.parse(source.baseUrl),
-          ).resolve('.dasync/');
-          summary = await _syncService.syncWithWebDavEndpoint(
-            baseUri: syncDirUri,
-            username: source.username,
-            password: _secretsBySourceId[source.id],
-            markerNamespace: source.id,
+      await _syncService.initialize();
+      final settings = _syncService.webDavSettings;
+      if (webDavSyncEnabled &&
+          (settings.sourceId.isEmpty || settings.sourceId == sourceId)) {
+        try {
+          final summary = await _syncService.syncWithWebDav(
+            resolveSource: _resolveWebDavSyncSource,
           );
+          if (summary != null) onSyncSummary?.call(summary);
+        } on Object catch (error) {
+          // Read-only WebDAV shares may forbid MKCOL/PUT; still allow catalog refresh.
+          AppLogService.warning('remote_webdav_pull_sync_skipped', error: error);
         }
-        onSyncSummary?.call(summary);
-      } on Object catch (error) {
-        // Read-only WebDAV shares may forbid MKCOL/PUT; still allow catalog refresh.
-        AppLogService.warning('remote_webdav_pull_sync_skipped', error: error);
       }
     }
 
@@ -642,9 +732,11 @@ class RemoteLibraryController extends ChangeNotifier {
   Future<void> syncAllConfiguredInBackground() async {
     await initialize();
     await _syncService.initialize();
-    if (_syncService.webDavSettings.isConfigured) {
+    if (webDavSyncEnabled) {
       try {
-        await _syncService.syncWithWebDav();
+        await _syncService.syncWithWebDav(
+          resolveSource: _resolveWebDavSyncSource,
+        );
       } on Object catch (error) {
         AppLogService.warning('local_refresh_webdav_sync_skipped', error: error);
       }
@@ -1772,12 +1864,10 @@ class RemoteLibraryController extends ChangeNotifier {
     _headerRegistry.replaceAll(rules);
   }
 
-  Future<void> _persistSources() async {
-    await AppPreferences.setString(
-      _remoteSourcesPrefKey,
-      jsonEncode(_sources.map((s) => s.toJson()).toList(growable: false)),
-    );
-  }
+  Future<bool> _persistSources() => AppPreferences.setString(
+    _remoteSourcesPrefKey,
+    jsonEncode(_sources.map((s) => s.toJson()).toList(growable: false)),
+  );
 
   Future<File> _catalogCacheFile(String sourceId) async {
     final support = await _supportDirectoryProvider();

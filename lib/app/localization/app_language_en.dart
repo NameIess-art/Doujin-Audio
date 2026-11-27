@@ -67,16 +67,12 @@ const Map<String, String> appLanguageEn = {
   'network_password_keep': 'Leave blank to keep the saved password',
   'network_apply_proxy': 'Apply proxy',
   'network_current_proxy': 'Current proxy',
-  'network_new_connections':
-      'Applied settings affect new connections. Current playback continues.',
   'network_dns': 'DNS service',
   'network_dns_ip': 'DNS server IP (IPv4 / IPv6)',
   'network_apply_dns': 'Apply DNS',
-  'network_reset_dns': 'Use system DNS',
+  'network_reset_dns': 'Clear settings',
   'network_current_dns': 'Current DNS',
   'network_system_dns': 'System DNS',
-  'network_dns_proxy_note':
-      'Manual proxies resolve destination domains. Custom DNS applies to direct connections.',
   'network_invalid_value': 'Enter a valid value',
   'network_untested': 'Not tested',
   'network_testing': 'Testing',
@@ -88,9 +84,9 @@ const Map<String, String> appLanguageEn = {
   'asmr_download_size_unknown': 'Size unknown',
   'online_library_partial_failure':
       'Some sources are unavailable. Available works are shown. Please retry.',
-  'asmr_one_unavailable_title': 'ASMR.ONE Unavailable',
-  'japanese_asmr_unavailable_title': 'Japanese ASMR Unavailable',
-  'online_source_unavailable_title': 'Some Sources Unavailable',
+  'asmr_one_unavailable_title': 'ASMR.ONE server error',
+  'japanese_asmr_unavailable_title': 'Japanese ASMR server error',
+  'online_source_unavailable_title': 'Source server error',
   'asmr_one_server_unavailable_partial':
       'ASMR.ONE server error (not your network). Showing Japanese ASMR works.',
   'asmr_one_unavailable_partial':
@@ -1248,8 +1244,6 @@ const Map<String, String> appLanguageEn = {
   'remote_source_manage': 'Manage remote sources',
   'remote_source_local_library': 'Local',
   'remote_source_type_lan': 'Windows LAN host',
-  'remote_source_lan_discover_hint':
-      'Scan for Windows hosts sharing on the same LAN',
   'remote_source_discover': 'Discover',
   'remote_source_name': 'Source name',
   'remote_source_lan_address': 'LAN server address',
@@ -1279,10 +1273,7 @@ const Map<String, String> appLanguageEn = {
   'lan_server_allow_edit': 'Allow remote metadata and folder edits',
   'remote_source_edit_disabled': 'Editing is disabled on this remote source',
   'lan_server_addresses': 'Local LAN URLs (tap to copy)',
-  'cross_platform_sync_webdav_setup': 'Configure WebDAV sync',
-  'cross_platform_sync_webdav_now': 'Sync via WebDAV now',
-  'cross_platform_sync_webdav_config': 'WebDAV sync settings',
-  'cross_platform_sync_auto': 'Auto-sync on startup & background',
+  'cross_platform_sync_webdav': 'WebDAV cross-platform sync',
   'cross_platform_sync_completed':
       'Merged {tracks} track states, {days} listening days, and {segments} timeline labels',
   'cross_platform_sync_failed':

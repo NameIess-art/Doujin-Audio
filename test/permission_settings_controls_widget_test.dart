@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/presentation/app_settings_group_card.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/app/theme/app_styles.dart';
 import 'package:doujin_audio/core/widgets/app_settings_action_tile.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/shimmer_loading.dart';
@@ -172,16 +173,12 @@ void main() {
           tester.getBottomRight(cards.at(index)).dy;
       expect(gap, closeTo(3, 0.001));
     }
-    final firstCardShape =
-        tester.widget<Card>(cards.first).shape! as RoundedRectangleBorder;
-    final firstBorderRadius = firstCardShape.borderRadius as BorderRadius;
-    expect(firstBorderRadius.topLeft, const Radius.circular(12));
-    expect(firstBorderRadius.bottomLeft, const Radius.circular(6));
-    final lastCardShape =
-        tester.widget<Card>(cards.last).shape! as RoundedRectangleBorder;
-    final lastBorderRadius = lastCardShape.borderRadius as BorderRadius;
-    expect(lastBorderRadius.topLeft, const Radius.circular(6));
-    expect(lastBorderRadius.bottomLeft, const Radius.circular(12));
+    for (final card in tester.widgetList<Card>(cards)) {
+      expect(
+        card.shape,
+        const RoundedRectangleBorder(borderRadius: AppRadius.borderSmall),
+      );
+    }
     expect(find.text(language.tr('permission_group_playback')), findsNothing);
     expect(
       find.text(language.tr('permission_group_reliability')),

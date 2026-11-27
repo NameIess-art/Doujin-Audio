@@ -162,12 +162,11 @@ void main() {
       findsOneWidget,
     );
     expect(
-      tester
-          .widget<TopPageHeader>(
-            find.byKey(const ValueKey<String>('batch_metadata_results_header')),
-          )
-          .icon,
-      Icons.cloud_download_rounded,
+      find.descendant(
+        of: find.byType(HeaderTopCapsule),
+        matching: find.byIcon(Icons.cloud_download_rounded),
+      ),
+      findsOneWidget,
     );
     expect(
       find.byKey(const ValueKey<String>('batch_metadata_results_done')),
@@ -287,19 +286,19 @@ void main() {
     expect(find.byType(HeaderFloatingSurface), findsNWidgets(3));
   });
 
-  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
-    for (final scale in [1.0, 2.0]) {
-      testWidgets('batch rows fit two lines on $platform at scale $scale', (
-        tester,
-      ) async {
+  for (final scale in [1.0, 2.0]) {
+    testWidgets(
+      'batch results fit three lines at scale $scale',
+      (tester) async {
+        final platform = defaultTargetPlatform;
         tester.view.physicalSize = const Size(320, 800);
         tester.view.devicePixelRatio = 1;
         addTearDown(tester.view.resetPhysicalSize);
         addTearDown(tester.view.resetDevicePixelRatio);
         final languageProvider = AppLanguageProvider();
         final entries = [
-          resultEntry('001', title: '很长的作品名称用来验证窄窗口只显示一行并省略后续文字'),
-          resultEntry('002', hasRjCode: false),
+          resultEntry('001', title: '很长的作品名称用来验证窄窗口显示两行并省略后续文字'),
+          resultEntry('002', hasRjCode: false, title: '短'),
         ];
         final session = DlsiteMetadataBatchSession(
           entries: entries,
@@ -333,17 +332,29 @@ void main() {
               find.byKey(ValueKey<String>('batch_metadata_result_$i')),
             ),
         ];
-        expect(resultRects[0].height, scale == 1 ? 48 : greaterThan(48));
+        final capsule = find.byType(HeaderTopCapsule);
+        final compactProgress = find.descendant(
+          of: capsule,
+          matching: find.text('${session.completedLookupCount}/2·0'),
+        );
+        expect(compactProgress, findsOneWidget);
+        expect(
+          tester.getTopRight(compactProgress).dx,
+          closeTo(tester.getTopRight(capsule).dx - 14, 0.5),
+        );
+        expect(resultRects[0].height, greaterThan(48));
         expect(resultRects[1].height, resultRects[0].height);
         expect(resultRects[1].top, resultRects[0].bottom);
-        for (final text in tester.widgetList<Text>(
-          find.descendant(
-            of: find.byType(FileTreeRow),
-            matching: find.byType(Text),
-          ),
-        )) {
-          expect(text.maxLines, 1);
+        final longTitle = find.text(entries[0].title);
+        final shortTitle = find.text(entries[1].title);
+        for (final title in [longTitle, shortTitle]) {
+          expect(tester.widget<Text>(title).maxLines, 2);
         }
+        expect(
+          tester.getSize(longTitle).height,
+          greaterThan(tester.getSize(shortTitle).height),
+        );
+        expect(tester.widget<Text>(find.text('RJ000001')).maxLines, 1);
         expect(tester.takeException(), isNull);
 
         await tester.pumpWidget(
@@ -360,8 +371,8 @@ void main() {
           for (var i = 0; i < entries.length; i++)
             tester.getRect(pickerRows.at(i)),
         ];
-        expect(pickerRects[0].height, resultRects[0].height);
-        expect(pickerRects[1].height, resultRects[0].height);
+        expect(pickerRects[0].height, lessThan(resultRects[0].height));
+        expect(pickerRects[1].height, pickerRects[0].height);
         expect(pickerRects[1].top, pickerRects[0].bottom);
         expect(pickerRects[0].left, resultRects[0].left);
         expect(pickerRects[0].right, resultRects[0].right);
@@ -397,8 +408,12 @@ void main() {
           isFalse,
         );
         expect(tester.takeException(), isNull);
-      });
-    }
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
   }
 
   testWidgets('batch results wait for all lookups before saving', (
@@ -560,26 +575,74 @@ void main() {
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
 
-      final allFilter = find.byKey(
-        const ValueKey<String>('batch_metadata_filter_all'),
+      final allFilter = find.text(languageProvider.tr('batch_filter_all'));
+      final failedFilter = find.text(
+        languageProvider.tr('batch_filter_failed'),
       );
-      final failedFilter = find.byKey(
-        const ValueKey<String>('batch_metadata_filter_failed'),
+      final categoryBar = find.byWidgetPredicate(
+        (widget) => widget is HeaderSegmentedCategoryBar,
       );
-      RawChip chipFor(Finder filter) => tester.widget<RawChip>(
-        find.descendant(of: filter, matching: find.byType(RawChip)),
+      final categorySurface = find.descendant(
+        of: categoryBar,
+        matching: find.byType(HeaderFloatingSurface),
+      );
+      final confirm = find.byKey(
+        const ValueKey<String>('batch_metadata_confirm_found'),
+      );
+      final confirmSurface = find.ancestor(
+        of: confirm,
+        matching: find.byType(HeaderFloatingButton),
+      );
+      final capsule = find.byType(HeaderTopCapsule);
+      final progress = find.descendant(
+        of: capsule,
+        matching: find.text(
+          languageProvider.tr('batch_results_progress', {
+            'done': '3',
+            'total': '3',
+            'confirmed': '0',
+          }),
+        ),
+      );
+      expect(progress, findsOneWidget);
+      expect(
+        tester.getTopLeft(categorySurface).dy,
+        greaterThan(tester.getBottomLeft(capsule).dy),
+      );
+      expect(
+        tester.getTopLeft(confirmSurface).dx,
+        greaterThan(tester.getTopRight(categorySurface).dx),
+      );
+      expect(
+        tester.getCenter(confirmSurface).dy,
+        tester.getCenter(categorySurface).dy,
+      );
+      expect(tester.getSize(confirmSurface), const Size.square(38));
+      final firstRow = find.byKey(
+        const ValueKey<String>('batch_metadata_result_0'),
+      );
+      expect(
+        tester.getTopLeft(firstRow).dy,
+        greaterThan(tester.getBottomLeft(categorySurface).dy),
       );
       final allSize = tester.getSize(allFilter);
       final failedSize = tester.getSize(failedFilter);
-      expect(chipFor(allFilter).selected, isTrue);
-      expect(chipFor(allFilter).showCheckmark, isFalse);
+      bool isSelected(Finder label) => tester.widget<Semantics>(
+        find.ancestor(
+          of: label,
+          matching: find.byWidgetPredicate(
+            (widget) => widget is Semantics && widget.properties.selected != null,
+          ),
+        ),
+      ).properties.selected!;
+      expect(isSelected(allFilter), isTrue);
+      expect(isSelected(failedFilter), isFalse);
 
       // Filter to Failed -> only item 2 visible
       await tester.tap(failedFilter);
       await tester.pumpAndSettle();
-      expect(chipFor(allFilter).selected, isFalse);
-      expect(chipFor(failedFilter).selected, isTrue);
-      expect(chipFor(failedFilter).showCheckmark, isFalse);
+      expect(isSelected(allFilter), isFalse);
+      expect(isSelected(failedFilter), isTrue);
       expect(tester.getSize(allFilter), allSize);
       expect(tester.getSize(failedFilter), failedSize);
       expect(
@@ -601,13 +664,13 @@ void main() {
       // Switch back to All and confirm all matched
       await tester.tap(allFilter);
       await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(const ValueKey<String>('batch_metadata_confirm_found')),
-      );
+      await tester.tap(confirm);
       await tester.pumpAndSettle();
       expect(session.confirmedCount, 3);
       expect(
-        find.text(languageProvider.tr('batch_results_save_count', {'count': '3'})),
+        find.text(
+          languageProvider.tr('batch_results_save_count', {'count': '3'}),
+        ),
         findsOneWidget,
       );
 
@@ -730,12 +793,11 @@ void main() {
       findsOneWidget,
     );
     expect(
-      tester
-          .widget<TopPageHeader>(
-            find.byKey(const ValueKey<String>('batch_metadata_results_header')),
-          )
-          .icon,
-      Icons.cloud_download_rounded,
+      find.descendant(
+        of: find.byType(HeaderTopCapsule),
+        matching: find.byIcon(Icons.cloud_download_rounded),
+      ),
+      findsOneWidget,
     );
   });
 

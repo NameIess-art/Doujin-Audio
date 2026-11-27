@@ -73,11 +73,11 @@ void showAsmrUnavailableFeedback({
   final isPartial = error is AsmrPartialCatalogException;
   showAppSnackBar(
     context,
-    localizedAsmrCatalogErrorText(i18n, error),
+    localizedAsmrUnavailableTitle(i18n, error),
     tone: isPartial ? AppFeedbackTone.warning : AppFeedbackTone.destructive,
-    title: localizedAsmrUnavailableTitle(i18n, error),
     icon: Icons.cloud_off_rounded,
-    actionLabel: onRetry != null ? i18n.tr('retry') : null,
+    actionIcon: onRetry != null ? Icons.refresh_rounded : null,
+    actionLabel: onRetry != null ? i18n.tr('refresh') : null,
     onAction: onRetry,
     duration: const Duration(seconds: 5),
     showCountdown: false,

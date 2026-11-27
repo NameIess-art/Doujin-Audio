@@ -168,7 +168,14 @@ class _AsmrAccountPanelState extends ConsumerState<_AsmrAccountPanel> {
           (error is AsmrApiException &&
               error.statusCode == HttpStatus.badRequest);
       if (!isCredentialError && shouldShowAsmrUnavailableFeedback(error)) {
-        showAsmrUnavailableFeedback(context: context, i18n: i18n, error: error);
+        showAsmrUnavailableFeedback(
+          context: context,
+          i18n: i18n,
+          error: error,
+          onRetry: () {
+            if (mounted && !_submitting) unawaited(_login());
+          },
+        );
         return;
       }
       showAppSnackBar(
@@ -210,6 +217,9 @@ class _AsmrAccountPanelState extends ConsumerState<_AsmrAccountPanel> {
           context: context,
           i18n: ref.read(appLanguageProviderInstanceProvider),
           error: syncState.lastError!,
+          onRetry: () {
+            if (mounted && !_submitting) unawaited(_sync());
+          },
         );
         return;
       }

@@ -199,7 +199,7 @@ extension _TimerTabBody on _TimerTabState {
           spacing: 8,
           runSpacing: 6,
           children: [
-            for (final minutes in const [15, 30, 60])
+            for (final minutes in const [15, 30, 45, 60])
               Builder(
                 builder: (context) {
                   final presetDuration = Duration(minutes: minutes);

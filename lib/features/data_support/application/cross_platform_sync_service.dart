@@ -17,6 +17,8 @@ import '../domain/cross_platform_sync_models.dart';
 
 typedef SyncSecretRead = Future<String?> Function(String key);
 typedef SyncSecretWrite = Future<void> Function(String key, String? value);
+typedef WebDavSyncSource = ({Uri baseUri, String username, String? password});
+typedef WebDavSyncSourceResolver = WebDavSyncSource? Function(String sourceId);
 typedef SyncAppliedCallback =
     Future<void> Function(
       Set<String> updatedTrackPaths,
@@ -38,7 +40,6 @@ class CrossPlatformSyncService extends ChangeNotifier {
     Future<void> Function()? beforeExport,
     SyncAppliedCallback? onSyncApplied,
     SyncSecretRead? readSecret,
-    SyncSecretWrite? writeSecret,
     WebDavClient Function({
       required Uri baseUri,
       String? username,
@@ -53,7 +54,6 @@ class CrossPlatformSyncService extends ChangeNotifier {
        _beforeExport = beforeExport,
        _onSyncApplied = onSyncApplied,
        _readSecret = readSecret ?? _defaultSecretRead,
-       _writeSecret = writeSecret ?? _defaultSecretWrite,
        _webDavClientFactory = webDavClientFactory ?? _defaultWebDavFactory,
        _httpClientFactory = httpClientFactory ?? HttpClient.new,
        _clock = clock ?? DateTime.now,
@@ -63,10 +63,6 @@ class CrossPlatformSyncService extends ChangeNotifier {
   static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
   static Future<String?> _defaultSecretRead(String key) =>
       _secureStorage.read(key: key);
-  static Future<void> _defaultSecretWrite(String key, String? value) =>
-      value == null || value.isEmpty
-      ? _secureStorage.delete(key: key)
-      : _secureStorage.write(key: key, value: value);
   static WebDavClient _defaultWebDavFactory({
     required Uri baseUri,
     String? username,
@@ -77,7 +73,6 @@ class CrossPlatformSyncService extends ChangeNotifier {
   final Future<void> Function()? _beforeExport;
   SyncAppliedCallback? _onSyncApplied;
   final SyncSecretRead _readSecret;
-  final SyncSecretWrite _writeSecret;
   final WebDavClient Function({
     required Uri baseUri,
     String? username,
@@ -90,7 +85,7 @@ class CrossPlatformSyncService extends ChangeNotifier {
   final String _deviceName;
 
   WebDavSyncSettings _webDavSettings = const WebDavSyncSettings();
-  bool _initialized = false;
+  Future<void>? _initialization;
   bool _syncing = false;
   DateTime? _lastAutoSyncAttempt;
   Future<void> _serialTail = Future<void>.value();
@@ -102,8 +97,9 @@ class CrossPlatformSyncService extends ChangeNotifier {
     _onSyncApplied = callback;
   }
 
-  Future<void> initialize() async {
-    if (_initialized) return;
+  Future<void> initialize() => _initialization ??= _loadWebDavSettings();
+
+  Future<void> _loadWebDavSettings() async {
     final raw = await AppPreferences.getString(_webDavSyncConfigPrefKey);
     if (raw != null && raw.isNotEmpty) {
       try {
@@ -121,74 +117,26 @@ class CrossPlatformSyncService extends ChangeNotifier {
         );
       }
     }
-    _initialized = true;
     notifyListeners();
   }
 
-  Future<void> saveWebDavSettings(
-    WebDavSyncSettings next, {
-    String? password,
-  }) async {
-    await initialize();
-    final trimmedUrl = next.url.trim();
-    if (trimmedUrl.isNotEmpty) {
-      final parsed = Uri.tryParse(trimmedUrl);
-      if (parsed == null ||
-          !const {'http', 'https'}.contains(parsed.scheme.toLowerCase()) ||
-          parsed.host.isEmpty) {
-        throw const FormatException('invalid_webdav_url');
-      }
-    }
-    final hasNewPassword = password != null && password.isNotEmpty;
-    final keepExistingPassword =
-        password == null && _webDavSettings.passwordConfigured;
-    final passwordConfigured = trimmedUrl.isEmpty
-        ? false
-        : (hasNewPassword || keepExistingPassword);
-
-    if (trimmedUrl.isEmpty || (password != null && password.isEmpty && !keepExistingPassword)) {
-      if (trimmedUrl.isEmpty) {
-        await _writeSecret(_webDavSyncPasswordSecretKey, null);
-      }
-    }
-    if (hasNewPassword) {
-      await _writeSecret(_webDavSyncPasswordSecretKey, password);
-    }
-
-    final normalized = next.copyWith(
-      url: trimmedUrl,
-      username: next.username.trim(),
-      passwordConfigured: passwordConfigured,
-    );
-    await AppPreferences.setString(
-      _webDavSyncConfigPrefKey,
-      jsonEncode(normalized.toJson()),
-    );
-    _webDavSettings = normalized;
-    notifyListeners();
-  }
-
-  Future<void> testWebDavConnection({
-    required String url,
-    required String username,
-    String? password,
-  }) async {
-    await initialize();
-    final uri = _parseWebDavUri(url);
-    final effectivePassword = (password != null && password.isNotEmpty)
-        ? password
-        : await _readSecret(_webDavSyncPasswordSecretKey);
-    final client = _webDavClientFactory(
-      baseUri: uri,
-      username: username.trim(),
-      password: effectivePassword,
-    );
-    try {
-      await client.testConnection();
-    } finally {
-      client.close();
-    }
-  }
+  Future<void> setWebDavSyncEnabled(bool enabled, {String? sourceId}) =>
+      _runSerialized(() async {
+        await initialize();
+        final next = _webDavSettings.copyWith(
+          sourceId: sourceId,
+          autoSyncEnabled: enabled,
+        );
+        if (enabled && !next.isConfigured) {
+          throw StateError('No WebDAV sync source');
+        }
+        final saved = await AppPreferences.setString(
+          _webDavSyncConfigPrefKey,
+          jsonEncode(next.toJson()),
+        );
+        if (!saved) throw StateError('Could not save WebDAV sync settings');
+        _webDavSettings = next;
+      });
 
   Future<Uint8List> exportSyncBytes() => _runSerialized(() => _exportBytesUnlocked());
 
@@ -265,46 +213,39 @@ class CrossPlatformSyncService extends ChangeNotifier {
     }
   });
 
-  Future<CrossPlatformSyncSummary> syncWithWebDav() => _runSerialized(() async {
+  Future<CrossPlatformSyncSummary?> syncWithWebDav({
+    WebDavSyncSourceResolver? resolveSource,
+  }) => _runSerialized(() async {
     await initialize();
-    if (!_webDavSettings.isConfigured) {
-      throw const FormatException('webdav_sync_not_configured');
-    }
-    final baseUri = _parseWebDavUri(_webDavSettings.url);
-    final password = _webDavSettings.passwordConfigured
+    final settings = _webDavSettings;
+    if (!settings.autoSyncEnabled || !settings.isConfigured) return null;
+    final source = settings.sourceId.isEmpty
+        ? null
+        : resolveSource?.call(settings.sourceId);
+    // A removed media source must not redirect uploads to a different host.
+    if (settings.sourceId.isNotEmpty && source == null) return null;
+
+    final password = source != null
+        ? source.password
+        : settings.passwordConfigured
         ? await _readSecret(_webDavSyncPasswordSecretKey)
         : null;
     final summary = await _syncWithWebDavUnlocked(
-      baseUri: baseUri,
-      username: _webDavSettings.username,
+      baseUri: source?.baseUri ?? _parseWebDavUri(settings.url),
+      username: source?.username ?? settings.username,
       password: password,
-      markerNamespace: '',
+      markerNamespace: settings.sourceId,
+      ensureBaseDirectory: source != null,
     );
-    final nowMs = _clock().millisecondsSinceEpoch;
-    _webDavSettings = _webDavSettings.copyWith(lastSyncedAtMs: nowMs);
+    _webDavSettings = settings.copyWith(
+      lastSyncedAtMs: _clock().millisecondsSinceEpoch,
+    );
     await AppPreferences.setString(
       _webDavSyncConfigPrefKey,
       jsonEncode(_webDavSettings.toJson()),
     );
-    notifyListeners();
     return summary;
   });
-
-  /// Syncs `.dasync` device shards against a specific WebDAV folder (e.g. `<source>/.dasync/`).
-  Future<CrossPlatformSyncSummary> syncWithWebDavEndpoint({
-    required Uri baseUri,
-    String username = '',
-    String? password,
-    required String markerNamespace,
-  }) => _runSerialized(
-    () => _syncWithWebDavUnlocked(
-      baseUri: WebDavClient.normalizeDirectoryUri(baseUri),
-      username: username,
-      password: password,
-      markerNamespace: markerNamespace,
-      ensureBaseDirectory: true,
-    ),
-  );
 
   Future<CrossPlatformSyncSummary> _syncWithWebDavUnlocked({
     required Uri baseUri,
@@ -388,6 +329,7 @@ class CrossPlatformSyncService extends ChangeNotifier {
   /// Best-effort background WebDAV sync for startup and app backgrounding.
   Future<void> maybeAutoSyncInBackground({
     Duration minInterval = const Duration(minutes: 2),
+    WebDavSyncSourceResolver? resolveSource,
   }) async {
     await initialize();
     if (!_webDavSettings.isConfigured || !_webDavSettings.autoSyncEnabled) {
@@ -400,7 +342,7 @@ class CrossPlatformSyncService extends ChangeNotifier {
     }
     _lastAutoSyncAttempt = now;
     try {
-      await syncWithWebDav();
+      await syncWithWebDav(resolveSource: resolveSource);
     } on Object catch (error, stackTrace) {
       AppLogService.warning(
         'cross_platform_auto_sync_failed',

@@ -443,8 +443,8 @@ void main() {
     Material tileSurface() => tester.widget<Material>(sourceMaterial.first);
     expect(tileSurface().color, Colors.transparent);
     expect(
-      (tileSurface().shape! as RoundedRectangleBorder).side,
-      BorderSide.none,
+      tileSurface().shape,
+      const RoundedRectangleBorder(borderRadius: AppRadius.borderSmall),
     );
 
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);

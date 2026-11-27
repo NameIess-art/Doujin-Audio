@@ -35,6 +35,7 @@ class _FeedbackData {
     this.iconWidget,
     this.iconColor,
     required this.duration,
+    this.actionIcon,
     this.actionLabel,
     this.onAction,
     this.secondaryActionLabel,
@@ -52,6 +53,7 @@ class _FeedbackData {
   final Widget? iconWidget;
   final Color? iconColor;
   final Duration? duration;
+  final IconData? actionIcon;
   final String? actionLabel;
   final VoidCallback? onAction;
   final String? secondaryActionLabel;
@@ -69,6 +71,7 @@ class _FeedbackData {
     Widget? iconWidget,
     Color? iconColor,
     Duration? duration,
+    IconData? actionIcon,
     String? actionLabel,
     VoidCallback? onAction,
     String? secondaryActionLabel,
@@ -86,6 +89,7 @@ class _FeedbackData {
       iconWidget: iconWidget ?? this.iconWidget,
       iconColor: iconColor ?? this.iconColor,
       duration: duration ?? this.duration,
+      actionIcon: actionIcon ?? this.actionIcon,
       actionLabel: actionLabel ?? this.actionLabel,
       onAction: onAction ?? this.onAction,
       secondaryActionLabel: secondaryActionLabel ?? this.secondaryActionLabel,
@@ -122,6 +126,7 @@ class _QueuedFeedback {
     this.iconWidget,
     this.iconColor,
     required this.duration,
+    this.actionIcon,
     this.actionLabel,
     this.onAction,
     this.secondaryActionLabel,
@@ -143,6 +148,7 @@ class _QueuedFeedback {
   final Widget? iconWidget;
   final Color? iconColor;
   final Duration? duration;
+  final IconData? actionIcon;
   final String? actionLabel;
   final VoidCallback? onAction;
   final String? secondaryActionLabel;
@@ -229,6 +235,7 @@ void showAppSnackBar(
   Widget? iconWidget,
   Color? iconColor,
   Duration? duration,
+  IconData? actionIcon,
   String? actionLabel,
   VoidCallback? onAction,
   String? secondaryActionLabel,
@@ -254,6 +261,7 @@ void showAppSnackBar(
               (tone == AppFeedbackTone.destructive
                   ? const Duration(seconds: 5)
                   : const Duration(seconds: 2)),
+    actionIcon: actionIcon,
     actionLabel: actionLabel,
     onAction: onAction,
     secondaryActionLabel: secondaryActionLabel,
@@ -310,14 +318,16 @@ Future<bool> showUndoableRemovalFeedback(
   required String undoLabel,
   required String failureMessage,
   IconData icon = Icons.delete_outline_rounded,
+  OverlayState? overlay,
 }) async {
   final fallbackOverlay =
+      overlay ??
       Overlay.maybeOf(context, rootOverlay: true) ??
       MobileOverlayInset.menuOverlayOf(context) ??
       Overlay.maybeOf(context);
   final staged = await service.stage(action);
   if (!staged) {
-    if (context.mounted) {
+    if (context.mounted && overlay == null) {
       showAppSnackBar(
         context,
         failureMessage,
@@ -326,7 +336,7 @@ Future<bool> showUndoableRemovalFeedback(
       );
     } else if (fallbackOverlay != null && fallbackOverlay.mounted) {
       _showTopFeedback(
-        fallbackOverlay.context,
+        context.mounted ? context : fallbackOverlay.context,
         failureMessage,
         tone: AppFeedbackTone.destructive,
         icon: Icons.error_outline_rounded,
@@ -339,8 +349,9 @@ Future<bool> showUndoableRemovalFeedback(
     return false;
   }
   if (context.mounted) {
-    showPendingUndoableRemovalFeedback(
+    _showPendingUndoableRemovalOnOverlay(
       context,
+      explicitOverlay: overlay,
       service: service,
       message: message,
       batchMessage: batchMessage,
@@ -416,7 +427,7 @@ void _showPendingUndoableRemovalOnOverlay(
     }
     if (fallbackOverlay != null && fallbackOverlay.mounted) {
       _showTopFeedback(
-        fallbackOverlay.context,
+        context.mounted ? context : fallbackOverlay.context,
         failureMessage,
         tone: AppFeedbackTone.destructive,
         icon: Icons.error_outline_rounded,
@@ -482,6 +493,7 @@ void _showTopFeedback(
   Widget? iconWidget,
   Color? iconColor,
   required Duration? duration,
+  IconData? actionIcon,
   String? actionLabel,
   VoidCallback? onAction,
   String? secondaryActionLabel,
@@ -519,6 +531,7 @@ void _showTopFeedback(
       iconWidget: iconWidget,
       iconColor: iconColor,
       duration: duration,
+      actionIcon: actionIcon,
       actionLabel: actionLabel,
       onAction: onAction,
       secondaryActionLabel: secondaryActionLabel,
@@ -566,6 +579,7 @@ void _showTopFeedback(
       iconWidget: iconWidget,
       iconColor: iconColor,
       duration: duration,
+      actionIcon: actionIcon,
       actionLabel: actionLabel,
       onAction: onAction,
       secondaryActionLabel: secondaryActionLabel,
@@ -598,6 +612,7 @@ void _showTopFeedback(
     iconWidget: iconWidget,
     iconColor: iconColor,
     duration: duration,
+    actionIcon: actionIcon,
     actionLabel: actionLabel,
     onAction: onAction,
     secondaryActionLabel: secondaryActionLabel,
@@ -652,6 +667,7 @@ void _showTopFeedback(
           iconWidget: queued.iconWidget,
           iconColor: queued.iconColor,
           duration: queued.duration,
+          actionIcon: queued.actionIcon,
           actionLabel: queued.actionLabel,
           onAction: queued.onAction,
           secondaryActionLabel: queued.secondaryActionLabel,
@@ -764,10 +780,14 @@ void _showTopFeedback(
             }
           }
 
-          final hasAction =
+          final hasIconAction =
+              currentData.actionIcon != null && currentData.onAction != null;
+          final hasTextAction =
+              !hasIconAction &&
               currentData.actionLabel != null &&
               currentData.actionLabel!.trim().isNotEmpty &&
               currentData.onAction != null;
+          final hasAction = hasIconAction || hasTextAction;
           final hasSecondaryAction =
               currentData.secondaryActionLabel != null &&
               currentData.secondaryActionLabel!.trim().isNotEmpty &&
@@ -802,10 +822,10 @@ void _showTopFeedback(
                         onPauseChanged,
                       ) {
                         final isRemovalAction =
-                            hasAction &&
+                            hasTextAction &&
                             currentData.showActionCountdown &&
                             remainingSeconds != null;
-                        final resolvedActionLabel = hasAction
+                        final resolvedActionLabel = hasTextAction
                             ? (isRemovalAction
                                   ? '${currentData.actionLabel!} (${remainingSeconds}s)'
                                   : currentData.actionLabel!)
@@ -843,7 +863,12 @@ void _showTopFeedback(
                                     ? null
                                     : remainingSeconds,
                                 padding: hasAnyAction
-                                    ? const EdgeInsets.fromLTRB(10, 1, 10, 1)
+                                    ? EdgeInsets.fromLTRB(
+                                        10,
+                                        1,
+                                        hasIconAction ? 2 : 10,
+                                        1,
+                                      )
                                     : const EdgeInsets.fromLTRB(
                                         10,
                                         AppFeedbackSurface._verticalPadding,
@@ -881,7 +906,59 @@ void _showTopFeedback(
                                                     .secondaryActionLabel!,
                                               ),
                                             ),
-                                          if (hasAction)
+                                          if (hasIconAction)
+                                            IconButton(
+                                              key: ValueKey((
+                                                currentData.message,
+                                                currentData.actionIcon,
+                                              )),
+                                              style: appIconButtonStyle(
+                                                IconButton.styleFrom(
+                                                  minimumSize: const Size(
+                                                    36,
+                                                    36,
+                                                  ),
+                                                  fixedSize: const Size(36, 36),
+                                                  padding: EdgeInsets.zero,
+                                                  tapTargetSize:
+                                                      MaterialTapTargetSize
+                                                          .shrinkWrap,
+                                                ),
+                                              ),
+                                              tooltip:
+                                                  currentData.actionLabel !=
+                                                          null &&
+                                                      currentData.actionLabel!
+                                                          .trim()
+                                                          .isNotEmpty
+                                                  ? currentData.actionLabel
+                                                  : null,
+                                              onPressed: () {
+                                                if (dismissed ||
+                                                    !identical(
+                                                      dataNotifier.value,
+                                                      currentData,
+                                                    )) {
+                                                  return;
+                                                }
+                                                dismissEntry(
+                                                  AppFeedbackDismissReason
+                                                      .action,
+                                                );
+                                                currentData.onAction!();
+                                              },
+                                              icon: Icon(
+                                                currentData.actionIcon!,
+                                                size:
+                                                    AppDesignTokens
+                                                        .opticalIconSize(
+                                                          currentData
+                                                              .actionIcon!,
+                                                          18,
+                                                        ),
+                                              ),
+                                            )
+                                          else if (hasTextAction)
                                             TextButton(
                                               key: ValueKey((
                                                 currentData.message,

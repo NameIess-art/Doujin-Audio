@@ -4,15 +4,16 @@ import '../../asmr/presentation/asmr_providers.dart';
 import '../../library/presentation/library_providers.dart';
 import '../../player/presentation/playback_providers.dart';
 import '../../settings/presentation/settings_providers.dart';
+import '../../settings/presentation/settings_tile_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../app/presentation/app_settings_group_card.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/state/listening_activity_provider.dart';
 import '../../../app/state/subtitle_settings_provider.dart';
 import '../../../core/logging/app_log_service.dart';
-import '../application/cross_platform_sync_service.dart';
 import '../application/data_backup_service.dart';
 import '../application/data_support_file_service.dart';
 import '../../../core/ui/ui_operation_service.dart';
@@ -24,7 +25,6 @@ import '../../../core/widgets/confirm_action_dialog.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/app_settings_action_tile.dart';
-import '../../../core/widgets/unified_popup_menu.dart';
 
 class DataSupportSettingsControls extends ConsumerStatefulWidget {
   const DataSupportSettingsControls({super.key});
@@ -39,11 +39,13 @@ class _DataSupportSettingsControlsState
   UiOperationService get _operationService =>
       ref.read(uiOperationServiceProvider);
   late final DataSupportFileService _fileService;
+  bool _changingWebDavSync = false;
 
   @override
   void initState() {
     super.initState();
     _fileService = ref.read(dataSupportFileServiceProvider);
+    unawaited(ref.read(crossPlatformSyncServiceProvider).initialize());
   }
 
   Future<void> _exportDiagnostics() async {
@@ -69,14 +71,18 @@ class _DataSupportSettingsControlsState
     );
   }
 
-  Future<void> _openWebDavSyncConfigDialog() async {
-    final syncService = ref.read(crossPlatformSyncServiceProvider);
-    await syncService.initialize();
-    if (!mounted) return;
-    await showAppDialog<void>(
-      context: context,
-      builder: (_) => _WebDavSyncSettingsDialog(syncService: syncService),
-    );
+  Future<void> _setWebDavSync(bool enabled) async {
+    if (_changingWebDavSync) return;
+    final remoteLibrary = ref.read(remoteLibraryControllerProvider);
+    setState(() => _changingWebDavSync = true);
+    try {
+      await saveSettingsWithFeedback(
+        context,
+        () => remoteLibrary.setWebDavSyncEnabled(enabled),
+      );
+    } finally {
+      if (mounted) setState(() => _changingWebDavSync = false);
+    }
   }
 
   Future<void> _exportBackup() async {
@@ -369,17 +375,18 @@ class _DataSupportSettingsControlsState
           ),
         )
         .isBusy;
-    final webDavSyncBusy = ref.watch(
-      crossPlatformSyncServiceProvider.select((s) => s.isSyncing),
-    );
-    final webDavSyncSettings = ref.watch(
-      crossPlatformSyncServiceProvider.select((s) => s.webDavSettings),
-    );
+    final syncService = ref.watch(crossPlatformSyncServiceProvider);
+    final remoteLibrary = ref.watch(remoteLibraryControllerProvider);
+    final webDavSyncEnabled = remoteLibrary.webDavSyncEnabled;
     final dataOperationBusy =
         diagnosticsBusy ||
         backupExportBusy ||
         backupRestoreBusy ||
-        webDavSyncBusy;
+        syncService.isSyncing;
+    final canChangeWebDavSync =
+        !dataOperationBusy &&
+        !_changingWebDavSync &&
+        (webDavSyncEnabled || remoteLibrary.canEnableWebDavSync);
     return PopScope(
       canPop: !backupRestoreBusy,
       child: Column(
@@ -405,16 +412,20 @@ class _DataSupportSettingsControlsState
                 busy: backupRestoreBusy,
                 onTap: dataOperationBusy ? null : _restoreBackup,
               ),
-              AppSettingsActionTile(
-                key: const ValueKey('data-support-webdav-sync-config'),
-                title: i18n.tr(
-                  webDavSyncSettings.isConfigured
-                      ? 'cross_platform_sync_webdav_config'
-                      : 'cross_platform_sync_webdav_setup',
+              SwitchListTile(
+                key: const ValueKey('data-support-webdav-sync'),
+                secondary: SizedBox(
+                  width: SettingsTileTheme.leadingWidth,
+                  child: Icon(
+                    Icons.cloud_sync_outlined,
+                    size: SettingsTileTheme.iconSize,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
                 ),
-                icon: Icons.cloud_sync_outlined,
-                busy: webDavSyncBusy,
-                onTap: dataOperationBusy ? null : _openWebDavSyncConfigDialog,
+                title: Text(i18n.tr('cross_platform_sync_webdav')),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                value: webDavSyncEnabled,
+                onChanged: canChangeWebDavSync ? _setWebDavSync : null,
               ),
               AppSettingsActionTile(
                 key: const ValueKey('data-support-export-diagnostics'),
@@ -617,193 +628,6 @@ class _BackupImportConfirmDialogState
               ),
             ),
             icon: isMerge ? Icons.sync_rounded : Icons.restore_rounded,
-            label: i18n.tr('confirm'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _WebDavSyncSettingsDialog extends ConsumerStatefulWidget {
-  const _WebDavSyncSettingsDialog({required this.syncService});
-
-  final CrossPlatformSyncService syncService;
-
-  @override
-  ConsumerState<_WebDavSyncSettingsDialog> createState() =>
-      _WebDavSyncSettingsDialogState();
-}
-
-class _WebDavSyncSettingsDialogState
-    extends ConsumerState<_WebDavSyncSettingsDialog> {
-  late final TextEditingController _urlController;
-  late final TextEditingController _usernameController;
-  final TextEditingController _passwordController = TextEditingController();
-  late bool _autoSync;
-  bool _obscurePassword = true;
-  bool _testing = false;
-  bool _saving = false;
-
-  @override
-  void initState() {
-    super.initState();
-    final cfg = widget.syncService.webDavSettings;
-    _urlController = TextEditingController(text: cfg.url);
-    _usernameController = TextEditingController(text: cfg.username);
-    _autoSync = cfg.autoSyncEnabled;
-  }
-
-  @override
-  void dispose() {
-    _urlController.dispose();
-    _usernameController.dispose();
-    _passwordController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _test() async {
-    if (_testing || _saving) return;
-    final url = _urlController.text.trim();
-    if (url.isEmpty) return;
-    final i18n = ref.read(appLanguageProviderInstanceProvider);
-    setState(() => _testing = true);
-    try {
-      await widget.syncService.testWebDavConnection(
-        url: url,
-        username: _usernameController.text.trim(),
-        password: _passwordController.text.isEmpty
-            ? null
-            : _passwordController.text,
-      );
-      if (!mounted) return;
-      showAppSnackBar(
-        context,
-        i18n.tr('remote_source_test_success'),
-        tone: AppFeedbackTone.success,
-      );
-    } on Object {
-      if (!mounted) return;
-      showAppSnackBar(
-        context,
-        i18n.tr('remote_source_test_failed'),
-        tone: AppFeedbackTone.destructive,
-      );
-    } finally {
-      if (mounted) setState(() => _testing = false);
-    }
-  }
-
-  Future<void> _save() async {
-    if (_saving || _testing) return;
-    final i18n = ref.read(appLanguageProviderInstanceProvider);
-    setState(() => _saving = true);
-    try {
-      final current = widget.syncService.webDavSettings;
-      await widget.syncService.saveWebDavSettings(
-        current.copyWith(
-          url: _urlController.text.trim(),
-          username: _usernameController.text.trim(),
-          autoSyncEnabled: _autoSync,
-        ),
-        password: _passwordController.text.isEmpty
-            ? null
-            : _passwordController.text,
-      );
-      if (mounted) Navigator.of(context).pop();
-    } on Object {
-      if (!mounted) return;
-      showAppSnackBar(
-        context,
-        i18n.tr('network_invalid_value'),
-        tone: AppFeedbackTone.destructive,
-      );
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final current = widget.syncService.webDavSettings;
-
-    return AppDialog(
-      title: i18n.tr('cross_platform_sync_webdav_config'),
-      icon: Icons.cloud_sync_outlined,
-      content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 430),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              TextField(
-                contextMenuBuilder: buildAppEditableTextMenu,
-                controller: _urlController,
-                autocorrect: false,
-                decoration: InputDecoration(
-                  labelText: i18n.tr('remote_source_webdav_url'),
-                  hintText: 'https://dav.example.com/DoujinAudioSync',
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                contextMenuBuilder: buildAppEditableTextMenu,
-                controller: _usernameController,
-                autocorrect: false,
-                decoration: InputDecoration(
-                  labelText: i18n.tr('network_proxy_username'),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                contextMenuBuilder: buildAppEditableTextMenu,
-                controller: _passwordController,
-                obscureText: _obscurePassword,
-                autocorrect: false,
-                enableSuggestions: false,
-                decoration: InputDecoration(
-                  labelText: i18n.tr('network_proxy_password'),
-                  hintText: current.passwordConfigured
-                      ? i18n.tr('network_password_keep')
-                      : null,
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _obscurePassword
-                          ? Icons.visibility_outlined
-                          : Icons.visibility_off_outlined,
-                    ),
-                    onPressed: () =>
-                        setState(() => _obscurePassword = !_obscurePassword),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(i18n.tr('cross_platform_sync_auto')),
-                value: _autoSync,
-                onChanged: (v) => setState(() => _autoSync = v),
-              ),
-            ],
-          ),
-        ),
-      ),
-      actions: AppDialogActions(
-        leading: AppConnectionTestButton(
-          tooltip: i18n.tr('network_test'),
-          onPressed: _saving ? null : _test,
-          isTesting: _testing,
-        ),
-        children: [
-          AppSecondaryButton(
-            onPressed: _saving ? null : () => Navigator.of(context).pop(),
-            label: i18n.tr('cancel'),
-          ),
-          AppPrimaryButton(
-            onPressed: _saving ? null : _save,
-            icon: Icons.check_rounded,
             label: i18n.tr('confirm'),
           ),
         ],

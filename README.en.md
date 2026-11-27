@@ -4,7 +4,7 @@
 
 # Doujin Audio
 
-[简体中文](README.md) | English | [日本語](README.ja.md)
+[简体中文](README.md) | English | [日本語](README.ja.md) | [Türkçe](README.tr.md)
 
 An Android / Windows player for ASMR, doujin audio, and local media libraries. Play local audio and video, stream and download from online work catalogs, and manage multiple playback sessions with independent positions, volume, subtitles, and audio effects.
 

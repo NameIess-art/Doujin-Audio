@@ -4,7 +4,7 @@
 
 # Doujin Audio
 
-[简体中文](README.md) | [English](README.en.md) | 日本語
+[简体中文](README.md) | [English](README.en.md) | 日本語 | [Türkçe](README.tr.md)
 
 ASMR、同人音声、ローカルメディアライブラリ向けの Android / Windows プレーヤーです。ローカルの音声・動画やオンライン作品庫の再生・ダウンロードに対応し、複数の再生セッションで再生位置、音量、字幕、音声効果を個別に管理できます。
 

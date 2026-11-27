@@ -4,7 +4,7 @@
 
 # Doujin Audio
 
-简体中文 | [English](README.en.md) | [日本語](README.ja.md)
+简体中文 | [English](README.en.md) | [日本語](README.ja.md) | [Türkçe](README.tr.md)
 
 面向 ASMR、同人音声与本地媒体库的 Android / Windows 播放器。支持本地音视频、在线作品库播放与下载，可同时管理多个播放会话，独立设置进度、音量、字幕和音效。
 

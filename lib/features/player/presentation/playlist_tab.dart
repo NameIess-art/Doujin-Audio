@@ -733,10 +733,8 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                                           .hasPlayingAudioSession) {
                                                         return;
                                                       }
-                                                      Navigator.of(
-                                                        context,
-                                                      ).push(
-                                                        BedtimeCanvasPage.route(
+                                                      unawaited(
+                                                        BedtimeCanvasPage.open(
                                                           context,
                                                         ),
                                                       );

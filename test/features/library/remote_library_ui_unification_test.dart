@@ -44,6 +44,7 @@ import 'package:doujin_audio/features/player/application/playback_session_launch
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/session_detail_content.dart';
+import 'package:doujin_audio/features/settings/application/settings_repository.dart';
 import 'package:doujin_audio/features/settings/presentation/settings_providers.dart';
 import 'package:doujin_audio/infrastructure/sqlite/sqlite_cross_platform_sync_repository.dart';
 import 'package:doujin_audio/infrastructure/sqlite/sqlite_library_repository.dart';
@@ -954,7 +955,10 @@ void main() {
       });
 
       late final RemoteLibraryWork sampleWork;
+      late final SettingsRepository settings;
       await tester.runAsync(() async {
+        settings = SettingsRepository();
+        addTearDown(settings.dispose);
         final openedDb = await databaseFactoryFfi.openDatabase(
           p.join(tempDir.path, 'detail_ui_test.db'),
         );
@@ -1004,16 +1008,16 @@ void main() {
       // 1. Long-pressing RemoteWorkCardTile enters multi-select mode with LibraryBatchSelectionHeader!
       var isSelectionMode = false;
       final selectedIds = <String>{};
+      final overrides = [
+        appLanguageProviderInstanceProvider.overrideWithValue(i18n),
+        libraryFacadeProvider.overrideWithValue(libraryFacade!),
+        remoteLibraryControllerProvider.overrideWith((ref) => remoteController!),
+        settingsRepositoryProvider.overrideWithValue(settings),
+        settingsStateProvider.overrideWith((ref) => const Stream.empty()),
+      ];
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [
-            appLanguageProviderInstanceProvider.overrideWithValue(i18n),
-            libraryFacadeProvider.overrideWithValue(libraryFacade!),
-            remoteLibraryControllerProvider.overrideWith(
-              (ref) => remoteController!,
-            ),
-            settingsStateProvider.overrideWith((ref) => const Stream.empty()),
-          ],
+          overrides: overrides,
           child: MaterialApp(
             theme: themeProvider.darkTheme,
             home: StatefulBuilder(
@@ -1077,14 +1081,7 @@ void main() {
       // and renders WorkUserReviewSection!
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [
-            appLanguageProviderInstanceProvider.overrideWithValue(i18n),
-            libraryFacadeProvider.overrideWithValue(libraryFacade!),
-            remoteLibraryControllerProvider.overrideWith(
-              (ref) => remoteController!,
-            ),
-            settingsStateProvider.overrideWith((ref) => const Stream.empty()),
-          ],
+          overrides: overrides,
           child: MaterialApp(
             theme: themeProvider.darkTheme,
             home: WorkDetailPage.forRemote(

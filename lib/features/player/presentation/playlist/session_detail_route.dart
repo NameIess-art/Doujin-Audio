@@ -246,14 +246,7 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
     if (defaultTargetPlatform != TargetPlatform.android || view == null) {
       return false;
     }
-    final display = view.display;
-    return AppOrientationPolicy.forDisplay(
-              platform: TargetPlatform.android,
-              shortestSide:
-                  display.size.shortestSide / display.devicePixelRatio,
-            ) ==
-            AppOrientationPolicy.portrait &&
-        view.physicalSize.width > view.physicalSize.height;
+    return view.physicalSize.width > view.physicalSize.height;
   }
 
   Future<void> prepareForExit() {

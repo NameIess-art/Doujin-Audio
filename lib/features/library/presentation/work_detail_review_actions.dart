@@ -6,16 +6,8 @@ import '../../../core/media/audio_detail.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/work_review_panel.dart';
-import '../../asmr/presentation/asmr_providers.dart';
 import '../application/audio_detail_repository.dart';
 import 'library_providers.dart';
-
-bool localDetailSyncsWithAsmrCloud(WidgetRef ref, AudioDetail? detail) {
-  final asmr = ref.read(asmrLibraryControllerProvider);
-  if (asmr == null || !asmr.isAsmrAccountLoggedIn) return false;
-  final rj = AudioDetail.findRjCodeInText(detail?.rjCode ?? '');
-  return rj != null && rj.isNotEmpty;
-}
 
 Future<AudioDetailSaveResult?> saveLocalWorkUserReviewWithFeedback(
   BuildContext context,
@@ -96,7 +88,9 @@ Future<AudioDetail?> openLocalWorkReviewEditor(
     initialStatus: detail.listenStatus,
     initialUserRating: detail.userRating,
     initialReviewText: detail.reviewText,
-    syncsWithCloud: localDetailSyncsWithAsmrCloud(ref, detail),
+    syncsWithCloud:
+        AudioDetail.findRjCodeInText(detail.rjCode) != null &&
+        ref.read(asmrCloudReviewAvailableProvider)(),
     translate: i18n.tr,
   );
   if (draft == null || !context.mounted) return null;

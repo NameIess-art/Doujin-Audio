@@ -895,7 +895,13 @@ final class WorkSmartStatusCoordinator implements RuntimeBinding {
     if (meta != null && meta['id'] is int) {
       try {
         return AsmrWork.fromJson(meta);
-      } catch (_) {}
+      } catch (error, stackTrace) {
+        AppLogService.warning(
+          'work_smart_status_remote_metadata_invalid',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
     }
     final digits = rj == null ? 0 : (int.tryParse(rj.substring(2)) ?? 0);
     if (digits <= 0 && rj == null) return null;

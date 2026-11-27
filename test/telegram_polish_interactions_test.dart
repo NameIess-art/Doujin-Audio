@@ -176,7 +176,6 @@ void main() {
           setPreferredOrientations: (_) async {},
           setSystemUiMode: (_) async {},
         );
-        await orientation.updateDisplay(390);
 
         await tester.pumpWidget(
           fixture.build(

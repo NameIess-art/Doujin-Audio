@@ -70,6 +70,11 @@ final browsePageStateStoreProvider = Provider<BrowsePageStateStore>((ref) {
 final workSmartStatusCoordinatorProvider =
     Provider<WorkSmartStatusCoordinator?>((ref) => null);
 
+final asmrCloudReviewAvailableProvider = Provider<bool Function()>((ref) {
+  final controller = ref.watch(asmrLibraryControllerProvider);
+  return () => controller?.isAsmrAccountLoggedIn ?? false;
+});
+
 final appLanguageProviderInstanceProvider = Provider<AppLanguageProvider>((
   ref,
 ) {

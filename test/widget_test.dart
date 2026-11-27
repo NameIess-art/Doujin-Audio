@@ -30,6 +30,7 @@ import 'package:doujin_audio/app/presentation/windows_window_title_bar.dart';
 import 'package:doujin_audio/app/presentation/work_detail_navigation.dart';
 import 'package:doujin_audio/app/presentation/mobile_dock_capsule_content.dart';
 import 'package:doujin_audio/app/presentation/app_orientation_controller.dart';
+import 'package:doujin_audio/features/player/presentation/bedtime_canvas_page.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
@@ -5836,9 +5837,66 @@ void main() {
     variant: TargetPlatformVariant.only(TargetPlatform.android),
   );
 
+  testWidgets(
+    'sleep mode opened from landscape playback fills the view and restores rotation',
+    (tester) async {
+      const portrait = Size(390, 820);
+      const landscape = Size(820, 390);
+      _setLogicalTestViewSize(tester, portrait);
+      final orientations = <List<DeviceOrientation>>[];
+      final modes = <SystemUiMode>[];
+      final session = PlaybackSession(
+        id: 'sleep_session',
+        currentTrackPath: '/audio/sleep.mp3',
+        loopMode: SessionLoopMode.single,
+        nonSingleLoopMode: SessionLoopMode.single,
+        volume: 1,
+        createdAt: DateTime(2026),
+        state: const PlayerState(true, ProcessingState.ready),
+      );
+      addTearDown(session.shutdown);
+      await _pumpAppShell(
+        tester,
+        additionalPlaybackSessions: [session],
+        orientationController: AppOrientationController(
+          setPreferredOrientations: (value) async => orientations.add(value),
+          setSystemUiMode: (mode) async => modes.add(mode),
+        ),
+      );
+      final navigator = Navigator.of(tester.element(find.byType(MainScreen)));
+      unawaited(navigator.push(buildSessionDetailRoute(sessionId: session.id)));
+      await _pumpMainScreenAnimations(tester);
+      tester.view.physicalSize = landscape;
+      await _pumpMainScreenAnimations(tester);
+
+      await tester.tap(
+        find.byKey(const ValueKey('session_detail_sleep_button')),
+      );
+      await _pumpMainScreenAnimations(tester);
+      final canvas = find.byType(BedtimeCanvasPage);
+      expect(tester.getRect(canvas), Offset.zero & landscape);
+      expect(
+        orientations.last,
+        AppOrientationPolicy.landscape.allowedOrientations,
+      );
+      expect(modes, [SystemUiMode.immersiveSticky]);
+
+      navigator.pop();
+      await _pumpMainScreenAnimations(tester);
+      expect(canvas, findsNothing);
+      expect(
+        orientations.last,
+        AppOrientationPolicy.rotatable.allowedOrientations,
+      );
+      expect(modes, [SystemUiMode.immersiveSticky]);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.android),
+  );
+
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
-      'MusicPlayerApp display orientation ignores narrow windows on $platform',
+      'MusicPlayerApp route orientation applies on large displays on $platform',
       (tester) async {
         _setLogicalTestViewSize(tester, const Size(390, 820));
         tester.view.display.size = const Size(1600, 2560);
@@ -5853,10 +5911,7 @@ void main() {
         );
         await _pumpAppShell(tester, orientationController: orientation);
         if (platform == TargetPlatform.android) {
-          expect(
-            calls.last,
-            AppOrientationPolicy.rotatable.allowedOrientations,
-          );
+          expect(calls.last, AppOrientationPolicy.portrait.allowedOrientations);
         } else {
           expect(calls, isEmpty);
         }
@@ -5875,10 +5930,11 @@ void main() {
             : const Size(860, 1640);
         await _pumpMainScreenAnimations(tester);
         if (platform == TargetPlatform.android) {
-          expect(
-            calls,
-            everyElement(AppOrientationPolicy.rotatable.allowedOrientations),
-          );
+          expect(calls, [
+            AppOrientationPolicy.portrait.allowedOrientations,
+            AppOrientationPolicy.rotatable.allowedOrientations,
+            AppOrientationPolicy.portrait.allowedOrientations,
+          ]);
         } else {
           expect(calls, isEmpty);
         }
@@ -7597,13 +7653,14 @@ void main() {
     final scheme = Theme.of(detailContext).colorScheme;
     expect(scheme.brightness, Brightness.light);
 
-    final detailMarquees = tester.widgetList<MarqueeText>(
-      find.descendant(of: detail, matching: find.byType(MarqueeText)),
+    final artworkTitle = tester.widget<MarqueeText>(
+      find.descendant(
+        of: detail,
+        matching: find.byKey(const ValueKey('title_marquee_orientation_session')),
+      ),
     );
-    final titleColor = detailMarquees
-        .singleWhere((widget) => widget.text == 'Color hierarchy track')
-        .style!
-        .color!;
+    expect(artworkTitle.text, 'Color hierarchy work');
+    final titleColor = artworkTitle.style!.color!;
     Color iconColor(IconData icon) {
       final finder = find.descendant(of: detail, matching: find.byIcon(icon));
       return tester.widget<Icon>(finder).color ??

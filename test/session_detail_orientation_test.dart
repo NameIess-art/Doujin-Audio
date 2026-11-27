@@ -81,7 +81,6 @@ void main() {
             setPreferredOrientations: (value) async => calls.add(value),
             setSystemUiMode: (_) async {},
           );
-          await orientation.updateDisplay(390);
           await orientation.setPlaybackDetailVisible(true);
           final homePaintSizes = <Size>[];
           final homeRepaint = ValueNotifier(0);
@@ -313,7 +312,6 @@ void main() {
         setPreferredOrientations: (_) async {},
         setSystemUiMode: (_) async {},
       );
-      await orientation.updateDisplay(540);
       await orientation.setPlaybackDetailVisible(true);
 
       await tester.pumpWidget(

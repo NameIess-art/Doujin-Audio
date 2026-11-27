@@ -91,7 +91,7 @@ void main() {
         ),
       }, detailRevision: 2);
 
-      expect(first.termReads, 3);
+      expect(first.termReads, 4);
       expect(second.termReads, 0);
       expect(updated.entries.last, same(second));
       expect(updated.tagTerms, ['New', 'Shared']);

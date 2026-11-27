@@ -7,6 +7,7 @@ internal class AppLifecycleMethodHandler(
     private val terminateForPendingRestore: () -> Unit,
     private val syncAppTheme: (String, String, Boolean) -> Unit = { _, _, _ -> },
     private val getSystemAccentColor: () -> Int? = { null },
+    private val setImmersiveMode: (Boolean) -> Unit = {},
 ) : MethodChannel.MethodCallHandler {
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         val envelope = ChannelEnvelopeResult(result)
@@ -35,12 +36,16 @@ internal class AppLifecycleMethodHandler(
                 AppLifecycleMethods.GET_SYSTEM_ACCENT_COLOR -> {
                     envelope.success(getSystemAccentColor())
                 }
+                AppLifecycleMethods.SET_IMMERSIVE_MODE -> {
+                    setImmersiveMode(call.argumentReader().requiredBoolean("enabled"))
+                    envelope.success(null)
+                }
                 else -> result.notImplemented()
             }
         } catch (error: IllegalArgumentException) {
             envelope.error(
                 ChannelErrorCodes.INVALID_ARGUMENT,
-                error.message ?: "Invalid app theme payload",
+                error.message ?: "Invalid app lifecycle payload",
                 mapOf("method" to call.method)
             )
         } catch (error: Exception) {

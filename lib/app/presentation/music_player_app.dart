@@ -279,12 +279,6 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
   }
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _updateDisplayOrientation();
-  }
-
-  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     final enabled =
@@ -295,9 +289,6 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
       _appTickersEnabled.value = enabled;
     }
   }
-
-  @override
-  void didChangeMetrics() => _updateDisplayOrientation();
 
   @override
   void didChangePlatformBrightness() {
@@ -320,17 +311,6 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
     } catch (_) {
       // Optional platform accent lookup falls back to the selected preset.
     }
-  }
-
-  void _updateDisplayOrientation() {
-    if (defaultTargetPlatform == TargetPlatform.windows) return;
-    // Window bounds can be letterboxed or split; device class uses the display.
-    final display = View.of(context).display;
-    unawaited(
-      _orientationController.updateDisplay(
-        display.size.shortestSide / display.devicePixelRatio,
-      ),
-    );
   }
 
   @override
@@ -486,7 +466,8 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
         onTopPageChanged: (route) => unawaited(
           _orientationController.updateTopRoute(
             playbackDetailVisible: route is SessionDetailRoute,
-            bedtimeCanvasVisible: route is BedtimeCanvasRoute,
+            bedtimeCanvasOrientation:
+                route is BedtimeCanvasRoute ? route.orientation : null,
           ),
         ),
         builder:

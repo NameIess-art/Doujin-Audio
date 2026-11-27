@@ -3795,6 +3795,7 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
 
 class BedtimeCanvasRoute extends AppPreparedPageRoute<void> {
   BedtimeCanvasRoute({
+    required this.orientation,
     required super.pageBuilder,
     required super.transitionsBuilder,
     required super.transitionDuration,
@@ -3803,6 +3804,8 @@ class BedtimeCanvasRoute extends AppPreparedPageRoute<void> {
     super.fullscreenDialog,
     super.slide,
   });
+
+  final Orientation orientation;
 }
 
 PageRoute<void> buildBedtimeCanvasRoute({
@@ -3816,7 +3819,11 @@ PageRoute<void> buildBedtimeCanvasRoute({
 }) {
   final reducedMotion = MediaQuery.disableAnimationsOf(context);
   final contentKey = GlobalKey();
+  final viewSize = View.of(context).physicalSize;
   return BedtimeCanvasRoute(
+    orientation: viewSize.width > viewSize.height
+        ? Orientation.landscape
+        : Orientation.portrait,
     settings: settings,
     fullscreenDialog: fullscreenDialog,
     slide: slide,

@@ -168,6 +168,9 @@ class _DeferredDetailAsmrController extends ChangeNotifier
   Completer<void>? pendingLoad;
 
   @override
+  bool get initialized => true;
+
+  @override
   List<AsmrTrackFile>? trackTreeFor(String workId) {
     cacheReads++;
     return cached ? tree : null;

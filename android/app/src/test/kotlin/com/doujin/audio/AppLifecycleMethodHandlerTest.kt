@@ -116,6 +116,29 @@ class AppLifecycleMethodHandlerTest {
     }
 
     @Test
+    fun `immersive mode requires a boolean and applies both transitions`() {
+        val modes = mutableListOf<Boolean>()
+        val handler = AppLifecycleMethodHandler(
+            terminateForPendingRestore = {},
+            setImmersiveMode = { modes += it },
+        )
+        for (enabled in listOf(true, false)) {
+            val result = RecordingAppLifecycleResult()
+            handler.onMethodCall(
+                MethodCall(AppLifecycleMethods.SET_IMMERSIVE_MODE, mapOf("enabled" to enabled)),
+                result,
+            )
+            assertEquals(true, (result.successValue as Map<*, *>)["ok"])
+        }
+        for (arguments in listOf(emptyMap(), mapOf("enabled" to "true"))) {
+            val result = RecordingAppLifecycleResult()
+            handler.onMethodCall(MethodCall(AppLifecycleMethods.SET_IMMERSIVE_MODE, arguments), result)
+            assertEquals(ChannelErrorCodes.INVALID_ARGUMENT, (result.successValue as Map<*, *>)["errorCode"])
+        }
+        assertEquals(listOf(true, false), modes)
+    }
+
+    @Test
     fun `unexpected lifecycle failures return structured platform error envelope`() {
         val handler = AppLifecycleMethodHandler(
             terminateForPendingRestore = {},

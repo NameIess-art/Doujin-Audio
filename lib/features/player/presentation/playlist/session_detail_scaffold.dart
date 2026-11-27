@@ -11,7 +11,6 @@ import 'package:flutter/physics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/presentation/app_presentation_providers.dart';
-import '../../../../app/presentation/app_orientation_controller.dart';
 import '../../../../app/presentation/windows_window_title_bar.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/state/subtitle_settings_provider.dart';
@@ -381,12 +380,9 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
     final isLandscape =
         isWindows || MediaQuery.orientationOf(context) == Orientation.landscape;
     final phoneLandscape =
+        !isWindows &&
         isLandscape &&
-        AppOrientationPolicy.forDisplay(
-              platform: defaultTargetPlatform,
-              shortestSide: MediaQuery.sizeOf(context).shortestSide,
-            ) ==
-            AppOrientationPolicy.portrait;
+        MediaQuery.sizeOf(context).shortestSide < 600;
     final showHeaderActions = !phoneLandscape;
     final topBarHeight = isWindows ? 48.0 : 40.0;
     // Portrait detail is immersive; the shell's retained status-bar inset
@@ -423,6 +419,26 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
         backgroundColor: Colors.transparent,
         shape: const CircleBorder(),
       ),
+    );
+    final sleepButton = Consumer(
+      builder: (context, ref, _) {
+        final hasPlayingAudio = ref.watch(
+          playlistHeaderUiProvider.select(
+            (state) => state.hasPlayingAudioSession,
+          ),
+        );
+        return IconButton(
+          key: const ValueKey('session_detail_sleep_button'),
+          style: headerActionStyle,
+          onPressed: hasPlayingAudio
+              ? () => unawaited(BedtimeCanvasPage.open(context))
+              : null,
+          icon: const Icon(Icons.bedtime_outlined),
+          tooltip: i18n.tr('sleep_mode'),
+          iconSize: 20,
+          padding: EdgeInsets.zero,
+        );
+      },
     );
 
     final track = widget.track;
@@ -699,7 +715,14 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
                     : kAppFadeDuration,
                 curve: kAppFadeCurve,
                 child: !showHeaderActions
-                    ? closeButton
+                    ? Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          closeButton,
+                          const SizedBox(width: 8),
+                          sleepButton,
+                        ],
+                      )
                     : Row(
                         children: [
                           closeButton,
@@ -769,30 +792,7 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
                           ),
                           if (!isWindows) ...[
                             const SizedBox(width: 8),
-                            Consumer(
-                              builder: (context, ref, _) {
-                                final hasPlayingAudio = ref.watch(
-                                  playlistHeaderUiProvider.select(
-                                    (state) => state.hasPlayingAudioSession,
-                                  ),
-                                );
-                                return IconButton(
-                                  key: const ValueKey(
-                                    'session_detail_sleep_button',
-                                  ),
-                                  style: headerActionStyle,
-                                  onPressed: hasPlayingAudio
-                                      ? () => Navigator.of(
-                                          context,
-                                        ).push(BedtimeCanvasPage.route(context))
-                                      : null,
-                                  icon: const Icon(Icons.bedtime_outlined),
-                                  tooltip: i18n.tr('sleep_mode'),
-                                  iconSize: 20,
-                                  padding: EdgeInsets.zero,
-                                );
-                              },
-                            ),
+                            sleepButton,
                           ],
                         ],
                       ),

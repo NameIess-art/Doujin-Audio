@@ -345,7 +345,6 @@ void main() {
         setPreferredOrientations: (orientations) async => calls.add(orientations),
         setSystemUiMode: (_) async {},
       );
-      await orientation.updateDisplay(390);
       await orientation.setPlaybackDetailVisible(true);
       final navigation = await _pumpApp(
         tester,
@@ -865,6 +864,12 @@ void main() {
               findsNothing,
             );
             root.pop();
+            if (platform == TargetPlatform.android) {
+              // Keep the simulated display landscape for the next entry.
+              // The route should still close if Android never rotates it.
+              expect(detail, findsOneWidget);
+              await tester.pump(const Duration(milliseconds: 550));
+            }
             await _settle(tester);
             expect(detail, findsNothing);
             if (split) {

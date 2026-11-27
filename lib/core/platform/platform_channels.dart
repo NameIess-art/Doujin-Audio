@@ -32,6 +32,7 @@ abstract final class AppLifecycleMethod {
   static const String syncAppTheme = 'syncAppTheme';
   static const String syncTrayMenu = 'syncTrayMenu';
   static const String getSystemAccentColor = 'getSystemAccentColor';
+  static const String setImmersiveMode = 'setImmersiveMode';
 }
 
 abstract final class PowerChannel {

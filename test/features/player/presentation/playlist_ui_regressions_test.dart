@@ -1002,9 +1002,7 @@ Dialogue: 0,0:00:10.00,0:00:14.00,Default,,0,0,0,,Middle line
             Builder(
               builder: (context) => Scaffold(
                 body: TextButton(
-                  onPressed: () => Navigator.of(
-                    context,
-                  ).push(BedtimeCanvasPage.route(context)),
+                  onPressed: () => BedtimeCanvasPage.open(context),
                   child: const Text('Open Bedtime'),
                 ),
               ),

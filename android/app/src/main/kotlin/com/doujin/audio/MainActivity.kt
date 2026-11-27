@@ -27,6 +27,7 @@ import android.os.Looper
 import android.os.Process
 import android.view.View
 import android.view.WindowInsetsController
+import android.view.WindowManager
 import android.view.animation.AccelerateDecelerateInterpolator
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -40,6 +41,7 @@ import io.flutter.plugin.common.StandardMethodCodec
 
 open class MainActivity : FlutterFragmentActivity() {
     private var appLifecycleMethodChannel: MethodChannel? = null
+    private var immersiveMode = false
     private var nativePlaybackMethodChannel: MethodChannel? = null
     private var nativePlaybackEventChannel: EventChannel? = null
     private var nativePlaybackBridge: NativePlaybackBridge? = null
@@ -76,8 +78,43 @@ open class MainActivity : FlutterFragmentActivity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus && BuildConfig.SCREENSHOT_MODE) {
-            hideScreenshotStatusBar()
+        if (hasFocus) {
+            if (immersiveMode) {
+                setImmersiveMode(true)
+            } else if (BuildConfig.SCREENSHOT_MODE) {
+                hideScreenshotStatusBar()
+            }
+        }
+    }
+
+    private fun setImmersiveMode(enabled: Boolean) {
+        immersiveMode = enabled
+        if (Build.VERSION.SDK_INT in Build.VERSION_CODES.P until Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            val cutoutMode = if (enabled) {
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            } else {
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
+            }
+            val attributes = window.attributes
+            if (attributes.layoutInDisplayCutoutMode != cutoutMode) {
+                attributes.layoutInDisplayCutoutMode = cutoutMode
+                window.attributes = attributes
+            }
+        }
+        // Android 16 keeps the window edge-to-edge even while the bars are hidden.
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        if (enabled) {
+            controller.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+        } else {
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
+            if (BuildConfig.SCREENSHOT_MODE) {
+                controller.show(WindowInsetsCompat.Type.navigationBars())
+                hideScreenshotStatusBar()
+            } else {
+                controller.show(WindowInsetsCompat.Type.systemBars())
+            }
         }
     }
 
@@ -298,6 +335,7 @@ open class MainActivity : FlutterFragmentActivity() {
                     terminateForPendingRestore = ::schedulePendingRestoreTermination,
                     syncAppTheme = ::syncAppTheme,
                     getSystemAccentColor = ::getSystemAccentColor,
+                    setImmersiveMode = ::setImmersiveMode,
                 )
             )
         }

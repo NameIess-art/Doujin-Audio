@@ -897,6 +897,7 @@ void main() {
         final favoriteLabel = fixture.languageProvider.tr(
           'asmr_favorite_action',
         );
+        final favoriteMenuAction = find.text(favoriteLabel).hitTestable();
         final downloadLabel = fixture.languageProvider.tr('download');
         if (platform == TargetPlatform.android) {
           await tester.drag(swipe, const Offset(-150, 0));
@@ -909,7 +910,7 @@ void main() {
         }
         await tester.pumpAndSettle();
         if (platform == TargetPlatform.windows) {
-          expect(find.text(favoriteLabel), findsOneWidget);
+          expect(favoriteMenuAction, findsOneWidget);
           expect(find.text(downloadLabel), findsOneWidget);
         } else {
           expect(find.byTooltip(favoriteLabel), findsNothing);
@@ -918,7 +919,7 @@ void main() {
           expect(controller.favoriteToggles, 0);
         }
         if (platform == TargetPlatform.windows) {
-          await tester.tap(find.text(favoriteLabel));
+          await tester.tap(favoriteMenuAction);
           await tester.pumpAndSettle();
           expect(controller.favoriteToggles, 1);
         }
@@ -932,7 +933,10 @@ void main() {
   testWidgets('ASMR rebuilds keep published cards during interaction', (
     tester,
   ) async {
-    final controller = _PresentationController(createTestAsmrServices());
+    final categoryLoad = Completer<void>();
+    final controller = _PresentationController(createTestAsmrServices())
+      ..cacheValid = false
+      ..pendingCategoryLoad = categoryLoad;
     final fixture = AppRuntimeWidgetTestFixture();
     final padding = ValueNotifier<double>(0);
     final activeTab = ValueNotifier<int>(0);
@@ -966,6 +970,7 @@ void main() {
     expect(find.text('Published work'), findsNothing);
 
     interaction.cancelInteraction(motion);
+    categoryLoad.complete();
     await pumpUntilFound(tester, find.text('Published work'));
     final readsBeforeMotion = controller.categoryReads;
     interaction.beginInteraction(motion);

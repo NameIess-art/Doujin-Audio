@@ -179,17 +179,10 @@ final class RemoteCoverDownloader {
 
       Future<void> switchToStaging() async {
         final opened = await artworkStore.openStagingWrite();
+        staging = opened;
         if (opened == null || !isCurrent()) {
-          if (opened != null) {
-            await opened.sink.close().catchError((_) {});
-            if (await opened.file.exists()) {
-              await opened.file.delete().catchError((_) => opened.file);
-            }
-            opened.release();
-          }
           throw const _RemoteCoverCancelledException();
         }
-        staging = opened;
         digestSink = _DigestSink();
         hashSink = sha256.startChunkedConversion(digestSink!);
         final buffered = inMemoryBytes?.takeBytes();
@@ -279,17 +272,30 @@ final class RemoteCoverDownloader {
     } finally {
       final activeStaging = staging;
       if (activeStaging != null) {
-        if (!stagingClosed) {
-          try {
-            await activeStaging.sink.close();
-          } catch (_) {}
-        }
-        if (!stagingCommitted && await activeStaging.file.exists()) {
-          try {
+        try {
+          if (!stagingClosed) {
+            try {
+              await activeStaging.sink.close();
+            } catch (error, stackTrace) {
+              AppLogService.warning(
+                'Unable to close staged remote artwork.',
+                error: error,
+                stackTrace: stackTrace,
+              );
+            }
+          }
+          if (!stagingCommitted && await activeStaging.file.exists()) {
             await activeStaging.file.delete();
-          } catch (_) {}
+          }
+        } catch (error, stackTrace) {
+          AppLogService.warning(
+            'Unable to remove staged remote artwork.',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        } finally {
+          activeStaging.release();
         }
-        activeStaging.release();
       }
     }
   }

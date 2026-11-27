@@ -815,34 +815,37 @@ void main() {
       final syncAttempts = <(Uri, String?, String?)>[];
       final uploaded = <Uri>[];
       final secrets = <String, String>{};
-      final temp = (await tester.runAsync(
-        () => Directory.systemTemp.createTemp('webdav_sync_settings_'),
-      ))!;
-      addTearDown(() => temp.delete(recursive: true));
-      final syncService = CrossPlatformSyncService(
-        webDavClientFactory: ({required baseUri, username, password}) {
-          syncAttempts.add((baseUri, username, password));
-          return _SettingsWebDavClient(
-            baseUri: baseUri,
-            onUpload: uploaded.add,
-          );
-        },
-      );
-      final remoteLibrary = RemoteLibraryController(
-        syncService: syncService,
-        supportDirectoryProvider: () async => temp,
-        readSecret: (key) async => secrets[key],
-        writeSecret: (key, value) async {
-          if (value != null) secrets[key] = value;
-        },
-        webDavClientFactory: ({required baseUri, username, password}) =>
-            _SettingsWebDavClient(baseUri: baseUri),
-      );
-      await tester.runAsync(() async {
+      // Source saves await a queue seeded by the constructor. Keep that queue
+      // in the same real async zone as the file I/O used to configure sources.
+      final (syncService, remoteLibrary) = (await tester.runAsync(() async {
+        final temp = await Directory.systemTemp.createTemp(
+          'webdav_sync_settings_',
+        );
+        addTearDown(() => temp.delete(recursive: true));
+        final syncService = CrossPlatformSyncService(
+          webDavClientFactory: ({required baseUri, username, password}) {
+            syncAttempts.add((baseUri, username, password));
+            return _SettingsWebDavClient(
+              baseUri: baseUri,
+              onUpload: uploaded.add,
+            );
+          },
+        );
+        final remoteLibrary = RemoteLibraryController(
+          syncService: syncService,
+          supportDirectoryProvider: () async => temp,
+          readSecret: (key) async => secrets[key],
+          writeSecret: (key, value) async {
+            if (value != null) secrets[key] = value;
+          },
+          webDavClientFactory: ({required baseUri, username, password}) =>
+              _SettingsWebDavClient(baseUri: baseUri),
+        );
         await AppPreferences.init();
         await syncService.initialize();
         await remoteLibrary.initialize();
-      });
+        return (syncService, remoteLibrary);
+      }))!;
       await tester.pumpWidget(
         harness.build(
           const SettingsTab(),
@@ -871,7 +874,6 @@ void main() {
       await tester.pumpAndSettle();
       expect(syncTile().value, isFalse);
       expect(syncTile().onChanged, isNull);
-
       late RemoteMediaSource source;
       await tester.runAsync(() async {
         source = await remoteLibrary.addOrUpdateSource(
@@ -939,6 +941,7 @@ void main() {
       expect(uploaded, isEmpty);
       await tester.pumpWidget(const SizedBox.shrink());
     },
+    timeout: const Timeout(Duration(seconds: 30)),
     variant: const TargetPlatformVariant({
       TargetPlatform.android,
       TargetPlatform.windows,

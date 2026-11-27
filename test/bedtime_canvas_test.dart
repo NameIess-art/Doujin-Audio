@@ -170,22 +170,26 @@ void main() {
       }),
     );
 
-    testWidgets('manages keepScreenOn lifecycle when entering and exiting', (
+    testWidgets('opens above a nested navigator and manages keepScreenOn', (
       tester,
     ) async {
       await tester.pumpWidget(
         fixture.build(
-          Navigator(
-            onGenerateRoute: (settings) => MaterialPageRoute(
-              builder: (context) => Scaffold(
-                body: Center(
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.of(
-                        context,
-                      ).push(BedtimeCanvasPage.route(context));
-                    },
-                    child: const Text('Open Bedtime Canvas'),
+          Center(
+            child: SizedBox(
+              width: 320,
+              height: 240,
+              child: Navigator(
+                onGenerateRoute: (settings) => MaterialPageRoute(
+                  builder: (context) => Scaffold(
+                    body: Center(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          unawaited(BedtimeCanvasPage.open(context));
+                        },
+                        child: const Text('Open Bedtime Canvas'),
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -204,10 +208,14 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
 
       expect(powerService.keepScreenOnCalls, equals([true]));
-      expect(find.byType(BedtimeCanvasPage), findsOneWidget);
+      final canvas = find.byType(BedtimeCanvasPage);
+      expect(
+        tester.getRect(canvas),
+        Offset.zero & (tester.view.physicalSize / tester.view.devicePixelRatio),
+      );
 
       // Long press for 2 seconds to exit
-      final center = tester.getCenter(find.byType(BedtimeCanvasPage));
+      final center = tester.getCenter(canvas);
       final gesture = await tester.startGesture(center);
       for (var i = 0; i < 10; i++) {
         await tester.pump(const Duration(milliseconds: 100));
@@ -502,9 +510,7 @@ void main() {
               builder: (context) => Scaffold(
                 body: ElevatedButton(
                   onPressed: () {
-                    Navigator.of(
-                      context,
-                    ).push(BedtimeCanvasPage.route(context));
+                    unawaited(BedtimeCanvasPage.open(context));
                   },
                   child: const Text('Open'),
                 ),

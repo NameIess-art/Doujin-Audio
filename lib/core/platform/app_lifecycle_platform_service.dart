@@ -65,6 +65,18 @@ class AppLifecyclePlatformService {
     return result.isOk ? result.valueOrNull : null;
   }
 
+  Future<void> setImmersiveMode(bool enabled) async {
+    if (!_isAndroid) return;
+    final result = await _client.invoke<void>(
+      AppLifecycleMethod.setImmersiveMode,
+      arguments: {'enabled': enabled},
+      decode: (_) {},
+    );
+    if (!result.isOk) {
+      throw StateError('Could not set immersive mode: ${result.errorOrNull}');
+    }
+  }
+
   Future<bool> syncTrayMenu({
     required String open,
     required String toggle,

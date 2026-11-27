@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/presentation/app_orientation_controller.dart';
 import 'package:doujin_audio/core/errors/native_result.dart';
@@ -29,7 +30,6 @@ void main() {
         setSystemUiMode: (value) async =>
             calls.add(MethodCall('system_ui', value)),
       );
-      await controller.updateDisplay(360);
       await controller.setPlaybackDetailVisible(true);
       final first = await controller.enterVideoFullscreen();
       final second = await controller.enterVideoFullscreen();
@@ -56,7 +56,7 @@ void main() {
         setSystemUiMode: (mode) async => uiModeCalls.add(mode),
       );
 
-      await controller.updateDisplay(360);
+      await controller.updateTopRoute(playbackDetailVisible: false);
       final lease = await controller.enterVideoFullscreen();
       await controller.setPlaybackDetailVisible(true);
 
@@ -68,10 +68,7 @@ void main() {
 
       await lease.release();
 
-      expect(
-        orientationCalls.last,
-        AppOrientationPolicy.rotatable.allowedOrientations,
-      );
+      expect(orientationCalls, hasLength(2));
       expect(uiModeCalls.last, SystemUiMode.immersiveSticky);
 
       await controller.setPlaybackDetailVisible(false);
@@ -82,36 +79,6 @@ void main() {
       expect(uiModeCalls.last, SystemUiMode.edgeToEdge);
     },
   );
-
-  test('device policy distinguishes phones, tablets and Windows', () {
-    for (final side in [360.0, 599.0, 600.0, 800.0]) {
-      expect(
-        AppOrientationPolicy.forDisplay(
-          platform: TargetPlatform.android,
-          shortestSide: side,
-        ),
-        side < 600
-            ? AppOrientationPolicy.portrait
-            : AppOrientationPolicy.rotatable,
-      );
-      expect(
-        AppOrientationPolicy.forDisplay(
-          platform: TargetPlatform.android,
-          shortestSide: side,
-          playbackDetailVisible: true,
-        ),
-        AppOrientationPolicy.rotatable,
-      );
-      expect(
-        AppOrientationPolicy.forDisplay(
-          platform: TargetPlatform.windows,
-          shortestSide: side,
-          playbackDetailVisible: true,
-        ),
-        AppOrientationPolicy.landscape,
-      );
-    }
-  });
 
   test(
     'playback detail hides status bar on Android and restores edgeToEdge on dismiss',
@@ -134,37 +101,34 @@ void main() {
   );
 
   test(
-    'entering bedtime canvas from playback detail keeps immersiveSticky and returns to playback detail without showing status bar',
+    'landscape bedtime canvas preserves orientation and keeps bars hidden',
     () async {
+      final orientations = <List<DeviceOrientation>>[];
       final uiModeCalls = <SystemUiMode>[];
       final controller = AppOrientationController(
-        setPreferredOrientations: (_) async {},
+        setPreferredOrientations: (value) async => orientations.add(value),
         setSystemUiMode: (mode) async => uiModeCalls.add(mode),
       );
 
-      // 1. Enter playback detail
       await controller.updateTopRoute(playbackDetailVisible: true);
       expect(uiModeCalls, <SystemUiMode>[SystemUiMode.immersiveSticky]);
 
-      // 2. Open bedtime canvas over playback detail
       await controller.updateTopRoute(
         playbackDetailVisible: false,
-        bedtimeCanvasVisible: true,
+        bedtimeCanvasOrientation: Orientation.landscape,
       );
-      // Mode should NOT switch to edgeToEdge; it stays immersiveSticky
       expect(uiModeCalls, <SystemUiMode>[SystemUiMode.immersiveSticky]);
 
-      // 3. Exit bedtime canvas back to playback detail
-      await controller.updateTopRoute(
-        playbackDetailVisible: true,
-      );
-      // Mode should STILL be immersiveSticky
+      await controller.updateTopRoute(playbackDetailVisible: true);
       expect(uiModeCalls, <SystemUiMode>[SystemUiMode.immersiveSticky]);
 
-      // 4. Finally close playback detail
-      await controller.updateTopRoute(
-        playbackDetailVisible: false,
-      );
+      await controller.updateTopRoute(playbackDetailVisible: false);
+      expect(orientations, [
+        AppOrientationPolicy.rotatable.allowedOrientations,
+        AppOrientationPolicy.landscape.allowedOrientations,
+        AppOrientationPolicy.rotatable.allowedOrientations,
+        AppOrientationPolicy.portrait.allowedOrientations,
+      ]);
       expect(uiModeCalls, <SystemUiMode>[
         SystemUiMode.immersiveSticky,
         SystemUiMode.edgeToEdge,
@@ -173,18 +137,23 @@ void main() {
   );
 
   test(
-    'bedtime canvas from normal page hides status bar on Android and restores edgeToEdge on exit',
+    'portrait bedtime canvas stays vertical and hides the system bars',
     () async {
+      final orientations = <List<DeviceOrientation>>[];
       final uiModeCalls = <SystemUiMode>[];
       final controller = AppOrientationController(
-        setPreferredOrientations: (_) async {},
+        setPreferredOrientations: (value) async => orientations.add(value),
         setSystemUiMode: (mode) async => uiModeCalls.add(mode),
       );
 
-      await controller.setBedtimeCanvasVisible(true);
+      await controller.updateTopRoute(
+        playbackDetailVisible: false,
+        bedtimeCanvasOrientation: Orientation.portrait,
+      );
       expect(uiModeCalls, <SystemUiMode>[SystemUiMode.immersiveSticky]);
 
-      await controller.setBedtimeCanvasVisible(false);
+      await controller.updateTopRoute(playbackDetailVisible: false);
+      expect(orientations, [AppOrientationPolicy.portrait.allowedOrientations]);
       expect(uiModeCalls, <SystemUiMode>[
         SystemUiMode.immersiveSticky,
         SystemUiMode.edgeToEdge,
@@ -199,8 +168,8 @@ void main() {
       final controller = AppOrientationController(
         setPreferredOrientations: (value) async => calls.add(value),
       );
-      await controller.updateDisplay(390);
-      await controller.updateDisplay(390);
+      await controller.updateTopRoute(playbackDetailVisible: false);
+      await controller.updateTopRoute(playbackDetailVisible: false);
       await controller.setPlaybackDetailVisible(true);
       await controller.setPlaybackDetailVisible(true);
       await controller.setPlaybackDetailVisible(false);
@@ -212,42 +181,19 @@ void main() {
     },
   );
 
-  test('display class changes reapply the visible page policy', () async {
-    final calls = <List<DeviceOrientation>>[];
-    final controller = AppOrientationController(
-      setPreferredOrientations: (value) async => calls.add(value),
-    );
-    await controller.updateDisplay(800);
-    await controller.updateDisplay(700);
-    await controller.updateDisplay(500);
-    await controller.setPlaybackDetailVisible(true);
-    await controller.updateDisplay(800);
-    await controller.setPlaybackDetailVisible(false);
-    await controller.updateDisplay(500);
-    expect(calls, [
-      AppOrientationPolicy.rotatable.allowedOrientations,
-      AppOrientationPolicy.portrait.allowedOrientations,
-      AppOrientationPolicy.rotatable.allowedOrientations,
-      AppOrientationPolicy.rotatable.allowedOrientations,
-      AppOrientationPolicy.rotatable.allowedOrientations,
-      AppOrientationPolicy.portrait.allowedOrientations,
-    ]);
-  });
-
-  test('fullscreen restores tablet policy after a display change', () async {
+  test('fullscreen restores portrait on return to an ordinary page', () async {
     final calls = <List<DeviceOrientation>>[];
     final controller = AppOrientationController(
       setPreferredOrientations: (value) async => calls.add(value),
       setSystemUiMode: (_) async {},
     );
-    await controller.updateDisplay(360);
+    await controller.updateTopRoute(playbackDetailVisible: true);
     final lease = await controller.enterVideoFullscreen();
-    await controller.updateDisplay(800);
+    await controller.updateTopRoute(playbackDetailVisible: false);
     await lease.release();
     expect(calls, [
+      AppOrientationPolicy.rotatable.allowedOrientations,
       AppOrientationPolicy.portrait.allowedOrientations,
-      AppOrientationPolicy.rotatable.allowedOrientations,
-      AppOrientationPolicy.rotatable.allowedOrientations,
     ]);
   });
 

@@ -1,5 +1,3 @@
-import 'package:flutter/foundation.dart';
-
 import '../../../core/immutable_collections.dart';
 
 enum RemoteMediaSourceType {
@@ -185,6 +183,15 @@ class LanDiscoveredServer {
 
 const Object _remoteUnset = Object();
 
+bool _sameOrderedStrings(List<String> left, List<String> right) {
+  if (identical(left, right)) return true;
+  if (left.length != right.length) return false;
+  for (var index = 0; index < left.length; index++) {
+    if (left[index] != right[index]) return false;
+  }
+  return true;
+}
+
 class RemoteLibraryWork {
   RemoteLibraryWork({
     required this.sourceId,
@@ -251,8 +258,8 @@ class RemoteLibraryWork {
       title == other.title &&
       folderName == other.folderName &&
       circleName == other.circleName &&
-      listEquals(voiceActors, other.voiceActors) &&
-      listEquals(tags, other.tags) &&
+      _sameOrderedStrings(voiceActors, other.voiceActors) &&
+      _sameOrderedStrings(tags, other.tags) &&
       releaseDateMs == other.releaseDateMs &&
       durationMs == other.durationMs &&
       trackCount == other.trackCount &&

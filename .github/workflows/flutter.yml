@@ -51,7 +51,8 @@ jobs:
           done
 
       - name: Test with coverage
-        run: flutter test --coverage --concurrency=1
+        timeout-minutes: 45
+        run: flutter test --no-pub --coverage --concurrency=1 --reporter expanded
 
       - name: Verify coverage baseline
         run: dart run tool/verify_coverage.dart

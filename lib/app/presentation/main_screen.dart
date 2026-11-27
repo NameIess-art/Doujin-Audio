@@ -535,13 +535,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     if (!conditionMet) return;
     _sleepModeAutoEntryTriggeredThisRun = true;
     if (BedtimeCanvasPage.isCanvasActive) return;
-    final navigator = _previousNavigationLayout?.$2 == true
-        ? WorkDetailNavigationScope.maybeOf(
-                context,
-              )?.contentNavigatorKey.currentState ??
-              Navigator.of(context)
-        : Navigator.of(context);
-    navigator.push(BedtimeCanvasPage.route(navigator.context));
+    unawaited(BedtimeCanvasPage.open(context));
   }
 
   void _queueAutoUpdateCheckIfReady() {

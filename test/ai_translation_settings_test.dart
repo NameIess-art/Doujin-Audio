@@ -4,6 +4,7 @@ import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:doujin_audio/core/translation/text_translation_service.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
 import 'package:doujin_audio/features/player/application/subtitle_ai_engine.dart';
+import 'package:doujin_audio/features/player/application/subtitle_generation.dart';
 import 'package:doujin_audio/features/player/application/subtitle_model_store.dart';
 import 'package:doujin_audio/features/settings/application/settings_repository.dart';
 import 'package:doujin_audio/features/settings/presentation/settings_tab.dart';
@@ -275,30 +276,40 @@ void main() {
           find.textContaining('Kotoba-Whisper v2.0 (Q5_0)'),
           findsWidgets,
         );
-        await tester.tap(find.text('Kotoba-Whisper v2.0 (Q5_0)').first);
-        await pumpAndSettleWithAsync(tester);
-        expect(
-          find.text('Whisper Large-v3-Turbo (Q8_0)'),
-          findsOneWidget,
+        final asrSelector = find.byWidgetPredicate(
+          (widget) =>
+              widget is DropdownButton<String> &&
+              widget.value == SubtitleModelStore.defaultAsrModelId,
         );
-        expect(
-          find.text('Whisper Large-v3 完整版 (Q5_0)'),
-          findsOneWidget,
-        );
-        expect(
-          find.text('Kotoba-Whisper v2.0 无损版 (FP16)'),
-          findsOneWidget,
-        );
-        expect(
-          find.text('Qwen3-ASR 1.7B 动漫声优微调 (Q4_K)'),
-          findsOneWidget,
-        );
-        await tester.tap(find.text('Whisper Large-v3-Turbo (Q8_0)').last);
-        await pumpAndSettleWithAsync(tester);
-        expect(
-          fixture.settings.selectedAsrModelId,
-          SubtitleModelStore.whisperLargeV3TurboJa.id,
-        );
+        final unavailableReason = subtitleGenerationUnavailableReason;
+        if (unavailableReason != null) {
+          // Theme platform variants do not change the native ASR host platform.
+          expect(
+            tester.widget<DropdownButton<String>>(asrSelector).onChanged,
+            isNull,
+          );
+          expect(find.text(i18n.tr(unavailableReason)), findsOneWidget);
+        } else {
+          await Scrollable.ensureVisible(
+            tester.element(asrSelector),
+            alignment: 0.5,
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(asrSelector);
+          await pumpAndSettleWithAsync(tester);
+          const turbo = SubtitleModelStore.whisperLargeV3TurboJa;
+          for (final model in const [
+            turbo,
+            SubtitleModelStore.whisperLargeV3Ja,
+            SubtitleModelStore.kotobaWhisperFp16Ja,
+            SubtitleModelStore.qwen3JaAnime,
+          ]) {
+            expect(find.text(i18n.tr(model.titleKey)), findsOneWidget);
+          }
+          await tester.tap(find.text(i18n.tr(turbo.titleKey)));
+          await pumpAndSettleWithAsync(tester);
+          expect(fixture.settings.selectedAsrModelId, turbo.id);
+        }
         expect(
           find.descendant(
             of: find.byKey(const ValueKey('manage_ctc_model_tile')),

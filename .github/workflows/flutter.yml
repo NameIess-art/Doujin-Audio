@@ -418,6 +418,7 @@ jobs:
               Sort-Object FullName |
               ForEach-Object { $_.FullName.Substring((Get-Location).Path.Length + 1).Replace('\', '/') }
           ) + @(
+            'test/ai_translation_settings_test.dart',
             'test/desktop_main_navigation_test.dart',
             'test/subtitle_native_build_cache_test.dart',
             'test/swipe_reveal_card_test.dart',

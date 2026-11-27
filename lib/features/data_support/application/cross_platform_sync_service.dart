@@ -17,8 +17,12 @@ import '../domain/cross_platform_sync_models.dart';
 
 typedef SyncSecretRead = Future<String?> Function(String key);
 typedef SyncSecretWrite = Future<void> Function(String key, String? value);
-typedef WebDavSyncSource = ({Uri baseUri, String username, String? password});
-typedef WebDavSyncSourceResolver = WebDavSyncSource? Function(String sourceId);
+typedef WebDavSyncSource = ({
+  String id,
+  Uri baseUri,
+  String username,
+  String? password,
+});
 typedef SyncAppliedCallback =
     Future<void> Function(
       Set<String> updatedTrackPaths,
@@ -120,23 +124,16 @@ class CrossPlatformSyncService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> setWebDavSyncEnabled(bool enabled, {String? sourceId}) =>
-      _runSerialized(() async {
-        await initialize();
-        final next = _webDavSettings.copyWith(
-          sourceId: sourceId,
-          autoSyncEnabled: enabled,
-        );
-        if (enabled && !next.isConfigured) {
-          throw StateError('No WebDAV sync source');
-        }
-        final saved = await AppPreferences.setString(
-          _webDavSyncConfigPrefKey,
-          jsonEncode(next.toJson()),
-        );
-        if (!saved) throw StateError('Could not save WebDAV sync settings');
-        _webDavSettings = next;
-      });
+  Future<void> setWebDavSyncEnabled(bool enabled) => _runSerialized(() async {
+    await initialize();
+    final next = _webDavSettings.copyWith(autoSyncEnabled: enabled);
+    final saved = await AppPreferences.setString(
+      _webDavSyncConfigPrefKey,
+      jsonEncode(next.toJson()),
+    );
+    if (!saved) throw StateError('Could not save WebDAV sync settings');
+    _webDavSettings = next;
+  });
 
   Future<Uint8List> exportSyncBytes() => _runSerialized(() => _exportBytesUnlocked());
 
@@ -214,127 +211,157 @@ class CrossPlatformSyncService extends ChangeNotifier {
   });
 
   Future<CrossPlatformSyncSummary?> syncWithWebDav({
-    WebDavSyncSourceResolver? resolveSource,
+    Iterable<WebDavSyncSource> Function()? resolveSources,
   }) => _runSerialized(() async {
     await initialize();
     final settings = _webDavSettings;
-    if (!settings.autoSyncEnabled || !settings.isConfigured) return null;
-    final source = settings.sourceId.isEmpty
-        ? null
-        : resolveSource?.call(settings.sourceId);
-    // A removed media source must not redirect uploads to a different host.
-    if (settings.sourceId.isNotEmpty && source == null) return null;
+    if (!settings.autoSyncEnabled) return null;
+    final sources = <WebDavSyncSource>[...?resolveSources?.call()];
+    if (sources.isEmpty && settings.hasLegacyEndpoint) {
+      sources.add((
+        id: '',
+        baseUri: _parseWebDavUri(settings.url),
+        username: settings.username,
+        password: settings.passwordConfigured
+            ? await _readSecret(_webDavSyncPasswordSecretKey)
+            : null,
+      ));
+    }
+    if (sources.isEmpty) return null;
 
-    final password = source != null
-        ? source.password
-        : settings.passwordConfigured
-        ? await _readSecret(_webDavSyncPasswordSecretKey)
-        : null;
-    final summary = await _syncWithWebDavUnlocked(
-      baseUri: source?.baseUri ?? _parseWebDavUri(settings.url),
-      username: source?.username ?? settings.username,
-      password: password,
-      markerNamespace: settings.sourceId,
-      ensureBaseDirectory: source != null,
-    );
-    _webDavSettings = settings.copyWith(
-      lastSyncedAtMs: _clock().millisecondsSinceEpoch,
-    );
-    await AppPreferences.setString(
-      _webDavSyncConfigPrefKey,
-      jsonEncode(_webDavSettings.toJson()),
-    );
-    return summary;
-  });
-
-  Future<CrossPlatformSyncSummary> _syncWithWebDavUnlocked({
-    required Uri baseUri,
-    required String username,
-    required String? password,
-    required String markerNamespace,
-    bool ensureBaseDirectory = false,
-  }) async {
-    final client = _webDavClientFactory(
-      baseUri: baseUri,
-      username: username,
-      password: password,
-    );
-
+    final localDeviceId = await _repository.ensureDeviceId(_generateUuidV4);
+    final peerMarkers = await _loadPeerMarkers();
+    final clients = <WebDavClient>[];
     try {
-      if (ensureBaseDirectory) {
-        await client.ensureDirectory(baseUri);
-      }
-      final localDeviceId = await _repository.ensureDeviceId(_generateUuidV4);
-      final devicesDir = client.resolveRelativePath(
-        'devices',
-        isDirectory: true,
+      final reads = await Future.wait(
+        sources.map((source) async {
+          try {
+            final client = _webDavClientFactory(
+              baseUri: source.baseUri,
+              username: source.username,
+              password: source.password,
+            );
+            clients.add(client);
+            final devicesPath = source.id.isEmpty
+                ? 'devices'
+                : '.dasync/devices';
+            final devicesDir = client.resolveRelativePath(
+              devicesPath,
+              isDirectory: true,
+            );
+            final peerData = await _readWebDavPeerBundles(
+              client,
+              devicesDir: devicesDir,
+              sourceId: source.id,
+              localDeviceId: localDeviceId,
+              peerMarkers: peerMarkers,
+            );
+            return (
+              client: client,
+              fileUri: client.resolveRelativePath(
+                '$devicesPath/$localDeviceId.dasync',
+              ),
+              bundles: peerData.$1,
+              markers: peerData.$2,
+            );
+          } on Exception catch (error, stack) {
+            AppLogService.warning(
+              'webdav_sync_source_read_failed',
+              error: error,
+              stackTrace: stack,
+            );
+            return null;
+          }
+        }),
       );
-      await client.ensureDirectory(devicesDir);
+      final ready = [for (final read in reads) ?read];
+      if (ready.isEmpty) return null;
 
-      final entries = await client.listDirectory(devicesDir);
-      final peerMarkers = await _loadPeerMarkers();
-      final peerBundles = <CrossPlatformSyncBundle>[];
-      final updatedMarkers = Map<String, String>.of(peerMarkers);
-      final prefix = markerNamespace.isEmpty ? '' : '$markerNamespace::';
-
-      for (final entry in entries) {
-        if (entry.isDirectory || !entry.name.endsWith('.dasync')) continue;
-        final peerFileId = entry.name.substring(
-          0,
-          entry.name.length - '.dasync'.length,
-        );
-        if (peerFileId.isEmpty || peerFileId == localDeviceId) continue;
-
-        final markerKey = '$prefix$peerFileId';
-        final marker = _entryVersionMarker(entry);
-        if (marker != null && peerMarkers[markerKey] == marker) {
-          continue;
-        }
-        final bytes = await client.getBytes(
-          entry.uri,
-          maxBytes: _maxCompressedSyncBytes,
-        );
-        peerBundles.add(decodeSyncBytes(bytes));
-        if (marker != null) {
-          updatedMarkers[markerKey] = marker;
-        }
+      final bundles = [for (final remote in ready) ...remote.bundles];
+      final summary = await _applyBundlesUnlocked(bundles);
+      for (final remote in ready) {
+        peerMarkers.addAll(remote.markers);
       }
-
-      final summary = peerBundles.isEmpty
-          ? const CrossPlatformSyncSummary(
-              trackStatesMerged: 0,
-              listeningDaysUpdated: 0,
-              timeSegmentsMerged: 0,
-              interestsChanged: false,
-              peersMerged: 0,
-            )
-          : await _applyBundlesUnlocked(peerBundles);
-
-      final myBytes = await _exportBytesUnlocked();
-      final myFileUri = client.resolveRelativePath(
-        'devices/$localDeviceId.dasync',
-      );
-      await client.putBytesAtomic(myFileUri, myBytes);
-
       await AppPreferences.setString(
         _webDavPeerStatePrefKey,
-        jsonEncode(updatedMarkers),
+        jsonEncode(peerMarkers),
+      );
+
+      // Export once after merging every peer so each source receives the same snapshot.
+      final myBytes = await _exportBytesUnlocked();
+      final uploadedFiles = <Uri>{};
+      for (final remote in ready) {
+        // Duplicate source entries may share the same temporary upload path.
+        if (uploadedFiles.contains(remote.fileUri)) continue;
+        try {
+          await remote.client.putBytesAtomic(remote.fileUri, myBytes);
+          uploadedFiles.add(remote.fileUri);
+        } on Exception catch (error, stack) {
+          AppLogService.warning(
+            'webdav_sync_source_write_failed',
+            error: error,
+            stackTrace: stack,
+          );
+        }
+      }
+      if (uploadedFiles.isEmpty && bundles.isEmpty) return null;
+      _webDavSettings = settings.copyWith(
+        lastSyncedAtMs: _clock().millisecondsSinceEpoch,
+      );
+      await AppPreferences.setString(
+        _webDavSyncConfigPrefKey,
+        jsonEncode(_webDavSettings.toJson()),
       );
       return summary;
     } finally {
-      client.close();
+      for (final client in clients) {
+        client.close();
+      }
     }
+  });
+
+  Future<(List<CrossPlatformSyncBundle>, Map<String, String>)>
+  _readWebDavPeerBundles(
+    WebDavClient client, {
+    required Uri devicesDir,
+    required String sourceId,
+    required String localDeviceId,
+    required Map<String, String> peerMarkers,
+  }) async {
+    await client.ensureDirectory(devicesDir);
+    final entries = await client.listDirectory(devicesDir);
+    final bundles = <CrossPlatformSyncBundle>[];
+    final updatedMarkers = <String, String>{};
+    final prefix = sourceId.isEmpty ? '' : '$sourceId::';
+
+    for (final entry in entries) {
+      if (entry.isDirectory || !entry.name.endsWith('.dasync')) continue;
+      final peerFileId = entry.name.substring(
+        0,
+        entry.name.length - '.dasync'.length,
+      );
+      if (peerFileId.isEmpty || peerFileId == localDeviceId) continue;
+
+      final markerKey = '$prefix$peerFileId';
+      final marker = _entryVersionMarker(entry);
+      if (marker != null && peerMarkers[markerKey] == marker) continue;
+      final bytes = await client.getBytes(
+        entry.uri,
+        maxBytes: _maxCompressedSyncBytes,
+      );
+      bundles.add(decodeSyncBytes(bytes));
+      if (marker != null) updatedMarkers[markerKey] = marker;
+    }
+    return (bundles, updatedMarkers);
   }
 
   /// Best-effort background WebDAV sync for startup and app backgrounding.
   Future<void> maybeAutoSyncInBackground({
     Duration minInterval = const Duration(minutes: 2),
-    WebDavSyncSourceResolver? resolveSource,
+    Iterable<WebDavSyncSource> Function()? resolveSources,
   }) async {
     await initialize();
-    if (!_webDavSettings.isConfigured || !_webDavSettings.autoSyncEnabled) {
-      return;
-    }
+    if (!_webDavSettings.autoSyncEnabled) return;
     final now = _clock();
     if (_lastAutoSyncAttempt != null &&
         now.difference(_lastAutoSyncAttempt!) < minInterval) {
@@ -342,7 +369,7 @@ class CrossPlatformSyncService extends ChangeNotifier {
     }
     _lastAutoSyncAttempt = now;
     try {
-      await syncWithWebDav(resolveSource: resolveSource);
+      await syncWithWebDav(resolveSources: resolveSources);
     } on Object catch (error, stackTrace) {
       AppLogService.warning(
         'cross_platform_auto_sync_failed',

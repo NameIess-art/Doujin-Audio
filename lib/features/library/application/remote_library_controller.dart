@@ -618,75 +618,53 @@ class RemoteLibraryController extends ChangeNotifier {
     );
   }
 
-  bool get webDavSyncEnabled {
-    final settings = _syncService.webDavSettings;
-    if (!settings.autoSyncEnabled) return false;
-    return settings.sourceId.isEmpty
-        ? settings.isConfigured
-        : sourceById(settings.sourceId)?.isWebDav == true;
-  }
+  bool get webDavSyncEnabled => _syncService.webDavSettings.autoSyncEnabled;
 
   bool get canEnableWebDavSync =>
-      _webDavSyncSourceToEnable != null ||
-      _syncService.webDavSettings.url.trim().isNotEmpty;
-
-  RemoteMediaSource? get _webDavSyncSourceToEnable {
-    final selected = selectedSource;
-    if (selected != null && selected.isWebDav && canEnterSource(selected.id)) {
-      return selected;
-    }
-    final bound = sourceById(_syncService.webDavSettings.sourceId);
-    if (bound != null && bound.isWebDav && canEnterSource(bound.id)) {
-      return bound;
-    }
-    RemoteMediaSource? candidate;
-    for (final source in sources) {
-      if (!source.isWebDav || !canEnterSource(source.id)) continue;
-      if (candidate != null) return null;
-      candidate = source;
-    }
-    return candidate;
-  }
+      sources.any((source) => source.isWebDav && canEnterSource(source.id)) ||
+      _syncService.webDavSettings.hasLegacyEndpoint;
 
   Future<void> setWebDavSyncEnabled(bool enabled) async {
     await ensureCredentialsLoaded();
     await _syncService.initialize();
-    await _syncService.setWebDavSyncEnabled(
-      enabled,
-      sourceId: enabled ? _webDavSyncSourceToEnable?.id ?? '' : null,
-    );
+    if (enabled && !canEnableWebDavSync) {
+      throw StateError('No WebDAV sync source');
+    }
+    await _syncService.setWebDavSyncEnabled(enabled);
     if (enabled) {
       unawaited(
         _syncService.maybeAutoSyncInBackground(
           minInterval: Duration.zero,
-          resolveSource: _resolveWebDavSyncSource,
+          resolveSources: _webDavSyncSources,
         ),
       );
     }
   }
 
-  WebDavSyncSource? _resolveWebDavSyncSource(String sourceId) {
-    final source = sourceById(sourceId);
-    if (_disposed || source == null || !source.isWebDav) return null;
-    return (
-      baseUri: WebDavClient.normalizeDirectoryUri(
-        Uri.parse(source.baseUrl),
-      ).resolve('.dasync/'),
-      username: source.username,
-      password: _secretsBySourceId[sourceId],
-    );
+  Iterable<WebDavSyncSource> _webDavSyncSources() sync* {
+    if (_disposed) return;
+    for (final source in sources) {
+      if (!source.isWebDav) continue;
+      final baseUri = Uri.tryParse(source.baseUrl);
+      if (baseUri == null || baseUri.host.isEmpty) continue;
+      yield (
+        id: source.id,
+        baseUri: baseUri,
+        username: source.username,
+        password: _secretsBySourceId[source.id],
+      );
+    }
   }
 
   Future<void> maybeAutoSyncInBackground() async {
     await ensureCredentialsLoaded();
     await _syncService.maybeAutoSyncInBackground(
-      resolveSource: _resolveWebDavSyncSource,
+      resolveSources: _webDavSyncSources,
     );
   }
 
-  /// Unified pull-to-refresh entry point: exchanges `.dasync` progress/reviews/stats
-  /// with the remote source first (best-effort if sync is disabled or read-only),
-  /// then refreshes the remote work catalog.
+  /// Exchanges sync data with the LAN source or configured WebDAV media sources,
+  /// then refreshes the selected remote work catalog.
   Future<List<RemoteLibraryWork>> pullRefreshAndSync(
     String sourceId, {
     ValueChanged<CrossPlatformSyncSummary>? onSyncSummary,
@@ -709,17 +687,18 @@ class RemoteLibraryController extends ChangeNotifier {
       }
     } else {
       await _syncService.initialize();
-      final settings = _syncService.webDavSettings;
-      if (webDavSyncEnabled &&
-          (settings.sourceId.isEmpty || settings.sourceId == sourceId)) {
+      if (webDavSyncEnabled) {
         try {
           final summary = await _syncService.syncWithWebDav(
-            resolveSource: _resolveWebDavSyncSource,
+            resolveSources: _webDavSyncSources,
           );
           if (summary != null) onSyncSummary?.call(summary);
         } on Object catch (error) {
           // Read-only WebDAV shares may forbid MKCOL/PUT; still allow catalog refresh.
-          AppLogService.warning('remote_webdav_pull_sync_skipped', error: error);
+          AppLogService.warning(
+            'remote_webdav_pull_sync_skipped',
+            error: error,
+          );
         }
       }
     }
@@ -734,11 +713,12 @@ class RemoteLibraryController extends ChangeNotifier {
     await _syncService.initialize();
     if (webDavSyncEnabled) {
       try {
-        await _syncService.syncWithWebDav(
-          resolveSource: _resolveWebDavSyncSource,
-        );
+        await _syncService.syncWithWebDav(resolveSources: _webDavSyncSources);
       } on Object catch (error) {
-        AppLogService.warning('local_refresh_webdav_sync_skipped', error: error);
+        AppLogService.warning(
+          'local_refresh_webdav_sync_skipped',
+          error: error,
+        );
       }
     }
     for (final source in _sources) {

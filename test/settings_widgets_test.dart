@@ -802,7 +802,7 @@ void main() {
   );
 
   testWidgets(
-    'WebDAV sync switch reuses a connected source and stops when disabled',
+    'WebDAV sync switch uses multiple connected sources and stops when disabled',
     (tester) async {
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = defaultTargetPlatform == TargetPlatform.windows
@@ -812,7 +812,7 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       final harness = AppRuntimeWidgetTestFixture();
       addTearDown(harness.dispose);
-      final syncAttempts = <WebDavSyncSource>[];
+      final syncAttempts = <(Uri, String?, String?)>[];
       final uploaded = <Uri>[];
       final secrets = <String, String>{};
       final temp = (await tester.runAsync(
@@ -821,12 +821,11 @@ void main() {
       addTearDown(() => temp.delete(recursive: true));
       final syncService = CrossPlatformSyncService(
         webDavClientFactory: ({required baseUri, username, password}) {
-          syncAttempts.add((
+          syncAttempts.add((baseUri, username, password));
+          return _SettingsWebDavClient(
             baseUri: baseUri,
-            username: username ?? '',
-            password: password,
-          ));
-          return _SettingsWebDavClient(baseUri: baseUri, onUpload: uploaded.add);
+            onUpload: uploaded.add,
+          );
         },
       );
       final remoteLibrary = RemoteLibraryController(
@@ -883,6 +882,14 @@ void main() {
           secret: 'media-source-password',
         );
         await remoteLibrary.refreshSource(source.id);
+        final second = await remoteLibrary.addOrUpdateSource(
+          type: RemoteMediaSourceType.webDav,
+          name: 'Second NAS',
+          baseUrl: 'https://other.example.test/shared/',
+          username: 'second-user',
+          secret: 'second-source-password',
+        );
+        await remoteLibrary.refreshSource(second.id);
       });
       await tester.pumpAndSettle();
       expect(syncTile().onChanged, isNotNull);
@@ -890,26 +897,46 @@ void main() {
       await pumpAndSettleWithAsync(tester);
       expect(syncTile().value, isTrue);
       expect(find.byType(AppDialog), findsNothing);
-      expect(syncService.webDavSettings.sourceId, source.id);
       expect(syncService.webDavSettings.url, isEmpty);
-      expect(syncAttempts.single, (
-        baseUri: Uri.parse('https://dav.example.test/library/.dasync/'),
-        username: 'listener',
-        password: 'media-source-password',
-      ));
-      expect(uploaded.single.path, '/library/.dasync/devices/noop-device.dasync');
+      expect(
+        syncAttempts,
+        unorderedEquals([
+          (
+            Uri.parse('https://dav.example.test/library/'),
+            'listener',
+            'media-source-password',
+          ),
+          (
+            Uri.parse('https://other.example.test/shared/'),
+            'second-user',
+            'second-source-password',
+          ),
+        ]),
+      );
+      final firstUpload = Uri.parse(
+        'https://dav.example.test/library/.dasync/devices/noop-device.dasync',
+      );
+      final secondUpload = Uri.parse(
+        'https://other.example.test/shared/.dasync/devices/noop-device.dasync',
+      );
+      expect(uploaded, unorderedEquals([firstUpload, secondUpload]));
 
       await tester.tap(toggle);
       await pumpAndSettleWithAsync(tester);
       expect(syncTile().value, isFalse);
-      expect(syncService.webDavSettings.sourceId, source.id);
-      expect(secrets.values, ['media-source-password']);
+      expect(
+        secrets.values,
+        unorderedEquals(['media-source-password', 'second-source-password']),
+      );
+      syncAttempts.clear();
+      uploaded.clear();
       await tester.runAsync(() async {
         await remoteLibrary.pullRefreshAndSync(source.id);
         await remoteLibrary.syncAllConfiguredInBackground();
         await remoteLibrary.maybeAutoSyncInBackground();
       });
-      expect(uploaded, hasLength(1));
+      expect(syncAttempts, isEmpty);
+      expect(uploaded, isEmpty);
       await tester.pumpWidget(const SizedBox.shrink());
     },
     variant: const TargetPlatformVariant({

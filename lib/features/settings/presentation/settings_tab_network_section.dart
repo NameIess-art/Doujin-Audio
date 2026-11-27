@@ -453,17 +453,17 @@ class _NetworkSettingsControlsState
                   spacing: AppSpacing.xs,
                   children: [
                     Expanded(
-                      child: AppPillButton(
-                        onPressed: _saving ? null : _applyDns,
-                        child: Text(i18n.tr('network_apply_dns')),
-                      ),
-                    ),
-                    Expanded(
                       child: TextButton(
                         onPressed: _saving
                             ? null
                             : () => _applyDns(reset: true),
                         child: Text(i18n.tr('network_reset_dns')),
+                      ),
+                    ),
+                    Expanded(
+                      child: AppPillButton(
+                        onPressed: _saving ? null : _applyDns,
+                        child: Text(i18n.tr('network_apply_dns')),
                       ),
                     ),
                   ],

@@ -225,11 +225,27 @@ void main() {
         final overflowBox = find.byKey(
           const ValueKey('active_session_title_overflow_box'),
         );
+        final expectsMarquee = platform == TargetPlatform.windows;
         void expectSettledTextWidth() {
-          expect(
-            tester.getSize(marqueeViewport(firstCue).first).width,
-            closeTo(tester.getSize(overflowBox.first).width, 0.001),
-          );
+          final targetWidth = tester.getSize(overflowBox.first).width;
+          if (expectsMarquee) {
+            expect(
+              tester.getSize(marqueeViewport(firstCue).first).width,
+              closeTo(targetWidth, 0.001),
+            );
+          } else {
+            expect(marqueeViewport(title), findsNothing);
+            expect(marqueeViewport(firstCue), findsNothing);
+            for (final text in [title, firstCue]) {
+              final render = tester.renderObject<RenderParagraph>(
+                paragraph(text).first,
+              );
+              expect(render.constraints.maxWidth, closeTo(targetWidth, 0.001));
+              expect(render.maxLines, 1);
+              expect(render.overflow, TextOverflow.ellipsis);
+              expect(render.didExceedMaxLines, isTrue);
+            }
+          }
           if (desktop) {
             expect(
               tester.getSize(find.byType(DesktopMainNavigation)).width,
@@ -328,25 +344,37 @@ void main() {
         expect(progressWidths.length, greaterThan(3));
         expect(paragraph(firstCue), findsWidgets);
         expectSettledTextWidth();
-        final titleScroll = tester
-            .state<ScrollableState>(marqueeViewport(title).first)
-            .position;
-        final subtitleScroll = tester
-            .state<ScrollableState>(marqueeViewport(firstCue).first)
-            .position;
-        var titlePrev = titleScroll.pixels;
-        var subtitlePrev = subtitleScroll.pixels;
-        var titleAdvanced = false;
-        var subtitleAdvanced = false;
-        for (var frame = 0; frame < 45; frame++) {
-          await tester.pump(const Duration(milliseconds: 100));
-          if (titleScroll.pixels > titlePrev) titleAdvanced = true;
-          if (subtitleScroll.pixels > subtitlePrev) subtitleAdvanced = true;
-          titlePrev = titleScroll.pixels;
-          subtitlePrev = subtitleScroll.pixels;
+        if (expectsMarquee) {
+          final titleScroll = tester
+              .state<ScrollableState>(marqueeViewport(title).first)
+              .position;
+          final subtitleScroll = tester
+              .state<ScrollableState>(marqueeViewport(firstCue).first)
+              .position;
+          var titlePrev = titleScroll.pixels;
+          var subtitlePrev = subtitleScroll.pixels;
+          var titleAdvanced = false;
+          var subtitleAdvanced = false;
+          for (var frame = 0; frame < 45; frame++) {
+            await tester.pump(const Duration(milliseconds: 100));
+            if (titleScroll.pixels > titlePrev) titleAdvanced = true;
+            if (subtitleScroll.pixels > subtitlePrev) subtitleAdvanced = true;
+            titlePrev = titleScroll.pixels;
+            subtitlePrev = subtitleScroll.pixels;
+          }
+          expect(titleAdvanced, isTrue);
+          expect(subtitleAdvanced, isTrue);
+        } else {
+          final titleLeft = tester.getTopLeft(paragraph(title).first);
+          final subtitleLeft = tester.getTopLeft(paragraph(firstCue).first);
+          for (var frame = 0; frame < 20; frame++) {
+            await tester.pump(const Duration(milliseconds: 100));
+          }
+          expect(marqueeViewport(title), findsNothing);
+          expect(marqueeViewport(firstCue), findsNothing);
+          expect(tester.getTopLeft(paragraph(title).first), titleLeft);
+          expect(tester.getTopLeft(paragraph(firstCue).first), subtitleLeft);
         }
-        expect(titleAdvanced, isTrue);
-        expect(subtitleAdvanced, isTrue);
         await tester.pump(interaction.idleDelay);
         session.setOptimisticPosition(const Duration(seconds: 90));
         await tester.pump();

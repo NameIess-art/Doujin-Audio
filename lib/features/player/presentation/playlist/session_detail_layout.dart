@@ -87,6 +87,8 @@ class SessionDetailLayout extends StatelessWidget {
               MarqueeText(
                 key: ValueKey('title_marquee_$sessionId'),
                 text: title,
+                animateOnAndroid: true,
+                edgePadding: 0,
                 pauseDuration: const Duration(seconds: 1),
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   color: titleOverArtwork

@@ -16426,4 +16426,60 @@ void main() {
       TargetPlatform.windows,
     }),
   );
+
+  testWidgets(
+    'session detail title scrolls marquee after route entry on Android and Windows',
+    (tester) async {
+      const longTitle =
+          '播放详细页超长作品名称跑马灯测试 / Very long playback detail title '
+          'that overflows both mobile portrait and desktop landscape headers';
+      final pumped = await _pumpSubtitleDetail(
+        tester: tester,
+        openDetail: false,
+        initialTrack: testMusicTrack(
+          name: longTitle,
+          path: '/library/marquee-work/long-track.mp3',
+          groupKey: '/library/marquee-work',
+          groupTitle: 'Marquee Work',
+        ),
+        subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+        initialPosition: Duration.zero,
+        physicalSize: defaultTargetPlatform == TargetPlatform.windows
+            ? const Size(3840, 2400)
+            : const Size(1080, 2400),
+      );
+      final navigator = Navigator.of(tester.element(find.byType(PlaylistTab)));
+      unawaited(
+        navigator.push(buildSessionDetailRoute(sessionId: pumped.session.id)),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+
+      final titleFinder = find.byKey(
+        ValueKey('title_marquee_${pumped.session.id}'),
+      );
+      final scrollable = find.descendant(
+        of: titleFinder,
+        matching: find.byType(Scrollable),
+      );
+      expect(scrollable, findsOneWidget);
+      final position = tester.state<ScrollableState>(scrollable).position;
+      expect(position.pixels, 0);
+
+      await tester.pumpAndSettle();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      expect(position.pixels, 0);
+      for (var i = 0; i < 16; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(position.pixels, greaterThan(0));
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 }

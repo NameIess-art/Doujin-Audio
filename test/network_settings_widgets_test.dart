@@ -178,7 +178,7 @@ void main() {
         );
         final applyBounds = tester.getRect(applyDns);
         final resetBounds = tester.getRect(resetDns);
-        expect(applyBounds.right, lessThan(resetBounds.left));
+        expect(resetBounds.right, lessThan(applyBounds.left));
         expect(applyBounds.center.dy, closeTo(resetBounds.center.dy, 0.5));
         await tapDnsAction(applyDns);
         await tester.pumpAndSettle();

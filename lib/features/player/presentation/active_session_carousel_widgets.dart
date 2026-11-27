@@ -744,8 +744,6 @@ class _ActiveSessionTitleSubtitleState
         fontSize: 13.5,
         height: 1.12,
       ),
-      animateOnAndroid: true,
-      edgePadding: theme.platform == TargetPlatform.android ? 0 : 8,
       scrollSpeed: 26,
     );
     final showSecondary = secondaryText != null && secondaryText.isNotEmpty;
@@ -774,7 +772,6 @@ class _ActiveSessionTitleSubtitleState
                 ? MarqueeText(
                     text: secondaryText.replaceAll('\n', ' '),
                     style: secondaryStyle,
-                    animateOnAndroid: true,
                     pauseDuration: const Duration(milliseconds: 450),
                     scrollSpeed: 26,
                     edgePadding: 0,

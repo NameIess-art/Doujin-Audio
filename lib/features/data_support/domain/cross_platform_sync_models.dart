@@ -366,7 +366,6 @@ class CrossPlatformSyncBundle {
 
 class WebDavSyncSettings {
   const WebDavSyncSettings({
-    this.sourceId = '',
     this.url = '',
     this.username = '',
     this.passwordConfigured = false,
@@ -374,30 +373,24 @@ class WebDavSyncSettings {
     this.lastSyncedAtMs,
   });
 
-  final String sourceId;
   final String url;
   final String username;
   final bool passwordConfigured;
   final bool autoSyncEnabled;
   final int? lastSyncedAtMs;
 
-  bool get isConfigured => sourceId.isNotEmpty || url.trim().isNotEmpty;
+  bool get hasLegacyEndpoint => url.trim().isNotEmpty;
 
-  WebDavSyncSettings copyWith({
-    String? sourceId,
-    bool? autoSyncEnabled,
-    int? lastSyncedAtMs,
-  }) => WebDavSyncSettings(
-    sourceId: sourceId ?? this.sourceId,
-    url: url,
-    username: username,
-    passwordConfigured: passwordConfigured,
-    autoSyncEnabled: autoSyncEnabled ?? this.autoSyncEnabled,
-    lastSyncedAtMs: lastSyncedAtMs ?? this.lastSyncedAtMs,
-  );
+  WebDavSyncSettings copyWith({bool? autoSyncEnabled, int? lastSyncedAtMs}) =>
+      WebDavSyncSettings(
+        url: url,
+        username: username,
+        passwordConfigured: passwordConfigured,
+        autoSyncEnabled: autoSyncEnabled ?? this.autoSyncEnabled,
+        lastSyncedAtMs: lastSyncedAtMs ?? this.lastSyncedAtMs,
+      );
 
   Map<String, Object?> toJson() => <String, Object?>{
-    if (sourceId.isNotEmpty) 'sourceId': sourceId,
     'url': url,
     'username': username,
     'passwordConfigured': passwordConfigured,
@@ -405,15 +398,17 @@ class WebDavSyncSettings {
     if (lastSyncedAtMs != null) 'lastSyncedAtMs': lastSyncedAtMs,
   };
 
-  factory WebDavSyncSettings.fromJson(Map<String, Object?> json) =>
-      WebDavSyncSettings(
-        sourceId: json['sourceId']?.toString() ?? '',
-        url: json['url']?.toString() ?? '',
-        username: json['username']?.toString() ?? '',
-        passwordConfigured: json['passwordConfigured'] == true,
-        autoSyncEnabled: json['autoSyncEnabled'] == true,
-        lastSyncedAtMs: (json['lastSyncedAtMs'] as num?)?.toInt(),
-      );
+  factory WebDavSyncSettings.fromJson(Map<String, Object?> json) {
+    // A former media-source binding had already superseded the standalone URL.
+    final wasBound = (json['sourceId']?.toString() ?? '').isNotEmpty;
+    return WebDavSyncSettings(
+      url: wasBound ? '' : json['url']?.toString() ?? '',
+      username: wasBound ? '' : json['username']?.toString() ?? '',
+      passwordConfigured: !wasBound && json['passwordConfigured'] == true,
+      autoSyncEnabled: json['autoSyncEnabled'] == true,
+      lastSyncedAtMs: (json['lastSyncedAtMs'] as num?)?.toInt(),
+    );
+  }
 }
 
 class CrossPlatformSyncSummary {

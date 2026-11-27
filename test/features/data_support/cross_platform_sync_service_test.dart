@@ -387,17 +387,30 @@ void main() {
     );
   });
 
-  test('WebDAV per-device shard sync merges peer shards and skips unchanged ETags', () async {
+  test('WebDAV merges peer shards across sources and skips unchanged ETags per source', () async {
     final shards = <String, Uint8List>{};
+    final directories = {'/sync/', '/sync/.dasync/', '/other/'};
     var peerDownloads = 0;
+    String? failedMethod;
 
     final webDavServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     addTearDown(() => webDavServer.close(force: true));
     webDavServer.listen((req) async {
       final path = Uri.decodeFull(req.uri.path);
+      if (path.startsWith('/sync/') && req.method == failedMethod) {
+        req.response.statusCode = HttpStatus.serviceUnavailable;
+        await req.response.close();
+        return;
+      }
       switch (req.method) {
         case 'MKCOL':
-          req.response.statusCode = HttpStatus.created;
+          final parent = req.uri.resolve('..').path;
+          if (directories.contains(parent)) {
+            directories.add(path);
+            req.response.statusCode = HttpStatus.created;
+          } else {
+            req.response.statusCode = HttpStatus.conflict;
+          }
           await req.response.close();
         case 'PUT':
           final b = BytesBuilder();
@@ -418,6 +431,11 @@ void main() {
           req.response.add(shards[path]!);
           await req.response.close();
         case 'PROPFIND':
+          if (!directories.contains(path)) {
+            req.response.statusCode = HttpStatus.notFound;
+            await req.response.close();
+            return;
+          }
           final buf = StringBuffer('<?xml version="1.0"?><d:multistatus xmlns:d="DAV:">');
           buf.write(
             '<d:response><d:href>${req.uri.path}</d:href>'
@@ -425,13 +443,12 @@ void main() {
             '<d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>',
           );
           for (final entry in shards.entries) {
-            if (entry.key.startsWith('/sync/devices/') && !entry.key.endsWith('.part')) {
-              final name = entry.key.substring('/sync/devices/'.length);
+            if (entry.key.startsWith(path) && entry.key.endsWith('.dasync')) {
               buf.write(
-                '<d:response><d:href>/sync/devices/$name</d:href>'
+                '<d:response><d:href>${entry.key}</d:href>'
                 '<d:propstat><d:prop><d:resourcetype/>'
                 '<d:getcontentlength>${entry.value.length}</d:getcontentlength>'
-                '<d:getetag>"len-${entry.value.length}"</d:getetag></d:prop>'
+                '<d:getetag>"v1"</d:getetag></d:prop>'
                 '<d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>',
               );
             }
@@ -472,7 +489,8 @@ void main() {
       serviceB.dispose();
     });
 
-    final syncUrl = 'http://127.0.0.1:${webDavServer.port}/sync/';
+    final serverUrl = 'http://127.0.0.1:${webDavServer.port}';
+    final syncUrl = '$serverUrl/sync/.dasync/';
     const configKey = 'cross_platform_webdav_sync_v1';
     final legacySettings = jsonEncode(
       WebDavSyncSettings(
@@ -484,7 +502,7 @@ void main() {
     );
     await AppPreferences.setString(configKey, legacySettings);
     await serviceA.syncWithWebDav();
-    expect(shards.keys.where((k) => k.endsWith('.dasync')), hasLength(1));
+    final firstDeviceFile = shards.keys.single.split('/').last;
 
     // Clear peer marker prefs to simulate Device B's own SharedPreferences store.
     SharedPreferences.setMockInitialValues(<String, Object>{});
@@ -505,12 +523,64 @@ void main() {
     expect(await serviceB.syncWithWebDav(), isNull);
     expect(serviceB.webDavSettings.url, syncUrl);
     expect(serviceB.webDavSettings.passwordConfigured, isTrue);
-    await serviceB.setWebDavSyncEnabled(true, sourceId: 'missing-source');
+    await AppPreferences.setString(configKey, jsonEncode({
+      ...serviceB.webDavSettings.toJson(),
+      'sourceId': 'previous-binding',
+      'autoSyncEnabled': true,
+    }));
     final restarted = buildService(dbB);
     addTearDown(restarted.dispose);
     await restarted.initialize();
-    expect(restarted.webDavSettings.sourceId, 'missing-source');
-    expect(await restarted.syncWithWebDav(resolveSource: (_) => null), isNull);
+    expect(restarted.webDavSettings.autoSyncEnabled, isTrue);
+    expect(await restarted.syncWithWebDav(), isNull);
+
+    final first = (
+      id: 'first',
+      baseUri: Uri.parse('$serverUrl/sync/'),
+      username: 'u',
+      password: 'p',
+    );
+    final second = (
+      id: 'second',
+      baseUri: Uri.parse('$serverUrl/other/'),
+      username: 'u',
+      password: 'p',
+    );
+    final initialMediaSync = await restarted.syncWithWebDav(
+      resolveSources: () => [first, second],
+    );
+    expect(initialMediaSync?.peersMerged, 1);
+    expect(peerDownloads, 2);
+    expect(directories, contains('/other/.dasync/devices/'));
+
+    await dbA.importListeningBatch('a2', const <ListeningDayRecord>[
+      ListeningDayRecord(date: '2026-11-25', totalMs: 300000, works: []),
+    ]);
+    shards['/other/.dasync/devices/$firstDeviceFile'] = await serviceA.exportSyncBytes();
+
+    // Two sources may expose the same device file name and ETag independently.
+    final both = await restarted.syncWithWebDav(resolveSources: () => [first, second]);
+    expect(both?.peersMerged, 1);
+    expect(peerDownloads, 3);
+    expect(_daysMap(await dbB.loadListeningDays())['2026-11-25'], 300000);
+    final localPath = shards.keys.singleWhere((path) =>
+        path.startsWith('/sync/') && !path.endsWith('/$firstDeviceFile'));
+    final secondLocalPath = localPath.replaceFirst('/sync/', '/other/');
+    expect(shards[secondLocalPath], orderedEquals(shards[localPath]!));
+    final exported = CrossPlatformSyncService.decodeSyncBytes(shards[localPath]!);
+    final firstDeviceId = firstDeviceFile.split('.').first;
+    expect(exported.deviceDayLedger[firstDeviceId]?['2026-11-25'], 300000);
+
+    final unchanged = await restarted.syncWithWebDav(resolveSources: () => [first, second]);
+    expect(unchanged?.peersMerged, 0);
+    expect(peerDownloads, 3);
+
+    for (final method in ['PROPFIND', 'PUT']) {
+      failedMethod = method;
+      shards.remove(secondLocalPath);
+      expect(await restarted.syncWithWebDav(resolveSources: () => [first, second]), isNotNull);
+      expect(shards, contains(secondLocalPath));
+    }
   });
 
   test('merges work-level reviews, listenStatus (including status clear), and metadata across platforms via .dasync v23', () async {

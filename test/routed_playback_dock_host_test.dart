@@ -164,7 +164,7 @@ PageRoute<void> _detailRoute(
 Future<void> _exercisePointerInputs(
   WidgetTester tester,
   Offset point, {
-  GlobalKey<NavigatorState>? navigator,
+  Route<void>? detailRoute,
 }) async {
   for (final input in <Future<void> Function()>[
     () => tester.tapAt(point),
@@ -176,14 +176,16 @@ Future<void> _exercisePointerInputs(
     ),
   ]) {
     await input();
-    if (navigator != null) {
+    if (detailRoute != null) {
       await tester.pumpAndSettle();
-      // Card gestures may open playback or a menu. Test each input against
-      // the work detail again instead of the resulting route's barrier.
-      navigator.currentState!.popUntil(
-        (route) => route.settings.name == workDetailRouteName,
-      );
-      await tester.pumpAndSettle();
+      if (!detailRoute.isCurrent) {
+        // Landscape playback can defer its pop until portrait restoration
+        // finishes or times out. Advance the clock before the next gesture.
+        detailRoute.navigator!.pop();
+        await tester.pump(const Duration(milliseconds: 600));
+        await tester.pumpAndSettle();
+        expect(detailRoute.isCurrent, isTrue);
+      }
     }
   }
 }
@@ -510,28 +512,25 @@ void main() {
         platform,
         viewportSize: const Size(1280, 800),
       );
-      unawaited(
-        navigator.currentState!.push(
-          _detailRoute(
-            navigator,
-            child: Scaffold(
-              body: Listener(
-                behavior: HitTestBehavior.opaque,
-                onPointerDown: (_) => backgroundEvents++,
-                onPointerMove: (_) => backgroundEvents++,
-                onPointerSignal: (_) => backgroundEvents++,
-                child: const SizedBox.expand(),
-              ),
-            ),
+      final detail = _detailRoute(
+        navigator,
+        child: Scaffold(
+          body: Listener(
+            behavior: HitTestBehavior.opaque,
+            onPointerDown: (_) => backgroundEvents++,
+            onPointerMove: (_) => backgroundEvents++,
+            onPointerSignal: (_) => backgroundEvents++,
+            child: const SizedBox.expand(),
           ),
         ),
       );
+      unawaited(navigator.currentState!.push(detail));
       await tester.pumpAndSettle();
       final bounds = tester.getRect(_dock);
       await _exercisePointerInputs(
         tester,
         bounds.topLeft + const Offset(1, 1),
-        navigator: navigator,
+        detailRoute: detail,
       );
       expect(backgroundEvents, 0);
       await tester.tapAt(bounds.topLeft - const Offset(1, 0));

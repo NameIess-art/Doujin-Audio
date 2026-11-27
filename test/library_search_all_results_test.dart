@@ -867,12 +867,10 @@ void main() {
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextFormField), '30');
       await tester.tap(
-        find
-            .descendant(
-              of: find.byType(AppEditPanelForm),
-              matching: find.byType(TextButton),
-            )
-            .last,
+        find.descendant(
+          of: find.byType(AppEditPanelForm),
+          matching: find.text(fixture.languageProvider.tr('confirm')),
+        ),
       );
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('app_search_confirm')));

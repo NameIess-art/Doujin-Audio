@@ -6586,13 +6586,12 @@ void main() {
             ),
           ),
         );
-        await tester.pumpAndSettle();
-        final referenceRect = tester.getRect(
-          find.ancestor(
-            of: find.byKey(const ValueKey('reference_back_button')),
-            matching: find.byType(HeaderFloatingButton),
-          ),
+        final referenceButton = find.ancestor(
+          of: find.byKey(const ValueKey('reference_back_button')),
+          matching: find.byType(HeaderFloatingButton),
         );
+        await tester.pumpAndSettle();
+        final referenceRect = tester.getRect(referenceButton);
         expect(referenceRect.topLeft, const Offset(16, 30));
 
         if (hideBeforeOpen) {
@@ -6630,16 +6629,9 @@ void main() {
         await tester.tap(
           find.byKey(const ValueKey('session_detail_close_button')),
         );
+        await pumpUntilFound(tester, referenceButton);
         await tester.pumpAndSettle();
-        expect(
-          tester.getRect(
-            find.ancestor(
-              of: find.byKey(const ValueKey('reference_back_button')),
-              matching: find.byType(HeaderFloatingButton),
-            ),
-          ),
-          referenceRect,
-        );
+        expect(tester.getRect(referenceButton), referenceRect);
         navigator.pop();
         await tester.pumpAndSettle();
         await tester.pump(const Duration(milliseconds: 200));
@@ -7815,8 +7807,7 @@ void main() {
       );
       expect(tester.getTopLeft(content).dy, closeTo(0, 0.1));
       navigator.pop();
-      await tester.pumpAndSettle();
-      expect(find.byType(SessionDetailPage), findsNothing);
+      await pumpUntilNotFound(tester, find.byType(SessionDetailPage));
       expect(tester.takeException(), isNull);
       await _settleSessionDetailAsyncWork(tester);
       await tester.pumpWidget(const SizedBox.shrink());

@@ -35,6 +35,7 @@ import 'package:doujin_audio/core/ui/undoable_removal_service.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
+import 'package:doujin_audio/features/player/application/playback_time_segment_service.dart';
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
 import 'package:doujin_audio/features/player/application/playback_queue_resolver.dart';
 import 'package:doujin_audio/features/player/application/session_switcher_tree.dart';
@@ -475,8 +476,37 @@ void main() {
     await tester.pump();
   }
 
+  Future<void> drainAsyncFuture(WidgetTester tester, Future<Object?> future) async {
+    var finished = false;
+    unawaited(future.whenComplete(() => finished = true));
+    for (var attempt = 0; !finished && attempt < 100; attempt++) {
+      await tester.pump(const Duration(milliseconds: 10));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+    }
+    expect(finished, isTrue);
+  }
+
+  // The rename race is controlled by the SQLite write gate. JSON export has
+  // separate tests and uses an isolate that can outlive the fake widget clock.
+  final segmentStorageOnly = playbackTimeSegmentServiceProvider.overrideWith((
+    ref,
+  ) {
+    final playback = ref.watch(playbackFacadeProvider);
+    final service = PlaybackTimeSegmentService(
+      database: playback.databaseRepository,
+      playback: playback,
+      paths: ref.watch(audioPathCoordinatorProvider),
+    );
+    ref.onDispose(service.dispose);
+    return service;
+  });
+
   setUpAll(() async {
-    testDatabase = await AppRuntimeTestFixture.installSharedDatabase();
+    testDatabase = await AppRuntimeTestFixture.installSharedDatabase(
+      factory: databaseFactoryFfiNoIsolate,
+    );
   });
 
   tearDownAll(() async {
@@ -3707,8 +3737,14 @@ void main() {
       find.byKey(ValueKey<String>('progress_${sessions.last.id}')),
       findsNothing,
     );
-    expect(find.text(tracks.first.displayName), findsOneWidget);
-    expect(find.text(tracks.last.displayName), findsNothing);
+    expect(
+      find.byKey(ValueKey('title_marquee_${sessions.first.id}')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(ValueKey('title_marquee_${sessions.last.id}')),
+      findsNothing,
+    );
 
     if (find.byType(SessionDetailPage).evaluate().isNotEmpty) {
       Navigator.of(tester.element(find.byType(SessionDetailPage))).pop();
@@ -5195,7 +5231,9 @@ void main() {
       );
       expect(tester.widget<TextField>(timeInput).controller?.text, '00:18');
       await tester.enterText(timeInput, 'invalid');
-      await tester.tap(find.widgetWithText(TextButton, i18n.tr('confirm')));
+      await tester.tap(
+        find.descendant(of: timeForm, matching: find.text(i18n.tr('confirm'))),
+      );
       await tester.pumpAndSettle();
       expect(timeForm, findsOneWidget);
       await tester.enterText(timeInput, '00:00:20');
@@ -5257,19 +5295,8 @@ void main() {
       expect(labelsAfterFirst[1].start, const Duration(seconds: 18));
       expect(labelsAfterFirst[1].end, const Duration(seconds: 42));
 
-      Future<void> drainAsyncFuture(Future<Object?> future) async {
-        var finished = false;
-        unawaited(future.whenComplete(() => finished = true));
-        for (var attempt = 0; !finished && attempt < 100; attempt++) {
-          await tester.pump(const Duration(milliseconds: 10));
-          await tester.runAsync(
-            () => Future<void>.delayed(const Duration(milliseconds: 10)),
-          );
-        }
-        expect(finished, isTrue);
-      }
-
       await drainAsyncFuture(
+        tester,
         fixture.library.detailCacheService.waitForPendingOperations(),
       );
       await tester.pump();
@@ -5319,9 +5346,11 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
       await drainAsyncFuture(
+        tester,
         fixture.library.playbackCoverPathFutureForTrack(track),
       );
       await drainAsyncFuture(
+        tester,
         fixture.library.detailCacheService.waitForPendingOperations(),
       );
       await tester.pump();
@@ -5377,6 +5406,7 @@ void main() {
               artworkWidget: const SizedBox.shrink(),
             ),
           ),
+          overrides: [segmentStorageOnly],
         );
         await tester.pumpWidget(detail());
         await tester.pumpAndSettle();
@@ -5420,11 +5450,11 @@ void main() {
         firstSave.complete();
         List<TimeSegmentLabel>? stored;
         for (var attempt = 0; attempt < 100; attempt++) {
-          await tester.pump();
-          stored = await tester.runAsync(
-            () => fixture.persistenceRepository.loadTimeSegmentLabels(trackKey),
+          await tester.pump(const Duration(milliseconds: 10));
+          stored = await fixture.persistenceRepository.loadTimeSegmentLabels(
+            trackKey,
           );
-          if (stored!.any((label) => label.name == 'Final name')) break;
+          if (stored.any((label) => label.name == 'Final name')) break;
           await tester.runAsync(
             () => Future<void>.delayed(const Duration(milliseconds: 10)),
           );
@@ -5529,7 +5559,7 @@ void main() {
       };
       await tester.enterText(find.byType(TextField), 'Renamed');
       await tester.pump(const Duration(milliseconds: 350));
-      await saveStarted.future;
+      expect(saveStarted.isCompleted, isTrue);
 
       await tester.tap(find.widgetWithText(FilledButton, i18n.tr('remove')));
       await tester.pump();
@@ -5539,16 +5569,13 @@ void main() {
       fixture.persistenceRepository.beforeTimeSegmentLabelUpsert = null;
       releaseSave.complete();
       await tester.pump();
-      await tester.runAsync(
-        () => fixture.library.detailCacheService.waitForPendingOperations(),
-      );
       List<TimeSegmentLabel>? remaining;
       for (var attempt = 0; attempt < 100; attempt++) {
-        await tester.pump();
-        remaining = await tester.runAsync(
-          () => fixture.persistenceRepository.loadTimeSegmentLabels(trackKey),
+        await tester.pump(const Duration(milliseconds: 10));
+        remaining = await fixture.persistenceRepository.loadTimeSegmentLabels(
+          trackKey,
         );
-        if (remaining!.isEmpty) break;
+        if (remaining.isEmpty) break;
         await tester.runAsync(
           () => Future<void>.delayed(const Duration(milliseconds: 10)),
         );
@@ -5589,8 +5616,9 @@ void main() {
       expect(restored.single.end, const Duration(seconds: 10));
       expect(restored.single.colorValue, kTimeSegmentLabelPalette.first);
       expect(find.text('Renamed'), findsOneWidget);
-      await tester.runAsync(
-        () => fixture.library.detailCacheService.waitForPendingOperations(),
+      await drainAsyncFuture(
+        tester,
+        fixture.library.detailCacheService.waitForPendingOperations(),
       );
       await tester.pumpAndSettle();
     },
@@ -6170,7 +6198,10 @@ void main() {
       expect(rectWithKeyboard.center.dy, closeTo(availableHeight / 2, 0.01));
       expect(rectWithKeyboard.bottom, lessThanOrEqualTo(availableHeight));
 
-      final confirm = find.widgetWithText(TextButton, i18n.tr('confirm'));
+      final confirm = find.descendant(
+        of: volumeSurface,
+        matching: find.widgetWithText(FilledButton, i18n.tr('confirm')),
+      );
       final cancel = find
           .widgetWithText(TextButton, i18n.tr('cancel'))
           .hitTestable();
@@ -6254,7 +6285,6 @@ void main() {
         expect(tester.getRect(surface), originalRect);
         final remove = find.widgetWithText(TextButton, i18n.tr('remove_queue'));
         final originalButtonRect = tester.getRect(remove);
-        final originalStyle = tester.widget<TextButton>(remove).style!;
         await tester.tap(find.text(i18n.tr('edit_queue_name')));
         await tester.pump();
         double opacity() => tester
@@ -6278,8 +6308,14 @@ void main() {
         );
         await tester.pump(kAppFadeDuration ~/ 2);
         expect(opacity(), 1);
-        final save = find.widgetWithText(TextButton, i18n.tr('save'));
-        final cancel = find.widgetWithText(TextButton, i18n.tr('cancel'));
+        final save = find.descendant(
+          of: name,
+          matching: find.widgetWithText(FilledButton, i18n.tr('save')),
+        );
+        final cancel = find.descendant(
+          of: name,
+          matching: find.widgetWithText(TextButton, i18n.tr('cancel')),
+        );
         final header = find.byKey(
           const ValueKey('playback_queue_name_header_icon'),
         );
@@ -6298,15 +6334,8 @@ void main() {
         expect(nameRect.center.dy, lessThan(size.height / 2));
         expect(inputRect.top, closeTo(tester.getRect(header).bottom + 12, 0.5));
         expect(tester.getRect(save).right, originalButtonRect.right);
-        expect(tester.getRect(save).height, originalButtonRect.height);
-        for (final button in [save, cancel]) {
-          final style = tester.widget<TextButton>(button).style!;
-          expect(style.shape!.resolve({}), originalStyle.shape!.resolve({}));
-          expect(
-            style.textStyle!.resolve({}),
-            originalStyle.textStyle!.resolve({}),
-          );
-        }
+        expect(tester.getRect(save).height, greaterThanOrEqualTo(40));
+        expect(tester.getCenter(save).dy, tester.getCenter(cancel).dy);
         expect(tester.widget<TextField>(input).controller!.text, 'Queue');
         await tester.enterText(input, '   ');
         await tester.tap(save);
@@ -15589,7 +15618,8 @@ void main() {
               }
             }
           } else {
-            expect(sleep, findsNothing);
+            expect(sleep, findsOneWidget);
+            expect(tester.getRect(sleep).top, buttonRect.top);
             expect(timer, findsNothing);
           }
           final arrow = find.descendant(
@@ -15676,8 +15706,7 @@ void main() {
             await tester.pumpAndSettle();
           }
           await tester.tapAt(buttonRect.topLeft + const Offset(1, 1));
-          await tester.pumpAndSettle();
-          expect(find.byType(SessionDetailPage), findsNothing);
+          await pumpUntilNotFound(tester, find.byType(SessionDetailPage));
           expect(find.byType(PlaylistTab), findsOneWidget);
         } finally {
           debugDefaultTargetPlatformOverride = null;

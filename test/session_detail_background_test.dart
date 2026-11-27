@@ -1219,8 +1219,7 @@ void main() {
             await tester.tap(
               find.byKey(const ValueKey('session_detail_close_button')),
             );
-            await tester.pumpAndSettle();
-            expect(find.byType(SessionDetailContent), findsNothing);
+            await pumpUntilNotFound(tester, find.byType(SessionDetailContent));
             unawaited(
               Navigator.of(
                 tester.element(find.byType(PlaylistTab)),

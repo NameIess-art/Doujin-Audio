@@ -780,7 +780,7 @@ void main() {
     expect(theme.scrollbarTheme.radius, const Radius.circular(AppRadius.small));
   });
 
-  test('interactive component themes keep the minimum tap target', () async {
+  test('button tap targets and dense input height', () async {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
     await AppPreferences.init();
     final theme = ThemeProvider().lightTheme;
@@ -794,10 +794,7 @@ void main() {
       theme.textButtonTheme.style?.minimumSize?.resolve(<WidgetState>{}),
       Size.square(tokens.minimumTapTarget),
     );
-    expect(
-      theme.inputDecorationTheme.constraints?.minHeight,
-      tokens.minimumTapTarget,
-    );
+    expect(theme.inputDecorationTheme.constraints?.minHeight, 44);
     expect(
       theme.filledButtonTheme.style?.shape?.resolve(const <WidgetState>{}),
       isA<StadiumBorder>(),

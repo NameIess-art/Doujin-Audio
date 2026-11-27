@@ -30,6 +30,7 @@ import 'package:doujin_audio/features/settings/presentation/subtitle_window_sett
 import 'package:doujin_audio/features/settings/presentation/asmr_download_folder_name_settings_sheet.dart';
 import 'package:doujin_audio/features/data_support/application/storage_usage_service.dart';
 import 'package:doujin_audio/features/data_support/application/cross_platform_sync_service.dart';
+import 'package:doujin_audio/features/library/application/lan_media_server_service.dart';
 import 'package:doujin_audio/features/library/application/remote_library_controller.dart';
 import 'package:doujin_audio/features/library/domain/remote_media_source.dart';
 import 'package:doujin_audio/features/library/presentation/library_providers.dart';
@@ -1322,7 +1323,21 @@ void main() {
     (tester) async {
       final harness = AppRuntimeWidgetTestFixture();
       addTearDown(harness.dispose);
-      await tester.pumpWidget(harness.build(const SettingsTab()));
+      await tester.pumpWidget(
+        harness.build(
+          const SettingsTab(),
+          overrides: [
+            lanMediaServerServiceProvider.overrideWith(
+              (ref) => LanMediaServerService(
+                library: harness.library,
+                syncService: ref.watch(crossPlatformSyncServiceProvider),
+                readSecret: (_) async => null,
+                writeSecret: (_, _) async {},
+              ),
+            ),
+          ],
+        ),
+      );
       await tester.pumpAndSettle();
 
       void expectMatchingInkCorners() {
@@ -1383,7 +1398,7 @@ void main() {
         final entry = find.text(i18n.tr(category));
         await tester.ensureVisible(entry);
         await tester.tap(entry);
-        await tester.pumpAndSettle();
+        await pumpAndSettleWithAsync(tester);
         expectMatchingInkCorners();
         if (category == 'section_data_storage' &&
             Theme.of(tester.element(find.byType(TopPageHeader))).platform ==

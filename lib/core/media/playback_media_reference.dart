@@ -3,6 +3,8 @@ import '../network/remote_source_headers.dart';
 /// A transport address and optional chapter range. The original URL remains the
 /// logical identity, because several chapters can share a single HLS stream.
 class PlaybackMediaReference {
+  static const _remoteSourcePrefix = 'doujin-source=';
+
   const PlaybackMediaReference({
     required this.streamUrl,
     this.startMs = 0,
@@ -39,8 +41,19 @@ class PlaybackMediaReference {
         .toString();
   }
 
-  factory PlaybackMediaReference.parse(String url) {
+  static String bindRemoteSource(String url, String sourceId) => Uri.parse(url)
+      .replace(fragment: '$_remoteSourcePrefix${Uri.encodeComponent(sourceId)}')
+      .toString();
+
+  static String? remoteSourceIdOf(Uri uri) {
+    if (!uri.fragment.startsWith(_remoteSourcePrefix)) return null;
+    final value = uri.fragment.substring(_remoteSourcePrefix.length);
+    return Uri.decodeComponent(value);
+  }
+
+  factory PlaybackMediaReference.parse(String url, {String? sourceId}) {
     final uri = Uri.parse(url);
+    final boundSourceId = remoteSourceIdOf(uri);
     final values = uri.fragment.startsWith('eara-chapter=')
         ? Uri.splitQueryString(uri.fragment)
         : const <String, String>{};
@@ -56,7 +69,9 @@ class PlaybackMediaReference {
         (end != null && end <= start)) {
       throw const FormatException('Invalid chapter range');
     }
-    final streamUrl = values.isEmpty ? url : uri.removeFragment().toString();
+    final streamUrl = values.isEmpty && boundSourceId == null
+        ? url
+        : uri.removeFragment().toString();
     return PlaybackMediaReference(
       streamUrl: streamUrl,
       startMs: start,
@@ -65,7 +80,10 @@ class PlaybackMediaReference {
           ? values['download']
           : null,
       fileName: values['file'],
-      httpHeaders: requestHeadersForUri(Uri.parse(streamUrl)),
+      httpHeaders: requestHeadersForUri(
+        Uri.parse(streamUrl),
+        sourceId: boundSourceId ?? sourceId,
+      ),
     );
   }
 
@@ -90,7 +108,14 @@ class PlaybackMediaReference {
   };
 
   /// Per-resource headers must never become default headers for other sources.
-  static Map<String, String> requestHeadersForUri(Uri uri) {
+  static Map<String, String> requestHeadersForUri(Uri uri, {String? sourceId}) {
+    final boundSourceId = remoteSourceIdOf(uri) ?? sourceId;
+    if (boundSourceId != null) {
+      return RemoteSourceHeaderRegistry.instance.headersForUri(
+        uri,
+        sourceId: boundSourceId,
+      );
+    }
     final host = uri.host.toLowerCase();
     if (host == 'japaneseasmr.com' ||
         host.endsWith('.japaneseasmr.com') ||

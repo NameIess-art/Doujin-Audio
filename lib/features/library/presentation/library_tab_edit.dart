@@ -67,13 +67,16 @@ class LibraryEditPage extends ConsumerWidget {
         headerBuilder: (context, searchBar) => TopPageHeader(
           iconWidget: const LibraryEditIcon(),
           title: i18n.tr('edit_library'),
-          titleSuffix: Text(
-            PathDisplay.folderName(libraryPath),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: cs.onSurfaceVariant,
-              fontWeight: FontWeight.w700,
+          titleSuffix: Align(
+            alignment: AlignmentDirectional.centerEnd,
+            child: Text(
+              PathDisplay.folderName(libraryPath),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: cs.onSurfaceVariant,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
           leading: const AppHeaderBackButton(),

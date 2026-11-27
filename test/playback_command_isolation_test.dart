@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:doujin_audio/core/errors/native_result.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/core/media/playback_media_reference.dart';
 import 'package:doujin_audio/core/network/remote_source_headers.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_playback_cache_service.dart';
 import 'package:doujin_audio/features/player/application/audio_state_services.dart'
@@ -968,9 +969,102 @@ void main() {
       });
     },
   );
+
+  test(
+    'remote playback resumes, records progress and isolates equal-URL accounts',
+    () async {
+      addTearDown(RemoteSourceHeaderRegistry.instance.clear);
+      final root = Uri.parse('https://dav.example.test/audio/');
+      final media = root.resolve('RJ123456/01.flac').toString();
+      RemoteSourceHeaderRegistry.instance.replaceAll([
+        for (final user in ['alice', 'bob'])
+          RemoteSourceHeaderRule.basicAuth(
+            id: user,
+            baseUri: root,
+            username: user,
+            password: '',
+          ),
+      ]);
+      MusicTrack trackFor(String sourceId, int resumeAt) => MusicTrack(
+        path: PlaybackMediaReference.bindRemoteSource(media, sourceId),
+        displayName: 'Track 1',
+        groupKey: 'remote-work:$sourceId::work',
+        groupTitle: 'Work',
+        groupSubtitle: 'RJ123456',
+        isSingle: false,
+        lastPlayedPosition: Duration(seconds: resumeAt),
+        remoteMetadataKind: MusicTrack.remoteMetadataKindRemoteSource,
+        remoteMetadata: {
+          'remoteSourceId': sourceId,
+          'trackRelativePath': '01.flac',
+        },
+      );
+      final alice = trackFor('alice', 10);
+      final bob = trackFor('bob', 20);
+      final recorded = <(String?, Duration)>[];
+      playback
+        ..configurePersistence(enabled: true)
+        ..attachPersistenceRuntime(
+          trackByPath: (_) => null,
+          recordPlaybackProgress: () => true,
+          restoreRuntime: (_, {String? focusedSessionId}) async {},
+          updatePlaybackHistory:
+              ({
+                required trackPath,
+                required position,
+                required now,
+                required updatePlayedAt,
+              }) => null,
+          onFocusChanged: (_) {},
+          saveRemoteTrackProgress:
+              (track, {required position, required playedAt}) async {
+                recorded.add((track.remoteSourceId, position));
+              },
+        );
+
+      expect(
+        await playback.playDirect([
+          bob,
+          alice,
+        ], loopMode: SessionLoopMode.crossSequential),
+        isTrue,
+      );
+      expect(native.startPositions.single, const Duration(seconds: 20));
+      expect(native.lastPreparedQueue!.map((entry) => entry['uri']), [
+        media,
+        media,
+      ]);
+      expect(native.lastPreparedQueue!.map((entry) => entry['path']), [
+        bob.path,
+        alice.path,
+      ]);
+      expect(native.lastPreparedQueue!.map((entry) => entry['httpHeaders']), [
+        {HttpHeaders.authorizationHeader: 'Basic Ym9iOg=='},
+        {HttpHeaders.authorizationHeader: 'Basic YWxpY2U6'},
+      ]);
+      final session = playback.sessions.values.single;
+      session.setOptimisticPosition(const Duration(seconds: 45));
+      await playback.flushSessionStatePersistence();
+      expect(recorded, contains(('bob', const Duration(seconds: 45))));
+      final writeCount = recorded.length;
+      await playback.flushSessionStatePersistence();
+      expect(recorded, hasLength(writeCount));
+    },
+  );
 }
 
-class _Persistence extends Fake implements PlaybackPersistenceRepository {}
+class _Persistence extends Fake implements PlaybackPersistenceRepository {
+  @override
+  Future<void> upsertSession(
+    PersistedPlaybackSession session, {
+    bool includeQueue = true,
+    bool includeEffects = true,
+    Map<String, int>? queueEntryPositions,
+  }) async {}
+
+  @override
+  Future<void> updateSessionOrder(List<String> sessionIds) async {}
+}
 
 class _Paths extends Fake implements ports.PlaybackTrackResolver {}
 

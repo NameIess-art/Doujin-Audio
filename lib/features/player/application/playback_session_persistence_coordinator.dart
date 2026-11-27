@@ -116,6 +116,7 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
     required bool Function() recordPlaybackProgress,
     required RestoredPlaybackRuntime restoreRuntime,
     required PlaybackHistoryUpdater updatePlaybackHistory,
+    RemotePlaybackProgressWriter? saveRemoteTrackProgress,
     required void Function(String? sessionId) onFocusChanged,
     Future<void> Function(PlaybackSession session)? synchronizePausedRecovery,
   }) {
@@ -124,6 +125,7 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
     _recordPlaybackProgress ??= recordPlaybackProgress;
     _restoreRuntime ??= restoreRuntime;
     _updatePlaybackHistory ??= updatePlaybackHistory;
+    _saveRemoteTrackProgress ??= saveRemoteTrackProgress;
     _onPersistenceFocusChanged ??= onFocusChanged;
     _synchronizePausedRecovery ??= synchronizePausedRecovery;
   }
@@ -525,6 +527,7 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
     required int sortOrder,
     required DateTime now,
     bool updateHistory = false,
+    PersistedPlaybackSession? previous,
   }) {
     final positionMs = max(
       0,
@@ -534,9 +537,29 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
       ),
     );
     final position = Duration(milliseconds: positionMs);
-    final track = _persistedTrackResolver?.call(session.currentTrackPath);
-    if (updateHistory &&
-        track != null &&
+    final remoteTrack =
+        updateHistory && PathMatcher.isRemoteUri(session.currentTrackPath)
+        ? session.trackForPath(session.currentTrackPath)
+        : null;
+    final track = remoteTrack?.isRemoteSource == true
+        ? remoteTrack
+        : updateHistory
+        ? _persistedTrackResolver?.call(session.currentTrackPath)
+        : null;
+    if (track != null && track.isRemoteSource) {
+      final previousPositionMs = previous?.trackPath == track.path
+          ? previous!.positionMs
+          : track.lastPlayedPosition.inMilliseconds;
+      if (_saveRemoteTrackProgress != null &&
+          (_recordPlaybackProgress?.call() ?? true) &&
+          session.loadedPath == session.currentTrackPath &&
+          positionMs != previousPositionMs) {
+        _pendingPlaybackHistoryTracks[track.path] = track.copyWith(
+          lastPlayedPosition: position,
+          lastPlayedAt: now,
+        );
+      }
+    } else if (track != null &&
         (track.lastPlayedPosition.inSeconds ~/ positionBucketSeconds !=
                 position.inSeconds ~/ positionBucketSeconds ||
             session.state.playing)) {
@@ -720,6 +743,7 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
           sortOrder: next.sortOrder,
           now: now,
           updateHistory: true,
+          previous: previous,
         );
       }
       await _saveBackgroundResumeBatch();
@@ -784,13 +808,14 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
         final session = _service.sessions[sessionId];
         if (session == null) continue;
         if (_pendingSessionDefinitionIds.contains(sessionId)) continue;
+        final previous = _persistedSessions[sessionId];
         final next = _persistedSessionSnapshot(
           session,
           sortOrder: sortOrders[sessionId] ?? orderedIds.length,
           now: now,
           updateHistory: true,
+          previous: previous,
         );
-        final previous = _persistedSessions[sessionId];
         if (previous == null ||
             _persistedQueueVersions[sessionId] != session.queueVersion ||
             previous.audioEffects != next.audioEffects ||
@@ -861,16 +886,29 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
     final resolver = _persistedTrackResolver;
     final tracks = <MusicTrack>[
       for (final entry in pending.entries)
-        if (resolver == null)
-          entry.value
-        else if (resolver(entry.key) case final track?)
-          track.copyWith(
-            lastPlayedPosition: entry.value.lastPlayedPosition,
-            lastPlayedAt: entry.value.lastPlayedAt,
-          ),
+        if (!entry.value.isRemoteSource)
+          if (resolver == null)
+            entry.value
+          else if (resolver(entry.key) case final track?)
+            track.copyWith(
+              lastPlayedPosition: entry.value.lastPlayedPosition,
+              lastPlayedAt: entry.value.lastPlayedAt,
+            ),
     ];
     if (tracks.isNotEmpty) {
       await databaseRepository.updateTrackPlaybackHistory(tracks);
+    }
+    final saveRemote = _saveRemoteTrackProgress;
+    if (saveRemote != null) {
+      for (final track in pending.values) {
+        if (track.lastPlayedAt case final playedAt? when track.isRemoteSource) {
+          await saveRemote(
+            track,
+            position: track.lastPlayedPosition,
+            playedAt: playedAt,
+          );
+        }
+      }
     }
     for (final entry in pending.entries) {
       if (identical(_pendingPlaybackHistoryTracks[entry.key], entry.value)) {

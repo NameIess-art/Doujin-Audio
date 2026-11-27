@@ -114,6 +114,7 @@ AppRuntimeGraph createAppRuntimeGraph({
   AsmrDownloadManager? asmrDownloads,
   AsmrPlaybackSource? asmrPlaybackSource,
   MusicTrack? Function(String)? remoteTrackResolver,
+  RemotePlaybackProgressWriter? saveRemoteTrackProgress,
   LibraryScanCoordinator? libraryScans,
   LibraryScanLabels Function()? libraryScanLabels,
   PlaybackTrackCache? asmrPlaybackCacheService,
@@ -238,6 +239,7 @@ AppRuntimeGraph createAppRuntimeGraph({
       playbackCommands: playbackCommands,
       keepAlive: keepAlive,
       syncPlaybackState: syncPlaybackState,
+      saveRemoteTrackProgress: saveRemoteTrackProgress,
     ),
     TimerRuntimeBinding.attach(
       timer: timer,
@@ -440,13 +442,7 @@ ProductionAppRuntime createProductionAppRuntime({
               AudioDetailTarget(targetType: type, targetPath: targetPath),
         ];
         if (targets.isNotEmpty) {
-          final loadedDetails = await libraryRepository.loadMany(targets);
-          for (final detail in loadedDetails) {
-            await libraryFacade.saveAudioDetail(
-              detail,
-              preserveExistingDuration: true,
-            );
-          }
+          await libraryFacade.refreshSyncedAudioDetails(targets);
         }
       }
       await listeningActivity.refresh();
@@ -465,6 +461,7 @@ ProductionAppRuntime createProductionAppRuntime({
   final remoteLibraryController = RemoteLibraryController(
     syncService: crossPlatformSyncService,
     playbackLauncher: PlaybackFacadeSessionLauncher(playbackFacade),
+    localLanServerId: () => lanMediaServerService.serverId,
   );
   listeningActivity = ListeningActivityService(
     repository: SqliteListeningActivityRepository(database: database),
@@ -542,6 +539,7 @@ ProductionAppRuntime createProductionAppRuntime({
     listeningActivity: listeningActivity,
     playback: playbackFacade,
     timer: timerFacade,
+    loadRecentlyPlayedWorkKeys: database.loadRecentlyPlayedWorkKeys,
     readPersistedState: () =>
         database.loadAppSetting(WorkSmartStatusCoordinator.persistedSettingKey),
     writePersistedState: (json) => database.saveAppSetting(
@@ -562,6 +560,7 @@ ProductionAppRuntime createProductionAppRuntime({
     workSmartStatusBinding: workSmartStatusCoordinator,
     asmrPlaybackSource: asmrLibraryController,
     remoteTrackResolver: remoteLibraryController.resolveTrackByPath,
+    saveRemoteTrackProgress: crossPlatformSyncService.saveRemoteTrackProgress,
     listeningActivity: listeningActivity,
     initializeSecondaryData: () async {
       await Future.wait<void>([

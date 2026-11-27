@@ -852,7 +852,10 @@ void main() {
       await service.refresh();
       expect((await repository.loadHistory()).single.workKey, 'other');
 
-      usage = _batch('after-delete', 2000, lastPlayedAtMs: 2000);
+      final replayAtMs = DateTime.now()
+          .add(const Duration(seconds: 1))
+          .millisecondsSinceEpoch;
+      usage = _batch('after-delete', 2000, lastPlayedAtMs: replayAtMs);
       await service.refresh();
       await service.restoreHistoryEntry(removed);
       final playedAgain = await service.states.first;
@@ -862,7 +865,7 @@ void main() {
       ]);
       expect(
         playedAgain.history.first.lastPlayedAt?.millisecondsSinceEpoch,
-        2000,
+        replayAtMs,
       );
       expect(playedAgain.days.single.duration, const Duration(seconds: 7));
     },

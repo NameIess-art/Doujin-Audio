@@ -725,11 +725,14 @@ class _ActiveSessionTitleSubtitleState
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isAndroid = defaultTargetPlatform == TargetPlatform.android;
     final cs = theme.colorScheme;
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final secondaryText = widget.playbackError == null
-        ? (widget.isLoading ? i18n.tr('playback_loading') : _subtitleText)
+        ? (widget.isLoading
+              ? i18n.tr('playback_loading')
+              : _subtitleText?.replaceAll('\n', ' '))
         : widget.useAsmrOneErrorText
         ? localizedPlaybackErrorText(
             i18n,
@@ -737,14 +740,11 @@ class _ActiveSessionTitleSubtitleState
             useAsmrOneText: true,
           )
         : localizedPlaybackErrorText(i18n, widget.playbackError);
-    final title = MarqueeText(
-      text: widget.displayName.replaceAll('\n', ' '),
-      style: theme.textTheme.titleSmall?.copyWith(
-        fontWeight: FontWeight.w800,
-        fontSize: 13.5,
-        height: 1.12,
-      ),
-      scrollSpeed: 26,
+    final title = widget.displayName.replaceAll('\n', ' ');
+    final titleStyle = theme.textTheme.titleSmall?.copyWith(
+      fontWeight: FontWeight.w800,
+      fontSize: 13.5,
+      height: 1.12,
     );
     final showSecondary = secondaryText != null && secondaryText.isNotEmpty;
     final secondaryStyle = theme.textTheme.bodySmall?.copyWith(
@@ -759,18 +759,27 @@ class _ActiveSessionTitleSubtitleState
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (theme.platform == TargetPlatform.android)
-          title
+        if (isAndroid)
+          Text(
+            title,
+            style: titleStyle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          )
         else
-          SizedBox(width: double.infinity, height: 16, child: title),
+          SizedBox(
+            width: double.infinity,
+            height: 16,
+            child: MarqueeText(text: title, style: titleStyle, scrollSpeed: 26),
+          ),
         const SizedBox(height: 1.5),
         ExcludeSemantics(
           excluding: !showSecondary,
           child: Opacity(
             opacity: showSecondary ? 1 : 0,
-            child: showCue
+            child: showCue && !isAndroid
                 ? MarqueeText(
-                    text: secondaryText.replaceAll('\n', ' '),
+                    text: secondaryText,
                     style: secondaryStyle,
                     pauseDuration: const Duration(milliseconds: 450),
                     scrollSpeed: 26,

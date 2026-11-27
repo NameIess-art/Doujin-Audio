@@ -15,8 +15,10 @@ class _UnusedPersistence implements AsmrPersistenceRepository {
 
 class _One extends AsmrApiService {
   int calls = 0;
+  int searchCalls = 0;
   int mediaProbeCalls = 0;
   Object? error;
+  List<AsmrWork> searchResults = const [];
   Object? mediaError;
   bool empty = false;
   List<AsmrTrackFile>? customTree;
@@ -25,6 +27,27 @@ class _One extends AsmrApiService {
     AsmrRequestCancellationToken? cancellationToken,
   )?
   onVerifyMediaStream;
+
+  @override
+  Future<AsmrWorkPage> searchWorks({
+    required String keyword,
+    required String order,
+    required String sort,
+    int page = 1,
+    int pageSize = 40,
+    String? token,
+    AsmrContentLanguage language = AsmrContentLanguage.zh,
+    AsmrRequestCancellationToken? cancellationToken,
+  }) async {
+    searchCalls++;
+    if (error case final failure?) throw failure;
+    return AsmrWorkPage(
+      works: searchResults,
+      currentPage: page,
+      pageSize: pageSize,
+      totalCount: searchResults.length,
+    );
+  }
 
   @override
   Future<List<AsmrTrackFile>> fetchTrackTree(
@@ -62,6 +85,25 @@ class _One extends AsmrApiService {
 class _Japanese extends JapaneseAsmrApiService {
   Object? error;
   int calls = 0;
+  int searchCalls = 0;
+  List<AsmrWork> searchResults = const [];
+
+  @override
+  Future<AsmrWorkPage> searchWorks({
+    required String keyword,
+    int page = 1,
+    int pageSize = 40,
+    AsmrRequestCancellationToken? cancellationToken,
+  }) async {
+    searchCalls++;
+    if (error case final failure?) throw failure;
+    return AsmrWorkPage(
+      works: searchResults,
+      currentPage: page,
+      pageSize: pageSize,
+      totalCount: searchResults.length,
+    );
+  }
 
   @override
   Future<List<AsmrTrackFile>> fetchTrackTree(
@@ -101,6 +143,29 @@ void main() {
   tearDown(() {
     one.close();
     japanese.close();
+  });
+
+  test('RJ lookup retries ONE if Japanese fails during ONE cooldown', () async {
+    Future<AsmrWork?> lookup() => catalog.findWorkByRjCode(
+      work.rjCode,
+      language: AsmrContentLanguage.zh,
+      token: null,
+    );
+    final japaneseWork = AsmrWork.fromJson(const {
+      'id': 1,
+      'sourceId': 'RJ000001',
+      'title': 'Japanese work',
+    });
+    japanese.searchResults = [japaneseWork];
+    one.error = const SocketException('ONE temporarily unavailable');
+    expect(await lookup(), same(japaneseWork));
+
+    one.error = null;
+    one.searchResults = [work];
+    japanese.error = const SocketException('Japanese unavailable');
+    expect(await lookup(), same(work));
+    expect(one.searchCalls, 2);
+    expect(japanese.searchCalls, 2);
   });
 
   test('ONE always supplies an available directory first', () async {

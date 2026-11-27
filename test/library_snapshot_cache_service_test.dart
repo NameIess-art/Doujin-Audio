@@ -1597,6 +1597,9 @@ MusicTrack _track({required String path, required String groupKey}) {
 
 class _FakeAudioDetailRepository implements AudioDetailRepository {
   @override
+  Future<void> exportSyncedDetail(AudioDetail detail) async {}
+
+  @override
   bool get supportsFastQueries => false;
 
   @override

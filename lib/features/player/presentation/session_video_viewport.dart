@@ -8,6 +8,25 @@ import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/app_buttons.dart';
 
 typedef SessionVideoSurfaceBuilder = Widget Function(BuildContext context);
+typedef SessionVideoFullscreenCallback =
+    Future<void> Function(SessionVideoFullscreenHandoff handoff);
+
+class SessionVideoFullscreenHandoff {
+  SessionVideoFullscreenHandoff._(this._state);
+
+  final _SessionVideoViewportState _state;
+
+  GlobalKey get surfaceKey => _state._surfaceKey;
+
+  double get inlineBorderRadius => _state.widget.inlineBorderRadius;
+
+  Rect? resolveInlineRect({RenderObject? ancestor}) =>
+      _state._resolveViewportRect(ancestor: ancestor);
+
+  bool borrowSurface() => _state._borrowSurface();
+
+  void restoreSurface() => _state._restoreSurface();
+}
 
 enum SessionVideoGestureZone { left, center, right }
 
@@ -213,16 +232,18 @@ class SessionVideoViewport extends StatefulWidget {
     required this.fullscreenTooltip,
     required this.controlsLabel,
     this.isFullscreen = false,
+    this.inlineBorderRadius = 0,
     this.controlsTimeout = const Duration(seconds: 3),
   });
 
   final Widget poster;
   final bool videoReady;
   final SessionVideoSurfaceBuilder surfaceBuilder;
-  final Future<void> Function() onFullscreen;
+  final SessionVideoFullscreenCallback onFullscreen;
   final String fullscreenTooltip;
   final String controlsLabel;
   final bool isFullscreen;
+  final double inlineBorderRadius;
   final Duration controlsTimeout;
 
   @override
@@ -230,12 +251,14 @@ class SessionVideoViewport extends StatefulWidget {
 }
 
 class _SessionVideoViewportState extends State<SessionVideoViewport> {
+  final GlobalKey _surfaceKey = GlobalKey(debugLabel: 'session_video_surface');
   Timer? _controlsTimer;
   bool _controlsVisible = false;
   bool _cursorInside = false;
   bool _suppressedWhileHovered = false;
   Offset? _lastHoverPosition;
   bool _fullscreenActionRunning = false;
+  bool _surfaceBorrowed = false;
   bool _controlsHaveFocus = false;
 
   bool get _effectiveControlsVisible =>
@@ -257,6 +280,46 @@ class _SessionVideoViewportState extends State<SessionVideoViewport> {
   void dispose() {
     _controlsTimer?.cancel();
     super.dispose();
+  }
+
+  bool _borrowSurface() {
+    if (!mounted || !widget.videoReady) return false;
+    if (!_surfaceBorrowed) {
+      setState(() => _surfaceBorrowed = true);
+    }
+    return true;
+  }
+
+  void _restoreSurface() {
+    if (!_surfaceBorrowed) return;
+    if (mounted) {
+      setState(() => _surfaceBorrowed = false);
+    } else {
+      _surfaceBorrowed = false;
+    }
+  }
+
+  Rect? _resolveViewportRect({RenderObject? ancestor}) {
+    if (!mounted) return null;
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox ||
+        !renderObject.attached ||
+        !renderObject.hasSize ||
+        renderObject.debugNeedsLayout ||
+        renderObject.size.isEmpty) {
+      return null;
+    }
+    if (ancestor != null &&
+        (!ancestor.attached ||
+            (ancestor is RenderBox &&
+                (!ancestor.hasSize || ancestor.debugNeedsLayout)))) {
+      return null;
+    }
+    final rect = MatrixUtils.transformRect(
+      renderObject.getTransformTo(ancestor),
+      Offset.zero & renderObject.size,
+    );
+    return rect.isFinite && !rect.isEmpty ? rect : null;
   }
 
   void _toggleControls() {
@@ -296,19 +359,22 @@ class _SessionVideoViewportState extends State<SessionVideoViewport> {
       _fullscreenActionRunning = true;
     });
     try {
-      await WidgetsBinding.instance.endOfFrame;
-      if (!mounted || !widget.videoReady) return;
-      await widget.onFullscreen();
+      await widget.onFullscreen(SessionVideoFullscreenHandoff._(this));
     } finally {
       if (mounted) {
-        setState(() => _fullscreenActionRunning = false);
+        setState(() {
+          _fullscreenActionRunning = false;
+          _surfaceBorrowed = false;
+        });
+      } else {
+        _surfaceBorrowed = false;
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final showSurface = widget.videoReady && !_fullscreenActionRunning;
+    final showSurface = widget.videoReady && !_surfaceBorrowed;
     final controlsVisible = _effectiveControlsVisible;
     final viewport = MouseRegion(
       onEnter: widget.videoReady
@@ -354,16 +420,9 @@ class _SessionVideoViewportState extends State<SessionVideoViewport> {
           if (showSurface)
             KeyedSubtree(
               key: const ValueKey<String>('session_video_surface'),
-              child: TweenAnimationBuilder<double>(
-                tween: Tween<double>(begin: 0.0, end: 1.0),
-                duration: MediaQuery.disableAnimationsOf(context)
-                    ? Duration.zero
-                    : const Duration(milliseconds: 220),
-                curve: Curves.easeOutCubic,
+              child: KeyedSubtree(
+                key: _surfaceKey,
                 child: widget.surfaceBuilder(context),
-                builder: (context, opacity, child) => opacity >= 0.999
-                    ? child!
-                    : Opacity(opacity: opacity, child: child),
               ),
             ),
           if (widget.videoReady)

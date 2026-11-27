@@ -2,10 +2,14 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:doujin_audio/core/network/network_route_settings.dart';
+import 'package:doujin_audio/features/library/application/lan_media_server_service.dart';
+import 'package:doujin_audio/features/library/domain/remote_media_source.dart';
+import 'package:doujin_audio/features/library/presentation/library_providers.dart';
 import 'package:doujin_audio/features/settings/presentation/settings_tab.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -25,6 +29,70 @@ void main() {
     FlutterSecureStorage.setMockInitialValues({});
   });
   tearDown(() => debugDefaultTargetPlatformOverride = null);
+
+  testWidgets('LAN copy feedback includes the URL and keeps the PIN hidden', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1024, 800);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final clipboard = <String>[];
+    final messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') {
+        clipboard.add((call.arguments as Map)['text'] as String);
+      }
+      return null;
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+    await tester.pumpWidget(
+      fixture.build(
+        const SettingsTab(),
+        overrides: [
+          lanMediaServerServiceProvider.overrideWith(
+            (ref) => _RunningLanServer(
+              library: fixture.library,
+              syncService: ref.watch(crossPlatformSyncServiceProvider),
+            ),
+          ),
+        ],
+      ),
+    );
+    await pumpAndSettleWithAsync(tester);
+    final i18n = fixture.languageProvider;
+    final networkSection = find.text(i18n.tr('section_network'));
+    await tester.ensureVisible(networkSection);
+    await tester.tap(networkSection);
+    await pumpAndSettleWithAsync(tester);
+
+    Future<void> tapCopy(Finder button) async {
+      await Scrollable.ensureVisible(tester.element(button), alignment: 0.5);
+      await tester.pumpAndSettle();
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+    }
+
+    const url = 'http://192.0.2.10:42871';
+    await tapCopy(find.widgetWithText(ActionChip, url));
+    expect(clipboard, [url]);
+    expect(
+      find.text(i18n.tr('copied_to_clipboard', {'value': url})),
+      findsOneWidget,
+    );
+
+    await tapCopy(find.byTooltip(i18n.tr('element_copy')));
+    expect(clipboard, [url, '123456']);
+    expect(find.text(i18n.tr('copied')), findsOneWidget);
+    expect(find.textContaining('123456'), findsNothing);
+    expect(find.textContaining('{value}'), findsNothing);
+    debugDefaultTargetPlatformOverride = null;
+  });
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
@@ -199,6 +267,25 @@ void main() {
       },
     );
   }
+}
+
+class _RunningLanServer extends LanMediaServerService {
+  _RunningLanServer({required super.library, required super.syncService});
+
+  @override
+  Future<void> initialize() async {}
+
+  @override
+  LanServerSettings get settings => const LanServerSettings(enabled: true);
+
+  @override
+  bool get isRunning => true;
+
+  @override
+  List<String> get localAddresses => const ['192.0.2.10'];
+
+  @override
+  String get accessCode => '123456';
 }
 
 class _ProbeClient extends Fake implements HttpClient {

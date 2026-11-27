@@ -184,17 +184,19 @@ class SessionHeroArtwork extends ConsumerWidget {
                   enabled: !videoReady,
                   child: SessionVideoViewport(
                     videoReady: showVideoSurface,
+                    inlineBorderRadius: 16,
                     surfaceBuilder: (_) => NativeSessionVideoSurface(
                       sessionId: sessionId,
                       nativeRepository: ref
                           .read(playbackFacadeProvider)
                           .nativeRepository,
                     ),
-                    onFullscreen: () => showSessionVideoFullscreen(
+                    onFullscreen: (handoff) => showSessionVideoFullscreen(
                       context,
                       ref,
                       sessionId: sessionId,
                       trackPath: track!.path,
+                      handoff: handoff,
                     ),
                     fullscreenTooltip: i18n.tr('fullscreen'),
                     controlsLabel: i18n.tr('video_controls'),

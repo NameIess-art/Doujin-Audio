@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
@@ -16,6 +17,8 @@ import '../media/subtitle_parser.dart';
 import 'platform_channels.dart';
 import 'platform_method_client.dart';
 import 'windows_media_tools.dart';
+
+typedef PrimarySubtitleRevision = ({String? sourcePath, String? revision});
 
 class CoverImageReference {
   const CoverImageReference({
@@ -974,6 +977,127 @@ class FileCachePlatformGateway {
         await destination.delete();
         rethrow;
       }
+    }
+  }
+
+  Future<PrimarySubtitleRevision> primarySubtitleRevision({
+    required String trackPath,
+    String? groupKey,
+  }) async {
+    final options = await listTrackSubtitles(
+      trackPath: trackPath,
+      groupKey: groupKey,
+    );
+    final primary = options
+        .where((entry) => !isTranslatedSubtitleFile(entry.name))
+        .firstOrNull;
+    if (primary == null) return (sourcePath: null, revision: null);
+    final bytes = await readDocumentBytes(primary.sourcePath);
+    if (bytes == null) {
+      throw FileSystemException(
+        'Cannot read primary subtitle',
+        primary.sourcePath,
+      );
+    }
+    return (
+      sourcePath: primary.sourcePath,
+      revision: sha256.convert(bytes).toString(),
+    );
+  }
+
+  Future<String> saveTranscribedSubtitle({
+    required String trackPath,
+    String? groupKey,
+    required Uint8List bytes,
+    required PrimarySubtitleRevision expected,
+  }) async {
+    if (trackPath.startsWith('content://')) {
+      if (!_isAndroid()) throw UnsupportedError('SAF requires Android');
+      final result = await _client.invoke<String>(
+        FileCacheMethod.writeTrackSubtitle,
+        arguments: {
+          'trackPath': trackPath,
+          'groupKey': ?groupKey,
+          'extension': '.srt',
+          'bytes': bytes,
+          'replacePrimary': true,
+          'primaryPath': ?expected.sourcePath,
+          'primaryRevision': ?expected.revision,
+        },
+        decode: (value) => value as String,
+      );
+      if (result is NativeFailure<String>) {
+        throw PlatformException(code: result.code, message: result.message);
+      }
+      return result.valueOrNull!;
+    }
+    if (!await File(trackPath).exists()) {
+      throw FileSystemException('Audio file is unavailable', trackPath);
+    }
+    final directory = File(trackPath).parent;
+    final staging = await directory.createTemp('.doujin-subtitle-');
+    final temporary = File(path.join(staging.path, 'subtitle.srt'));
+    final backup = File(path.join(staging.path, 'original'));
+    File? primary;
+    File? reserved;
+    var committed = false;
+    try {
+      await temporary.writeAsBytes(bytes, flush: true);
+      final current = await primarySubtitleRevision(
+        trackPath: trackPath,
+        groupKey: groupKey,
+      );
+      if (current != expected) throw PlatformException(code: 'subtitle_exists');
+      final stem = path.basenameWithoutExtension(trackPath);
+      final siblingNames = await directory
+          .list(followLinks: false)
+          .map((entry) => path.basename(entry.path).toLowerCase())
+          .toSet();
+      if (current.sourcePath case final primaryPath?) {
+        primary = File(primaryPath);
+        await primary.rename(backup.path);
+        final stagedRevision = await sha256.bind(backup.openRead()).first;
+        if (stagedRevision.toString() != expected.revision) {
+          throw PlatformException(code: 'subtitle_exists');
+        }
+        siblingNames.remove(path.basename(primaryPath).toLowerCase());
+      }
+      var version = 0;
+      while (true) {
+        final name = switch (version++) {
+          0 => '$stem.srt',
+          1 => '$stem.asr.srt',
+          final index => '$stem.asr.$index.srt',
+        };
+        if (siblingNames.contains(name.toLowerCase())) continue;
+        final target = File(path.join(directory.path, name));
+        try {
+          await target.create(exclusive: true);
+        } on FileSystemException {
+          if (!await target.exists()) rethrow;
+          if (version == 1) {
+            throw PlatformException(code: 'subtitle_exists');
+          }
+          continue;
+        }
+        reserved = target;
+        await temporary.rename(target.path);
+        committed = true;
+        return target.path;
+      }
+    } finally {
+      if (!committed && reserved != null) await reserved.delete();
+      if (await backup.exists()) {
+        if (committed) {
+          await backup.delete();
+        } else if (primary != null) {
+          // Leave the backup available if another writer now owns the name.
+          await primary.create(exclusive: true);
+          await backup.rename(primary.path);
+        }
+      }
+      if (await temporary.exists()) await temporary.delete();
+      await staging.delete();
     }
   }
 

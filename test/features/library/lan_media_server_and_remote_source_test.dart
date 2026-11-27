@@ -8,6 +8,7 @@ import 'package:doujin_audio/core/media/dlsite_metadata.dart';
 import 'package:doujin_audio/core/media/media_file_support.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/network/remote_source_headers.dart';
+import 'package:doujin_audio/core/network/webdav_client.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:doujin_audio/core/persistence/json_document_store.dart';
@@ -17,6 +18,7 @@ import 'package:doujin_audio/features/library/application/lan_media_server_servi
 import 'package:doujin_audio/features/library/application/library_facade.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/features/library/application/remote_library_controller.dart';
+import 'package:doujin_audio/features/library/application/webdav_media_source_adapter.dart';
 import 'package:doujin_audio/features/library/domain/remote_media_source.dart';
 import 'package:doujin_audio/features/player/application/playback_session_launcher.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
@@ -66,6 +68,59 @@ Map<String, int> _daysMap(List<Map<String, Object?>> rows) => <String, int>{
     row['date']! as String: (row['milliseconds']! as num).toInt(),
 };
 
+class _CatalogWebDav extends WebDavClient {
+  _CatalogWebDav()
+    : super(baseUri: Uri.parse('https://dav.example.test/audio/'));
+
+  int count = 120;
+  int writes = 0;
+  int moves = 0;
+  bool failSidecarRead = false;
+  String sidecar =
+      '{"schemaVersion":1,"type":"audio-detail",'
+      '"workTitle":"Saved title","tags":["Saved tag"]}';
+
+  @override
+  Future<List<WebDavEntry>> listDirectory(
+    Uri directoryUri, {
+    int depth = 1,
+    bool includeSelf = false,
+    int maxResponseBytes = 16 * 1024 * 1024,
+  }) async => [
+    for (var i = 100000; i < 100000 + count; i++)
+      WebDavEntry(
+        uri: directoryUri.resolve('RJ$i/'),
+        name: 'RJ$i',
+        isDirectory: true,
+      ),
+  ];
+
+  @override
+  Future<Uint8List?> getBytesOrNull(
+    Uri fileUri, {
+    int maxBytes = 4 * 1024 * 1024,
+  }) async {
+    if (failSidecarRead) {
+      throw WebDavException('Temporary failure', statusCode: 503, uri: fileUri);
+    }
+    return Uint8List.fromList(utf8.encode(sidecar));
+  }
+
+  @override
+  Future<void> putBytesAtomic(Uri fileUri, Uint8List bytes) async {
+    writes++;
+  }
+
+  @override
+  Future<void> moveUri({
+    required Uri sourceUri,
+    required Uri destinationUri,
+    bool overwrite = false,
+  }) async {
+    moves++;
+  }
+}
+
 void main() {
   late Directory tempDir;
 
@@ -86,6 +141,193 @@ void main() {
       await tempDir.delete(recursive: true);
     }
   });
+
+  test('one WebDAV account cannot be added twice or edited onto another source', () async {
+    final sync = CrossPlatformSyncService();
+    addTearDown(sync.dispose);
+    final secrets = <String, String>{};
+    final controller = RemoteLibraryController(
+      syncService: sync,
+      supportDirectoryProvider: () async => tempDir,
+      readSecret: (key) async => secrets[key],
+      writeSecret: (key, value) async {
+        if (value == null) {
+          secrets.remove(key);
+        } else {
+          secrets[key] = value;
+        }
+      },
+      webDavClientFactory: ({required baseUri, username, password}) =>
+          _CatalogWebDav()..count = 0,
+    );
+    addTearDown(controller.dispose);
+    Future<RemoteMediaSource> save(String url, String username, {String? id}) =>
+        controller.addOrUpdateSource(
+          id: id,
+          type: RemoteMediaSourceType.webDav,
+          name: 'NAS',
+          baseUrl: url,
+          username: username,
+          secret: url.contains('DAV.EXAMPLE') ? 'original' : 'new',
+        );
+
+    final results = await Future.wait([
+      save('HTTPS://DAV.EXAMPLE:443/Audio', 'alice'),
+      save('https://dav.example/Audio/', ' alice ').then<Object>(
+        (source) => source,
+        onError: (Object error) => error,
+      ),
+    ]);
+    final alice = results.first as RemoteMediaSource;
+    expect(results.last, RemoteMediaSourceConflict.duplicate);
+    expect(secrets.values, ['original']);
+
+    final bob = await save('https://dav.example/Audio/', 'bob');
+    await expectLater(
+      save('https://dav.example/Audio/', 'alice', id: bob.id),
+      throwsA(RemoteMediaSourceConflict.duplicate),
+    );
+    final edited = await save('https://dav.example/Audio/', 'alice', id: alice.id);
+    expect(edited.id, alice.id);
+    expect(controller.sources.map((source) => source.username), ['alice', 'bob']);
+    await Future.wait([controller.refreshSource(alice.id), controller.refreshSource(bob.id)]);
+  });
+
+  test('LAN sources reject the same server through another address and reject this PC', () async {
+    Future<HttpServer> serve(String id) async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      server.listen((request) async {
+        final response = request.response;
+        if (request.uri.path.endsWith('/info')) {
+          response.write(jsonEncode({'serverId': id, 'allowSync': true}));
+        } else if (request.method == 'HEAD') {
+          response.statusCode = HttpStatus.noContent;
+        } else {
+          response.write('{"works":[]}');
+        }
+        await response.close();
+      });
+      return server;
+    }
+
+    final remote = await serve('other-pc');
+    final alias = await serve('other-pc');
+    final local = await serve('this-pc');
+    String url(HttpServer server) => 'http://127.0.0.1:${server.port}';
+    final sync = CrossPlatformSyncService();
+    addTearDown(sync.dispose);
+    final controller = RemoteLibraryController(
+      syncService: sync,
+      supportDirectoryProvider: () async => tempDir,
+      localLanServerId: () => 'this-pc',
+    );
+    addTearDown(controller.dispose);
+
+    Future<RemoteMediaSource> add(HttpServer server, {String? id}) =>
+        controller.addOrUpdateSource(
+          id: id,
+          type: RemoteMediaSourceType.windowsLan,
+          name: 'Media PC',
+          baseUrl: url(server),
+        );
+
+    final saved = await add(remote);
+    expect(saved.lanServerId, 'other-pc');
+    await expectLater(add(alias), throwsA(RemoteMediaSourceConflict.duplicate));
+    await expectLater(add(local), throwsA(RemoteMediaSourceConflict.localServer));
+    final edited = await add(alias, id: saved.id);
+    expect(edited.baseUrl, url(alias));
+    expect(controller.sources.single.id, saved.id);
+    expect(RemoteMediaSource.fromJson(edited.toJson()).lanServerId, 'other-pc');
+    await controller.refreshSource(saved.id);
+  });
+
+  test(
+    'WebDAV keeps metadata beyond 120 entries and across temporary errors',
+    () async {
+      final client = _CatalogWebDav();
+      addTearDown(client.close);
+      final source = RemoteMediaSource(
+        id: 'dav',
+        type: RemoteMediaSourceType.webDav,
+        name: 'NAS',
+        baseUrl: client.baseUri.toString(),
+        createdAtMs: 0,
+      );
+      const adapter = WebDavMediaSourceAdapter();
+      final before = await adapter.fetchWorks(source: source, client: client);
+      expect(before, hasLength(120));
+      client.count++;
+      final after = await adapter.fetchWorks(
+        source: source,
+        client: client,
+        cachedWorks: before,
+      );
+      expect(after, hasLength(121));
+      expect(
+        after.every(
+          (work) =>
+              work.title == 'Saved title' && work.tags.contains('Saved tag'),
+        ),
+        isTrue,
+      );
+      client.failSidecarRead = true;
+      final stale = await adapter.fetchWorks(
+        source: source,
+        client: client,
+        cachedWorks: after,
+      );
+      expect(stale.map((work) => work.title), everyElement('Saved title'));
+    },
+  );
+
+  test(
+    'WebDAV rejects incompatible sidecar before modifying metadata or moving a folder',
+    () async {
+      final client = _CatalogWebDav()
+        ..sidecar =
+            '[{"targetPath":"01.flac","timeSegmentLabels":[{"label":"keep"}]}]';
+      addTearDown(client.close);
+      final work = RemoteLibraryWork(
+        sourceId: 'dav',
+        workId: 'one',
+        rjCode: 'RJ100000',
+        title: 'Work',
+        folderName: 'RJ100000',
+        circleName: '',
+        directoryUri: client.baseUri.resolve('RJ100000/').toString(),
+      );
+      const adapter = WebDavMediaSourceAdapter();
+      await expectLater(
+        adapter.saveWorkReview(
+          work: work,
+          client: client,
+          listenStatus: null,
+          userRating: 4,
+          reviewText: 'review',
+        ),
+        throwsFormatException,
+      );
+      await expectLater(
+        adapter.saveWorkDetail(
+          work: work,
+          client: client,
+          metadata: DlsiteMetadata(
+            rjCode: work.rjCode,
+            workTitle: work.title,
+            circleName: '',
+            voiceActors: [],
+            tags: [],
+          ),
+          newFolderName: 'Renamed',
+        ),
+        throwsFormatException,
+      );
+      expect(client.writes, 0);
+      expect(client.moves, 0);
+    },
+  );
 
   test('LanMediaServerService enforces PIN auth, Range slicing, path sandbox, and 1-click LAN sync', () async {
     // 1. Prepare Windows server library root, work folder, excluded folder, and outside file.
@@ -267,6 +509,16 @@ void main() {
     await unauthResp.drain<void>();
     expect(unauthResp.statusCode, HttpStatus.unauthorized);
 
+    final worksUri = Uri.parse('http://127.0.0.1:$port/api/v1/works');
+    final rejectedProbe = await (await rawClient.headUrl(worksUri)).close();
+    await rejectedProbe.drain<void>();
+    expect(rejectedProbe.statusCode, HttpStatus.unauthorized);
+    final probe = await rawClient.headUrl(worksUri);
+    probe.headers.set(HttpHeaders.authorizationHeader, 'Bearer $pin');
+    final acceptedProbe = await probe.close();
+    expect(acceptedProbe.statusCode, HttpStatus.noContent);
+    expect(await acceptedProbe.transform(utf8.decoder).join(), isEmpty);
+
     // Verify sandbox blocks paths outside watched library roots and excluded folders.
     expect(libraryFacade.isActiveAllowedFileSystemPath(trackFile.path), isTrue);
     expect(libraryFacade.isActiveAllowedFileSystemPath(excludedFile.path), isFalse);
@@ -414,6 +666,13 @@ void main() {
     expect(launcher.lastTracks.first.remoteMetadata?['subtitleUrl'], isNotNull);
     expect(launcher.lastTracks.first.isRemoteSource, isTrue);
 
+    const phonePosition = Duration(minutes: 10, seconds: 30);
+    await clientSync.saveRemoteTrackProgress(
+      launcher.lastTracks.first,
+      position: phonePosition,
+      playedAt: DateTime.now(),
+    );
+
     final launchedVideo = await remoteController.playTrack(remoteWork, videoNode);
     expect(launchedVideo, isTrue);
     expect(launcher.lastTracks.first.isVideo, isTrue);
@@ -423,6 +682,11 @@ void main() {
     expect(syncSummary.listeningDaysUpdated, greaterThanOrEqualTo(0));
     expect(_daysMap(await serverDb.loadListeningDays())['2026-11-24'], 2100000);
     expect(_daysMap(await clientDb.loadListeningDays())['2026-11-24'], 2100000);
+
+    final syncedTrack = (await serverDb.loadAllTracks()).firstWhere(
+      (track) => track.path == trackFile.path,
+    );
+    expect(syncedTrack.lastPlayedPosition, phonePosition);
 
     // 5. Verify remote metadata edit + work folder rename updates disk, JSON, and workId!
     final renamedWork = await remoteController.saveWorkDetail(

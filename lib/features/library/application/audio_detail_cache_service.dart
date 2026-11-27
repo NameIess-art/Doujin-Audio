@@ -527,6 +527,34 @@ class AudioDetailCacheService {
     );
   }
 
+  Future<List<AudioDetail>> refreshSyncedDetails(
+    Iterable<AudioDetailTarget> targets,
+  ) {
+    final values = targets.toList(growable: false);
+    final epoch = _cacheEpoch;
+    return _runSerialized(values, () async {
+      final details = await _repository.loadMany(values);
+      final refreshed = <AudioDetail>[];
+      for (final result in details) {
+        if (epoch != _cacheEpoch) throw const AudioDetailOperationCancelled();
+        final detail = result.detail;
+        if (detail.isEmpty &&
+            detail.createdAt == null &&
+            detail.reviewUpdatedAt == null) {
+          continue;
+        }
+        await _repository.exportSyncedDetail(detail);
+        if (epoch != _cacheEpoch) throw const AudioDetailOperationCancelled();
+        _store(detail);
+        refreshed.add(detail);
+      }
+      if (refreshed.isNotEmpty) {
+        _bumpRevision(refreshed.map((detail) => detail.target));
+      }
+      return refreshed;
+    });
+  }
+
   Future<AudioDetailSaveResult> saveUserReview(
     AudioDetailTarget target, {
     required WorkListenStatus? listenStatus,

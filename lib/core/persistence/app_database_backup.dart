@@ -232,6 +232,21 @@ extension AppDatabaseBackup on AppDatabase {
             );
           }
         }
+        if (keepLocalHistory) {
+          await txn.rawDelete('DELETE FROM main.sync_listening_history_edits');
+          final editsTable = await txn.rawQuery(
+            "SELECT 1 FROM local_restore.sqlite_master WHERE type = 'table' "
+            "AND name = 'sync_listening_history_edits'",
+          );
+          if (editsTable.isNotEmpty) {
+            await txn.execute('''
+              INSERT INTO main.sync_listening_history_edits
+                (work_key, updated_at_ms, deleted)
+              SELECT work_key, updated_at_ms, deleted
+              FROM local_restore.sync_listening_history_edits
+            ''');
+          }
+        }
         final localSettings = [
           if (keepLocalActivity) _listeningActivityPlaybackAtKey,
           if (keepLocalHistory) _listeningHistoryEditedAtKey,
@@ -333,9 +348,21 @@ extension AppDatabaseBackup on AppDatabase {
     final candidate = await openDatabase(candidatePath, singleInstance: false);
     try {
       return await candidate.transaction((txn) async {
+        // Native batch identifiers survive in snapshots and remain stable as
+        // the same installation appends new usage. The seed row is shared.
+        final firstBatch = await txn.query(
+          'listening_imports',
+          columns: const ['batch_id'],
+          where: 'batch_id != ?',
+          whereArgs: const ['legacy-history'],
+          orderBy: 'rowid',
+          limit: 1,
+        );
+        final batchId = firstBatch.firstOrNull?['batch_id'] as String?;
         final syncSnapshot = await _exportSyncSnapshotInTxn(
           txn,
-          generateDeviceId: () => fallbackDeviceId,
+          generateDeviceId: () =>
+              batchId == null ? fallbackDeviceId : '$fallbackDeviceId:$batchId',
           interestSettingKeys: interestSettingKeys,
         );
         final langRows = await txn.query(
@@ -677,6 +704,7 @@ Future<void> _validateRestoreSchema(
     )).map((row) => row['name']).toSet();
     for (final table in requiredTables) {
       final name = table['name']! as String;
+      if (version < 24 && name == 'sync_listening_history_edits') continue;
       if (version < 22 && name.startsWith('sync_')) continue;
       if (version < 14 && name.startsWith('listening_')) continue;
       if (version < 6 && name.startsWith('audio_detail_')) continue;
@@ -689,6 +717,8 @@ Future<void> _validateRestoreSchema(
       requiredColumns = requiredColumns.where((column) {
         final columnName = column['name'];
         return switch (name) {
+          'track_playback_state' =>
+            version >= 24 || columnName != 'favorite_updated_at_ms',
           'audio_details' =>
             (version >= 2 || columnName != 'card_cover_path') &&
                 (version >= 3 || columnName != 'duration_ms') &&
@@ -725,7 +755,10 @@ Future<void> _validateRestoreSchema(
           'playback_queue_entries' || 'playback_queue_entry_tracks' =>
             version >= 19 || columnName != 'path_match_key',
           'time_segment_labels' =>
-            version >= 12 || columnName != 'track_match_key',
+            (version >= 12 || columnName != 'track_match_key') &&
+                (version >= 24 ||
+                    (columnName != 'portable_track_key' &&
+                        columnName != 'portable_stem_key')),
           _ => true,
         };
       }).toList();

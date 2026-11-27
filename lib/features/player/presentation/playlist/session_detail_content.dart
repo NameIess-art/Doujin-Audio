@@ -759,9 +759,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
     final paths = _paths;
 
     final track = paths.trackByPath(session.currentTrackPath);
-    final displayName =
-        track?.displayName ??
-        path.basenameWithoutExtension(session.currentTrackPath);
+    String? detailTitle;
     var circleName = '';
     var voiceActors = const <String>[];
     if (track?.isRemoteMedia == true) {
@@ -782,9 +780,15 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
               : null) ??
           paths.library.resolvedAudioDetail(target) ??
           paths.library.categorySnapshot?.detailFor(target);
+      detailTitle = detail?.workTitle.trim();
       circleName = detail?.circleName ?? '';
       voiceActors = detail?.voiceActors ?? const <String>[];
     }
+    final workTitle = detailTitle != null && detailTitle.isNotEmpty
+        ? detailTitle
+        : track == null
+        ? path.basenameWithoutExtension(session.currentTrackPath)
+        : paths.workTitleForTrack(track);
 
     final hasSiblings = session.isPlaybackQueue
         ? session.playbackQueue!.trackCount > 0
@@ -857,7 +861,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
       segmentPanelExpanded: _segmentPanelExpanded,
       artwork: KeyedSubtree(key: _artworkKey, child: widget.artworkWidget),
       isVideo: track?.isVideo == true,
-      title: displayName,
+      title: workTitle.replaceAll('\n', ' '),
       circleName: circleName,
       voiceActors: voiceActors,
       onCopyCredit: (value) {

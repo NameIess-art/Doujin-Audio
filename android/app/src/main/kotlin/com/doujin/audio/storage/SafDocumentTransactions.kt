@@ -99,6 +99,7 @@ internal fun <T> commitSafDocumentReplacement(
     current: T?,
     temporary: T,
     isValidCommitted: (T) -> Boolean = { true },
+    isValidBackup: (T) -> Boolean = { true },
     rename: (T, String) -> T?,
     delete: (T) -> Boolean
 ): T? {
@@ -109,6 +110,11 @@ internal fun <T> commitSafDocumentReplacement(
         } ?: return null
     } else {
         null
+    }
+    if (backup != null && !runCatching { isValidBackup(backup) }.getOrDefault(false)) {
+        runCatching { rename(backup, targetName) }
+        runCatching { delete(temporary) }
+        return null
     }
 
     val committed = runCatching { rename(temporary, targetName) }.getOrNull()
@@ -131,6 +137,8 @@ internal fun <T> replaceSafDocument(
     createTemp: () -> T?,
     writeTemp: (T) -> Boolean,
     isValidCommitted: (T) -> Boolean = { true },
+    authorizeCommit: (() -> Boolean)? = null,
+    isValidBackup: (T) -> Boolean = { true },
     rename: (T, String) -> T?,
     delete: (T) -> Boolean
 ): T? {
@@ -156,12 +164,17 @@ internal fun <T> replaceSafDocument(
         cleanupTemp()
         return null
     }
+    if (authorizeCommit != null && !runCatching(authorizeCommit).getOrDefault(false)) {
+        cleanupTemp()
+        return null
+    }
 
     return commitSafDocumentReplacement(
         targetName = targetName,
         current = current,
         temporary = temp,
         isValidCommitted = isValidCommitted,
+        isValidBackup = isValidBackup,
         rename = rename,
         delete = delete
     )

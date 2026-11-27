@@ -1032,7 +1032,7 @@ void registerAsmrAccountSyncTests({
     await controller.loginAsmrAccount('alice', 'password');
 
     expect(api.reviewPuts, isNot(contains('92:listening')));
-    expect(api.calls.first, 'fetch:marked:1');
+    expect(api.calls.first, 'fetch:all:1');
     expect(controller.syncViewState.pendingCount, 0);
   });
 
@@ -1352,14 +1352,14 @@ void registerAsmrAccountSyncTests({
       final started = Completer<void>();
       final release = Completer<void>();
       api.beforeFetchReviews = () async {
-        if (api.reviewCancellationTokens.length == 5) started.complete();
+        if (!started.isCompleted) started.complete();
         await release.future;
       };
       final sync = controller.syncAsmrAccount();
       await started.future;
       await controller.logoutAsmrAccount();
       await sync.timeout(const Duration(seconds: 2));
-      expect(api.reviewCancellationTokens, hasLength(5));
+      expect(api.reviewCancellationTokens, hasLength(1));
       expect(
         api.reviewCancellationTokens.every((token) => token!.isCancelled),
         isTrue,
@@ -1790,7 +1790,7 @@ void registerAsmrAccountSyncTests({
       expect(syncService.snapshot.remoteProgressByWorkId[501], 'marked');
       expect(syncService.snapshot.remoteProgressByWorkId[502], 'marked');
 
-      // Unfavoriting removes remote progress without a full 5-list pull.
+      // Unfavoriting removes remote progress without a full pull.
       api.calls.clear();
       await controller.toggleFavorite(_work(id: 501, title: 'First'));
       await Future<void>.delayed(const Duration(milliseconds: 120));
@@ -1798,13 +1798,12 @@ void registerAsmrAccountSyncTests({
       expect(api.calls.where((call) => call.startsWith('fetch:')), isEmpty);
       expect(syncService.snapshot.remoteProgressByWorkId[501], isNull);
 
-      // Manual force sync runs immediately with a full 5-list pull.
+      // Manual force sync immediately pulls all reviews without filtering.
       api.calls.clear();
       await controller.syncAsmrAccount(force: true);
-      expect(
-        api.calls.where((call) => call.startsWith('fetch:')),
-        hasLength(5),
-      );
+      expect(api.calls.where((call) => call.startsWith('fetch:')), [
+        'fetch:all:1',
+      ]);
 
       // After cooldown expires, a background sync performs a full pull again.
       api.calls.clear();

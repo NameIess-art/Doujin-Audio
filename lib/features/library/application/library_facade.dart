@@ -56,7 +56,8 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   }) : _service = service,
        entryEditorService = entryEditorService ?? LibraryEntryEditorService(),
        _coverArtworkCacheService = coverArtworkCacheService,
-       _fileCacheGateway = fileCacheGateway ?? FileCachePlatformGateway.instance;
+       _fileCacheGateway =
+           fileCacheGateway ?? FileCachePlatformGateway.instance;
 
   factory LibraryFacade.create({
     required LibraryPersistenceRepository databaseRepository,
@@ -383,6 +384,9 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
     updatedAt: updatedAt,
     deferCategoryUpdate: deferCategoryUpdate,
   );
+
+  Future<void> refreshSyncedAudioDetails(Iterable<AudioDetailTarget> targets) =>
+      _metadataCoordinator.refreshSyncedAudioDetails(targets);
 
   Future<AudioDetailSaveResult> saveMissingLibraryDuration(
     AudioDetailTarget target,

@@ -909,7 +909,8 @@ const Map<String, String> appLanguageZh = {
   'subtitle_selected': '已切换字幕',
   'subtitle_transcribe_generate': '语音识别字幕',
   'subtitle_transcribe_overwrite_hint':
-      '此音频已有本地主字幕。继续识别将生成同名 SRT 并替换原有主字幕，已生成的译文字幕会保留。',
+      '此音频已有本地主字幕。继续识别会用新生成的 SRT 替换这份主字幕，其余字幕会保留。',
+  'subtitle_transcription_source_changed': '主字幕已变更。请重新开始语音识别。',
   'subtitle_script_generate': '台本识别字幕',
   'subtitle_script_selection_title': '台本选择',
   'subtitle_script_hint': '选择 TXT 或 MD 台本，为当前音频匹配时间轴',
@@ -1156,6 +1157,8 @@ const Map<String, String> appLanguageZh = {
   'remote_source_access_code': '访问码',
   'remote_source_test_success': '连接测试成功',
   'remote_source_test_failed': '无法连接远程源，请检查地址与网络',
+  'remote_source_duplicate': '此远程媒体源已添加',
+  'remote_source_local_server': '这是本机的共享服务，请直接使用本地媒体库',
   'remote_source_auth_failed': '鉴权失败，请检查访问码或账号密码',
   'remote_source_load_failed': '加载远程目录失败',
   'remote_source_refresh_added': '刷新完成：新增 {count} 部作品',

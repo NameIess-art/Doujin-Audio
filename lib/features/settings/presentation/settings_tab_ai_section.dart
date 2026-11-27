@@ -850,6 +850,9 @@ class _LocalSubtitleModelManageTileState
   Future<SubtitleModelStatus>? _statusFuture;
   bool _deleting = false;
   late Listenable _mergedListenable;
+  late int _modelRevision;
+  late bool _inUse;
+  late SubtitleModelDownloadSnapshot _progress;
 
   SubtitleModelStore get _store => widget.subtitles.modelStore;
 
@@ -858,7 +861,7 @@ class _LocalSubtitleModelManageTileState
     super.initState();
     _mergedListenable = Listenable.merge([widget.subtitles, _store]);
     _mergedListenable.addListener(_handleStoreChanged);
-    _refreshStatus();
+    _bindModelState();
   }
 
   @override
@@ -869,7 +872,7 @@ class _LocalSubtitleModelManageTileState
       _mergedListenable.removeListener(_handleStoreChanged);
       _mergedListenable = Listenable.merge([widget.subtitles, _store]);
       _mergedListenable.addListener(_handleStoreChanged);
-      _refreshStatus();
+      _bindModelState();
     }
   }
 
@@ -881,14 +884,29 @@ class _LocalSubtitleModelManageTileState
 
   void _handleStoreChanged() {
     if (!mounted) return;
-    final active = _store.bundleSnapshot(widget.specs).active;
-    if (!active) {
-      _statusFuture = _store.bundleStatus(widget.specs);
+    final revision = _store.bundleRevision(widget.specs);
+    final progress = _store.bundleSnapshot(widget.specs);
+    final inUse = widget.subtitles.isModelTaskRunningFor(widget.taskKind);
+    if (revision == _modelRevision &&
+        inUse == _inUse &&
+        progress.active == _progress.active &&
+        (!progress.active || progress.received == _progress.received)) {
+      return;
     }
-    setState(() {});
+    setState(() {
+      if (!progress.active && revision != _modelRevision) {
+        _statusFuture = _store.bundleStatus(widget.specs);
+      }
+      _modelRevision = revision;
+      _progress = progress;
+      _inUse = inUse;
+    });
   }
 
-  void _refreshStatus() {
+  void _bindModelState() {
+    _modelRevision = _store.bundleRevision(widget.specs);
+    _progress = _store.bundleSnapshot(widget.specs);
+    _inUse = widget.subtitles.isModelTaskRunningFor(widget.taskKind);
     _statusFuture = _store.bundleStatus(widget.specs);
   }
 
@@ -896,16 +914,10 @@ class _LocalSubtitleModelManageTileState
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     try {
       await _store.ensureBundle(widget.specs);
-      if (mounted) {
-        setState(_refreshStatus);
-      }
     } on SubtitleModelDownloadCancelled {
-      if (mounted) {
-        setState(_refreshStatus);
-      }
+      return;
     } catch (_) {
       if (!mounted) return;
-      setState(_refreshStatus);
       showAppSnackBar(
         context,
         i18n.tr('subtitle_model_download_failed'),
@@ -931,7 +943,6 @@ class _LocalSubtitleModelManageTileState
     try {
       await widget.onDelete();
       if (!mounted) return;
-      setState(_refreshStatus);
       showAppSnackBar(
         context,
         i18n.tr('ai_model_deleted'),
@@ -958,8 +969,8 @@ class _LocalSubtitleModelManageTileState
       (sum, spec) => sum + spec.bytes,
     );
     final sizeMiB = (totalBytes / 1048576).ceil();
-    final progress = _store.bundleSnapshot(widget.specs);
-    final inUse = widget.subtitles.isModelTaskRunningFor(widget.taskKind);
+    final progress = _progress;
+    final inUse = _inUse;
 
     return FutureBuilder<SubtitleModelStatus>(
       future: _statusFuture,

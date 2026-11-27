@@ -589,43 +589,46 @@ class AsmrRemoteCatalogService {
   }) async {
     final code = AudioDetail.findRjCodeInText(value);
     if (code == null) return null;
-    AsmrWork? exactMatch(AsmrWorkPage page) =>
-        page.works.where((work) => work.rjCode == code).firstOrNull;
 
-    Object? oneError;
     final japanese = _japaneseApiService;
-    final preferJapanese =
-        japanese != null && _activeOneCooldownError() != null;
-    if (preferJapanese) {
-      final page = await japanese.searchWorks(keyword: code, pageSize: 20);
-      _recordJapaneseCatalogSuccess();
-      final work = exactMatch(page);
-      if (work != null) return work;
+    final sources = japanese != null && _activeOneCooldownError() != null
+        ? const [AsmrCatalogSource.japaneseAsmr, AsmrCatalogSource.asmrOne]
+        : const [AsmrCatalogSource.asmrOne, AsmrCatalogSource.japaneseAsmr];
+    (Object, StackTrace)? firstFailure;
+    for (final source in sources) {
+      try {
+        final AsmrWorkPage page;
+        if (source == AsmrCatalogSource.asmrOne) {
+          page = await _apiService.searchWorks(
+            keyword: code,
+            order: 'release',
+            sort: 'desc',
+            pageSize: 20,
+            language: language,
+            token: token,
+          );
+          clearOneCatalogCooldown();
+        } else {
+          if (japanese == null) continue;
+          page = await japanese.searchWorks(keyword: code, pageSize: 20);
+          _recordJapaneseCatalogSuccess();
+        }
+        final work = page.works
+            .where((work) => work.rjCode == code)
+            .firstOrNull;
+        if (work != null) return work;
+      } on AsmrRequestCancelled {
+        rethrow;
+      } catch (error, stackTrace) {
+        if (source == AsmrCatalogSource.asmrOne) {
+          _recordOneCatalogFailure(error);
+        }
+        firstFailure ??= (error, stackTrace);
+      }
     }
-    try {
-      final work = exactMatch(
-        await _apiService.searchWorks(
-          keyword: code,
-          order: 'release',
-          sort: 'desc',
-          pageSize: 20,
-          language: language,
-          token: token,
-        ),
-      );
-      clearOneCatalogCooldown();
-      if (work != null) return work;
-    } catch (error) {
-      _recordOneCatalogFailure(error);
-      oneError = error;
+    if (firstFailure case (final error, final stackTrace)) {
+      Error.throwWithStackTrace(error, stackTrace);
     }
-    if (!preferJapanese && japanese != null) {
-      final page = await japanese.searchWorks(keyword: code, pageSize: 20);
-      _recordJapaneseCatalogSuccess();
-      final work = exactMatch(page);
-      if (work != null) return work;
-    }
-    if (oneError != null) throw oneError;
     return null;
   }
 

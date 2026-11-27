@@ -234,8 +234,7 @@ void main() {
               closeTo(targetWidth, 0.001),
             );
           } else {
-            expect(marqueeViewport(title), findsNothing);
-            expect(marqueeViewport(firstCue), findsNothing);
+            expect(find.byType(MarqueeText), findsNothing);
             for (final text in [title, firstCue]) {
               final render = tester.renderObject<RenderParagraph>(
                 paragraph(text).first,

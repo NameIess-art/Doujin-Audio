@@ -61,6 +61,11 @@ class MusicTrack {
   bool get isRemoteSource =>
       remoteMetadataKind == remoteMetadataKindRemoteSource;
 
+  String? get remoteSourceId {
+    final id = remoteMetadata?['remoteSourceId'];
+    return isRemoteSource && id is String && id.isNotEmpty ? id : null;
+  }
+
   /// Whether this track streams from any remote source rather than local storage.
   bool get isRemoteMedia => isRemoteAsmr || isRemoteSource;
 

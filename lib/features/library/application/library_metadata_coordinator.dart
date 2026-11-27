@@ -107,6 +107,18 @@ final class LibraryMetadataCoordinator {
     return result;
   }
 
+  Future<void> refreshSyncedAudioDetails(
+    Iterable<AudioDetailTarget> targets,
+  ) async {
+    final details = await _detailCacheService.refreshSyncedDetails(
+      targets.map(canonicalTarget).toSet(),
+    );
+    for (final detail in details) {
+      _snapshotCacheService.markDetailChanged(detail, true);
+    }
+    if (details.isNotEmpty) flushMetadataUpdates();
+  }
+
   Future<AudioDetailSaveResult> saveAudioUserReview(
     AudioDetailTarget target, {
     required WorkListenStatus? listenStatus,
@@ -1020,7 +1032,9 @@ final class LibraryMetadataCoordinator {
   }) async {
     if (forceRefresh) _metadataService.clearCache();
     return (await _lookupPreferredMetadata(
-      (source) async => [await source.fetchByRjCode(rjCode, language: language)],
+      (source) async => [
+        await source.fetchByRjCode(rjCode, language: language),
+      ],
     )).single;
   }
 

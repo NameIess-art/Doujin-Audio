@@ -43,30 +43,7 @@ final _workReviewProvider = StreamProvider.autoDispose
       if (controller == null) return Stream.value(null);
       return interactionDeferredListenableStream(
         source: controller,
-        read: () {
-          final reviewed = controller.reviewForWork(work);
-          if (reviewed != null) {
-            return (
-              listenStatus: reviewed.listenStatus,
-              userRating: reviewed.userRating,
-              reviewText: reviewed.reviewText,
-            );
-          }
-          if (controller.isFavorite(work.workKey)) {
-            return (
-              listenStatus: WorkListenStatus.marked,
-              userRating: work.userRating,
-              reviewText: work.reviewText,
-            );
-          }
-          return (
-            listenStatus: work.listenStatus == WorkListenStatus.marked
-                ? null
-                : work.listenStatus,
-            userRating: work.userRating,
-            reviewText: work.reviewText,
-          );
-        },
+        read: () => readAsmrWorkReviewDraft(controller, work),
       ).distinct();
     });
 
@@ -136,7 +113,7 @@ class _AsmrWorkDetail implements RemoteWorkDetail {
     final streamed = ref.watch(_workReviewProvider(work)).value;
     if (streamed != null) return streamed;
     return readAsmrWorkReviewDraft(
-      ProviderScope.containerOf(ref.context, listen: false),
+      ref.read(asmrLibraryControllerProvider),
       work,
     );
   }

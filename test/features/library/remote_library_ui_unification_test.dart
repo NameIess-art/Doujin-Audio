@@ -157,7 +157,7 @@ class _ControllableProbeHttpClient extends Fake implements HttpClient {
   Duration? connectionTimeout;
 
   @override
-  Future<HttpClientRequest> getUrl(Uri url) => isOnline()
+  Future<HttpClientRequest> openUrl(String method, Uri url) => isOnline()
       ? Future<HttpClientRequest>.value(_ProbeHttpRequest(HttpStatus.ok))
       : Future<HttpClientRequest>.error(
           const SocketException('remote_host_offline'),
@@ -294,7 +294,7 @@ void main() {
   });
 
   testWidgets(
-    'LAN discovery places selectable results in a column to the right of scan',
+    'LAN discovery shows selectable results when adding a source only',
     (tester) async {
       final width = defaultTargetPlatform == TargetPlatform.android
           ? 320.0
@@ -303,6 +303,14 @@ void main() {
       addTearDown(() => tester.binding.setSurfaceSize(null));
       final i18n = AppLanguageProvider();
       final themeProvider = ThemeProvider();
+      final isWindows = defaultTargetPlatform == TargetPlatform.windows;
+      final sync = CrossPlatformSyncService();
+      final controller = RemoteLibraryController(
+        syncService: sync,
+        localLanServerId: isWindows ? () => 'local-pc' : null,
+      );
+      addTearDown(sync.dispose);
+      addTearDown(controller.dispose);
       addTearDown(i18n.dispose);
       addTearDown(themeProvider.dispose);
 
@@ -325,10 +333,12 @@ void main() {
         ),
       ];
       var scans = 0;
+      RemoteMediaSource? existing;
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
             appLanguageProviderInstanceProvider.overrideWithValue(i18n),
+            remoteLibraryControllerProvider.overrideWith((_) => controller),
           ],
           child: MaterialApp(
             theme: themeProvider.darkTheme,
@@ -337,7 +347,19 @@ void main() {
                 builder: (context) => TextButton(
                   onPressed: () => showAddOrEditRemoteSourceDialog(
                     context,
-                    discoverLan: () async => ++scans == 1 ? [] : servers,
+                    existing: existing,
+                    discoverLan: () async => ++scans == 1 ? [] : [
+                      if (isWindows)
+                        const LanDiscoveredServer(
+                          serverId: 'local-pc',
+                          name: 'This PC',
+                          host: '192.168.0.1',
+                          port: 42871,
+                          authRequired: false,
+                          allowSync: true,
+                        ),
+                      ...servers,
+                    ],
                   ),
                   child: Text(i18n.tr('remote_source_add')),
                 ),
@@ -365,6 +387,7 @@ void main() {
 
       final results = find.byType(ActionChip);
       expect(results, findsNWidgets(2));
+      expect(find.text('This PC'), findsNothing);
       final firstResult = tester.getRect(results.first);
       final secondResult = tester.getRect(results.last);
       final scanRect = tester.getRect(scan);
@@ -391,6 +414,26 @@ void main() {
         tester.widget<TextField>(fields.at(0)).controller!.text,
         servers.last.name,
       );
+      expect(
+        tester.widget<TextField>(fields.at(1)).controller!.text,
+        servers.last.baseUrl,
+      );
+
+      await tester.tap(find.text(i18n.tr('cancel')));
+      await tester.pumpAndSettle();
+      existing = RemoteMediaSource(
+        id: 'existing-pc',
+        type: RemoteMediaSourceType.windowsLan,
+        name: servers.last.name,
+        baseUrl: servers.last.baseUrl,
+        createdAtMs: 1,
+      );
+      await tester.tap(find.text(i18n.tr('remote_source_add')));
+      await tester.pumpAndSettle();
+      expect(find.text(i18n.tr('remote_source_edit_title')), findsOneWidget);
+      expect(scan, findsNothing);
+      expect(results, findsNothing);
+      expect(scans, 2);
       expect(
         tester.widget<TextField>(fields.at(1)).controller!.text,
         servers.last.baseUrl,
@@ -663,9 +706,11 @@ void main() {
 
           var useFakeProbe = false;
           var probeOnline = true;
+          var probeTime = DateTime(2026);
           final ctrl = RemoteLibraryController(
             syncService: sync,
             playbackLauncher: launcher,
+            clock: () => probeTime,
             supportDirectoryProvider: () async => tempDir,
             httpClientFactory: () => useFakeProbe
                 ? _ControllableProbeHttpClient(isOnline: () => probeOnline)
@@ -691,7 +736,10 @@ void main() {
           lanServer.dispose();
           useFakeProbe = true;
           // Expose probeOnline mutator via closure below.
-          setProbeOnline = (value) => probeOnline = value;
+          setProbeOnline = (value) {
+            probeOnline = value;
+            probeTime = probeTime.add(const Duration(seconds: 6));
+          };
         } finally {
           HttpOverrides.global = previousHttpOverrides;
         }

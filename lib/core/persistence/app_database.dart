@@ -28,7 +28,7 @@ const int _sqliteInClauseBatchSize = 900;
 class AppDatabase {
   AppDatabase._({Future<Database> Function()? opener}) : _opener = opener;
 
-  static const int schemaVersion = 23;
+  static const int schemaVersion = 24;
   static const String fileName = 'audio_player.db';
 
   @visibleForTesting
@@ -37,8 +37,7 @@ class AppDatabase {
       _opener = opener;
 
   @visibleForTesting
-  AppDatabase.forTest({Future<Database> Function()? opener})
-    : _opener = opener;
+  AppDatabase.forTest({Future<Database> Function()? opener}) : _opener = opener;
 
   static AppDatabase? _instance;
   static AppDatabase get instance => _instance ??= AppDatabase._();

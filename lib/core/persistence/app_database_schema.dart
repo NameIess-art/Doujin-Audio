@@ -23,8 +23,11 @@ Future<void> _onCreate(Database db, int version) async {
   await _createAudioDetailsTable(db);
   await _createLibraryEntriesTable(db);
   await _createTimeSegmentLabelsTable(db);
+  await _createTimeSegmentPortableKeys(db);
   await _createListeningTables(db);
+  await _createListeningWorkKeyIndex(db);
   await _createSyncTables(db);
+  await _createListeningHistoryEditsTable(db);
 }
 
 Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -219,6 +222,85 @@ Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
   if (oldVersion < 23 && newVersion >= 23) {
     await _createSyncWorkStatesTable(db);
   }
+  if (oldVersion < 24 && newVersion >= 24) {
+    await _createListeningHistoryEditsTable(db);
+    await _createListeningWorkKeyIndex(db);
+    await _addColumnIfMissing(
+      db,
+      'track_playback_state',
+      'favorite_updated_at_ms',
+      'INTEGER NOT NULL DEFAULT 0',
+    );
+    // Existing favorites have no edit timestamp. Seed once instead of changing
+    // their version on every playback or export.
+    await db.execute('''
+      UPDATE track_playback_state SET favorite_updated_at_ms =
+        MAX(1, COALESCE(last_played_at_ms, 0))
+      WHERE is_favorite = 1 AND favorite_updated_at_ms = 0
+    ''');
+    await _createTimeSegmentPortableKeys(db);
+    await _backfillTimeSegmentPortableKeys(db);
+  }
+}
+
+Future<void> _createListeningWorkKeyIndex(Database db) => db.execute(
+  'CREATE INDEX IF NOT EXISTS idx_listening_work_days_key_date '
+  'ON listening_work_days(work_key, date)',
+);
+
+Future<void> _createListeningHistoryEditsTable(Database db) => db.execute('''
+  CREATE TABLE IF NOT EXISTS sync_listening_history_edits (
+    work_key TEXT PRIMARY KEY,
+    updated_at_ms INTEGER NOT NULL,
+    deleted INTEGER NOT NULL
+  )
+''');
+
+Future<void> _createTimeSegmentPortableKeys(Database db) async {
+  await _addColumnIfMissing(
+    db,
+    'time_segment_labels',
+    'portable_track_key',
+    'TEXT',
+  );
+  await _addColumnIfMissing(
+    db,
+    'time_segment_labels',
+    'portable_stem_key',
+    'TEXT',
+  );
+  await db.execute(
+    'CREATE INDEX IF NOT EXISTS idx_time_segment_labels_portable '
+    'ON time_segment_labels(portable_track_key)',
+  );
+  await db.execute(
+    'CREATE INDEX IF NOT EXISTS idx_time_segment_labels_portable_stem '
+    'ON time_segment_labels(portable_stem_key)',
+  );
+}
+
+Future<void> _backfillTimeSegmentPortableKeys(Database db) async {
+  final rows = await db.query(
+    'time_segment_labels',
+    columns: ['id', 'track_key'],
+  );
+  if (rows.isEmpty) return;
+  final labels = await _loadTimeSegmentPortableKeys(
+    db,
+    rows.map((row) => row['track_key']! as String),
+  );
+  final batch = db.batch();
+  for (final row in rows) {
+    final identity = labels[row['track_key']];
+    if (identity == null) continue;
+    batch.update(
+      'time_segment_labels',
+      _timeSegmentPortableKeyFields(identity),
+      where: 'id = ?',
+      whereArgs: [row['id']],
+    );
+  }
+  await batch.commit(noResult: true);
 }
 
 Future<void> _createSyncTables(Database db) async {
@@ -357,7 +439,8 @@ Future<void> _createTrackDetailTables(Database db) async {
         path TEXT PRIMARY KEY,
         last_played_position_ms INTEGER NOT NULL DEFAULT 0,
         last_played_at_ms INTEGER,
-        is_favorite INTEGER NOT NULL DEFAULT 0
+        is_favorite INTEGER NOT NULL DEFAULT 0,
+        favorite_updated_at_ms INTEGER NOT NULL DEFAULT 0
       )
     ''');
   await db.execute('''

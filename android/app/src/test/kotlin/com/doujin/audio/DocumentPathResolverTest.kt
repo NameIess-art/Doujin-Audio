@@ -15,8 +15,10 @@ import com.doujin.audio.storage.DocumentPathResolver
 import com.doujin.audio.storage.DocumentStorageOperations
 import com.doujin.audio.storage.resolveContainedFilePath
 import com.doujin.audio.subtitle.SubtitleOperations
+import com.doujin.audio.subtitle.SubtitleExistsException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -143,6 +145,36 @@ class DocumentPathResolverTest {
     }
 
     @Test
+    fun `SAF transcription replaces only the confirmed primary and preserves occupied SRT`() {
+        val context = RuntimeEnvironment.getApplication()
+        val subtitles = SubtitleOperations(context, DocumentStorageOperations(context))
+        val track = documentUri("child-audio").toString()
+        val folder = documentUri("child-cd").toString()
+        val primary = documentUri("primary").toString()
+        val original = "original primary"
+        val revision = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(original.toByteArray()).joinToString("") { "%02x".format(it) }
+        provider.allowDelete = true
+        provider.addSubtitle("primary", "voice.lrc", original)
+        provider.addSubtitle("alternate", "voice.srt", "alternate subtitle")
+        provider.addSubtitle("translation", "voice.mp3.translated.en.srt", "translation")
+
+        provider.addSubtitle("primary", "voice.lrc", "changed primary")
+        assertThrows(SubtitleExistsException::class.java) {
+            subtitles.writeTranscription(track, folder, byteArrayOf(1), primary, revision)
+        }
+        assertTrue(provider.attemptedDeletes.isEmpty())
+
+        provider.addSubtitle("primary", "voice.lrc", original)
+        val saved = subtitles.writeTranscription(track, folder, byteArrayOf(1), primary, revision)
+        val options = subtitles.list(track, folder).associate { it["name"] to it["sourcePath"] }
+        assertEquals(saved, options["voice.asr.srt"])
+        assertEquals(documentUri("alternate").toString(), options["voice.srt"])
+        assertEquals(documentUri("translation").toString(), options["voice.mp3.translated.en.srt"])
+        assertEquals(listOf(documentUri("primary")), provider.attemptedDeletes)
+    }
+
+    @Test
     fun `copyFileToUri opens destination with wt mode and falls back to w when wt is unsupported`() {
         val context = RuntimeEnvironment.getApplication()
         val storage = DocumentStorageOperations(context)
@@ -170,7 +202,9 @@ class DocumentPathResolverTest {
         val createdMimeTypes = mutableListOf<String?>()
         val openedModes = mutableListOf<String>()
         var rejectWtMode = false
+        var allowDelete = false
         private var nextCreatedId = 1
+        private val documentFiles = mutableMapOf<String, java.io.File>()
         private val folders = linkedMapOf(
             "authorized-root" to mutableListOf(listOf("root-cd", "CD1", DocumentsContract.Document.MIME_TYPE_DIR)),
             "selected-child" to mutableListOf(
@@ -188,6 +222,17 @@ class DocumentPathResolverTest {
                 listOf("child-subtitle", "track.srt", "application/x-subrip")
             )
         )
+
+        fun addSubtitle(id: String, name: String, content: String) {
+            val rows = folders.getValue("child-cd")
+            rows.removeAll { it[0] == id }
+            rows.add(listOf(id, name, "application/octet-stream"))
+            fileForDocument(id).writeText(content)
+        }
+
+        private fun fileForDocument(id: String) = documentFiles.getOrPut(id) {
+            java.io.File.createTempFile("saf_test_", ".bin", context!!.cacheDir).apply { deleteOnExit() }
+        }
 
         override fun query(
             uri: Uri,
@@ -222,8 +267,13 @@ class DocumentPathResolverTest {
         override fun call(method: String, arg: String?, extras: Bundle?): Bundle? {
             return when (method) {
                 "android:deleteDocument" -> {
-                    attemptedDeletes += extras?.getParcelable("uri", Uri::class.java)
-                    throw IllegalStateException("Stale temporary document could not be deleted")
+                    val uri = extras?.getParcelable("uri", Uri::class.java)
+                    attemptedDeletes += uri
+                    if (!allowDelete) throw IllegalStateException("Stale temporary document could not be deleted")
+                    val id = DocumentsContract.getDocumentId(requireNotNull(uri))
+                    folders.values.forEach { rows -> rows.removeAll { it[0] == id } }
+                    documentFiles.remove(id)?.delete()
+                    Bundle()
                 }
                 "android:createDocument" -> {
                     val parentUri = extras?.getParcelable("uri", Uri::class.java)!!
@@ -262,14 +312,12 @@ class DocumentPathResolverTest {
             if (rejectWtMode && mode == "wt") {
                 throw IllegalArgumentException("wt unsupported")
             }
-            val file = java.io.File.createTempFile("saf_test_", ".bin", context!!.cacheDir).apply {
-                deleteOnExit()
-            }
+            val file = fileForDocument(DocumentsContract.getDocumentId(uri))
+            val flags = if (mode == "r") android.os.ParcelFileDescriptor.MODE_READ_ONLY
+                else android.os.ParcelFileDescriptor.MODE_READ_WRITE or android.os.ParcelFileDescriptor.MODE_TRUNCATE
             return android.os.ParcelFileDescriptor.open(
                 file,
-                android.os.ParcelFileDescriptor.MODE_CREATE or
-                    android.os.ParcelFileDescriptor.MODE_READ_WRITE or
-                    android.os.ParcelFileDescriptor.MODE_TRUNCATE
+                flags
             )
         }
 

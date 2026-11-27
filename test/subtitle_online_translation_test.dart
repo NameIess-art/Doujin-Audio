@@ -538,7 +538,87 @@ void main() {
       expect(llmDraft.cues.last.text, contains('llm:もう少し近くに来てね。'));
     },
   );
+
+  test(
+    'changing translation configuration mid-job preserves the active backend',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      final requests = <(String, String?)>[];
+      server.listen((request) async {
+        final backend = request.uri.pathSegments.first;
+        requests.add((
+          backend,
+          request.headers.value(HttpHeaders.authorizationHeader),
+        ));
+        final payload =
+            jsonDecode(await utf8.decoder.bind(request).join()) as Map;
+        final message = (payload['messages'] as List).last as Map;
+        final items =
+            (jsonDecode(message['content'] as String) as Map)['items'] as Map;
+        request.response.write(
+          jsonEncode({
+            'choices': [
+              {
+                'message': {
+                  'content': jsonEncode({
+                    for (final key in items.keys) key: '$backend translation',
+                  }),
+                },
+              },
+            ],
+          }),
+        );
+        await request.response.close();
+      });
+      TranslationServiceSettings settings(String backend) =>
+          TranslationServiceSettings(
+            provider: TranslationProviderKind.openAiCompatible,
+            model: 'model',
+            apiBaseUrl: 'http://127.0.0.1:${server.port}/$backend',
+          );
+      final translations = TextTranslationService(
+        clientFactory: () => _LocalHttpClient().createHttpClient(null),
+        initialSettings: settings('first'),
+        initialApiKey: 'first-key',
+        requestInterval: Duration.zero,
+      );
+      addTearDown(translations.dispose);
+      final engine = SubtitleAiEngine(translations: translations);
+      final cues = [
+        for (var i = 0; i <= textTranslationLlmBatchMaxItems; i++)
+          _cue('サンプルです $i', i),
+      ];
+      final draft = await engine.prepareTranslation(
+        cues,
+        'en',
+        trackPath: 'live_config.mp3',
+        onProgress: (progress) {
+          if (progress.stage == 'translating' &&
+              progress.fraction > 0 &&
+              progress.fraction < 1) {
+            translations.configure(settings('second'), 'second-key');
+          }
+        },
+      );
+      expect(draft.cues.last.text, contains('first translation'));
+      expect(requests, [
+        ('first', 'Bearer first-key'),
+        ('first', 'Bearer first-key'),
+      ]);
+      translations.configure(settings('first'), 'first-key');
+      final resumed = await engine.prepareTranslation(
+        cues,
+        'en',
+        trackPath: 'live_config.mp3',
+      );
+      expect(resumed.cues.last.text, contains('first translation'));
+      expect(requests, hasLength(2));
+    },
+  );
 }
+
+class _LocalHttpClient extends HttpOverrides {}
 
 class _SceneAwareTranslations extends TextTranslationService {
   _SceneAwareTranslations({

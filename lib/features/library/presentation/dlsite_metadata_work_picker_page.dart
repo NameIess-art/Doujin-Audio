@@ -1,8 +1,11 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/state/app_runtime_providers.dart';
+import '../../../app/theme/app_design_tokens.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../core/widgets/file_tree_row.dart';
 import '../../../core/widgets/operation_feedback.dart';
@@ -130,7 +133,10 @@ class _DlsiteMetadataWorkPickerPageState
     final filtered = _filteredEntries;
     final cs = Theme.of(context).colorScheme;
 
-    final topInset = AppPageHeaderMetrics.contentTopInset(context);
+    final topInset = AppPageHeaderMetrics.contentTopInset(
+      context,
+      contentHeight: AppPageHeaderMetrics.expandedContentHeight,
+    );
 
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
@@ -142,62 +148,79 @@ class _DlsiteMetadataWorkPickerPageState
             children: [
               Positioned.fill(
                 child: AppPageContentTransition(
-                  child: ListView.builder(
-                    padding: EdgeInsets.only(
-                      left: 16,
-                      right: 16,
-                      top: AppPageHeaderMetrics.contentTopInset(context),
-                      bottom: 78 +
-                          MediaQuery.paddingOf(context).bottom +
-                          MobileOverlayInset.of(context),
-                    ),
-                    itemCount: filtered.isEmpty ? 1 : filtered.length,
-                    findChildIndexCallback: filtered.isEmpty
-                        ? null
-                        : (key) => key is ValueKey<String>
-                              ? _filteredIndexByKey[key.value]
-                              : null,
-                    itemBuilder: (context, index) {
-                      if (filtered.isEmpty) {
-                        return Padding(
-                          padding: const EdgeInsets.only(top: 80),
-                          child: Center(
-                            child: AppEmptyState(
-                              icon: Icons.search_off_rounded,
-                              title: i18n.tr('no_results_found'),
-                              message: i18n.tr('search_no_match'),
-                            ),
-                          ),
-                        );
-                      }
-                      final entry = filtered[index];
-                      final id = AudioLibraryCategorySnapshot.targetKey(
-                        entry.target,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final maxWidth = AppDesignTokens.of(
+                        context,
+                      ).readableContentMaxWidth;
+                      final horizontalPadding = math.max(
+                        16.0,
+                        (constraints.maxWidth - maxWidth) / 2,
                       );
-                      final selected = _selectedIds.contains(id);
-                      return MergeSemantics(
-                        key: ValueKey<String>('batch_metadata_picker_row_$id'),
-                        child: FileTreeRow(
-                          key: ValueKey<String>('batch_metadata_picker_$id'),
-                          minHeight: 48,
-                          verticalPadding: 2,
-                          reserveSubtitleSpace: true,
-                          title: entry.detail.workTitle.isNotEmpty
-                              ? entry.detail.workTitle
-                              : entry.title,
-                          subtitle: entry.detail.rjCode.isNotEmpty
-                              ? entry.detail.rjCode
-                              : null,
-                          trailing: Checkbox(
-                            value: selected,
-                            visualDensity: VisualDensity.compact,
-                            onChanged: (val) => _toggleSelection(id, val),
-                          ),
-                          onTap: () => _toggleSelection(id, !selected),
+                      return ListView.builder(
+                        padding: EdgeInsets.only(
+                          left: horizontalPadding,
+                          right: horizontalPadding,
+                          top: topInset,
+                          bottom:
+                              78 +
+                              MediaQuery.paddingOf(context).bottom +
+                              MobileOverlayInset.of(context),
                         ),
-                      );
+                        itemCount: filtered.isEmpty ? 1 : filtered.length,
+                        findChildIndexCallback: filtered.isEmpty
+                            ? null
+                            : (key) => key is ValueKey<String>
+                                  ? _filteredIndexByKey[key.value]
+                                  : null,
+                        itemBuilder: (context, index) {
+                          if (filtered.isEmpty) {
+                            return Padding(
+                              padding: const EdgeInsets.only(top: 80),
+                              child: Center(
+                                child: AppEmptyState(
+                                  icon: Icons.search_off_rounded,
+                                  title: i18n.tr('no_results_found'),
+                                  message: i18n.tr('search_no_match'),
+                                ),
+                              ),
+                            );
+                          }
+                          final entry = filtered[index];
+                          final id = AudioLibraryCategorySnapshot.targetKey(
+                            entry.target,
+                          );
+                          final selected = _selectedIds.contains(id);
+                          return MergeSemantics(
+                            key: ValueKey<String>(
+                              'batch_metadata_picker_row_$id',
+                            ),
+                            child: FileTreeRow(
+                              key: ValueKey<String>(
+                                'batch_metadata_picker_$id',
+                              ),
+                              minHeight: 48,
+                              verticalPadding: 2,
+                              titleMaxLines: 2,
+                              reserveSubtitleSpace: true,
+                              title: entry.detail.workTitle.isNotEmpty
+                                  ? entry.detail.workTitle
+                                  : entry.title,
+                              subtitle: entry.detail.rjCode.isNotEmpty
+                                  ? entry.detail.rjCode
+                                  : null,
+                              trailing: Checkbox(
+                                value: selected,
+                                visualDensity: VisualDensity.compact,
+                                onChanged: (val) => _toggleSelection(id, val),
+                              ),
+                              onTap: () => _toggleSelection(id, !selected),
+                            ),
+                          );
+                        },
+                      ).withWindowsSmoothScroll();
                     },
-                  ).withWindowsSmoothScroll(),
+                  ),
                 ),
               ),
               Positioned(
@@ -206,31 +229,38 @@ class _DlsiteMetadataWorkPickerPageState
                 right: 0,
                 child: TopPageHeader(
                   key: const ValueKey<String>('batch_metadata_picker_header'),
-                  leading: const AppHeaderBackButton(),
-                  trailing: filtered.isEmpty
-                      ? null
-                      : HeaderActionPill(
-                          children: [
-                            IconButton(
-                              key: const ValueKey<String>(
-                                'batch_metadata_picker_select_all',
-                              ),
-                              tooltip: i18n.tr(
-                                _allFilteredSelected
-                                    ? 'deselect_all'
-                                    : 'select_all',
-                              ),
-                              icon: Icon(
-                                _allFilteredSelected
-                                    ? Icons.deselect_rounded
-                                    : Icons.select_all_rounded,
-                                size: 20,
-                              ),
-                              visualDensity: VisualDensity.compact,
-                              onPressed: _toggleSelectAllFiltered,
-                            ),
-                          ],
+                  topCapsuleChild: Row(
+                    spacing: AppSpacing.xs,
+                    children: [
+                      const HeaderFloatingButton(child: AppHeaderBackButton()),
+                      Expanded(
+                        child: HeaderTopCapsule(
+                          title: i18n.tr('batch_metadata_specific'),
+                          leading: Icon(
+                            Icons.cloud_download_rounded,
+                            color: cs.primary,
+                            size: AppPageHeaderMetrics.titleIconSize,
+                          ),
                         ),
+                      ),
+                    ],
+                  ),
+                  trailing: IconButton(
+                    key: const ValueKey<String>(
+                      'batch_metadata_picker_select_all',
+                    ),
+                    tooltip: i18n.tr(
+                      _allFilteredSelected ? 'deselect_all' : 'select_all',
+                    ),
+                    icon: Icon(
+                      _allFilteredSelected
+                          ? Icons.deselect_rounded
+                          : Icons.select_all_rounded,
+                    ),
+                    onPressed: filtered.isEmpty
+                        ? null
+                        : _toggleSelectAllFiltered,
+                  ),
                   titleWidget: HeaderFloatingSurface(
                     key: const ValueKey<String>('batch_metadata_picker_search'),
                     child: TextSelectionTheme(

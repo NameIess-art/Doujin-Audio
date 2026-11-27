@@ -255,16 +255,31 @@ void main() {
       find.byKey(const ValueKey<String>('batch_metadata_picker_header')),
       findsOneWidget,
     );
-    expect(
-      find.byKey(const ValueKey<String>('batch_metadata_picker_search')),
-      findsOneWidget,
+    final title = find.widgetWithText(
+      HeaderTopCapsule,
+      languageProvider.tr('batch_metadata_specific'),
     );
+    final search = find.byKey(
+      const ValueKey<String>('batch_metadata_picker_search'),
+    );
+    final selectAll = find.byKey(
+      const ValueKey<String>('batch_metadata_picker_select_all'),
+    );
+    expect(title, findsOneWidget);
+    expect(
+      tester.getTopLeft(search).dy,
+      greaterThan(tester.getBottomLeft(title).dy),
+    );
+    expect(tester.getCenter(search).dy, tester.getCenter(selectAll).dy);
+    expect(
+      tester.getTopLeft(selectAll).dx,
+      greaterThan(tester.getTopRight(search).dx),
+    );
+    expect(tester.getSize(selectAll), const Size(38, 38));
+    expect(tester.widget<IconButton>(selectAll).onPressed, isNull);
     expect(find.byIcon(Icons.search_rounded), findsOneWidget);
     final searchField = tester.widget<TextField>(
-      find.descendant(
-        of: find.byKey(const ValueKey<String>('batch_metadata_picker_search')),
-        matching: find.byType(TextField),
-      ),
+      find.descendant(of: search, matching: find.byType(TextField)),
     );
     expect(searchField.textInputAction, TextInputAction.search);
     expect(
@@ -277,18 +292,17 @@ void main() {
     );
     expect(
       tester.widget<ListView>(find.byType(ListView)).padding,
-      const EdgeInsets.fromLTRB(16, 52, 16, 78),
+      const EdgeInsets.fromLTRB(16, 96, 16, 78),
     );
     expect(
       find.byKey(const ValueKey<String>('batch_metadata_picker_done')),
       findsOneWidget,
     );
-    expect(find.byType(HeaderFloatingSurface), findsNWidgets(3));
   });
 
   for (final scale in [1.0, 2.0]) {
     testWidgets(
-      'batch results fit three lines at scale $scale',
+      'batch results and picker share three-line rows at scale $scale',
       (tester) async {
         final platform = defaultTargetPlatform;
         tester.view.physicalSize = const Size(320, 800);
@@ -371,11 +385,15 @@ void main() {
           for (var i = 0; i < entries.length; i++)
             tester.getRect(pickerRows.at(i)),
         ];
-        expect(pickerRects[0].height, lessThan(resultRects[0].height));
+        expect(pickerRects[0].height, resultRects[0].height);
         expect(pickerRects[1].height, pickerRects[0].height);
         expect(pickerRects[1].top, pickerRects[0].bottom);
         expect(pickerRects[0].left, resultRects[0].left);
         expect(pickerRects[0].right, resultRects[0].right);
+        for (final title in [longTitle, shortTitle]) {
+          expect(tester.widget<Text>(title).maxLines, 2);
+        }
+        expect(tester.widget<Text>(find.text('RJ000001')).maxLines, 1);
         await tester.enterText(find.byType(TextField), 'RJ000001');
         await tester.pump();
         expect(find.byType(FileTreeRow), findsOneWidget);

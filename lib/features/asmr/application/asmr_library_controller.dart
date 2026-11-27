@@ -812,10 +812,10 @@ class AsmrLibraryController extends ChangeNotifier
     _favoriteIds = snapshot.favoriteIds;
     if (!identical(_reviewedWorks, snapshot.reviewedWorks)) {
       _filteredReviewedCache.clear();
+      _reviewedWorks = snapshot.reviewedWorks;
+      _reviewedByWorkKey = snapshot.reviewedByWorkKey;
+      _reviewedByRjCode = snapshot.reviewedByRjCode;
     }
-    _reviewedWorks = snapshot.reviewedWorks;
-    _reviewedByWorkKey = snapshot.reviewedByWorkKey;
-    _reviewedByRjCode = snapshot.reviewedByRjCode;
     _historyWorks = snapshot.historyWorks;
     _syncOperations = snapshot.pendingOperations;
     _lastSyncAt = snapshot.lastSyncAt;
@@ -1364,6 +1364,7 @@ class AsmrLibraryController extends ChangeNotifier
       }
       final previousToken = _authSession?.token;
       final previousReviewed = _reviewedByRjCode;
+      final previousFavoriteIds = _favoriteIds;
       _applyAccountSnapshot(result.snapshot);
       tokenChanged = _authSession?.token != previousToken;
       if (tokenChanged) {
@@ -1372,16 +1373,21 @@ class AsmrLibraryController extends ChangeNotifier
         _catalog.invalidateForAuthChange();
         _invalidateRemoteWorkCaches();
       } else {
-        final syncedAt = result.snapshot.lastSyncAt ?? DateTime.now();
-        for (final rjCode in previousReviewed.keys) {
-          if (!_reviewedByRjCode.containsKey(rjCode)) {
-            _clearedReviewAtByRjCode[rjCode] = syncedAt;
+        final reviewsChanged = !identical(previousReviewed, _reviewedByRjCode);
+        if (reviewsChanged) {
+          final syncedAt = result.snapshot.lastSyncAt ?? DateTime.now();
+          for (final rjCode in previousReviewed.keys) {
+            if (!_reviewedByRjCode.containsKey(rjCode)) {
+              _clearedReviewAtByRjCode[rjCode] = syncedAt;
+            }
+          }
+          for (final rjCode in _reviewedByRjCode.keys) {
+            _clearedReviewAtByRjCode.remove(rjCode);
           }
         }
-        for (final rjCode in _reviewedByRjCode.keys) {
-          _clearedReviewAtByRjCode.remove(rjCode);
+        if (reviewsChanged || !identical(previousFavoriteIds, _favoriteIds)) {
+          _catalog.syncAllReviewsToCurrent();
         }
-        _catalog.syncAllReviewsToCurrent();
       }
       _syncPhase = result.succeeded
           ? AsmrSyncPhase.succeeded

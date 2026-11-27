@@ -55,6 +55,7 @@ class WebDavMediaSourceAdapter {
   Future<List<RemoteLibraryWork>> fetchWorks({
     required RemoteMediaSource source,
     required WebDavClient client,
+    Iterable<RemoteLibraryWork> cachedWorks = const [],
   }) async {
     final topEntries = await client.listDirectory(client.baseUri);
     final directories = topEntries
@@ -180,34 +181,34 @@ class WebDavMediaSourceAdapter {
         .where((w) => !excludedSet.contains(w.workId))
         .toList(growable: false);
 
-    // Hydrate `doujin-audio.json` metadata & user reviews when present in folders.
-    if (visibleWorks.length <= 120) {
-      final hydrated = List<RemoteLibraryWork>.of(visibleWorks);
-      const concurrency = 4;
-      for (var offset = 0; offset < hydrated.length; offset += concurrency) {
-        final end = (offset + concurrency).clamp(0, hydrated.length);
-        await Future.wait(<Future<void>>[
-          for (var idx = offset; idx < end; idx++)
-            () async {
-              hydrated[idx] = await _hydrateFromFolderJson(
-                hydrated[idx],
-                client,
-              );
-            }(),
-        ]);
+    final cachedById = {for (final work in cachedWorks) work.workId: work};
+    var nextIndex = 0;
+    Future<void> hydrateWorks() async {
+      while (nextIndex < visibleWorks.length) {
+        final index = nextIndex++;
+        final work = visibleWorks[index];
+        visibleWorks[index] = await _hydrateFromFolderJson(
+          work,
+          client,
+          cached: cachedById[work.workId],
+        );
       }
-      hydrated.sort((a, b) => compareNatural(a.title, b.title));
-      return hydrated;
     }
 
+    const concurrency = 4;
+    await Future.wait([
+      for (var i = 0; i < concurrency && i < visibleWorks.length; i++)
+        hydrateWorks(),
+    ]);
     visibleWorks.sort((a, b) => compareNatural(a.title, b.title));
     return visibleWorks;
   }
 
   Future<RemoteLibraryWork> _hydrateFromFolderJson(
     RemoteLibraryWork base,
-    WebDavClient client,
-  ) async {
+    WebDavClient client, {
+    RemoteLibraryWork? cached,
+  }) async {
     final dirRaw = base.directoryUri;
     if (dirRaw == null || dirRaw.isEmpty) return base;
     try {
@@ -263,13 +264,12 @@ class WebDavMediaSourceAdapter {
         updatedAtMs:
             detail.updatedAt?.millisecondsSinceEpoch ?? base.updatedAtMs,
       );
-    } on Object {
-      return base;
+    } on Exception {
+      return cached?.copyWith(isPinned: base.isPinned) ?? base;
     }
   }
 
   Future<RemoteLibraryWork> saveWorkDetail({
-    required RemoteMediaSource source,
     required RemoteLibraryWork work,
     required WebDavClient client,
     required DlsiteMetadata metadata,
@@ -282,33 +282,26 @@ class WebDavMediaSourceAdapter {
     if (rawDir == null || rawDir.isEmpty) {
       throw StateError('Missing WebDAV directory URI');
     }
-    var currentDirUri = WebDavClient.normalizeDirectoryUri(Uri.parse(rawDir));
+    final originalDir = WebDavClient.normalizeDirectoryUri(Uri.parse(rawDir));
+    final existingBytes = await client.getBytesOrNull(
+      originalDir.resolve('doujin-audio.json'),
+      maxBytes: 2 * 1024 * 1024,
+    );
+    var currentDirUri = originalDir;
     var currentWork = work;
 
     final trimmedFolder = newFolderName?.trim() ?? '';
     if (trimmedFolder.isNotEmpty && trimmedFolder != work.folderName) {
       _validateRemoteEntryName(trimmedFolder);
-      final destDirUri = _siblingUri(
+      currentDirUri = _siblingUri(
         currentDirUri,
         trimmedFolder,
         isDirectory: true,
       );
-      try {
-        await client.moveUri(
-          sourceUri: currentDirUri,
-          destinationUri: destDirUri,
-        );
-      } on WebDavException catch (error) {
-        if (error.statusCode == 412 || error.statusCode == 409) {
-          throw const AudioDetailRenameException('nameConflict');
-        }
-        throw const AudioDetailRenameException('renameFailed');
-      }
-      currentDirUri = destDirUri;
       currentWork = currentWork.copyWith(
-        workId: _stableWorkId(destDirUri.toString()),
+        workId: _stableWorkId(currentDirUri.toString()),
         folderName: trimmedFolder,
-        directoryUri: destDirUri.toString(),
+        directoryUri: currentDirUri.toString(),
       );
     }
 
@@ -316,29 +309,18 @@ class WebDavMediaSourceAdapter {
     String? nextCoverUrl = currentWork.coverUrl;
     if (coverBytes != null && coverBytes.isNotEmpty) {
       final safeExt = coverExtension.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
-      final fileName = 'cover.${safeExt.isEmpty ? 'jpg' : safeExt.toLowerCase()}';
+      final fileName =
+          'cover.${safeExt.isEmpty ? 'jpg' : safeExt.toLowerCase()}';
       final coverUri = currentDirUri.resolve(Uri.encodeComponent(fileName));
-      await client.putBytesAtomic(coverUri, coverBytes);
       savedRelCover = fileName;
       nextCoverUrl = coverUri.toString();
     }
 
     final jsonUri = currentDirUri.resolve('doujin-audio.json');
-    final existingBytes = await client.getBytesOrNull(
-      jsonUri,
-      maxBytes: 2 * 1024 * 1024,
-    );
     final target = AudioDetailTarget.libraryRootFolder(currentDirUri.path);
-    AudioDetail baseDetail;
-    if (existingBytes != null) {
-      try {
-        baseDetail = _jsonCodec.decode(existingBytes, target);
-      } on Object {
-        baseDetail = _detailFromRemoteWork(currentWork, target);
-      }
-    } else {
-      baseDetail = _detailFromRemoteWork(currentWork, target);
-    }
+    final baseDetail = existingBytes == null
+        ? _detailFromRemoteWork(currentWork, target)
+        : _jsonCodec.decode(existingBytes, target).copyWith(target: target);
 
     final now = DateTime.now();
     final effectiveDuration = preserveDuration && baseDetail.duration != null
@@ -360,9 +342,26 @@ class WebDavMediaSourceAdapter {
       updatedAt: now,
     );
 
-    final encoded = existingBytes != null
-        ? _tryMergeOrEncodeNew(existingBytes, nextDetail)
-        : _jsonCodec.encodeNew(nextDetail);
+    final encoded = _encodeSidecar(existingBytes, nextDetail);
+    if (originalDir != currentDirUri) {
+      try {
+        await client.moveUri(
+          sourceUri: originalDir,
+          destinationUri: currentDirUri,
+        );
+      } on WebDavException catch (error) {
+        if (error.statusCode == 412 || error.statusCode == 409) {
+          throw const AudioDetailRenameException('nameConflict');
+        }
+        throw const AudioDetailRenameException('renameFailed');
+      }
+    }
+    if (savedRelCover != null && coverBytes != null) {
+      await client.putBytesAtomic(
+        currentDirUri.resolve(savedRelCover),
+        coverBytes,
+      );
+    }
     await client.putBytesAtomic(jsonUri, encoded);
 
     return currentWork.copyWith(
@@ -401,16 +400,9 @@ class WebDavMediaSourceAdapter {
       maxBytes: 2 * 1024 * 1024,
     );
     final target = AudioDetailTarget.libraryRootFolder(dirUri.path);
-    AudioDetail baseDetail;
-    if (existingBytes != null) {
-      try {
-        baseDetail = _jsonCodec.decode(existingBytes, target);
-      } on Object {
-        baseDetail = _detailFromRemoteWork(work, target);
-      }
-    } else {
-      baseDetail = _detailFromRemoteWork(work, target);
-    }
+    final baseDetail = existingBytes == null
+        ? _detailFromRemoteWork(work, target)
+        : _jsonCodec.decode(existingBytes, target);
 
     final now = DateTime.now();
     final trimmedReview = reviewText.trim();
@@ -423,9 +415,7 @@ class WebDavMediaSourceAdapter {
       updatedAt: baseDetail.updatedAt ?? now,
     );
 
-    final encoded = existingBytes != null
-        ? _tryMergeOrEncodeNew(existingBytes, nextDetail)
-        : _jsonCodec.encodeNew(nextDetail);
+    final encoded = _encodeSidecar(existingBytes, nextDetail);
     await client.putBytesAtomic(jsonUri, encoded);
 
     return work.copyWith(
@@ -506,16 +496,9 @@ class WebDavMediaSourceAdapter {
       maxBytes: 2 * 1024 * 1024,
     );
     final target = AudioDetailTarget.libraryRootFolder(dirUri.path);
-    AudioDetail baseDetail;
-    if (existingBytes != null) {
-      try {
-        baseDetail = _jsonCodec.decode(existingBytes, target);
-      } on Object {
-        baseDetail = _detailFromRemoteWork(work, target);
-      }
-    } else {
-      baseDetail = _detailFromRemoteWork(work, target);
-    }
+    final baseDetail = existingBytes == null
+        ? _detailFromRemoteWork(work, target)
+        : _jsonCodec.decode(existingBytes, target);
 
     final now = DateTime.now();
     final nextDetail = baseDetail.copyWith(
@@ -524,9 +507,7 @@ class WebDavMediaSourceAdapter {
       createdAt: baseDetail.createdAt ?? now,
       updatedAt: now,
     );
-    final encoded = existingBytes != null
-        ? _tryMergeOrEncodeNew(existingBytes, nextDetail)
-        : _jsonCodec.encodeNew(nextDetail);
+    final encoded = _encodeSidecar(existingBytes, nextDetail);
     await client.putBytesAtomic(jsonUri, encoded);
 
     return work.copyWith(
@@ -536,16 +517,12 @@ class WebDavMediaSourceAdapter {
     );
   }
 
-  static Uint8List _tryMergeOrEncodeNew(
-    Uint8List existingBytes,
+  static Uint8List _encodeSidecar(
+    Uint8List? existingBytes,
     AudioDetail nextDetail,
-  ) {
-    try {
-      return _jsonCodec.merge(existingBytes, nextDetail);
-    } on Object {
-      return _jsonCodec.encodeNew(nextDetail);
-    }
-  }
+  ) => existingBytes == null
+      ? _jsonCodec.encodeNew(nextDetail)
+      : _jsonCodec.merge(existingBytes, nextDetail);
 
   static AudioDetail _detailFromRemoteWork(
     RemoteLibraryWork work,

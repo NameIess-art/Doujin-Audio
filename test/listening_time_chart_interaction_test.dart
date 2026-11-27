@@ -557,28 +557,66 @@ void main() {
   }
 
   testWidgets(
-    'heatmap resizing fills the viewport without rescanning history',
+    'heatmap resizing reflows the legend without rescanning history',
     (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
       final days = _CountingDays([
         ListeningDay(date: today, duration: const Duration(minutes: 2)),
       ]);
-      await pumpChart(tester, style: ListeningChartStyle.heatmap, days: days);
+      final intervals = find.byKey(const ValueKey('listening-chart-intervals'));
+      final legend = find.byKey(const ValueKey('listening-heatmap-legend'));
+      final grid = find.byKey(const ValueKey('listening-chart-heatmap'));
+      await pumpChart(
+        tester,
+        style: ListeningChartStyle.heatmap,
+        days: days,
+        width: 280,
+        textScale: 1.6,
+      );
+      expect(
+        tester.getRect(legend).top,
+        greaterThan(tester.getRect(intervals).bottom),
+      );
       days.reads = 0;
       await pumpChart(
         tester,
         style: ListeningChartStyle.heatmap,
         days: days,
-        width: 720,
+        width: 1120,
         textScale: 1.6,
       );
       expect(days.reads, 0);
-      final bounds = tester.getRect(
-        find.byKey(const ValueKey('listening-chart-heatmap')),
-      );
+      final bounds = tester.getRect(grid);
       final latest = tester.getRect(find.byKey(ValueKey(today)));
+      final intervalBounds = tester.getRect(intervals);
+      final legendBounds = tester.getRect(legend);
+      expect(intervalBounds.left, closeTo(bounds.right - 1120, 0.1));
+      expect(legendBounds.left, greaterThan(intervalBounds.right));
+      expect(legendBounds.center.dy, closeTo(intervalBounds.center.dy, 0.1));
+      expect(legendBounds.right, closeTo(bounds.right, 0.1));
       expect(latest.bottomRight, bounds.bottomRight);
       expect(latest.width, greaterThan(18));
       expect(latest.width, closeTo(latest.height, 0.001));
+
+      // The buttons fit on their own with room left over, but the legend wraps.
+      final stackedWidth = intervalBounds.width + legendBounds.width / 2;
+      await pumpChart(
+        tester,
+        style: ListeningChartStyle.heatmap,
+        days: days,
+        width: stackedWidth,
+        textScale: 1.6,
+      );
+      final stackedGrid = tester.getRect(grid);
+      final stackedIntervals = tester.getRect(intervals);
+      final stackedLegend = tester.getRect(legend);
+      expect(
+        stackedIntervals.left,
+        closeTo(stackedGrid.right - stackedWidth, 0.1),
+      );
+      expect(stackedLegend.right, closeTo(stackedGrid.right, 0.1));
+      expect(stackedLegend.top, greaterThan(stackedIntervals.bottom));
       expect(tester.takeException(), isNull);
     },
   );

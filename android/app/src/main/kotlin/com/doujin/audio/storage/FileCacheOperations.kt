@@ -119,6 +119,11 @@ internal class FileCacheOperations(private val context: Context) {
     fun writeTrackSubtitle(path: String, bytes: ByteArray): Boolean =
         documentStorage.writeFileBytes(path, bytes)
 
+    fun writeTranscribedSubtitle(
+        trackPath: String, groupKey: String?, bytes: ByteArray,
+        primaryPath: String?, primaryRevision: String?
+    ): String = subtitles.writeTranscription(trackPath, groupKey, bytes, primaryPath, primaryRevision)
+
     fun resolveMediaDurationMs(source: String): Long? = mediaMetadata.resolveDurationMs(source)
 
     fun resolveTrackCover(path: String, groupKey: String?, rootFolder: String?): String? =

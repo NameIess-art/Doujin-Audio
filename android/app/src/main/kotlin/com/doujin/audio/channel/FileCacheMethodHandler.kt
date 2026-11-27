@@ -32,7 +32,8 @@ internal fun fileCacheTaskFailure(throwable: Throwable): FileCacheTaskResult.Fai
 internal fun trackSubtitleWriteAction(
     arguments: ChannelArgumentReader,
     writePath: (String, ByteArray) -> Boolean,
-    writeTrack: (String, String?, String, ByteArray, String?, Boolean, Boolean, String?) -> String
+    writeTrack: (String, String?, String, ByteArray, String?, Boolean, Boolean, String?) -> String,
+    writeTranscription: ((String, String?, ByteArray, String?, String?) -> String)? = null
 ): () -> Any {
     val bytes = arguments.requiredByteArray("bytes")
     if (arguments.optionalString("path") != null) {
@@ -49,6 +50,20 @@ internal fun trackSubtitleWriteAction(
     val overwrite = arguments.optionalBoolean("overwrite", false)
     val createNew = arguments.optionalBoolean("createNew", false)
     val suffix = arguments.optionalString("fileNameSuffix")
+    if (arguments.optionalBoolean("replacePrimary", false)) {
+        require(trackPath.startsWith("content://") && extension == ".srt" &&
+            sourcePath == null && !overwrite && !createNew && suffix == null) {
+            "Transcription requires a primary subtitle revision for an SAF track"
+        }
+        val primaryPath = arguments.optionalString("primaryPath")
+        val revision = arguments.optionalString("primaryRevision")
+        require(if (primaryPath == null) revision == null else
+            primaryPath.startsWith("content://") && revision?.matches(Regex("[0-9a-f]{64}")) == true) {
+            "Invalid primary subtitle revision"
+        }
+        val writer = requireNotNull(writeTranscription)
+        return { writer(trackPath, groupKey, bytes, primaryPath, revision) }
+    }
     if (createNew) {
         require(sourcePath == null && !overwrite) { "Independent subtitles cannot replace or move a source" }
         translatedSubtitleName("track.mp3", arguments.requiredString("fileNameSuffix"), extension)
@@ -391,7 +406,8 @@ internal class FileCacheMethodHandler(
             }
             FileCacheMethods.WRITE_TRACK_SUBTITLE -> {
                 val write = trackSubtitleWriteAction(
-                    arguments, operations::writeTrackSubtitle, operations::writeTrackSubtitle
+                    arguments, operations::writeTrackSubtitle, operations::writeTrackSubtitle,
+                    operations::writeTranscribedSubtitle
                 )
                 runAsync(result, errorCode = {
                     if (it is SubtitleExistsException) "subtitle_exists" else "subtitle_write_failed"

@@ -7,6 +7,7 @@ import 'package:doujin_audio/features/player/application/subtitle_generation.dar
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/media/subtitle_parser.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path/path.dart' as path;
@@ -29,6 +30,79 @@ void main() {
       'Format: Name, Fontname\nStyle: Custom,Arial\n[Events]\n'
       'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n'
       'Dialogue: 0,0:00:01.00,0:00:03.00,Custom,,0,0,0,,Original\n';
+
+  test(
+    'transcription replaces only the confirmed primary and preserves an occupied SRT',
+    () async {
+      final dir = await Directory.systemTemp.createTemp(
+        'transcription_primary_',
+      );
+      addTearDown(() => dir.delete(recursive: true));
+      final audio = File(path.join(dir.path, 'voice.mp3'));
+      await audio.writeAsBytes([1]);
+      final primary = File(path.join(dir.path, 'voice.ass'));
+      await primary.writeAsString(ass);
+      final alternate = File(path.join(dir.path, 'voice.srt'));
+      await alternate.writeAsString('alternate SRT');
+      final service = PlaybackSubtitleService(trackResolver: (_) => null);
+      addTearDown(service.dispose);
+      final expected = await service.transcriptionSubtitleTarget(audio.path);
+      expect(expected.sourcePath, primary.path);
+
+      final saved = await service.saveDraft(
+        audio.path,
+        const SubtitleDraft(
+          cues: editedCues,
+          kind: SubtitleDraftKind.transcription,
+          sourceLanguage: 'ja',
+        ),
+        expectedPrimary: expected,
+      );
+      expect(path.basename(saved.sourcePath), 'voice.asr.srt');
+      expect(await primary.exists(), isFalse);
+      expect(await alternate.readAsString(), 'alternate SRT');
+    },
+  );
+
+  for (final existed in [false, true]) {
+    test(
+      'transcription leaves a primary created or changed during the job (existed: $existed)',
+      () async {
+        final dir = await Directory.systemTemp.createTemp(
+          'transcription_conflict_',
+        );
+        addTearDown(() => dir.delete(recursive: true));
+        final audio = File(path.join(dir.path, 'voice.mp3'));
+        await audio.writeAsBytes([1]);
+        final primary = File(path.join(dir.path, 'voice.srt'));
+        if (existed) await primary.writeAsString('original');
+        final service = PlaybackSubtitleService(trackResolver: (_) => null);
+        addTearDown(service.dispose);
+        final expected = await service.transcriptionSubtitleTarget(audio.path);
+        await primary.writeAsString('concurrent edit');
+
+        await expectLater(
+          service.saveDraft(
+            audio.path,
+            const SubtitleDraft(
+              cues: editedCues,
+              kind: SubtitleDraftKind.transcription,
+              sourceLanguage: 'ja',
+            ),
+            expectedPrimary: expected,
+          ),
+          throwsA(
+            isA<PlatformException>().having(
+              (error) => error.code,
+              'code',
+              'subtitle_exists',
+            ),
+          ),
+        );
+        expect(await primary.readAsString(), 'concurrent edit');
+      },
+    );
+  }
   for (final overwrite in [false, true]) {
     test(
       'import replaces existing subtitles only when confirmed ($overwrite)',

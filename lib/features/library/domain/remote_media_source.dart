@@ -15,6 +15,8 @@ enum RemoteMediaSourceType {
   };
 }
 
+enum RemoteMediaSourceConflict implements Exception { duplicate, localServer }
+
 class RemoteMediaSource {
   RemoteMediaSource({
     required this.id,
@@ -22,6 +24,7 @@ class RemoteMediaSource {
     required this.name,
     required this.baseUrl,
     this.username = '',
+    this.lanServerId,
     this.secretConfigured = false,
     this.allowSync = false,
     this.allowEdit = true,
@@ -36,6 +39,7 @@ class RemoteMediaSource {
   final String name;
   final String baseUrl;
   final String username;
+  final String? lanServerId;
   final bool secretConfigured;
   final bool allowSync;
   final bool allowEdit;
@@ -50,6 +54,7 @@ class RemoteMediaSource {
     String? name,
     String? baseUrl,
     String? username,
+    String? lanServerId,
     bool? secretConfigured,
     bool? allowSync,
     bool? allowEdit,
@@ -61,6 +66,7 @@ class RemoteMediaSource {
     name: name ?? this.name,
     baseUrl: baseUrl ?? this.baseUrl,
     username: username ?? this.username,
+    lanServerId: lanServerId ?? this.lanServerId,
     secretConfigured: secretConfigured ?? this.secretConfigured,
     allowSync: allowSync ?? this.allowSync,
     allowEdit: allowEdit ?? this.allowEdit,
@@ -75,6 +81,7 @@ class RemoteMediaSource {
     'name': name,
     'baseUrl': baseUrl,
     'username': username,
+    'lanServerId': ?lanServerId,
     'secretConfigured': secretConfigured,
     'allowSync': allowSync,
     'allowEdit': allowEdit,
@@ -90,6 +97,7 @@ class RemoteMediaSource {
         name: json['name']?.toString() ?? '',
         baseUrl: json['baseUrl']?.toString() ?? '',
         username: json['username']?.toString() ?? '',
+        lanServerId: json['lanServerId']?.toString(),
         secretConfigured: json['secretConfigured'] == true,
         allowSync: json['allowSync'] == true,
         allowEdit: json['allowEdit'] != false,

@@ -730,7 +730,7 @@ class _WindowsLanServerSettingsCardState
                         );
                         showAppSnackBar(
                           context,
-                          i18n.tr('copied_to_clipboard'),
+                          i18n.tr('copied'),
                           tone: AppFeedbackTone.success,
                         );
                       },
@@ -790,7 +790,7 @@ class _WindowsLanServerSettingsCardState
                         Clipboard.setData(ClipboardData(text: url));
                         showAppSnackBar(
                           context,
-                          i18n.tr('copied_to_clipboard'),
+                          i18n.tr('copied_to_clipboard', {'value': url}),
                           tone: AppFeedbackTone.success,
                         );
                       },

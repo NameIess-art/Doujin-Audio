@@ -925,7 +925,9 @@ const Map<String, String> appLanguageJa = {
   'subtitle_selected': '字幕を切り替えました',
   'subtitle_transcribe_generate': '音声から字幕を生成',
   'subtitle_transcribe_overwrite_hint':
-      '既存の字幕があります。認識を続けると同名の SRT で主字幕を上書きします（生成済みの翻訳字幕は残ります）。',
+      '音声認識を続けると主字幕が新しい SRT に置き換わります。他の字幕ファイルはそのまま残ります。',
+  'subtitle_transcription_source_changed':
+      '主字幕が変更されました。音声認識をやり直してください。',
   'subtitle_script_generate': '台本から字幕を生成',
   'subtitle_script_selection_title': '台本選択',
   'subtitle_script_hint': 'TXT・MD の台本を選び、音声と同期',
@@ -1175,6 +1177,8 @@ const Map<String, String> appLanguageJa = {
   'remote_source_access_code': 'アクセスコード',
   'remote_source_test_success': '接続に成功しました',
   'remote_source_test_failed': '接続できませんでした。URL とネットワークを確認してください',
+  'remote_source_duplicate': 'このリモートメディアソースはすでに追加されています',
+  'remote_source_local_server': 'この端末の共有サービスです。ローカルライブラリを使用してください',
   'remote_source_auth_failed': '認証に失敗しました。アクセスコードまたは認証情報を確認してください',
   'remote_source_load_failed': 'リモートカタログの読み込みに失敗しました',
   'remote_source_refresh_added': '更新完了：{count}作品追加',

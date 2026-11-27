@@ -1166,7 +1166,9 @@ class _RemoteSourceEditDialogState
     if (_discovering) return;
     setState(() => _discovering = true);
     try {
-      final list = await widget.discoverLan();
+      final list = await ref
+          .read(remoteLibraryControllerProvider)
+          .discoverLanSources(discover: widget.discoverLan);
       if (mounted) setState(() => _discovered = list);
     } finally {
       if (mounted) setState(() => _discovering = false);
@@ -1250,11 +1252,18 @@ class _RemoteSourceEditDialogState
         );
       }
       if (mounted) Navigator.of(context).pop();
-    } on Object {
+    } on Object catch (error) {
       if (!mounted) return;
       showAppSnackBar(
         context,
-        i18n.tr('network_invalid_value'),
+        i18n.tr(
+          switch (error) {
+            RemoteMediaSourceConflict.duplicate => 'remote_source_duplicate',
+            RemoteMediaSourceConflict.localServer =>
+              'remote_source_local_server',
+            _ => 'network_invalid_value',
+          },
+        ),
         tone: AppFeedbackTone.destructive,
       );
     } finally {
@@ -1304,7 +1313,7 @@ class _RemoteSourceEditDialogState
                     ),
                   ],
                 ),
-              if (_type == RemoteMediaSourceType.windowsLan) ...[
+              if (!isEditing && _type == RemoteMediaSourceType.windowsLan) ...[
                 const SizedBox(height: 12),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,

@@ -321,10 +321,16 @@ class LanMediaServerService extends ChangeNotifier {
       if (segments.length == 3 &&
           segments[0] == 'api' &&
           segments[1] == 'v1' &&
-          segments[2] == 'works' &&
-          request.method == 'GET') {
-        await _handleListWorks(request);
-        return;
+          segments[2] == 'works') {
+        if (request.method == 'HEAD') {
+          response.statusCode = HttpStatus.noContent;
+          await response.close();
+          return;
+        }
+        if (request.method == 'GET') {
+          await _handleListWorks(request);
+          return;
+        }
       }
 
       if (segments.length == 5 &&

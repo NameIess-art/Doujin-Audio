@@ -14,6 +14,7 @@ import '../../../core/media/audio_detail.dart';
 import '../../../core/media/cross_platform_media_identity.dart';
 import '../../../core/media/dlsite_metadata.dart';
 import '../../../core/media/music_track.dart';
+import '../../../core/media/playback_media_reference.dart';
 import '../../../core/network/remote_source_headers.dart';
 import '../../../core/network/webdav_client.dart';
 import '../../../core/persistence/app_preferences.dart';
@@ -23,6 +24,7 @@ import '../../data_support/domain/cross_platform_sync_models.dart';
 import '../../player/application/playback_session_launcher.dart';
 import '../../player/domain/playback_mode.dart';
 import '../domain/remote_media_source.dart';
+import 'lan_discovery_service.dart';
 import 'library_facade.dart' show AudioDetailRenameException;
 import 'webdav_media_source_adapter.dart';
 
@@ -44,6 +46,8 @@ class RemoteLibraryController extends ChangeNotifier {
     })?
     webDavClientFactory,
     Future<Directory> Function()? supportDirectoryProvider,
+    DateTime Function()? clock,
+    String Function()? localLanServerId,
   }) : _syncService = syncService,
        _playbackLauncher = playbackLauncher,
        _readSecret = readSecret ?? _defaultSecretRead,
@@ -52,7 +56,9 @@ class RemoteLibraryController extends ChangeNotifier {
        _httpClientFactory = httpClientFactory ?? HttpClient.new,
        _webDavClientFactory = webDavClientFactory ?? _defaultWebDavFactory,
        _supportDirectoryProvider =
-           supportDirectoryProvider ?? getApplicationSupportDirectory;
+           supportDirectoryProvider ?? getApplicationSupportDirectory,
+       _clock = clock ?? DateTime.now,
+       _localLanServerId = localLanServerId;
 
   static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
   static Future<String?> _defaultSecretRead(String key) =>
@@ -80,10 +86,13 @@ class RemoteLibraryController extends ChangeNotifier {
   })
   _webDavClientFactory;
   final Future<Directory> Function() _supportDirectoryProvider;
+  final DateTime Function() _clock;
+  final String Function()? _localLanServerId;
   static const WebDavMediaSourceAdapter _webDavAdapter =
       WebDavMediaSourceAdapter();
 
   final List<RemoteMediaSource> _sources = <RemoteMediaSource>[];
+  Future<void> _sourceSaveTail = Future<void>.value();
   final Set<String> _pendingSourceRemovals = <String>{};
   List<RemoteMediaSource> _sourcesView = const <RemoteMediaSource>[];
   final Map<String, String> _secretsBySourceId = <String, String>{};
@@ -92,6 +101,7 @@ class RemoteLibraryController extends ChangeNotifier {
   final Map<String, bool> _loadingBySourceId = <String, bool>{};
   final Map<String, Object?> _errorBySourceId = <String, Object?>{};
   final Map<String, bool> _reachabilityBySourceId = <String, bool>{};
+  final Map<String, DateTime> _successfulProbes = <String, DateTime>{};
   final Map<String, Future<bool>> _inFlightProbes = <String, Future<bool>>{};
   final Map<String, Future<List<RemoteLibraryWork>>> _inFlightRefreshes =
       <String, Future<List<RemoteLibraryWork>>>{};
@@ -245,9 +255,28 @@ class RemoteLibraryController extends ChangeNotifier {
     if (existing != null) return existing;
     final source = sourceById(sourceId);
     if (source == null) return false;
+    final lastSuccess = _successfulProbes[sourceId];
+    if (lastSuccess != null &&
+        _clock().difference(lastSuccess) < const Duration(seconds: 5)) {
+      return true;
+    }
     final future = _runSourceProbe(source, timeout);
     _inFlightProbes[sourceId] = future;
-    return future;
+    try {
+      final ok = await future;
+      if (identical(_inFlightProbes[sourceId], future) &&
+          sourceById(sourceId) != null) {
+        final previous = _reachabilityBySourceId[sourceId];
+        _reachabilityBySourceId[sourceId] = ok;
+        if (ok) _successfulProbes[sourceId] = _clock();
+        if (previous != ok) notifyListeners();
+      }
+      return ok;
+    } finally {
+      if (identical(_inFlightProbes[sourceId], future)) {
+        unawaited(_inFlightProbes.remove(sourceId));
+      }
+    }
   }
 
   Future<void> probeAllSourcesConnection({
@@ -266,27 +295,12 @@ class RemoteLibraryController extends ChangeNotifier {
     RemoteMediaSource source,
     Duration timeout,
   ) async {
-    var ok = false;
     try {
       final baseUri = Uri.parse(source.baseUrl);
       final effectiveSecret = _secretsBySourceId[source.id];
       if (source.isLan) {
-        final client = _httpClientFactory()..connectionTimeout = timeout;
-        try {
-          final worksUri = _resolveLanPath(baseUri, '/api/v1/works');
-          final request = await client.getUrl(worksUri).timeout(timeout);
-          if (effectiveSecret != null && effectiveSecret.trim().isNotEmpty) {
-            request.headers.set(
-              HttpHeaders.authorizationHeader,
-              'Bearer ${effectiveSecret.trim()}',
-            );
-          }
-          final response = await request.close().timeout(timeout);
-          await response.drain<void>().timeout(timeout);
-          ok = response.statusCode >= 200 && response.statusCode < 300;
-        } finally {
-          client.close();
-        }
+        final status = await _probeLanAccess(baseUri, effectiveSecret, timeout);
+        return status >= 200 && status < 300;
       } else {
         final client = _webDavClientFactory(
           baseUri: baseUri,
@@ -295,22 +309,50 @@ class RemoteLibraryController extends ChangeNotifier {
         );
         try {
           await client.testConnection().timeout(timeout);
-          ok = true;
+          return true;
         } finally {
-          client.close();
+          client.close(force: true);
         }
       }
     } on Object {
-      ok = false;
-    } finally {
-      unawaited(_inFlightProbes.remove(source.id));
-      final previous = _reachabilityBySourceId[source.id];
-      _reachabilityBySourceId[source.id] = ok;
-      if (previous != ok) {
-        notifyListeners();
-      }
+      return false;
     }
-    return ok;
+  }
+
+  Future<int> _probeLanAccess(
+    Uri baseUri,
+    String? secret,
+    Duration timeout,
+  ) async {
+    final client = _httpClientFactory()..connectionTimeout = timeout;
+    final uri = _resolveLanPath(baseUri, '/api/v1/works');
+    Future<int> probe(String method) async {
+      final request = await client.openUrl(method, uri);
+      if (secret != null && secret.trim().isNotEmpty) {
+        request.headers.set(
+          HttpHeaders.authorizationHeader,
+          'Bearer ${secret.trim()}',
+        );
+      }
+      final response = await request.close();
+      await response.listen(null).cancel();
+      return response.statusCode;
+    }
+
+    try {
+      return await (() async {
+        final status = await probe('HEAD');
+        // Older LAN servers only support GET. Cancel after reading the status.
+        if (status == HttpStatus.notFound ||
+            status == HttpStatus.methodNotAllowed ||
+            status == HttpStatus.notImplemented) {
+          return probe('GET');
+        }
+        return status;
+      })().timeout(timeout);
+    } finally {
+      client.close(force: true);
+    }
   }
 
   void selectSource(String? sourceId) {
@@ -349,33 +391,43 @@ class RemoteLibraryController extends ChangeNotifier {
       return;
     }
 
-    final client = _httpClientFactory()
-      ..connectionTimeout = const Duration(seconds: 10);
-    try {
-      final worksUri = _resolveLanPath(baseUri, '/api/v1/works');
-      final request = await client
-          .getUrl(worksUri)
-          .timeout(const Duration(seconds: 10));
-      if (effectiveSecret != null && effectiveSecret.trim().isNotEmpty) {
-        request.headers.set(
-          HttpHeaders.authorizationHeader,
-          'Bearer ${effectiveSecret.trim()}',
-        );
-      }
-      final response = await request.close().timeout(
-        const Duration(seconds: 12),
-      );
-      await response.listen(null).cancel();
-      if (response.statusCode == HttpStatus.unauthorized ||
-          response.statusCode == HttpStatus.forbidden) {
-        throw const HttpException('remote_source_unauthorized');
-      }
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw HttpException('remote_source_http_${response.statusCode}');
-      }
-    } finally {
-      client.close();
+    final status = await _probeLanAccess(
+      baseUri,
+      effectiveSecret,
+      const Duration(seconds: 12),
+    );
+    if (status == HttpStatus.unauthorized || status == HttpStatus.forbidden) {
+      throw const HttpException('remote_source_unauthorized');
     }
+    if (status < 200 || status >= 300) {
+      throw HttpException('remote_source_http_$status');
+    }
+  }
+
+  Future<List<LanDiscoveredServer>> discoverLanSources({
+    Future<List<LanDiscoveredServer>> Function() discover =
+        LanDiscoveryClient.discover,
+  }) async {
+    await ensureCredentialsLoaded();
+    final found = await discover();
+    final localId = _localLanServerId?.call();
+    final seen = <String>{
+      if (localId != null && localId.isNotEmpty) localId,
+      for (final source in _sources) ?source.lanServerId,
+    };
+    final addedEndpoints = {
+      for (final source in _sources)
+        if (source.isLan)
+          if (Uri.tryParse(source.baseUrl) case final uri?) _sourceEndpoint(uri),
+    };
+    return [
+      for (final server in found)
+        if (!addedEndpoints.contains(
+              _sourceEndpoint(Uri.parse(server.baseUrl)),
+            ) &&
+            seen.add(server.serverId))
+          server,
+    ];
   }
 
   Future<RemoteMediaSource> addOrUpdateSource({
@@ -389,9 +441,72 @@ class RemoteLibraryController extends ChangeNotifier {
   }) async {
     await initialize();
     final baseUri = _normalizeSourceBaseUri(baseUrl, type);
+    final previousSave = _sourceSaveTail;
+    final finished = Completer<void>();
+    _sourceSaveTail = finished.future;
+    await previousSave;
+    try {
+      return await _saveSource(
+        id: id,
+        type: type,
+        name: name,
+        baseUri: baseUri,
+        username: username.trim(),
+        secret: secret,
+        clearSecret: clearSecret,
+      );
+    } finally {
+      finished.complete();
+    }
+  }
+
+  Future<RemoteMediaSource> _saveSource({
+    required String? id,
+    required RemoteMediaSourceType type,
+    required String name,
+    required Uri baseUri,
+    required String username,
+    required String? secret,
+    required bool clearSecret,
+  }) async {
     final sourceId = (id != null && id.isNotEmpty) ? id : _generateId();
-    final existingIndex = _sources.indexWhere((s) => s.id == sourceId);
-    final existing = existingIndex >= 0 ? _sources[existingIndex] : null;
+    final endpoint = _sourceEndpoint(baseUri);
+    final matchingType = _sources
+        .where((source) => source.id != sourceId && source.type == type)
+        .toList(growable: false);
+    if (matchingType.any(
+      (source) =>
+          _hasSourceEndpoint(source, endpoint) &&
+          (source.isLan || source.username.trim() == username),
+    )) {
+      throw RemoteMediaSourceConflict.duplicate;
+    }
+
+    final info = type == RemoteMediaSourceType.windowsLan
+        ? await _probeLanServerInfo(baseUri)
+        : null;
+    final serverId = info?.serverId;
+    if (serverId != null) {
+      if (serverId == _localLanServerId?.call()) {
+        throw RemoteMediaSourceConflict.localServer;
+      }
+      if (matchingType.any((source) => source.lanServerId == serverId)) {
+        throw RemoteMediaSourceConflict.duplicate;
+      }
+      // Older saved sources may only have an address until they are reached.
+      final legacyServers = await Future.wait([
+        for (final source in matchingType)
+          if (source.lanServerId == null)
+            if (Uri.tryParse(source.baseUrl) case final uri?)
+              _probeLanServerInfo(uri),
+      ]);
+      if (legacyServers.any((server) => server?.serverId == serverId)) {
+        throw RemoteMediaSourceConflict.duplicate;
+      }
+    }
+
+    _successfulProbes.remove(sourceId);
+    unawaited(_inFlightProbes.remove(sourceId));
 
     String? effectiveSecret;
     if (clearSecret) {
@@ -406,26 +521,23 @@ class RemoteLibraryController extends ChangeNotifier {
       effectiveSecret = _secretsBySourceId[sourceId];
     }
 
-    var allowSync =
-        existing?.allowSync ?? (type == RemoteMediaSourceType.windowsLan);
-    var allowEdit = existing?.allowEdit ?? true;
-    if (type == RemoteMediaSourceType.windowsLan) {
-      final info = await _probeLanServerInfo(baseUri);
-      if (info != null) {
-        allowSync = info.allowSync;
-        allowEdit = info.allowEdit;
-      }
-    }
-
+    final existingIndex = _sources.indexWhere((s) => s.id == sourceId);
+    final existing = existingIndex >= 0 ? _sources[existingIndex] : null;
+    final sameEndpoint =
+        existing != null && _hasSourceEndpoint(existing, endpoint);
     final saved = RemoteMediaSource(
       id: sourceId,
       type: type,
       name: name.trim().isNotEmpty ? name.trim() : baseUri.host,
       baseUrl: baseUri.toString(),
-      username: username.trim(),
+      username: username,
+      lanServerId: serverId ?? (sameEndpoint ? existing.lanServerId : null),
       secretConfigured: effectiveSecret != null && effectiveSecret.isNotEmpty,
-      allowSync: allowSync,
-      allowEdit: allowEdit,
+      allowSync:
+          info?.allowSync ??
+          existing?.allowSync ??
+          (type == RemoteMediaSourceType.windowsLan),
+      allowEdit: info?.allowEdit ?? existing?.allowEdit ?? true,
       pinnedWorkIds: existing?.pinnedWorkIds ?? const <String>[],
       excludedWorkIds: existing?.excludedWorkIds ?? const <String>[],
       createdAtMs:
@@ -484,6 +596,7 @@ class RemoteLibraryController extends ChangeNotifier {
     _loadingBySourceId.remove(sourceId);
     _errorBySourceId.remove(sourceId);
     _reachabilityBySourceId.remove(sourceId);
+    _successfulProbes.remove(sourceId);
     unawaited(_inFlightProbes.remove(sourceId));
     unawaited(_inFlightRefreshes.remove(sourceId));
     _treesByWorkKey.removeWhere((key, _) => key.startsWith('$sourceId::'));
@@ -534,6 +647,7 @@ class RemoteLibraryController extends ChangeNotifier {
           works = await _webDavAdapter.fetchWorks(
             source: source,
             client: client,
+            cachedWorks: worksFor(sourceId),
           );
           works = await _overlayLocalSyncWorkStates(works);
         } finally {
@@ -542,12 +656,14 @@ class RemoteLibraryController extends ChangeNotifier {
       }
       _worksBySourceId[sourceId] = works;
       _reachabilityBySourceId[sourceId] = true;
+      _successfulProbes[sourceId] = _clock();
       _treesByWorkKey.removeWhere((key, _) => key.startsWith('$sourceId::'));
       await _saveCachedWorksToDisk(sourceId, works);
       return works;
     } catch (error, stack) {
       _errorBySourceId[sourceId] = error;
       _reachabilityBySourceId[sourceId] = false;
+      _successfulProbes.remove(sourceId);
       AppLogService.warning(
         'remote_source_refresh_failed',
         error: error,
@@ -880,7 +996,6 @@ class RemoteLibraryController extends ChangeNotifier {
       );
       try {
         updatedWork = await _webDavAdapter.saveWorkDetail(
-          source: source,
           work: work,
           client: client,
           metadata: metadata,
@@ -1237,6 +1352,11 @@ class RemoteLibraryController extends ChangeNotifier {
       rjCode: work.rjCode,
       groupTitle: work.title,
       groupKey: work.uniqueKey,
+      remoteMetadata: {'workKey': work.uniqueKey},
+    );
+    final syncedByPath = await _syncService.findSyncedTrackStates(
+      workKey: workSyncKey,
+      relativePaths: ordered.map((file) => file.relativePath),
     );
 
     final built = <MusicTrack>[];
@@ -1254,24 +1374,8 @@ class RemoteLibraryController extends ChangeNotifier {
           allSubtitlesInFolder[folderKey == '.' ? '' : folderKey] ??
           const <AsmrTrackFile>[];
 
-      Duration syncedPos = Duration.zero;
-      DateTime? syncedAt;
-      var syncedFav = false;
-      if (workSyncKey.isNotEmpty) {
-        final synced = await _syncService.findSyncedTrackState(
-          workKey: workSyncKey,
-          relativePath: file.relativePath,
-        );
-        if (synced != null) {
-          syncedPos = Duration(milliseconds: synced.positionMs);
-          if (synced.lastPlayedAtMs != null && synced.lastPlayedAtMs! > 0) {
-            syncedAt = DateTime.fromMillisecondsSinceEpoch(
-              synced.lastPlayedAtMs!,
-            );
-          }
-          syncedFav = synced.isFavorite;
-        }
-      }
+      final synced = syncedByPath[file.relativePath];
+      final lastPlayedAtMs = synced?.lastPlayedAtMs ?? 0;
 
       final metadata = <String, Object?>{
         'remoteSourceId': work.sourceId,
@@ -1289,7 +1393,10 @@ class RemoteLibraryController extends ChangeNotifier {
         'trackRelativePath': file.relativePath,
         'playbackUrls': <String>[streamUrl],
         if (pairedSub?.streamUrl != null) ...<String, Object?>{
-          'subtitleUrl': pairedSub!.streamUrl,
+          'subtitleUrl': PlaybackMediaReference.bindRemoteSource(
+            pairedSub!.streamUrl!,
+            work.sourceId,
+          ),
           'subtitleTitle': pairedSub.title,
         },
         if (siblingSubs.isNotEmpty)
@@ -1297,25 +1404,35 @@ class RemoteLibraryController extends ChangeNotifier {
             for (final sub in siblingSubs)
               if (sub.streamUrl != null)
                 <String, String>{
-                  'url': sub.streamUrl!,
+                  'url': PlaybackMediaReference.bindRemoteSource(
+                    sub.streamUrl!,
+                    work.sourceId,
+                  ),
                   'name': sub.title,
                 },
           ],
       };
 
       final track = MusicTrack(
-        path: streamUrl,
+        path: PlaybackMediaReference.bindRemoteSource(streamUrl, work.sourceId),
         displayName: path.posix.basenameWithoutExtension(file.title),
         groupKey: 'remote-work:${work.uniqueKey}',
         groupTitle: work.title,
         groupSubtitle: work.rjCode.isNotEmpty ? work.rjCode : work.circleName,
         isSingle: false,
         isVideo: file.isVideo,
-        lastPlayedPosition: syncedPos,
-        lastPlayedAt: syncedAt,
-        isFavorite: syncedFav,
+        lastPlayedPosition: Duration(milliseconds: synced?.positionMs ?? 0),
+        lastPlayedAt: lastPlayedAtMs > 0
+            ? DateTime.fromMillisecondsSinceEpoch(lastPlayedAtMs)
+            : null,
+        isFavorite: synced?.isFavorite ?? false,
         tags: work.tags,
-        remoteCoverUrl: work.coverUrl,
+        remoteCoverUrl: work.coverUrl == null
+            ? null
+            : PlaybackMediaReference.bindRemoteSource(
+                work.coverUrl!,
+                work.sourceId,
+              ),
         remoteMetadataKind: MusicTrack.remoteMetadataKindRemoteSource,
         remoteMetadata: metadata,
         duration: file.duration,
@@ -1361,14 +1478,19 @@ class RemoteLibraryController extends ChangeNotifier {
       _resolveLanPath(baseUri, '/api/v1/works'),
     );
     final info = await _probeLanServerInfo(baseUri);
-    if (info != null &&
-        (info.allowSync != source.allowSync ||
-            info.allowEdit != source.allowEdit)) {
-      final idx = _sources.indexWhere((s) => s.id == source.id);
-      if (idx >= 0) {
-        _sources[idx] = source.copyWith(
+    if (info != null) {
+      final idx = _sources.indexWhere(
+        (s) => s.id == source.id && s.baseUrl == source.baseUrl,
+      );
+      final current = idx < 0 ? null : _sources[idx];
+      if (current != null &&
+          (info.allowSync != current.allowSync ||
+              info.allowEdit != current.allowEdit ||
+              (info.serverId != null && info.serverId != current.lanServerId))) {
+        _sources[idx] = current.copyWith(
           allowSync: info.allowSync,
           allowEdit: info.allowEdit,
+          lanServerId: info.serverId,
         );
         _refreshSourcesView();
         await _persistSources();
@@ -1581,7 +1703,7 @@ class RemoteLibraryController extends ChangeNotifier {
     }
   }
 
-  Future<({bool authRequired, bool allowSync, bool allowEdit})?>
+  Future<({String? serverId, bool allowSync, bool allowEdit})?>
   _probeLanServerInfo(Uri baseUri) async {
     final client = _httpClientFactory()
       ..connectionTimeout = const Duration(seconds: 5);
@@ -1594,17 +1716,23 @@ class RemoteLibraryController extends ChangeNotifier {
         await resp.listen(null).cancel();
         return null;
       }
-      final decoded = jsonDecode(await resp.transform(utf8.decoder).join());
+      final decoded = jsonDecode(
+        await resp
+            .transform(utf8.decoder)
+            .join()
+            .timeout(const Duration(seconds: 5)),
+      );
       if (decoded is! Map) return null;
+      final serverId = decoded['serverId']?.toString().trim();
       return (
-        authRequired: decoded['authRequired'] == true,
+        serverId: serverId == null || serverId.isEmpty ? null : serverId,
         allowSync: decoded['allowSync'] == true,
         allowEdit: decoded['allowEdit'] != false,
       );
     } on Object {
       return null;
     } finally {
-      client.close();
+      client.close(force: true);
     }
   }
 
@@ -1612,14 +1740,18 @@ class RemoteLibraryController extends ChangeNotifier {
     List<RemoteLibraryWork> works,
   ) async {
     if (works.isEmpty) return works;
+    final workKeys = {
+      for (final work in works)
+        if (CrossPlatformMediaIdentity.normalizeRjCode(work.rjCode)
+            case final rj?)
+          work.workId: 'rj:$rj',
+    };
+    final syncedStates = await _syncService.findSyncedWorkStates(
+      workKeys.values,
+    );
     final out = <RemoteLibraryWork>[];
     for (final w in works) {
-      final rj = CrossPlatformMediaIdentity.normalizeRjCode(w.rjCode);
-      if (rj == null) {
-        out.add(w);
-        continue;
-      }
-      final synced = await _syncService.findSyncedWorkState('rj:$rj');
+      final synced = syncedStates[workKeys[w.workId]];
       if (synced == null) {
         out.add(w);
         continue;
@@ -1921,6 +2053,18 @@ class RemoteLibraryController extends ChangeNotifier {
         ? parsed.path.substring(0, parsed.path.length - 1)
         : parsed.path;
     return parsed.replace(path: cleanPath);
+  }
+
+  static Uri _sourceEndpoint(Uri uri) {
+    final normalized = uri.normalizePath().removeFragment();
+    return normalized.replace(
+      path: normalized.path.replaceFirst(RegExp(r'/+$'), ''),
+    );
+  }
+
+  static bool _hasSourceEndpoint(RemoteMediaSource source, Uri endpoint) {
+    final uri = Uri.tryParse(source.baseUrl);
+    return uri != null && _sourceEndpoint(uri) == endpoint;
   }
 
   static Uri _resolveLanPath(Uri baseUri, String apiPath) {

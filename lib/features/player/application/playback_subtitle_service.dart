@@ -5,6 +5,7 @@ import 'dart:isolate';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
@@ -149,6 +150,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
 
   bool startTranscriptionGeneration(
     String trackPath, {
+    required PrimarySubtitleRevision expectedPrimary,
     VoidCallback? onApplied,
   }) => _startGeneration(
     trackPath,
@@ -160,6 +162,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
       cancellation: cancellation,
     ),
     onApplied,
+    expectedPrimary: expectedPrimary,
   );
 
   bool startTranslationGeneration(
@@ -212,8 +215,9 @@ class PlaybackSubtitleService extends ChangeNotifier {
       Future<void>,
     )
     prepare,
-    VoidCallback? onApplied,
-  ) {
+    VoidCallback? onApplied, {
+    PrimarySubtitleRevision? expectedPrimary,
+  }) {
     if (_disposed) return false;
     final existing = _generationJob;
     if (existing?.status == SubtitleGenerationStatus.running) {
@@ -221,10 +225,15 @@ class PlaybackSubtitleService extends ChangeNotifier {
     }
     final job = SubtitleGenerationJob(trackPath: trackPath, kind: kind);
     _generationJob = job;
-    _retryLastGeneration = () =>
-        _startGeneration(trackPath, kind, prepare, onApplied);
+    _retryLastGeneration = () => _startGeneration(
+      trackPath,
+      kind,
+      prepare,
+      onApplied,
+      expectedPrimary: expectedPrimary,
+    );
     _notifyIfActive();
-    unawaited(_runGeneration(job, prepare, onApplied));
+    unawaited(_runGeneration(job, prepare, onApplied, expectedPrimary));
     return true;
   }
 
@@ -237,6 +246,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
     )
     prepare,
     VoidCallback? onApplied,
+    PrimarySubtitleRevision? expectedPrimary,
   ) async {
     try {
       final draft = await prepare(
@@ -263,6 +273,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
           job.trackPath,
           draft,
           isCancelled: () => _disposed || job._cancelRequested,
+          expectedPrimary: expectedPrimary,
         );
         if (_disposed || job._cancelRequested) {
           job._status = SubtitleGenerationStatus.cancelled;
@@ -307,7 +318,14 @@ class PlaybackSubtitleService extends ChangeNotifier {
       if (_disposed || job._cancelRequested) {
         job._status = SubtitleGenerationStatus.cancelled;
       } else {
-        job._errorMessage = error.toString();
+        if (job.kind == SubtitleDraftKind.transcription &&
+            error is PlatformException &&
+            error.code == 'subtitle_exists') {
+          _retryLastGeneration = null;
+          job._errorMessageKey = 'subtitle_transcription_source_changed';
+        } else {
+          job._errorMessage = error.toString();
+        }
         AppLogService.warning(
           'subtitle_generation_failed',
           error: error,
@@ -390,6 +408,13 @@ class PlaybackSubtitleService extends ChangeNotifier {
 
   bool _isRemote(String trackPath) =>
       trackPath.startsWith('https://') || trackPath.startsWith('http://');
+
+  Future<PrimarySubtitleRevision> transcriptionSubtitleTarget(
+    String trackPath,
+  ) => _fileCacheGateway.primarySubtitleRevision(
+    trackPath: trackPath,
+    groupKey: _trackResolver(trackPath)?.groupKey,
+  );
 
   Future<bool> hasLocalSubtitleFile(
     String trackPath, {
@@ -530,17 +555,15 @@ class PlaybackSubtitleService extends ChangeNotifier {
     String trackPath,
     SubtitleDraft draft, {
     bool Function()? isCancelled,
+    PrimarySubtitleRevision? expectedPrimary,
   }) async {
     await _settingsReady;
     if (isCancelled?.call() == true) throw const SubtitleTaskCancelled();
     _validateCues(trackPath, draft.cues);
     final translation = draft.kind == SubtitleDraftKind.translation;
-    final useSrt =
-        translation || draft.kind == SubtitleDraftKind.transcription;
+    final useSrt = translation || draft.kind == SubtitleDraftKind.transcription;
     final extension = useSrt ? '.srt' : '.lrc';
-    final content = useSrt
-        ? _srtContent(draft.cues)
-        : _lrcContent(draft.cues);
+    final content = useSrt ? _srtContent(draft.cues) : _lrcContent(draft.cues);
     final bytes = Uint8List.fromList(utf8.encode(content));
     final targetLanguage = switch (draft.targetLanguage) {
       'zh' || 'zh-CN' => 'zh-CN',
@@ -552,7 +575,19 @@ class PlaybackSubtitleService extends ChangeNotifier {
     }
     final suffix = translation ? '.translated.$targetLanguage' : null;
     String? savedPath;
-    if (_isRemote(trackPath)) {
+    if (draft.kind == SubtitleDraftKind.transcription) {
+      if (expectedPrimary == null || _isRemote(trackPath)) {
+        throw ArgumentError(
+          'Local transcription needs a checked primary subtitle',
+        );
+      }
+      savedPath = await _fileCacheGateway.saveTranscribedSubtitle(
+        trackPath: trackPath,
+        groupKey: _trackResolver(trackPath)?.groupKey,
+        bytes: bytes,
+        expected: expectedPrimary,
+      );
+    } else if (_isRemote(trackPath)) {
       final dest = await _remoteSubtitleFile(trackPath, extension);
       if (translation) {
         savedPath = await FileCachePlatformGateway.saveNewSubtitleFile(
@@ -1349,6 +1384,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
     if (remoteTextService != null) {
       unawaited(remoteTextService.dispose());
     }
+    _aiEngine.dispose();
     super.dispose();
   }
 

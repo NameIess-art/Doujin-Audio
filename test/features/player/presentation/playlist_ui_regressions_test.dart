@@ -776,6 +776,21 @@ Dialogue: 0,0:00:10.00,0:00:14.00,Default,,0,0,0,,Middle line
           lessThan(surfaceRect.center.dx),
         );
 
+        final slider = find.descendant(
+          of: find.byKey(const ValueKey('fullscreen_video_progress')),
+          matching: find.byType(Slider),
+        );
+        final sliderRect = tester.getRect(slider);
+        await tester.tapAt(Offset(sliderRect.right - 50, sliderRect.center.dy));
+        await tester.pump(const Duration(milliseconds: 50));
+        final manuallySought = session.position;
+        expect(manuallySought, greaterThan(const Duration(seconds: 70)));
+        await tester.tapAt(leftDoubleTap);
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.tapAt(leftDoubleTap);
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(session.position, manuallySought - const Duration(seconds: 5));
+
         // Double-tap center toggles play/pause with centered circular icon.
         await tester.tapAt(surfaceRect.center);
         await tester.pump(const Duration(milliseconds: 50));

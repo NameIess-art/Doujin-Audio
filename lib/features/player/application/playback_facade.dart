@@ -49,6 +49,12 @@ typedef PlaybackHistoryUpdater =
       required DateTime now,
       required bool updatePlayedAt,
     });
+typedef RemotePlaybackProgressWriter =
+    Future<void> Function(
+      MusicTrack track, {
+      required Duration position,
+      required DateTime playedAt,
+    });
 
 /// Owns playback sessions and the platform playback runtime.
 final class PlaybackFacade {
@@ -94,6 +100,7 @@ final class PlaybackFacade {
   bool Function()? _recordPlaybackProgress;
   RestoredPlaybackRuntime? _restoreRuntime;
   PlaybackHistoryUpdater? _updatePlaybackHistory;
+  RemotePlaybackProgressWriter? _saveRemoteTrackProgress;
   void Function(String? sessionId)? _onPersistenceFocusChanged;
   Future<void> Function(PlaybackSession session)? _synchronizePausedRecovery;
   void Function(PlaybackSession session)? _onSessionRegistered;
@@ -420,6 +427,7 @@ final class PlaybackFacade {
     _recordPlaybackProgress = null;
     _restoreRuntime = null;
     _updatePlaybackHistory = null;
+    _saveRemoteTrackProgress = null;
     _onPersistenceFocusChanged = null;
     _synchronizePausedRecovery = null;
     _onSessionRegistered = null;
@@ -450,6 +458,15 @@ final class PlaybackFacade {
     _bindSessionListeners(session);
   }
 
+  Duration remoteResumePosition(MusicTrack? track) {
+    if (track == null ||
+        !track.isRemoteSource ||
+        !(_recordPlaybackProgress?.call() ?? true)) {
+      return Duration.zero;
+    }
+    return track.lastPlayedPosition;
+  }
+
   PlaybackSession createTrackSession(
     MusicTrack track, {
     SessionLoopMode loopMode = SessionLoopMode.folderSequential,
@@ -474,6 +491,10 @@ final class PlaybackFacade {
           ..speed = 1.0
           ..channelSwapEnabled = false
           ..audioEffects = AudioEffectsState.flat;
+    final resumePosition = remoteResumePosition(track);
+    if (resumePosition > Duration.zero) {
+      session.setOptimisticPosition(resumePosition);
+    }
     registerSession(session);
     if (!isTemporary) _scheduleNewSessionPersistence(sessionId: session.id);
     return session;
@@ -1020,6 +1041,7 @@ final class PlaybackFacade {
     required bool Function() recordPlaybackProgress,
     required RestoredPlaybackRuntime restoreRuntime,
     required PlaybackHistoryUpdater updatePlaybackHistory,
+    RemotePlaybackProgressWriter? saveRemoteTrackProgress,
     required void Function(String? sessionId) onFocusChanged,
     Future<void> Function(PlaybackSession session)? synchronizePausedRecovery,
   }) => PlaybackSessionPersistenceCoordinator(this).attachPersistenceRuntime(
@@ -1027,6 +1049,7 @@ final class PlaybackFacade {
     recordPlaybackProgress: recordPlaybackProgress,
     restoreRuntime: restoreRuntime,
     updatePlaybackHistory: updatePlaybackHistory,
+    saveRemoteTrackProgress: saveRemoteTrackProgress,
     onFocusChanged: onFocusChanged,
     synchronizePausedRecovery: synchronizePausedRecovery,
   );

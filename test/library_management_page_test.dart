@@ -224,16 +224,25 @@ void main() {
       expect(pressHighlight(), isEmpty);
       await tester.pump(const Duration(milliseconds: 140));
       expect(find.byType(LibraryEditPage), findsOneWidget);
+      final editHeader = find.descendant(
+        of: find.byType(LibraryEditPage),
+        matching: find.byType(TopPageHeader),
+      );
       expect(
-        tester
-            .widget<TopPageHeader>(
-              find.descendant(
-                of: find.byType(LibraryEditPage),
-                matching: find.byType(TopPageHeader),
-              ),
-            )
-            .iconWidget,
+        tester.widget<TopPageHeader>(editHeader).iconWidget,
         isA<LibraryEditIcon>(),
+      );
+      final name = find.descendant(
+        of: editHeader,
+        matching: find.text(PathDisplay.folderName(libraryPath)),
+      );
+      final capsule = find.ancestor(
+        of: name,
+        matching: find.byType(HeaderFloatingSurface),
+      );
+      expect(
+        tester.getTopRight(name).dx,
+        closeTo(tester.getTopRight(capsule).dx - 14, 0.1),
       );
       expect(
         tester

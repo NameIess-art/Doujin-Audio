@@ -112,10 +112,29 @@ void _writeTrackToBatch(
     _trackScanRow(track, scanGeneration: scanGeneration),
     conflictAlgorithm: ConflictAlgorithm.replace,
   );
-  batch.insert(
-    'track_playback_state',
-    _trackPlaybackRow(track),
-    conflictAlgorithm: ConflictAlgorithm.replace,
+  final playedAt = track.lastPlayedAt?.millisecondsSinceEpoch;
+  final favorite = track.isFavorite ? 1 : 0;
+  batch.rawInsert(
+    '''
+    INSERT OR REPLACE INTO track_playback_state (
+      path, last_played_position_ms, last_played_at_ms, is_favorite,
+      favorite_updated_at_ms
+    ) VALUES (?, ?, ?, ?, COALESCE((
+      SELECT CASE WHEN is_favorite = ? THEN favorite_updated_at_ms
+        ELSE MAX(?, favorite_updated_at_ms + 1) END
+      FROM track_playback_state WHERE path = ?
+    ), ?))
+  ''',
+    [
+      track.path,
+      track.lastPlayedPosition.inMilliseconds,
+      playedAt,
+      favorite,
+      favorite,
+      DateTime.now().millisecondsSinceEpoch,
+      track.path,
+      track.isFavorite ? max(1, playedAt ?? 0) : 0,
+    ],
   );
   batch.insert(
     'track_assets',
@@ -155,13 +174,6 @@ Map<String, dynamic> _trackScanRow(MusicTrack t, {int? scanGeneration}) => {
   'file_size_bytes': t.fileSizeBytes,
   'modified_at_ms': t.modifiedAt?.millisecondsSinceEpoch,
   'scan_generation': scanGeneration ?? 0,
-};
-
-Map<String, dynamic> _trackPlaybackRow(MusicTrack t) => {
-  'path': t.path,
-  'last_played_position_ms': t.lastPlayedPosition.inMilliseconds,
-  'last_played_at_ms': t.lastPlayedAt?.millisecondsSinceEpoch,
-  'is_favorite': t.isFavorite ? 1 : 0,
 };
 
 Map<String, dynamic> _trackAssetsRow(MusicTrack t) => {
@@ -342,7 +354,11 @@ void _writeAsmrWorkToBatch(
     'rating': work.rating,
     'has_subtitle': work.hasSubtitle ? 1 : 0,
     'is_favorite': (isFavorite ?? work.isFavorite) ? 1 : 0,
-    'listen_status': work.listenStatus,
+    'listen_status': switch (isFavorite) {
+      true => 'marked',
+      false when work.listenStatus == 'marked' => null,
+      _ => work.listenStatus,
+    },
     'user_rating': work.userRating,
     'review_text': work.reviewText,
     'review_updated_at_ms': work.reviewUpdatedAt?.millisecondsSinceEpoch,

@@ -41,8 +41,8 @@ void main() {
 
   tearDown(() => db.close());
 
-  test('schema starts from version 23', () {
-    expect(AppDatabase.schemaVersion, 23);
+  test('schema starts from version 24', () {
+    expect(AppDatabase.schemaVersion, 24);
   });
 
   test('clearAsmrTablesForTest removes all ASMR persistence rows', () async {

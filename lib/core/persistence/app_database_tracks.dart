@@ -91,12 +91,15 @@ extension AppDatabaseTracks on AppDatabase {
       batch.delete('track_tags');
       batch.delete('track_remote_metadata');
       batch.delete('track_assets');
-      batch.delete('track_playback_state');
       batch.delete('track_scan_info');
       batch.delete('tracks');
       for (final track in tracks) {
         _writeTrackToBatch(batch, track);
       }
+      batch.rawDelete(
+        'DELETE FROM track_playback_state WHERE NOT EXISTS ('
+        'SELECT 1 FROM tracks WHERE tracks.path = track_playback_state.path)',
+      );
       await batch.commit(noResult: true);
     });
   }

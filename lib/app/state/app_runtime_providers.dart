@@ -329,11 +329,7 @@ List<Override> createAppRuntimeOverrides({
     libraryFacadeProvider.overrideWithValue(library),
     playbackFacadeProvider.overrideWithValue(playback),
     playbackSubtitleServiceProvider.overrideWithValue(subtitles),
-    textTranslationServiceProvider.overrideWith((ref) {
-      final service = subtitles.translationService;
-      ref.onDispose(service.dispose);
-      return service;
-    }),
+    textTranslationServiceProvider.overrideWithValue(subtitles.translationService),
     timerFacadeProvider.overrideWithValue(timer),
     notificationFacadeProvider.overrideWithValue(notifications),
     settingsRepositoryProvider.overrideWithValue(settings),

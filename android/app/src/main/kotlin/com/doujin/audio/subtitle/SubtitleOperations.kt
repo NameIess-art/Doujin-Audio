@@ -8,6 +8,7 @@ import android.provider.DocumentsContract
 import java.io.File
 import java.io.IOException
 import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import java.util.Locale
 
 private val subtitleExtensions = setOf("vtt", "webvtt", "lrc", "srt", "ass", "ssa", "txt")
@@ -238,6 +239,70 @@ internal class SubtitleOperations(private val context: Context, private val stor
             ?: return null
         val text = try { best.readText(StandardCharsets.UTF_8) } catch (_: Exception) { return null }
         return result(best.absolutePath, best.name, text)
+    }
+
+    @Synchronized
+    fun writeTranscription(
+        trackPath: String, groupKey: String?, bytes: ByteArray,
+        primaryPath: String?, primaryRevision: String?
+    ): String {
+        val (folder, entries, audioName) = documentTrackFolder(trackPath, groupKey)
+        fun isSamePrimary(candidate: String?): Boolean = when {
+            candidate == null || primaryPath == null -> candidate == primaryPath
+            else -> sameDocument(candidate, primaryPath)
+        }
+        fun hasExpectedContents(candidate: String): Boolean =
+            storage.readDocumentBytes(candidate)?.let { contents ->
+                MessageDigest.getInstance("SHA-256").digest(contents)
+                    .joinToString("") { "%02x".format(it) } == primaryRevision
+            } == true
+        fun primaryMatches(files: List<DirectoryDocument>): Boolean {
+            val current = matches(files, audioName).firstOrNull()?.uri?.toString()
+            return isSamePrimary(current) && (current == null || hasExpectedContents(current))
+        }
+        if (!primaryMatches(entries)) throw SubtitleExistsException()
+        val preferred = subtitleDestinationName(audioName, ".srt")
+        val usedNames = entries.filterNot { isSamePrimary(it.uri.toString()) }
+            .map { it.name.lowercase(Locale.US) }.toSet()
+        val stem = preferred.removeSuffix(".srt")
+        val destination = generateSequence(0) { it + 1 }.map { version ->
+            when (version) {
+                0 -> preferred
+                1 -> "$stem.asr.srt"
+                else -> "$stem.asr.$version.srt"
+            }
+        }.first { it.lowercase(Locale.US) !in usedNames }
+        val primaryAtDestination = entries.any {
+            it.name.equals(destination, ignoreCase = true) && isSamePrimary(it.uri.toString())
+        }
+        var conflict = false
+        val saved = storage.writeFileBytesToDocumentFolder(
+            folder, destination, bytes,
+            authorizeExisting = { current ->
+                val existingIsAllowed = if (primaryAtDestination) {
+                    current != null && isSamePrimary(current)
+                } else current == null
+                val authorized = existingIsAllowed &&
+                    primaryMatches(listReadableDirectoryDocuments(context, folder))
+                if (!authorized) conflict = true
+                authorized
+            },
+            isValidBackup = { backup ->
+                hasExpectedContents(backup).also { if (!it) conflict = true }
+            },
+            isValidCommitted = {
+                if (primaryPath == null || primaryAtDestination) {
+                    true
+                } else if (!hasExpectedContents(primaryPath)) {
+                    conflict = true
+                    false
+                } else {
+                    storage.deleteDocumentPath(primaryPath)
+                }
+            }
+        )
+        if (conflict) throw SubtitleExistsException()
+        return saved ?: throw IOException("Cannot save subtitle")
     }
 
     @Synchronized

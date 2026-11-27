@@ -52,6 +52,7 @@ class SyncHistoryWorkEntry {
     required this.subtitle,
     this.remoteCoverUrl,
     required this.lastPlayedAtMs,
+    this.updatedAtMs,
   });
 
   final String workKey;
@@ -59,6 +60,9 @@ class SyncHistoryWorkEntry {
   final String subtitle;
   final String? remoteCoverUrl;
   final int lastPlayedAtMs;
+  final int? updatedAtMs;
+
+  int get stateUpdatedAtMs => updatedAtMs ?? lastPlayedAtMs;
 
   Map<String, Object?> toJson() => <String, Object?>{
     'workKey': workKey,
@@ -66,6 +70,7 @@ class SyncHistoryWorkEntry {
     'subtitle': subtitle,
     if (remoteCoverUrl != null) 'remoteCoverUrl': remoteCoverUrl,
     'lastPlayedAtMs': lastPlayedAtMs,
+    if (updatedAtMs != null) 'updatedAtMs': updatedAtMs,
   };
 
   factory SyncHistoryWorkEntry.fromJson(Map<String, Object?> json) =>
@@ -75,6 +80,7 @@ class SyncHistoryWorkEntry {
         subtitle: json['subtitle']?.toString() ?? '',
         remoteCoverUrl: json['remoteCoverUrl']?.toString(),
         lastPlayedAtMs: (json['lastPlayedAtMs'] as num?)?.toInt() ?? 0,
+        updatedAtMs: (json['updatedAtMs'] as num?)?.toInt(),
       );
 }
 
@@ -225,6 +231,7 @@ class CrossPlatformSyncBundle {
     required this.deviceDayLedger,
     required this.deviceWorkDayLedger,
     required this.history,
+    this.deletedHistory = const {},
     required this.timeSegments,
     required this.deletedTimeSegments,
     required this.interests,
@@ -243,6 +250,7 @@ class CrossPlatformSyncBundle {
   final Map<String, Map<String, int>> deviceDayLedger;
   final Map<String, Map<String, Map<String, int>>> deviceWorkDayLedger;
   final List<SyncHistoryWorkEntry> history;
+  final Map<String, int> deletedHistory;
   final List<SyncTimeSegmentEntry> timeSegments;
   final Map<String, int> deletedTimeSegments;
   final Map<String, Map<String, Object?>> interests;
@@ -259,6 +267,7 @@ class CrossPlatformSyncBundle {
     'deviceDayLedger': deviceDayLedger,
     'deviceWorkDayLedger': deviceWorkDayLedger,
     'history': history.map((e) => e.toJson()).toList(growable: false),
+    if (deletedHistory.isNotEmpty) 'deletedHistory': deletedHistory,
     'timeSegments': timeSegments.map((e) => e.toJson()).toList(growable: false),
     'deletedTimeSegments': deletedTimeSegments,
     'interests': interests,
@@ -321,6 +330,15 @@ class CrossPlatformSyncBundle {
         .map((m) => SyncTimeSegmentEntry.fromJson(Map<String, Object?>.from(m)))
         .toList(growable: false);
 
+    final deletedHistory = <String, int>{};
+    if (json['deletedHistory'] case final Map<Object?, Object?> deleted) {
+      for (final entry in deleted.entries) {
+        if (entry.key is String && entry.value is num) {
+          deletedHistory[entry.key as String] = (entry.value as num).toInt();
+        }
+      }
+    }
+
     final deletedSegments = <String, int>{};
     if (json['deletedTimeSegments'] is Map) {
       for (final entry in (json['deletedTimeSegments'] as Map).entries) {
@@ -356,6 +374,7 @@ class CrossPlatformSyncBundle {
       deviceDayLedger: dayLedger,
       deviceWorkDayLedger: workDayLedger,
       history: history,
+      deletedHistory: deletedHistory,
       timeSegments: segments,
       deletedTimeSegments: deletedSegments,
       interests: interests,
@@ -444,6 +463,7 @@ class CrossPlatformSyncApplyOutcome {
     required this.timeSegmentsMerged,
     this.updatedDetailTargets = const <(String, String)>{},
     this.workStatesMerged = 0,
+    this.historyChanged = false,
   });
 
   final Set<String> updatedTrackPaths;
@@ -452,10 +472,29 @@ class CrossPlatformSyncApplyOutcome {
   final int timeSegmentsMerged;
   final Set<(String, String)> updatedDetailTargets;
   final int workStatesMerged;
+  final bool historyChanged;
 }
 
 abstract interface class CrossPlatformSyncRepository {
   Future<String> ensureDeviceId(String Function() generateDeviceId);
+
+  Future<Map<String, SyncTrackStateEntry>> findSyncedTrackStates({
+    required String workKey,
+    required Iterable<String> relativePaths,
+  });
+
+  Future<Map<String, SyncWorkStateEntry>> findSyncedWorkStates(
+    Iterable<String> workKeys,
+  );
+
+  Future<void> saveRemoteTrackProgress({
+    required String workKey,
+    required String relativePath,
+    required int positionMs,
+    required int playedAtMs,
+  });
+
+  Future<Map<String, String?>> loadInterestSettings(Iterable<String> keys);
 
   Future<SyncTrackStateEntry?> findSyncedTrackState({
     required String workKey,
@@ -473,6 +512,7 @@ abstract interface class CrossPlatformSyncRepository {
       Map<String, Map<String, int>> deviceDayLedger,
       Map<String, Map<String, Map<String, int>>> deviceWorkDayLedger,
       List<SyncHistoryWorkEntry> history,
+      Map<String, int> deletedHistory,
       List<SyncTimeSegmentEntry> timeSegments,
       Map<String, int> deletedTimeSegments,
       Map<String, String?> interestSettings,
@@ -488,8 +528,10 @@ abstract interface class CrossPlatformSyncRepository {
     required String Function() generateDeviceId,
     required List<SyncTrackStateEntry> incomingTracks,
     required Map<String, Map<String, int>> incomingDeviceDayLedger,
-    required Map<String, Map<String, Map<String, int>>> incomingDeviceWorkDayLedger,
+    required Map<String, Map<String, Map<String, int>>>
+    incomingDeviceWorkDayLedger,
     required List<SyncHistoryWorkEntry> incomingHistory,
+    Map<String, int> incomingDeletedHistory = const {},
     required List<SyncTimeSegmentEntry> incomingTimeSegments,
     required Map<String, int> incomingDeletedTimeSegments,
     required Map<String, String?> mergedInterestSettings,
@@ -503,6 +545,30 @@ class NoopCrossPlatformSyncRepository implements CrossPlatformSyncRepository {
   @override
   Future<String> ensureDeviceId(String Function() generateDeviceId) async =>
       'noop-device';
+
+  @override
+  Future<Map<String, SyncTrackStateEntry>> findSyncedTrackStates({
+    required String workKey,
+    required Iterable<String> relativePaths,
+  }) async => const {};
+
+  @override
+  Future<Map<String, SyncWorkStateEntry>> findSyncedWorkStates(
+    Iterable<String> workKeys,
+  ) async => const {};
+
+  @override
+  Future<void> saveRemoteTrackProgress({
+    required String workKey,
+    required String relativePath,
+    required int positionMs,
+    required int playedAtMs,
+  }) async {}
+
+  @override
+  Future<Map<String, String?>> loadInterestSettings(
+    Iterable<String> keys,
+  ) async => const {};
 
   @override
   Future<SyncTrackStateEntry?> findSyncedTrackState({
@@ -526,6 +592,7 @@ class NoopCrossPlatformSyncRepository implements CrossPlatformSyncRepository {
       Map<String, Map<String, int>> deviceDayLedger,
       Map<String, Map<String, Map<String, int>>> deviceWorkDayLedger,
       List<SyncHistoryWorkEntry> history,
+      Map<String, int> deletedHistory,
       List<SyncTimeSegmentEntry> timeSegments,
       Map<String, int> deletedTimeSegments,
       Map<String, String?> interestSettings,
@@ -541,6 +608,7 @@ class NoopCrossPlatformSyncRepository implements CrossPlatformSyncRepository {
     deviceDayLedger: const <String, Map<String, int>>{},
     deviceWorkDayLedger: const <String, Map<String, Map<String, int>>>{},
     history: const <SyncHistoryWorkEntry>[],
+    deletedHistory: const <String, int>{},
     timeSegments: const <SyncTimeSegmentEntry>[],
     deletedTimeSegments: const <String, int>{},
     interestSettings: const <String, String?>{},
@@ -552,8 +620,10 @@ class NoopCrossPlatformSyncRepository implements CrossPlatformSyncRepository {
     required String Function() generateDeviceId,
     required List<SyncTrackStateEntry> incomingTracks,
     required Map<String, Map<String, int>> incomingDeviceDayLedger,
-    required Map<String, Map<String, Map<String, int>>> incomingDeviceWorkDayLedger,
+    required Map<String, Map<String, Map<String, int>>>
+    incomingDeviceWorkDayLedger,
     required List<SyncHistoryWorkEntry> incomingHistory,
+    Map<String, int> incomingDeletedHistory = const {},
     required List<SyncTimeSegmentEntry> incomingTimeSegments,
     required Map<String, int> incomingDeletedTimeSegments,
     required Map<String, String?> mergedInterestSettings,

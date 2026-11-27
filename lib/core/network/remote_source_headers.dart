@@ -142,7 +142,13 @@ class RemoteSourceHeaderRegistry {
     _revision++;
   }
 
-  Map<String, String> headersForUri(Uri uri) {
+  Map<String, String> headersForUri(Uri uri, {String? sourceId}) {
+    if (sourceId != null) {
+      final rule = _rulesById[sourceId];
+      return rule != null && rule.matches(uri)
+          ? rule.headers
+          : const <String, String>{};
+    }
     if (_rulesById.isEmpty) return const <String, String>{};
     RemoteSourceHeaderRule? bestMatch;
     for (final rule in _rulesById.values) {

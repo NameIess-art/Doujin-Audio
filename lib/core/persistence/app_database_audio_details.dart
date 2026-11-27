@@ -193,6 +193,10 @@ extension AppDatabaseAudioDetails on AppDatabase {
           ),
       ];
       if (labelList.isEmpty) return;
+      final portableKeys = await _loadTimeSegmentPortableKeys(
+        transaction,
+        labelList.map((item) => item.label.trackKey),
+      );
       final existingById = <String, ({String trackKey, int updatedAtMs})?>{};
       Future<void> loadConflicts(List<String> ids) async {
         final placeholders = List.filled(ids.length, '?').join(', ');
@@ -257,7 +261,7 @@ extension AppDatabaseAudioDetails on AppDatabase {
           updatedAtMs: label.updatedAtMs,
         );
         labelBatch.insert('time_segment_labels', {
-          ..._timeSegmentLabelRow(label),
+          ..._timeSegmentLabelRow(label, portableKeys[label.trackKey]),
           'id': id,
         }, conflictAlgorithm: ConflictAlgorithm.replace);
         hasLabelWrites = true;
@@ -284,37 +288,41 @@ extension AppDatabaseAudioDetails on AppDatabase {
           'track_key': trackKey,
         }),
     };
-    final identity = await _runDatabaseRead((db) async {
-      final rjMap = await _loadTargetRjMap(db);
-      final index = await _loadLocalTrackIdentityIndex(db, rjMap);
-      return (
-        resolved: _resolveIdentityForLabelTrackKey(trackKey, index),
-        index: index,
+    await _runDatabaseRead((db) async {
+      final identity = (await _loadTimeSegmentPortableKeys(db, [
+        trackKey,
+      ]))[trackKey];
+      if (identity == null) return;
+      var rows = await db.query(
+        'time_segment_labels',
+        where: 'portable_track_key = ?',
+        whereArgs: [identity.syncKey],
       );
-    });
-    final resolved = identity.resolved;
-    if (resolved != null) {
-      final candidateKeys = <String>{
-        resolved.timeSegmentTrackKey,
-        for (final local in identity.index.findMatches(resolved))
-          PathMatcher.normalize(local.path),
-      }..remove(PathMatcher.normalize(trackKey));
-      for (final altKey in candidateKeys) {
-        final extra = await loadTimeSegmentLabelsForTarget(
-          altKey,
-          isFolder: false,
+      if (rows.isEmpty && direct.isEmpty) {
+        final alternatives = await db.query(
+          'time_segment_labels',
+          where: 'portable_stem_key = ?',
+          whereArgs: [identity.stemSyncKey],
         );
-        for (final record in extra) {
-          final current = byId[record.id];
-          if (current == null || record.updatedAtMs > current.updatedAtMs) {
-            byId[record.id] = TimeSegmentLabelRecord.fromRow({
-              ...record.toRow(),
-              'track_key': trackKey,
-            });
-          }
+        if (alternatives
+                .map((row) => row['portable_track_key'])
+                .toSet()
+                .length ==
+            1) {
+          rows = alternatives;
         }
       }
-    }
+      for (final row in rows) {
+        final record = TimeSegmentLabelRecord.fromRow({
+          ...row,
+          'track_key': trackKey,
+        });
+        final current = byId[record.id];
+        if (current == null || record.updatedAtMs > current.updatedAtMs) {
+          byId[record.id] = record;
+        }
+      }
+    });
     final merged = byId.values.toList(growable: false)
       ..sort((a, b) {
         final c = a.startMs.compareTo(b.startMs);
@@ -326,9 +334,12 @@ extension AppDatabaseAudioDetails on AppDatabase {
   Future<void> upsertTimeSegmentLabel(TimeSegmentLabelRecord label) async {
     await _runDatabaseWrite(
       (db) => db.transaction((txn) async {
+        final identity = (await _loadTimeSegmentPortableKeys(txn, [
+          label.trackKey,
+        ]))[label.trackKey];
         await txn.insert(
           'time_segment_labels',
-          _timeSegmentLabelRow(label),
+          _timeSegmentLabelRow(label, identity),
           conflictAlgorithm: ConflictAlgorithm.replace,
         );
         await txn.delete(
@@ -375,6 +386,10 @@ extension AppDatabaseAudioDetails on AppDatabase {
         );
         final batch = txn.batch();
         final newMatchKey = PathMatcher.equivalenceKey(newTrackKey);
+        if (rows.isEmpty) return;
+        final identity = (await _loadTimeSegmentPortableKeys(txn, [
+          newTrackKey,
+        ]))[newTrackKey];
         var hasUpdates = false;
         for (final row in rows) {
           final id = row['id'] as String;
@@ -382,7 +397,11 @@ extension AppDatabaseAudioDetails on AppDatabase {
           if (trackKey == newTrackKey) continue;
           batch.update(
             'time_segment_labels',
-            {'track_key': newTrackKey, 'track_match_key': newMatchKey},
+            {
+              'track_key': newTrackKey,
+              'track_match_key': newMatchKey,
+              ..._timeSegmentPortableKeyFields(identity),
+            },
             where: 'id = ?',
             whereArgs: [id],
           );
@@ -407,20 +426,22 @@ extension AppDatabaseAudioDetails on AppDatabase {
         columns: const ['id', 'track_key'],
       );
       final batch = txn.batch();
-      for (final row in rows) {
-        final id = row['id'] as String;
-        final trackKey = row['track_key'] as String;
-        final nextTrackKey = PathMatcher.replaceWithinOrEqual(
-          trackKey,
-          oldRoot,
-          newRoot,
-        );
-        if (nextTrackKey == trackKey) continue;
+      final paths = <String, String>{
+        for (final row in rows)
+          row['id']! as String: PathMatcher.replaceWithinOrEqual(
+            row['track_key']! as String,
+            oldRoot,
+            newRoot,
+          ),
+      };
+      final portable = await _loadTimeSegmentPortableKeys(txn, paths.values);
+      for (final MapEntry(key: id, value: nextTrackKey) in paths.entries) {
         batch.update(
           'time_segment_labels',
           {
             'track_key': nextTrackKey,
             'track_match_key': PathMatcher.equivalenceKey(nextTrackKey),
+            ..._timeSegmentPortableKeyFields(portable[nextTrackKey]),
           },
           where: 'id = ?',
           whereArgs: [id],
@@ -471,10 +492,52 @@ Future<Iterable<Map<String, Object?>>> _queryTimeSegmentLabelRowsForTarget(
   );
 }
 
-Map<String, Object?> _timeSegmentLabelRow(TimeSegmentLabelRecord label) => {
+Map<String, Object?> _timeSegmentLabelRow(
+  TimeSegmentLabelRecord label,
+  CrossPlatformTrackIdentity? identity,
+) => {
   ...label.toRow(),
   'track_match_key': PathMatcher.equivalenceKey(label.trackKey),
+  ..._timeSegmentPortableKeyFields(identity),
 };
+
+Map<String, Object?> _timeSegmentPortableKeyFields(
+  CrossPlatformTrackIdentity? identity,
+) => {
+  'portable_track_key': identity?.syncKey,
+  'portable_stem_key': identity?.stemSyncKey,
+};
+
+Future<Map<String, CrossPlatformTrackIdentity>> _loadTimeSegmentPortableKeys(
+  DatabaseExecutor db,
+  Iterable<String> paths,
+) async {
+  final trackKeys = paths.toSet();
+  final storedPaths = <String>{};
+  for (final key in trackKeys) {
+    if (key.startsWith('asmr.one:') ||
+        key.contains('::') &&
+            !PathMatcher.isContentUri(key) &&
+            !PathMatcher.isRemoteUri(key)) {
+      continue;
+    }
+    final normalized = PathMatcher.normalize(key);
+    storedPaths.addAll([key, normalized]);
+    if (PathMatcher.equivalenceKey(normalized).startsWith('windows:')) {
+      storedPaths.add(normalized.replaceAll('\\', '/'));
+    }
+  }
+  final byPath = <String, CrossPlatformTrackIdentity>{};
+  for (final chunk in _stringChunks(storedPaths.toList(growable: false))) {
+    final index = await _loadLocalTrackIdentityIndex(db, null, paths: chunk);
+    byPath.addAll(index.byNormalizedPath);
+  }
+  return {
+    for (final key in trackKeys)
+      key: ?(byPath[PathMatcher.equivalenceKey(key)] ??
+          _resolveIdentityForLabelTrackKey(key)),
+  };
+}
 
 Future<List<AudioDetailRecord>> _loadAudioDetailRecords(
   DatabaseExecutor db,

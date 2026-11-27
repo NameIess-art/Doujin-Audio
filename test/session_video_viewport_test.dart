@@ -133,7 +133,8 @@ void main() {
 
   Widget buildViewport({
     required bool videoReady,
-    required Future<void> Function() onFullscreen,
+    Future<void> Function()? onFullscreen,
+    SessionVideoFullscreenCallback? onFullscreenHandoff,
     Duration controlsTimeout = const Duration(seconds: 3),
     bool isFullscreen = false,
     bool showTooltips = true,
@@ -153,7 +154,16 @@ void main() {
             key: ValueKey<String>('fake_video_surface'),
             color: Colors.black,
           ),
-          onFullscreen: onFullscreen,
+          onFullscreen:
+              onFullscreenHandoff ??
+              (handoff) async {
+                if (!handoff.borrowSurface()) return;
+                try {
+                  if (onFullscreen != null) await onFullscreen();
+                } finally {
+                  handoff.restoreSurface();
+                }
+              },
           fullscreenTooltip: isFullscreen ? 'Exit fullscreen' : 'Fullscreen',
           controlsLabel: 'Video controls',
           controlsTimeout: controlsTimeout,
@@ -414,36 +424,107 @@ void main() {
   });
 
   testWidgets(
-    'fullscreen action aborts if unmounted or videoReady clears before endOfFrame',
+    'inline surface stays opaque without remounting and keeps rendering until handoff borrows it',
     (tester) async {
-      var fullscreenCalls = 0;
+      var preparationGate = Completer<void>();
+      var borrowed = false;
+      final routeGate = Completer<void>();
 
-      // Case 1: unmounted before endOfFrame resolves.
       await tester.pumpWidget(
         buildViewport(
           videoReady: true,
-          onFullscreen: () async {
-            fullscreenCalls++;
+          onFullscreenHandoff: (handoff) async {
+            await preparationGate.future;
+            borrowed = handoff.borrowSurface();
+            if (!borrowed) return;
+            try {
+              await routeGate.future;
+            } finally {
+              handoff.restoreSurface();
+            }
           },
         ),
       );
+      final initialSurfaceElement = tester.element(
+        find.byKey(const ValueKey<String>('fake_video_surface')),
+      );
+      expect(
+        find.ancestor(
+          of: find.byKey(const ValueKey<String>('fake_video_surface')),
+          matching: find.byWidgetPredicate(
+            (widget) => widget is Opacity && widget.opacity < 1,
+          ),
+        ),
+        findsNothing,
+      );
+
+      // Advance past the former 220ms fade window: the surface element must not
+      // be unmounted and recreated.
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(
+        tester.element(
+          find.byKey(const ValueKey<String>('fake_video_surface')),
+        ),
+        same(initialSurfaceElement),
+      );
+
+      // While async fullscreen setup is still running, inline video remains visible.
+      await tester.tap(
+        find.byKey(const ValueKey<String>('session_video_tap_target')),
+      );
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.fullscreen_rounded));
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey<String>('fake_video_surface')),
+        findsOneWidget,
+      );
+      expect(
+        tester.element(
+          find.byKey(const ValueKey<String>('fake_video_surface')),
+        ),
+        same(initialSurfaceElement),
+      );
+
+      // Once setup finishes, borrowing detaches the inline surface in the push turn.
+      preparationGate.complete();
+      await tester.pump();
+      expect(borrowed, isTrue);
+      expect(
+        find.byKey(const ValueKey<String>('fake_video_surface')),
+        findsNothing,
+      );
+
+      routeGate.complete();
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey<String>('fake_video_surface')),
+        findsOneWidget,
+      );
+
+      // Case 1: unmounted before async setup finishes -> borrowSurface returns false.
+      preparationGate = Completer<void>();
+      borrowed = true;
       await tester.tap(
         find.byKey(const ValueKey<String>('session_video_tap_target')),
       );
       await tester.pump();
       await tester.tap(find.byIcon(Icons.fullscreen_rounded));
       await tester.pumpWidget(const SizedBox.shrink());
+      preparationGate.complete();
       await tester.pump();
-      expect(fullscreenCalls, 0);
+      expect(borrowed, isFalse);
 
-      // Case 2: videoReady becomes false before endOfFrame resolves.
+      // Case 2: videoReady clears before async setup finishes -> borrowSurface returns false.
+      preparationGate = Completer<void>();
+      borrowed = true;
+      Future<void> abortingHandoff(SessionVideoFullscreenHandoff handoff) async {
+        await preparationGate.future;
+        borrowed = handoff.borrowSurface();
+      }
+
       await tester.pumpWidget(
-        buildViewport(
-          videoReady: true,
-          onFullscreen: () async {
-            fullscreenCalls++;
-          },
-        ),
+        buildViewport(videoReady: true, onFullscreenHandoff: abortingHandoff),
       );
       await tester.tap(
         find.byKey(const ValueKey<String>('session_video_tap_target')),
@@ -451,24 +532,15 @@ void main() {
       await tester.pump();
       await tester.tap(find.byIcon(Icons.fullscreen_rounded));
       await tester.pumpWidget(
-        buildViewport(
-          videoReady: false,
-          onFullscreen: () async {
-            fullscreenCalls++;
-          },
-        ),
+        buildViewport(videoReady: false, onFullscreenHandoff: abortingHandoff),
       );
+      preparationGate.complete();
       await tester.pump();
-      expect(fullscreenCalls, 0);
+      expect(borrowed, isFalse);
 
       // Surface recovers cleanly once videoReady becomes true again.
       await tester.pumpWidget(
-        buildViewport(
-          videoReady: true,
-          onFullscreen: () async {
-            fullscreenCalls++;
-          },
-        ),
+        buildViewport(videoReady: true, onFullscreenHandoff: abortingHandoff),
       );
       await tester.pump();
       expect(

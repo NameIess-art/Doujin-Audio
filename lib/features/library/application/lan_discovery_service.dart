@@ -71,11 +71,12 @@ abstract final class LanDiscoveryClient {
           }
           final port = (decoded['port'] as num?)?.toInt() ?? 0;
           if (port < 1 || port > 65535) return;
-          final serverId =
-              decoded['serverId']?.toString() ??
-              '${datagram.address.address}:$port';
-          final key = '${datagram.address.address}:$port';
-          found[key] = LanDiscoveredServer(
+          final advertisedId = decoded['serverId']?.toString().trim() ?? '';
+          final serverId = advertisedId.isEmpty
+              ? '${datagram.address.address}:$port'
+              : advertisedId;
+          if (found.containsKey(serverId)) return;
+          found[serverId] = LanDiscoveredServer(
             serverId: serverId,
             name: decoded['name']?.toString().trim().isNotEmpty == true
                 ? decoded['name']!.toString().trim()

@@ -5,6 +5,7 @@ import '../../core/widgets/app_dialog.dart';
 import '../../core/widgets/app_feedback.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 import '../../features/player/domain/listening_activity.dart';
 import '../../features/settings/application/settings_state.dart';
@@ -585,9 +586,9 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
 
     Widget heatmapLegend() => Padding(
       key: const ValueKey('listening-heatmap-legend'),
-      padding: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsetsDirectional.only(start: 8),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.end,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Text(
             i18n.tr('my_heatmap_less'),
@@ -813,75 +814,108 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
           ),
         ),
         const SizedBox(height: 2),
-        WindowsHorizontalWheelScroll(
-          builder: (controller) => ScrollConfiguration(
-            behavior: ScrollConfiguration.of(
-              context,
-            ).copyWith(dragDevices: PointerDeviceKind.values.toSet()),
-            child: SingleChildScrollView(
-              key: const ValueKey('listening-chart-intervals'),
-              controller: controller,
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                spacing: 8,
-                children: [
-                  for (final interval in ListeningInterval.values)
-                    placeholderFor(
-                      appNoPointerInkTheme(
-                        context: context,
-                        androidPressHighlight: true,
-                        child: ChoiceChip(
-                          mouseCursor: WidgetStateMouseCursor.clickable,
-                          showCheckmark: false,
-                          visualDensity: VisualDensity.compact,
-                          label: Text(i18n.tr('my_interval_${interval.name}')),
-                          selected: _interval == interval,
-                          onSelected: (_) {
-                            if (_interval != interval) {
-                              AppInteractionFeedback.trigger(
-                                AppInteractionFeedbackType.selection,
-                              );
-                            }
-                            setState(() => _interval = interval);
-                            _revealSelection();
-                          },
+        SizedBox(
+          width: double.infinity,
+          child: _ListeningChartFooter(
+            intervals: WindowsHorizontalWheelScroll(
+              builder: (controller) => ScrollConfiguration(
+                behavior: ScrollConfiguration.of(
+                  context,
+                ).copyWith(dragDevices: PointerDeviceKind.values.toSet()),
+                child: SingleChildScrollView(
+                  key: const ValueKey('listening-chart-intervals'),
+                  controller: controller,
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    spacing: 8,
+                    children: [
+                      for (final interval in ListeningInterval.values)
+                        placeholderFor(
+                          appNoPointerInkTheme(
+                            context: context,
+                            androidPressHighlight: true,
+                            child: ChoiceChip(
+                              mouseCursor: WidgetStateMouseCursor.clickable,
+                              showCheckmark: false,
+                              visualDensity: VisualDensity.compact,
+                              label: Text(i18n.tr('my_interval_${interval.name}')),
+                              selected: _interval == interval,
+                              onSelected: (_) {
+                                if (_interval != interval) {
+                                  AppInteractionFeedback.trigger(
+                                    AppInteractionFeedbackType.selection,
+                                  );
+                                }
+                                setState(() => _interval = interval);
+                                _revealSelection();
+                              },
+                            ),
+                          ),
+                          radius: 12,
+                          height: 32,
+                          alignment: Alignment.center,
                         ),
-                      ),
-                      radius: 12,
-                      height: 32,
-                      alignment: Alignment.center,
-                    ),
-                ],
+                    ],
+                  ),
+                ),
               ),
             ),
-          ),
-        ),
-        TweenAnimationBuilder<double>(
-          tween: Tween<double>(end: heatmap ? 1.0 : 0.0),
-          duration: disableAnimations ? Duration.zero : kAppFadeDuration,
-          curve: kAppFadeCurve,
-          builder: (context, factor, child) {
-            if (factor == 0 && !heatmap) {
-              return const SizedBox.shrink();
-            }
-            return ClipRect(
-              child: Align(
-                alignment: Alignment.topCenter,
-                heightFactor: factor,
-                child: Opacity(opacity: factor, child: child),
+            legend: TweenAnimationBuilder<double>(
+              tween: Tween<double>(end: heatmap ? 1.0 : 0.0),
+              duration: disableAnimations ? Duration.zero : kAppFadeDuration,
+              curve: kAppFadeCurve,
+              builder: (context, factor, child) {
+                if (factor == 0 && !heatmap) {
+                  return const SizedBox.shrink();
+                }
+                return ClipRect(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    widthFactor: factor,
+                    heightFactor: factor,
+                    child: Opacity(opacity: factor, child: child),
+                  ),
+                );
+              },
+              child: placeholderFor(
+                heatmapLegend(),
+                width: 120,
+                height: 12,
+                alignment: Alignment.centerRight,
               ),
-            );
-          },
-          child: placeholderFor(
-            heatmapLegend(),
-            width: 120,
-            height: 12,
-            alignment: Alignment.centerRight,
+            ),
           ),
         ),
       ],
     );
     return widget.builder(duration, chart);
+  }
+}
+
+class _ListeningChartFooter extends MultiChildRenderObjectWidget {
+  _ListeningChartFooter({required Widget intervals, required Widget legend})
+    : super(children: [intervals, legend]);
+
+  @override
+  RenderWrap createRenderObject(BuildContext context) =>
+      _RenderListeningChartFooter();
+}
+
+class _RenderListeningChartFooter extends RenderWrap {
+  _RenderListeningChartFooter()
+    : super(
+        textDirection: TextDirection.ltr,
+        runSpacing: 6,
+        crossAxisAlignment: WrapCrossAlignment.center,
+      );
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    // The interval buttons start each run on the left; only the legend moves.
+    final legend = lastChild!;
+    final data = legend.parentData! as WrapParentData;
+    data.offset = Offset(size.width - legend.size.width, data.offset.dy);
   }
 }
 

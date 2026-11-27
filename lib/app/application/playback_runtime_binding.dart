@@ -24,6 +24,7 @@ final class PlaybackRuntimeBinding implements RuntimeBinding {
     required PlaybackCommandCoordinator playbackCommands,
     required PlaybackKeepAliveCoordinator keepAlive,
     required void Function() syncPlaybackState,
+    RemotePlaybackProgressWriter? saveRemoteTrackProgress,
   }) {
     final existing = _attached[playback];
     if (existing != null && !existing._disposed) return existing;
@@ -32,6 +33,7 @@ final class PlaybackRuntimeBinding implements RuntimeBinding {
       recordPlaybackProgress: () => settings.recordPlaybackProgress,
       restoreRuntime: playbackCommands.restorePersistedRuntime,
       updatePlaybackHistory: library.updatePlaybackHistory,
+      saveRemoteTrackProgress: saveRemoteTrackProgress,
       onFocusChanged: notifications.setFocusedSession,
       synchronizePausedRecovery: defaultTargetPlatform == TargetPlatform.android
           ? playbackCommands.synchronizePausedRecovery

@@ -48,6 +48,216 @@ void main() {
     }
   });
 
+  Future<AppDatabase> makeDatabase(String name) async {
+    final raw = await databaseFactoryFfi.openDatabase(
+      '${tempDir.path}/$name.db',
+    );
+    addTearDown(raw.close);
+    await AppDatabase.createSchemaForTest(raw);
+    return AppDatabase.test(raw);
+  }
+
+  CrossPlatformSyncService syncService(AppDatabase db) {
+    final service = CrossPlatformSyncService(
+      repository: SqliteCrossPlatformSyncRepository(database: db),
+    );
+    addTearDown(service.dispose);
+    return service;
+  }
+
+  final track = MusicTrack(
+    path: 'D:/voice/RJ123456/01.wav',
+    displayName: '01',
+    groupKey: 'D:/voice/RJ123456',
+    groupTitle: 'RJ123456',
+    groupSubtitle: '',
+    isSingle: false,
+  );
+
+  test('history deletion, undo, and replay converge across devices', () async {
+    final source = await makeDatabase('history-source');
+    final destination = await makeDatabase('history-destination');
+    final sourceSync = syncService(source);
+    final destinationSync = syncService(destination);
+    const workKey = 'rj:RJ123456';
+    final initial = ListeningWorkRecord(
+      workKey: workKey,
+      track: track,
+      milliseconds: 1000,
+      lastPlayedAtMs: 100000,
+    );
+    Future<void> played(String id, ListeningWorkRecord work) async {
+      await source.importListeningBatch(id, [
+        ListeningDayRecord(
+          date: '2026-11-26',
+          totalMs: work.milliseconds,
+          works: [work],
+        ),
+      ]);
+    }
+
+    await played('first', initial);
+    final old = await sourceSync.exportSyncBytes();
+    await destinationSync.importSyncBytes(old);
+    await destination.removeListeningHistoryEntry(workKey);
+    final deleted = await destinationSync.exportSyncBytes();
+    await destinationSync.importSyncBytes(old);
+    await sourceSync.importSyncBytes(deleted);
+    expect(await destination.countListeningHistory(), 0);
+    expect(await source.countListeningHistory(), 0);
+
+    await destination.restoreListeningHistoryEntry(initial, legacyOrder: 0);
+    await sourceSync.importSyncBytes(await destinationSync.exportSyncBytes());
+    expect(await source.countListeningHistory(), 1);
+    expect(
+      (await source.findListeningTrack(workKey))?['last_played_at_ms'],
+      100000,
+    );
+    await sourceSync.importSyncBytes(deleted);
+    expect(await source.countListeningHistory(), 1);
+
+    await destination.removeListeningHistoryEntry(workKey);
+    final deletedAgain = await destinationSync.exportSyncBytes();
+    await sourceSync.importSyncBytes(deletedAgain);
+    await played('late-old-native-batch', initial);
+    expect(await source.countListeningHistory(), 0);
+    await played(
+      'replay',
+      ListeningWorkRecord(
+        workKey: workKey,
+        track: track,
+        milliseconds: 1000,
+        lastPlayedAtMs: DateTime.now()
+            .add(const Duration(seconds: 1))
+            .millisecondsSinceEpoch,
+      ),
+    );
+    await destinationSync.importSyncBytes(await sourceSync.exportSyncBytes());
+    expect(await destination.countListeningHistory(), 1);
+  });
+
+  test(
+    'a recent play does not override the independent favorite clock',
+    () async {
+      final source = await makeDatabase('favorite-source');
+      final destination = await makeDatabase('favorite-destination');
+      final sourceSync = syncService(source);
+      final destinationSync = syncService(destination);
+      final favored = track.copyWith(
+        isFavorite: true,
+        lastPlayedAt: DateTime.fromMillisecondsSinceEpoch(100000),
+      );
+      await source.saveAllTracks([favored]);
+      await destination.saveAllTracks([track]);
+      final original = await sourceSync.exportSyncBytes();
+      await destinationSync.importSyncBytes(original);
+      expect(
+        (await destination.loadTrackDetail(track.path))?.isFavorite,
+        isTrue,
+      );
+
+      await destination.saveAllTracks([favored.copyWith(isFavorite: false)]);
+      await source.updateTrackPlaybackHistory([
+        favored.copyWith(
+          lastPlayedAt: DateTime.now().add(const Duration(minutes: 1)),
+          lastPlayedPosition: const Duration(seconds: 60),
+        ),
+      ]);
+      final unfavorited = await destinationSync.exportSyncBytes();
+      await sourceSync.importSyncBytes(unfavorited);
+      await destinationSync.importSyncBytes(original);
+      expect((await source.loadTrackDetail(track.path))?.isFavorite, isFalse);
+      expect(
+        (await source.loadTrackDetail(track.path))?.lastPlayedPosition,
+        const Duration(seconds: 60),
+      );
+      expect(
+        (await destination.loadTrackDetail(track.path))?.isFavorite,
+        isFalse,
+      );
+    },
+  );
+
+  test(
+    'older backups identify their installation by the first native usage batch',
+    () async {
+      Future<({String device, int total})> exportLegacy(
+        String label,
+        String firstBatch,
+        int additionalMs,
+      ) async {
+        final file = '${tempDir.path}/$label.db';
+        final raw = await databaseFactoryFfi.openDatabase(file);
+        await AppDatabase.createSchemaForTest(raw);
+        final database = AppDatabase.test(raw);
+        await database.importListeningBatch(firstBatch, [
+          const ListeningDayRecord(
+            date: '2026-11-26',
+            totalMs: 30000,
+            works: [],
+          ),
+        ]);
+        if (additionalMs > 0) {
+          await database.importListeningBatch('windows:later:1', [
+            ListeningDayRecord(
+              date: '2026-11-26',
+              totalMs: additionalMs,
+              works: [],
+            ),
+          ]);
+        }
+        await raw.close();
+        final portable = await database.extractPortableBackupData(
+          candidatePath: file,
+          fallbackDeviceId: 'legacy-backup:windows',
+          interestSettingKeys: const [],
+        );
+        final snapshot = portable.syncSnapshot;
+        return (
+          device: snapshot.deviceId,
+          total: snapshot.deviceDayLedger[snapshot.deviceId]!['2026-11-26']!,
+        );
+      }
+
+      final older = await exportLegacy('legacy-old', 'windows:device-a:1', 0);
+      final newer = await exportLegacy(
+        'legacy-new',
+        'windows:device-a:1',
+        15000,
+      );
+      final unrelated = await exportLegacy(
+        'legacy-independent',
+        'windows:device-b:1',
+        0,
+      );
+      expect(older.device, newer.device);
+      expect(older.device, isNot(unrelated.device));
+      final receiver = await makeDatabase('legacy-receiver');
+      final sync = syncService(receiver);
+      for (final data in [older, newer, older]) {
+        await sync.applySyncBundle(
+          CrossPlatformSyncBundle(
+            formatVersion: CrossPlatformSyncBundle.currentFormatVersion,
+            deviceId: data.device,
+            deviceName: 'Windows',
+            platform: 'windows',
+            exportedAt: DateTime.now(),
+            tracks: [],
+            deviceDayLedger: {
+              data.device: {'2026-11-26': data.total},
+            },
+            deviceWorkDayLedger: {},
+            history: [],
+            timeSegments: [],
+            deletedTimeSegments: {},
+            interests: {},
+          ),
+        );
+      }
+      expect(_daysMap(await receiver.loadListeningDays())['2026-11-26'], 45000);
+    },
+  );
+
   test('CrossPlatformMediaIdentity matches Windows filesystem paths and Android SAF content URIs', () {
     final windowsTrack = MusicTrack(
       path: r'E:\ASMR\[Circle] RJ123456 Title\SEなし\01_耳かき.wav',

@@ -45,6 +45,7 @@ class CustomTranslationTestOutcome {
 }
 
 class TextTranslationRequest {
+  ({TranslationServiceSettings settings, String? apiKey})? _configuration;
   bool _cancelled = false;
   final Set<void Function()> _pendingCancellations = {};
   void Function()? _abort;
@@ -209,8 +210,11 @@ class TextTranslationService {
     }
   }
 
-  TextTranslationRequest newRequest() {
+  TextTranslationRequest newRequest({bool pinConfiguration = false}) {
     final request = TextTranslationRequest();
+    if (pinConfiguration) {
+      request._configuration = (settings: _settings, apiKey: _apiKey);
+    }
     request._onCancel = () => _requests.remove(request);
     if (_disposed) {
       request.cancel();
@@ -240,8 +244,9 @@ class TextTranslationService {
     String target, {
     required String source,
     required TextTranslationScene scene,
+    String? backend,
   }) {
-    final key = (backendSignatureFor(scene), text, source, target);
+    final key = (backend ?? backendSignatureFor(scene), text, source, target);
     final value = _memory.remove(key);
     if (value != null) {
       _memory[key] = value;
@@ -328,8 +333,10 @@ class TextTranslationService {
     final result = <String, String>{};
     final additions = <_TranslationKey, String>{};
     final epoch = _cacheEpoch;
-    final activeSettings = _settings;
-    final activeApiKey = _apiKey;
+    final configuration =
+        request._configuration ?? (settings: _settings, apiKey: _apiKey);
+    final activeSettings = configuration.settings;
+    final activeApiKey = configuration.apiKey;
     final useCustom = activeSettings.usesCustomFor(scene);
     final backend = activeSettings.backendSignatureFor(scene);
     try {
@@ -346,6 +353,7 @@ class TextTranslationService {
           target,
           source: source,
           scene: scene,
+          backend: backend,
         );
         if (value != null) result[text] = value;
       }
@@ -379,7 +387,11 @@ class TextTranslationService {
         rollingContext = rollingContext.sublist(rollingContext.length - 4);
       }
       for (final batch in batches) {
-        final cooldown = useCustom ? _llmCooldownUntil : _cooldownUntil;
+        final currentConfiguration =
+            activeSettings == _settings && activeApiKey == _apiKey;
+        final cooldown = useCustom
+            ? (currentConfiguration ? _llmCooldownUntil : null)
+            : _cooldownUntil;
         final cooldownFailure = useCustom
             ? _llmCooldownFailure
             : _cooldownFailure;
@@ -779,7 +791,7 @@ class TextTranslationService {
         throw const _TranslationError(TextTranslationFailure.unauthorized);
       }
       if (response.statusCode == HttpStatus.tooManyRequests) {
-        if (recordCooldown) {
+        if (recordCooldown && settings == _settings && apiKey == _apiKey) {
           final delay = _resolveCooldownDelay(
             response,
             minimum: const Duration(seconds: 15),

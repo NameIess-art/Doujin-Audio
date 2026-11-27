@@ -14,6 +14,8 @@ import 'package:doujin_audio/features/asmr/application/asmr_library_controller.d
 import 'package:doujin_audio/features/asmr/application/asmr_preferences.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_remote_catalog_service.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
+import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
+import 'package:doujin_audio/features/asmr/presentation/asmr_work_detail_sheet.dart';
 import 'package:doujin_audio/features/library/application/library_facade.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/infrastructure/sqlite/sqlite_asmr_repository.dart';
@@ -22,6 +24,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'support/app_runtime_test_fixture.dart';
 import 'support/test_persistence_repository.dart';
 
 AsmrWork _asmrWork(
@@ -129,6 +132,13 @@ final class _FakeReviewApiService extends AsmrApiService {
       AsmrAuthSession(token: token, userName: 'tester');
 
   @override
+  Future<List<AsmrTrackFile>> fetchTrackTree(
+    int id, {
+    String? token,
+    AsmrRequestCancellationToken? cancellationToken,
+  }) async => const [];
+
+  @override
   Future<List<AsmrReviewRecord>> fetchReviews({
     required String token,
     String? filter,
@@ -139,7 +149,9 @@ final class _FakeReviewApiService extends AsmrApiService {
     AsmrRequestCancellationToken? cancellationToken,
   }) async {
     if (page > 1) return const <AsmrReviewRecord>[];
-    return reviewsByFilter[filter] ?? const <AsmrReviewRecord>[];
+    return filter == null
+        ? reviewsByFilter.values.expand((records) => records).toList()
+        : reviewsByFilter[filter] ?? const <AsmrReviewRecord>[];
   }
 
   @override
@@ -201,6 +213,84 @@ void main() {
   setUpAll(() {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
+  });
+
+  testWidgets('ASMR detail discards the old note after its review is cleared', (
+    tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final api = _FakeReviewApiService();
+    addTearDown(api.close);
+    final work = _asmrWork(100001);
+    final controller = (await tester.runAsync(() async {
+      final db = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath);
+      addTearDown(db.close);
+      await AppDatabase.createSchemaForTest(db);
+      final repository = SqliteAsmrRepository(database: AppDatabase.test(db));
+      final preferences = AsmrPreferencesStore(repository: repository);
+      final controller = AsmrLibraryController(
+        preferencesStore: preferences,
+        remoteCatalogService: AsmrRemoteCatalogService(
+          apiService: api,
+          persistenceRepository: repository,
+        ),
+        accountSyncService: AsmrAccountSyncService(
+          authService: AsmrAuthService(
+            apiService: api,
+            tokenStore: _MemoryAsmrTokenStore(),
+          ),
+          apiService: api,
+          preferencesStore: preferences,
+        ),
+      );
+      addTearDown(controller.dispose);
+      await controller.initialize();
+      await controller.saveWorkReview(
+        work,
+        listenStatus: null,
+        userRating: null,
+        reviewText: 'Review to clear',
+      );
+      return controller;
+    }))!;
+
+    await tester.pumpWidget(
+      fixture.build(
+        buildAsmrWorkDetailPage(work: controller.reviewedWorks.single),
+        overrides: [
+          asmrLibraryControllerProvider.overrideWithValue(controller),
+        ],
+      ),
+    );
+    final review = find.byType(WorkUserReviewSection);
+    await pumpUntilFound(tester, review);
+    expect(
+      tester.widget<WorkUserReviewSection>(review).reviewText,
+      'Review to clear',
+    );
+
+    await tester.runAsync(
+      () => controller.saveWorkReview(
+        work,
+        listenStatus: null,
+        userRating: null,
+        reviewText: '',
+      ),
+    );
+    await pumpUntilFound(
+      tester,
+      find.byWidgetPredicate(
+        (widget) => widget is WorkUserReviewSection && widget.reviewText.isEmpty,
+      ),
+    );
+    expect(tester.widget<WorkUserReviewSection>(review).reviewText, isEmpty);
+    final noteButton = find.byKey(const ValueKey('work_review_note_button'));
+    await tester.ensureVisible(noteButton);
+    await tester.tap(noteButton);
+    final input = find.byKey(const ValueKey('work_review_panel_note_input'));
+    await pumpUntilFound(tester, input);
+    expect(tester.widget<TextField>(input).controller!.text, isEmpty);
   });
 
   group('SQLite v21 user review persistence & migration', () {
@@ -338,6 +428,88 @@ void main() {
       api.close();
       await db.close();
     });
+
+    test(
+      'favoriting keeps the queued rating and note in SQLite and uploads them',
+      () async {
+        final work = _asmrWork(100001);
+        await sync.saveWorkReview(
+          work,
+          listenStatus: WorkListenStatus.listened,
+          userRating: 5,
+          reviewText: 'Pending note',
+        );
+
+        await sync.setFavorites([work], favorite: true);
+
+        final pending = (await prefs.loadSyncOperations()).single;
+        expect(pending.type, AsmrSyncOperationType.reviewUpsert);
+        expect(pending.progress, 'marked');
+        expect(pending.userRating, 5);
+        expect(pending.reviewText, 'Pending note');
+        // A stale pull can read the updated status without the new review fields.
+        api.reviewsByFilter['marked'] = [
+          AsmrReviewRecord(
+            work: work,
+            progress: 'marked',
+            updatedAt: DateTime.now().add(const Duration(minutes: 1)),
+          ),
+        ];
+        final result = await sync.synchronize(
+          language: AsmrContentLanguage.zh,
+          cancellationToken: AsmrRequestCancellationToken(),
+        );
+        expect(result.succeeded, isTrue);
+        expect(api.putProgressCalls, isEmpty);
+        final uploaded = api.putReviewCalls.single;
+        expect(uploaded.progress, WorkListenStatus.marked);
+        expect(uploaded.userRating, 5);
+        expect(uploaded.reviewText, 'Pending note');
+        expect(result.snapshot.reviewedWorks.single.reviewText, 'Pending note');
+        expect(
+          (await prefs.loadReviewedWorks()).single.reviewText,
+          'Pending note',
+        );
+      },
+    );
+
+    test(
+      'full pull includes reviews without status and reuses unchanged indexes',
+      () async {
+        final work = _asmrWork(200002);
+        api.reviewsByFilter[null] = [
+          AsmrReviewRecord(
+            work: work,
+            progress: '',
+            updatedAt: DateTime.utc(2026, 11, 26),
+            userRating: 4,
+            reviewText: 'Rated without status',
+          ),
+        ];
+
+        final result = await sync.synchronize(
+          language: AsmrContentLanguage.zh,
+          cancellationToken: AsmrRequestCancellationToken(),
+        );
+
+        expect(result.succeeded, isTrue);
+        expect(result.snapshot.favoriteWorks, isEmpty);
+        expect(result.snapshot.historyWorks, isEmpty);
+        final persisted = (await prefs.loadReviewedWorks()).single;
+        expect(persisted.listenStatus, isNull);
+        expect(persisted.userRating, 4);
+        expect(persisted.reviewText, 'Rated without status');
+        final afterHistory = await sync.recordHistory(_asmrWork(300003));
+        expect(
+          afterHistory.reviewedByWorkKey,
+          same(result.snapshot.reviewedByWorkKey),
+        );
+        expect(
+          afterHistory.reviewedByRjCode,
+          same(result.snapshot.reviewedByRjCode),
+        );
+      },
+    );
 
     test(
       'saves 5 statuses + rating + note, preserves rating/note on unfavorite, and drops 404 local RJ ops',

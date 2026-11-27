@@ -7,6 +7,7 @@ import '../../../app/state/app_runtime_providers.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/work_review_panel.dart';
+import '../application/asmr_library_controller.dart';
 import '../domain/asmr_models.dart';
 import 'asmr_providers.dart';
 
@@ -100,18 +101,10 @@ Future<bool> _setFavoriteWithFeedback(
 }
 
 WorkReviewDraft readAsmrWorkReviewDraft(
-  ProviderContainer container,
+  AsmrLibraryController? controller,
   AsmrWork work,
 ) {
-  final controller = container.read(asmrLibraryControllerProvider);
-  if (controller == null) {
-    return (
-      listenStatus: work.listenStatus,
-      userRating: work.userRating,
-      reviewText: work.reviewText,
-    );
-  }
-  final reviewed = controller.reviewForWork(work);
+  final reviewed = controller?.reviewForWork(work);
   if (reviewed != null) {
     return (
       listenStatus: reviewed.listenStatus,
@@ -119,17 +112,20 @@ WorkReviewDraft readAsmrWorkReviewDraft(
       reviewText: reviewed.reviewText,
     );
   }
-  if (controller.isFavorite(work.workKey)) {
+  final isFavorite = controller?.isFavorite(work.workKey) ?? work.isFavorite;
+  if (controller?.initialized ?? false) {
     return (
-      listenStatus: WorkListenStatus.marked,
-      userRating: work.userRating,
-      reviewText: work.reviewText,
+      listenStatus: isFavorite ? WorkListenStatus.marked : null,
+      userRating: null,
+      reviewText: '',
     );
   }
   return (
-    listenStatus: work.listenStatus == WorkListenStatus.marked
-        ? null
-        : work.listenStatus,
+    listenStatus: isFavorite
+        ? WorkListenStatus.marked
+        : (work.listenStatus == WorkListenStatus.marked
+              ? null
+              : work.listenStatus),
     userRating: work.userRating,
     reviewText: work.reviewText,
   );
@@ -143,7 +139,8 @@ Future<bool> saveAsmrWorkReviewWithFeedback(
 ) async {
   final feedbackContext = Scaffold.maybeOf(context)?.context ?? context;
   final container = ProviderScope.containerOf(context, listen: false);
-  final current = readAsmrWorkReviewDraft(container, work);
+  final controller = container.read(asmrLibraryControllerProvider);
+  final current = readAsmrWorkReviewDraft(controller, work);
   if (draft.userRating == null &&
       draft.reviewText.isEmpty &&
       current.userRating == null &&
@@ -151,14 +148,10 @@ Future<bool> saveAsmrWorkReviewWithFeedback(
       (draft.listenStatus == WorkListenStatus.marked ||
           (draft.listenStatus == null &&
               current.listenStatus == WorkListenStatus.marked))) {
-    return setAsmrWorksFavoriteWithFeedback(
-      context,
-      ref,
-      [work],
-      favorite: draft.listenStatus == WorkListenStatus.marked,
-    );
+    return setAsmrWorksFavoriteWithFeedback(context, ref, [
+      work,
+    ], favorite: draft.listenStatus == WorkListenStatus.marked);
   }
-  final controller = container.read(asmrLibraryControllerProvider);
   if (controller == null || !feedbackContext.mounted) return false;
   final operations = container.read(uiOperationServiceProvider);
   final scope = UiOperationScope.asmrWork(
@@ -201,7 +194,7 @@ Future<void> openAsmrWorkReviewEditor(
   final container = ProviderScope.containerOf(context, listen: false);
   final controller = container.read(asmrLibraryControllerProvider);
   final i18n = container.read(appLanguageProviderInstanceProvider);
-  final current = readAsmrWorkReviewDraft(container, work);
+  final current = readAsmrWorkReviewDraft(controller, work);
   final syncsWithCloud =
       (controller?.isAsmrAccountLoggedIn ?? false) &&
       work.resourceFor(AsmrCatalogSource.asmrOne) != null;

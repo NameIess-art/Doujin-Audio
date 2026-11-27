@@ -542,6 +542,9 @@ final class _FastQueryFakeAudioDetailRepository
 }
 
 final class _FakeAudioDetailRepository implements AudioDetailRepository {
+  @override
+  Future<void> exportSyncedDetail(AudioDetail detail) async {}
+
   _FakeAudioDetailRepository(this.detail);
 
   @override

@@ -68,6 +68,7 @@ class SubtitleAiEngine {
   }) : _models = models ?? SubtitleModelStore(),
        _files = files ?? FileCachePlatformGateway.instance,
        _translations = translations ?? TextTranslationService(),
+       _ownsTranslations = translations == null,
        _stereoAudioDecoder = stereoAudioDecoder,
        _transcriptionDriverFactory = transcriptionDriverFactory,
        _activeAsrModel =
@@ -76,6 +77,7 @@ class SubtitleAiEngine {
   final SubtitleModelStore _models;
   final FileCachePlatformGateway _files;
   final TextTranslationService _translations;
+  final bool _ownsTranslations;
   final SubtitleAudioDecodeHandler? _stereoAudioDecoder;
   final SubtitleTranscriptionDriverFactory? _transcriptionDriverFactory;
   final SubtitleAsrModelOption Function() _activeAsrModel;
@@ -86,6 +88,10 @@ class SubtitleAiEngine {
   SubtitleModelStore get modelStore => _models;
   TextTranslationService get translationService => _translations;
   SubtitleAsrModelOption get currentAsrModel => _activeAsrModel();
+
+  void dispose() {
+    if (_ownsTranslations) _translations.dispose();
+  }
 
   Future<SubtitleDraft?> prepareScript(
     String trackPath,
@@ -212,6 +218,39 @@ class SubtitleAiEngine {
     if (targetLanguage != 'zh' && targetLanguage != 'en') {
       throw ArgumentError.value(targetLanguage, 'targetLanguage');
     }
+    final request = _translations.newRequest(pinConfiguration: true);
+    try {
+      return await _prepareTranslation(
+        source,
+        targetLanguage,
+        trackPath: trackPath,
+        request: request,
+        backendSignature: _translations.backendSignatureFor(
+          TextTranslationScene.subtitle,
+        ),
+        useCustomBackend: _translations.usesCustomBackendFor(
+          TextTranslationScene.subtitle,
+        ),
+        onProgress: onProgress,
+        isCancelled: isCancelled,
+        cancellation: cancellation,
+      );
+    } finally {
+      request.cancel();
+    }
+  }
+
+  Future<SubtitleDraft> _prepareTranslation(
+    List<SubtitleCue> source,
+    String targetLanguage, {
+    required String trackPath,
+    required TextTranslationRequest request,
+    required String backendSignature,
+    required bool useCustomBackend,
+    SubtitleProgressCallback? onProgress,
+    bool Function()? isCancelled,
+    Future<void>? cancellation,
+  }) async {
     final originals = source
         .map((cue) => (cue.originalText ?? cue.text).trim())
         .toList();
@@ -233,12 +272,6 @@ class SubtitleAiEngine {
           originals[index],
         ],
     ];
-    final backendSignature = _translations.backendSignatureFor(
-      TextTranslationScene.subtitle,
-    );
-    final useCustomBackend = _translations.usesCustomBackendFor(
-      TextTranslationScene.subtitle,
-    );
     final maxBatchItems = useCustomBackend
         ? textTranslationLlmBatchMaxItems
         : textTranslationBatchMaxItems;
@@ -280,7 +313,6 @@ class SubtitleAiEngine {
         targetLanguage: targetLanguage,
       );
     }
-    final request = _translations.newRequest();
     final cancelled = cancellation?.then<void>((_) => request.cancel());
     final cues = prior.cues.toList();
     var offset = prior.nextChunk;
@@ -392,7 +424,6 @@ class SubtitleAiEngine {
       }
       completedNormally = true;
     } finally {
-      request.cancel();
       if (!completedNormally && offset > lastPersistedOffset) {
         try {
           await _writeCheckpoint(checkpoint, offset, cues);
@@ -492,24 +523,37 @@ class SubtitleAiEngine {
     final trackSourceKey = sha256
         .convert(utf8.encode(jsonEncode(['asr', trackPath])))
         .toString();
-    final localStatSignature = await _localFileSignature(
-      trackPath,
-      asrOption.checkpointSignature,
+    final localStatSignature = await _localFileSignature(trackPath);
+    final localDigest = localStatSignature == null
+        ? null
+        : await _asrFileDigest(trackPath);
+    final checkpointRoot = path.join(workDir.path, 'asr_v2_$trackSourceKey');
+    String checkpointFor(String digest) => path.join(
+      checkpointRoot,
+      sha256
+          .convert(utf8.encode('${asrOption.checkpointSignature}:$digest'))
+          .toString(),
     );
-    if (localStatSignature != null) {
-      final fastCheckpoint = await _findCompletedLocalAsrCheckpoint(
-        workDir,
-        trackSourceKey,
-        localStatSignature,
+    _checkCancelled(isCancelled);
+    if (localDigest != null &&
+        localStatSignature != await _localFileSignature(trackPath)) {
+      throw FileSystemException(
+        'Audio changed during transcription',
+        trackPath,
       );
-      if (fastCheckpoint != null) {
+    }
+    if (localDigest != null) {
+      final fastCheckpoint = await _loadAsrCheckpoint(
+        checkpointFor(localDigest),
+      );
+      if (fastCheckpoint.totalFrames > 0 &&
+          fastCheckpoint.nextFrame == fastCheckpoint.totalFrames) {
         _checkCancelled(isCancelled);
-        final cues = buildSanitizedTranscriptionCues(
+        final cues = await _asrCues(
           fastCheckpoint.segments,
-          maxDuration: Duration(
-            microseconds: (fastCheckpoint.totalFrames * 1000000) ~/ 16000,
-          ),
+          fastCheckpoint.totalFrames,
         );
+        _checkCancelled(isCancelled);
         if (cues.isEmpty) return null;
         return SubtitleDraft(
           cues: cues,
@@ -529,12 +573,10 @@ class SubtitleAiEngine {
     final asrModelPath = modelPaths.last;
     _checkCancelled(isCancelled);
 
-    final decoded = File(
-      path.join(
-        (await getTemporaryDirectory()).path,
-        'asr_$trackSourceKey.s16le.pcm',
-      ),
+    final temp = await (await getTemporaryDirectory()).createTemp(
+      'subtitle-asr-',
     );
+    final decoded = File(path.join(temp.path, 'audio.s16le.pcm'));
     try {
       final decode = _stereoAudioDecoder;
       if (decode != null) {
@@ -552,40 +594,23 @@ class SubtitleAiEngine {
       final length = await decoded.length();
       final totalFrames = length ~/ 4;
       if (totalFrames <= 0) return null;
-
-      final asrIdentity = sha256
-          .convert(
-            utf8.encode(
-              jsonEncode([
-                trackPath,
-                totalFrames,
-                for (final spec in asrOption.bundleSpecs) spec.sha256,
-              ]),
-            ),
-          )
-          .toString();
-      final checkpoint = File(
-        path.join(workDir.path, 'asr_${trackSourceKey}_v1_$asrIdentity.json'),
-      );
-      await for (final entry in workDir.list()) {
-        final name = path.basename(entry.path);
-        if (entry is File &&
-            entry.path != checkpoint.path &&
-            name.startsWith('asr_${trackSourceKey}_')) {
-          await entry.delete();
-        }
-      }
-
-      final prior = await _readAsrCheckpoint(checkpoint, totalFrames);
-      _checkCancelled(isCancelled);
-      final maxDuration = Duration(
-        microseconds: (totalFrames * 1000000) ~/ 16000,
-      );
-      if (prior.nextFrame >= totalFrames) {
-        final cues = buildSanitizedTranscriptionCues(
-          prior.segments,
-          maxDuration: maxDuration,
+      if (localStatSignature != null &&
+          localStatSignature != await _localFileSignature(trackPath)) {
+        throw FileSystemException(
+          'Audio changed during transcription',
+          trackPath,
         );
+      }
+      // SAF document identities can survive replacement. Use decoded content
+      // when Flutter cannot read the source as a regular file.
+      final checkpoint = checkpointFor(
+        localDigest ?? await _asrFileDigest(decoded.path),
+      );
+      final prior = await _loadAsrCheckpoint(checkpoint, totalFrames);
+      _checkCancelled(isCancelled);
+      if (prior.nextFrame >= totalFrames) {
+        final cues = await _asrCues(prior.segments, totalFrames);
+        _checkCancelled(isCancelled);
         if (cues.isEmpty) return null;
         return SubtitleDraft(
           cues: cues,
@@ -606,7 +631,8 @@ class SubtitleAiEngine {
 
       var frameOffset = prior.nextFrame;
       var lastPersistedFrame = frameOffset;
-      final segments = prior.segments.toList();
+      final segments = prior.segments;
+      var lastPersistedSegmentCount = segments.length;
       var windowsSinceCheckpoint = 0;
       final checkpointClock = Stopwatch()..start();
       var completedNormally = false;
@@ -642,7 +668,7 @@ class SubtitleAiEngine {
             await reader.setPosition(frameOffset * 4);
             final expectedBytes = currentFrames * 4;
             final bytes = await reader.read(expectedBytes);
-            if (bytes.length < 4) {
+            if (bytes.length != expectedBytes) {
               throw FileSystemException(
                 'Decoded audio is incomplete',
                 decoded.path,
@@ -658,6 +684,7 @@ class SubtitleAiEngine {
             );
             _checkCancelled(isCancelled);
 
+            final windowSegments = <AsrRawSegment>[];
             for (final slice in plan.slices) {
               _checkCancelled(isCancelled);
               final sliceSegments = await runCancellable(
@@ -668,7 +695,7 @@ class SubtitleAiEngine {
                 ),
               );
               _checkCancelled(isCancelled);
-              segments.addAll(sliceSegments);
+              windowSegments.addAll(sliceSegments);
               final sliceEndFrame = math.min(
                 totalFrames,
                 frameOffset + slice.endFrame,
@@ -690,6 +717,7 @@ class SubtitleAiEngine {
               frameOffset + 1,
               math.min(totalFrames, plan.nextFrameOffset),
             );
+            segments.addAll(windowSegments);
             frameOffset = nextOffset;
             windowsSinceCheckpoint++;
             if (frameOffset >= totalFrames ||
@@ -698,11 +726,12 @@ class SubtitleAiEngine {
               await _writeAsrCheckpoint(
                 checkpoint,
                 totalFrames: totalFrames,
+                startFrame: lastPersistedFrame,
                 nextFrame: frameOffset,
-                segments: segments,
-                fileSignature: localStatSignature,
+                segments: segments.sublist(lastPersistedSegmentCount),
               );
               lastPersistedFrame = frameOffset;
+              lastPersistedSegmentCount = segments.length;
               windowsSinceCheckpoint = 0;
               checkpointClock.reset();
             }
@@ -734,9 +763,9 @@ class SubtitleAiEngine {
             await _writeAsrCheckpoint(
               checkpoint,
               totalFrames: totalFrames,
+              startFrame: lastPersistedFrame,
               nextFrame: frameOffset,
-              segments: segments,
-              fileSignature: localStatSignature,
+              segments: segments.sublist(lastPersistedSegmentCount),
             );
           } catch (_) {
             // Preserve the original failure or cancellation.
@@ -745,10 +774,8 @@ class SubtitleAiEngine {
         await driver.close();
       }
 
-      final cues = buildSanitizedTranscriptionCues(
-        segments,
-        maxDuration: maxDuration,
-      );
+      final cues = await _asrCues(segments, totalFrames);
+      _checkCancelled(isCancelled);
       if (cues.isEmpty) return null;
       return SubtitleDraft(
         cues: cues,
@@ -757,13 +784,11 @@ class SubtitleAiEngine {
       );
     } finally {
       if (await decoded.exists()) await decoded.delete();
+      await temp.delete();
     }
   }
 
-  static Future<String?> _localFileSignature(
-    String trackPath,
-    String modelSignature,
-  ) async {
+  static Future<String?> _localFileSignature(String trackPath) async {
     if (trackPath.isEmpty ||
         trackPath.startsWith('content://') ||
         trackPath.startsWith('http://') ||
@@ -772,7 +797,7 @@ class SubtitleAiEngine {
     }
     final stat = await File(trackPath).stat();
     if (stat.type != FileSystemEntityType.file || stat.size <= 0) return null;
-    return '${stat.size}:${stat.modified.millisecondsSinceEpoch}:$modelSignature';
+    return '${stat.size}:${stat.modified.microsecondsSinceEpoch}:${stat.changed.microsecondsSinceEpoch}';
   }
 
   Future<void> _decodeAudio(
@@ -923,80 +948,59 @@ typedef _AsrCheckpoint = ({
   int totalFrames,
   int nextFrame,
   List<AsrRawSegment> segments,
-  String? fileSignature,
 });
 
-Future<_AsrCheckpoint?> _findCompletedLocalAsrCheckpoint(
-  Directory workDir,
-  String trackSourceKey,
-  String expectedSignature,
-) async {
-  if (!await workDir.exists()) return null;
-  await for (final entry in workDir.list()) {
-    final name = path.basename(entry.path);
-    if (entry is! File || !name.startsWith('asr_${trackSourceKey}_v1_')) {
-      continue;
-    }
+Future<String> _asrFileDigest(String filePath) => Isolate.run(() async {
+  final digest = await sha256.bind(File(filePath).openRead()).first;
+  return digest.toString();
+});
+
+Future<List<SubtitleCue>> _asrCues(
+  List<AsrRawSegment> segments,
+  int totalFrames,
+) => Isolate.run(
+  () => buildSanitizedTranscriptionCues(
+    segments,
+    maxDuration: Duration(microseconds: (totalFrames * 1000000) ~/ 16000),
+  ),
+);
+
+Future<_AsrCheckpoint> _loadAsrCheckpoint(
+  String directory, [
+  int? expectedTotalFrames,
+]) => Isolate.run(() async {
+  var totalFrames = expectedTotalFrames ?? 0;
+  var nextFrame = 0;
+  final segments = <AsrRawSegment>[];
+  while (totalFrames == 0 || nextFrame < totalFrames) {
+    final file = File(path.join(directory, '$nextFrame.json'));
+    if (!await file.exists()) break;
     try {
       final data =
-          jsonDecode(await entry.readAsString()) as Map<String, dynamic>;
-      if (data['version'] != 1 || data['fileSignature'] != expectedSignature) {
-        continue;
+          jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      final batchTotal = data['totalFrames'] as int;
+      final batchEnd = data['nextFrame'] as int;
+      if (batchEnd <= nextFrame ||
+          batchEnd > batchTotal ||
+          (totalFrames != 0 && totalFrames != batchTotal)) {
+        break;
       }
-      final totalFrames = data['totalFrames'] as int;
-      final nextFrame = data['nextFrame'] as int;
-      if (totalFrames <= 0 || nextFrame < totalFrames) continue;
-      return (
-        totalFrames: totalFrames,
-        nextFrame: nextFrame,
-        segments: _decodeAsrSegments(data['segments'] as List),
-        fileSignature: expectedSignature,
-      );
-    } catch (_) {
-      continue;
+      final batchSegments = _decodeAsrSegments(data['segments'] as List);
+      segments.addAll(batchSegments);
+      totalFrames = batchTotal;
+      nextFrame = batchEnd;
+    } on FormatException {
+      break;
+    } on TypeError {
+      break;
+    } on RangeError {
+      break;
+    } on FileSystemException {
+      break;
     }
   }
-  return null;
-}
-
-Future<_AsrCheckpoint> _readAsrCheckpoint(
-  File file,
-  int expectedTotalFrames,
-) async {
-  if (!await file.exists()) {
-    return (
-      totalFrames: expectedTotalFrames,
-      nextFrame: 0,
-      segments: <AsrRawSegment>[],
-      fileSignature: null,
-    );
-  }
-  try {
-    final data = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
-    if (data['version'] != 1 || data['totalFrames'] != expectedTotalFrames) {
-      return (
-        totalFrames: expectedTotalFrames,
-        nextFrame: 0,
-        segments: <AsrRawSegment>[],
-        fileSignature: null,
-      );
-    }
-    final nextFrame = (data['nextFrame'] as int).clamp(0, expectedTotalFrames);
-    return (
-      totalFrames: expectedTotalFrames,
-      nextFrame: nextFrame,
-      segments: _decodeAsrSegments(data['segments'] as List),
-      fileSignature: data['fileSignature'] as String?,
-    );
-  } catch (_) {
-    return (
-      totalFrames: expectedTotalFrames,
-      nextFrame: 0,
-      segments: <AsrRawSegment>[],
-      fileSignature: null,
-    );
-  }
-}
+  return (totalFrames: totalFrames, nextFrame: nextFrame, segments: segments);
+});
 
 List<AsrRawSegment> _decodeAsrSegments(List<dynamic> rawList) {
   return rawList.map((item) {
@@ -1020,19 +1024,19 @@ List<AsrRawSegment> _decodeAsrSegments(List<dynamic> rawList) {
 }
 
 Future<void> _writeAsrCheckpoint(
-  File file, {
+  String directory, {
   required int totalFrames,
+  required int startFrame,
   required int nextFrame,
   required List<AsrRawSegment> segments,
-  String? fileSignature,
-}) async {
-  final temporary = File('${file.path}.tmp');
+}) => Isolate.run(() async {
+  await Directory(directory).create(recursive: true);
+  final destination = path.join(directory, '$startFrame.json');
+  final temporary = File('$destination.tmp');
   await temporary.writeAsString(
     jsonEncode({
-      'version': 1,
       'totalFrames': totalFrames,
       'nextFrame': nextFrame,
-      'fileSignature': ?fileSignature,
       'segments': segments
           .map(
             (seg) => [
@@ -1050,9 +1054,8 @@ Future<void> _writeAsrCheckpoint(
     }),
     flush: true,
   );
-  if (await file.exists()) await file.delete();
-  await temporary.rename(file.path);
-}
+  await temporary.rename(destination);
+});
 
 class _SubtitleWorker implements SubtitleTranscriptionDriver {
   _SubtitleWorker(

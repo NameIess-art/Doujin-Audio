@@ -121,6 +121,36 @@ extension AppDatabaseListening on AppDatabase {
     return totals;
   });
 
+  Future<Set<String>> loadRecentlyPlayedWorkKeys(
+    Iterable<String> workKeys,
+    DateTime since,
+  ) => _runDatabaseRead((db) async {
+    final day = since.toLocal().toIso8601String().split('T').first;
+    final recent = <String>{};
+    for (final chunk in _stringChunks(
+      workKeys.toSet().toList(growable: false),
+    )) {
+      final placeholders = List.filled(chunk.length, '?').join(', ');
+      final history = await db.rawQuery(
+        '''
+        SELECT work_key FROM listening_history
+        WHERE work_key IN ($placeholders) AND last_played_at_ms >= ?
+      ''',
+        [...chunk, since.millisecondsSinceEpoch],
+      );
+      final usage = await db.rawQuery(
+        '''
+        SELECT DISTINCT work_key FROM listening_work_days
+        WHERE work_key IN ($placeholders) AND date > ?
+      ''',
+        [...chunk, day],
+      );
+      recent.addAll(history.map((row) => row['work_key']! as String));
+      recent.addAll(usage.map((row) => row['work_key']! as String));
+    }
+    return recent;
+  });
+
   Future<int> countListeningHistory() => _runDatabaseRead(
     (db) async => Sqflite.firstIntValue(
       await db.rawQuery('SELECT COUNT(*) FROM listening_history'),
@@ -160,7 +190,12 @@ extension AppDatabaseListening on AppDatabase {
               _listeningActivityPlaybackAtKey,
             ],
           );
-          await _recordListeningHistoryEdit(txn);
+          await _recordListeningHistoryEdit(
+            txn,
+            workKey,
+            deleted: true,
+            lastPlayedAtMs: entry['last_played_at_ms'] as int? ?? 0,
+          );
           return entry;
         }),
       );
@@ -178,7 +213,12 @@ extension AppDatabaseListening on AppDatabase {
         'legacy_order': legacyOrder,
       }, conflictAlgorithm: ConflictAlgorithm.ignore);
       if (Sqflite.firstIntValue(await txn.rawQuery('SELECT changes()')) != 0) {
-        await _recordListeningHistoryEdit(txn);
+        await _recordListeningHistoryEdit(
+          txn,
+          work.workKey,
+          deleted: false,
+          lastPlayedAtMs: work.lastPlayedAtMs,
+        );
       }
     }),
   );
@@ -230,11 +270,50 @@ Future<Map<String, Object?>?> _findListeningHistoryEntry(
   return rows.firstOrNull;
 }
 
-Future<void> _recordListeningHistoryEdit(Transaction txn) async {
+Future<void> _recordListeningHistoryEdit(
+  Transaction txn,
+  String workKey, {
+  required bool deleted,
+  required int lastPlayedAtMs,
+}) async {
+  final existing = (await _loadListeningHistoryEdits(txn, [workKey]))[workKey];
+  final timestamp = max(
+    DateTime.now().millisecondsSinceEpoch,
+    max(lastPlayedAtMs, existing?.updatedAtMs ?? 0) + 1,
+  );
+  await txn.insert('sync_listening_history_edits', {
+    'work_key': workKey,
+    'updated_at_ms': timestamp,
+    'deleted': deleted ? 1 : 0,
+  }, conflictAlgorithm: ConflictAlgorithm.replace);
   await txn.insert('app_kv_settings', {
     'key': _listeningHistoryEditedAtKey,
-    'value': DateTime.now().millisecondsSinceEpoch.toString(),
+    'value': timestamp.toString(),
   }, conflictAlgorithm: ConflictAlgorithm.replace);
+}
+
+typedef _HistoryEdit = ({int updatedAtMs, bool deleted});
+
+Future<Map<String, _HistoryEdit>> _loadListeningHistoryEdits(
+  DatabaseExecutor db,
+  Iterable<String> keys,
+) async {
+  final result = <String, _HistoryEdit>{};
+  for (final chunk in _stringChunks(keys.toList(growable: false))) {
+    final placeholders = List.filled(chunk.length, '?').join(', ');
+    final rows = await db.query(
+      'sync_listening_history_edits',
+      where: 'work_key IN ($placeholders)',
+      whereArgs: chunk,
+    );
+    for (final row in rows) {
+      result[row['work_key']! as String] = (
+        updatedAtMs: row['updated_at_ms']! as int,
+        deleted: row['deleted'] == 1,
+      );
+    }
+  }
+  return result;
 }
 
 Future<Set<String>> _loadExistingListeningDays(
@@ -304,9 +383,19 @@ Future<void> _enqueueListeningHistoryUpserts(
           (row['last_played_at_ms'] as int?) ?? 0;
     }
   }
+  final edits = await _loadListeningHistoryEdits(
+    db,
+    pending.keys.where((key) => !existingLastPlayed.containsKey(key)),
+  );
   for (final MapEntry(key: workKey, value: entry) in pending.entries) {
     final currentLastPlayed = existingLastPlayed[workKey];
     if (currentLastPlayed == null) {
+      final edit = edits[workKey];
+      if (edit != null &&
+          edit.deleted &&
+          entry.work.lastPlayedAtMs <= edit.updatedAtMs) {
+        continue;
+      }
       batch.insert('listening_history', {
         'work_key': entry.work.workKey,
         'track_json': jsonEncode(entry.work.track.toJson()),

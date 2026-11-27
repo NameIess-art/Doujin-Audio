@@ -140,6 +140,24 @@ void main() {
     await support.delete(recursive: true);
   });
 
+  test('subtitle disposal releases owned translations and preserves injected translations', () {
+    final owned = PlaybackSubtitleService(trackResolver: (_) => null);
+    final ownedRequest = owned.translationService.newRequest();
+    owned.dispose();
+    expect(ownedRequest.cancelled, isTrue);
+
+    final shared = TextTranslationService();
+    addTearDown(shared.dispose);
+    final engine = SubtitleAiEngine(translations: shared);
+    final subtitleService = PlaybackSubtitleService(
+      trackResolver: (_) => null,
+      aiEngine: engine,
+    );
+    final sharedRequest = shared.newRequest();
+    subtitleService.dispose();
+    expect(sharedRequest.cancelled, isFalse);
+  });
+
   test(
     'unchanged translation restores its completed checkpoint',
     () async {
@@ -417,7 +435,13 @@ void main() {
         subtitlesDirectoryResolver: () async => support,
       );
       addTearDown(service.dispose);
-      expect(service.startTranscriptionGeneration('silent.mp3'), isTrue);
+      expect(
+        service.startTranscriptionGeneration(
+          'silent.mp3',
+          expectedPrimary: (sourcePath: null, revision: null),
+        ),
+        isTrue,
+      );
       await _waitUntil(
         () => service.generationJob?.status == SubtitleGenerationStatus.noMatch,
       );
@@ -425,6 +449,61 @@ void main() {
     },
     skip: !Platform.isWindows && !Platform.isAndroid,
   );
+
+  for (final useSaf in [false, true]) {
+    test(
+      'equal-length replacement invalidates ASR checkpoints (SAF: $useSaf)',
+      () async {
+        final audio = File(path.join(support.path, 'replacement.mp3'));
+        final trackPath = useSaf
+            ? 'content://media/replacement.mp3'
+            : audio.path;
+        var sample = 1;
+        var driverStarts = 0;
+        final engine = SubtitleAiEngine(
+          models: _ResolvedBundleModels(),
+          stereoAudioDecoder: (_, output, _, _) async {
+            await output.writeAsBytes(Uint8List(16000 * 5 * 4)..[0] = sample);
+          },
+          transcriptionDriverFactory: (_, _) async {
+            driverStarts++;
+            final text = sample == 1 ? '古い台詞です。' : '新しい台詞です。';
+            return _FakeAsrDriver(
+              onPlanWindow: (startFrame, frameCount, _) async => VadWindowPlan(
+                slices: [(startFrame: 0, endFrame: frameCount)],
+                nextFrameOffset: startFrame + frameCount,
+              ),
+              onTranscribeSlice: (_, _, _) async => [
+                AsrRawSegment(text: text, startSeconds: 1, endSeconds: 2),
+              ],
+            );
+          },
+        );
+        addTearDown(engine.dispose);
+        addTearDown(engine.modelStore.dispose);
+        await audio.writeAsBytes([sample]);
+        await audio.setLastModified(DateTime(2025));
+        expect(
+          (await engine.prepareTranscription(trackPath))?.cues.single.text,
+          '古い台詞です。',
+        );
+        expect(
+          (await engine.prepareTranscription(trackPath))?.cues.single.text,
+          '古い台詞です。',
+        );
+        expect(driverStarts, 1);
+        sample = 2;
+        await audio.writeAsBytes([sample]);
+        await audio.setLastModified(DateTime(2025));
+        expect(
+          (await engine.prepareTranscription(trackPath))?.cues.single.text,
+          '新しい台詞です。',
+        );
+        expect(driverStarts, 2);
+      },
+      skip: !Platform.isWindows && !Platform.isAndroid,
+    );
+  }
 }
 
 class _ResolvedBundleModels extends SubtitleModelStore {

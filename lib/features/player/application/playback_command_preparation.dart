@@ -66,7 +66,10 @@ List<Map<String, Object?>> _buildNativePlaybackQueue(
         ? track?.remoteCoverUrl
         : Uri.file(descriptor.coverPath!).toString();
     final candidates = _candidatePlaybackUris(track);
-    final reference = PlaybackMediaReference.parse(descriptor.path);
+    final reference = PlaybackMediaReference.parse(
+      descriptor.path,
+      sourceId: track?.remoteSourceId,
+    );
     final headers = descriptor.httpHeaders.isNotEmpty
         ? descriptor.httpHeaders
         : reference.httpHeaders;
@@ -79,7 +82,8 @@ List<Map<String, Object?>> _buildNativePlaybackQueue(
           : Uri.file(descriptor.path).toString(),
       if (reference.isChapter) 'clipStartMs': reference.startMs,
       if (reference.endMs != null) 'clipEndMs': reference.endMs,
-      if (headers.isNotEmpty) 'httpHeaders': headers,
+      if (headers.isNotEmpty || track?.remoteSourceId != null)
+        'httpHeaders': headers,
       if (descriptor.playOnceBeforeQueue) 'playOnceBeforeQueue': true,
       'title':
           track?.displayName ?? path.basenameWithoutExtension(descriptor.path),
@@ -418,12 +422,16 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
   }) {
     final logicalPath = PathMatcher.normalize(nextPath);
     final resolvedPath = _playbackFacade.resolveRetargetedPath(nextPath);
+    final track = _sessionTrackForPath(session, logicalPath);
     final uri =
         PathMatcher.isContentUri(resolvedPath) ||
             PathMatcher.isRemoteUri(resolvedPath)
-        ? Uri.parse(resolvedPath)
+        ? Uri.parse(
+            track?.isRemoteSource == true
+                ? PlaybackMediaReference.parse(resolvedPath).streamUrl
+                : resolvedPath,
+          )
         : Uri.file(resolvedPath);
-    final track = _sessionTrackForPath(session, logicalPath);
     final coverPath = resolvedPlaybackCoverPathForTrack(track);
     if (coverPath == null) {
       unawaited(_resolveNotificationCoverPathForTrack(track));
@@ -441,8 +449,10 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
         );
     final startPosition =
         startPositionOverride ??
-        (forceStartAtZero || logicalTrackChanged
+        (forceStartAtZero
             ? Duration.zero
+            : logicalTrackChanged
+            ? _playbackFacade.remoteResumePosition(track)
             : session.lastKnownPosition);
     return _PlaybackPreparationTarget(
       logicalPath: logicalPath,
@@ -959,7 +969,10 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
               path: trackPath,
               track: track,
               coverPath: resolvedPlaybackCoverPathForTrack(track),
-              httpHeaders: PlaybackMediaReference.parse(trackPath).httpHeaders,
+              httpHeaders: PlaybackMediaReference.parse(
+                trackPath,
+                sourceId: track?.remoteSourceId,
+              ).httpHeaders,
               playOnceBeforeQueue: playDetachedOnce && index == 0,
             ));
             if (slice.elapsedMicroseconds >= 2000) {

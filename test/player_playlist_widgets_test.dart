@@ -811,6 +811,7 @@ void main() {
                 ? null
                 : (fixture) => fixture.persistenceRepository.upsert(
                     AudioDetail.empty(target).copyWith(
+                      workTitle: 'Local work title',
                       circleName: 'Circle',
                       voiceActors: ['Voice A', 'Voice B'],
                     ),
@@ -818,6 +819,13 @@ void main() {
           );
           final title = find.byKey(
             const ValueKey('title_marquee_subtitle-session'),
+          );
+          expect(
+            find.descendant(
+              of: title,
+              matching: find.text(remote ? 'Work' : 'Local work title'),
+            ),
+            findsOneWidget,
           );
           final credits = find.byKey(
             const ValueKey('session_detail_credits_subtitle-session'),
@@ -11630,6 +11638,9 @@ void main() {
       await tester.pumpAndSettle();
       expect(videoReady(), isTrue);
 
+      final inlineSurfaceBeforeFullscreen = tester.element(
+        find.byType(NativeSessionVideoSurface),
+      );
       await tester.tap(
         find.byKey(const ValueKey<String>('session_video_tap_target')),
       );
@@ -11638,21 +11649,42 @@ void main() {
       final fullscreenPage = find.byType(SessionVideoFullscreenPage);
       await pumpUntilFound(tester, fullscreenPage);
       await tester.pump(const Duration(milliseconds: 100));
-      final routeFade = find
-          .ancestor(
-            of: fullscreenPage,
-            matching: find.byWidgetPredicate(
-              (widget) => widget is FadeTransition,
-            ),
-          )
-          .first;
+      final routeFade = find.byKey(
+        const ValueKey<String>('fullscreen_video_backdrop_fade'),
+      );
       expect(
         tester.widget<FadeTransition>(routeFade).opacity.value,
         inExclusiveRange(0, 1),
       );
+      // The live video surface stays opaque and reuses its element instead of
+      // fading to the poster or remounting during fullscreen entrance.
+      expect(
+        tester.element(find.byType(NativeSessionVideoSurface)),
+        same(inlineSurfaceBeforeFullscreen),
+      );
+      expect(
+        find.ancestor(
+          of: find.byType(NativeSessionVideoSurface),
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                (widget is FadeTransition && widget.opacity.value < 1) ||
+                (widget is Opacity && widget.opacity < 1),
+          ),
+        ),
+        findsNothing,
+      );
       final openingBounds = tester.getRect(fullscreenPage);
+      final midEnterRect = tester.getRect(
+        find.byType(NativeSessionVideoSurface),
+      );
+      expect(midEnterRect.width, greaterThan(posterRect.width));
+      expect(midEnterRect.width, lessThan(openingBounds.width));
       await tester.pumpAndSettle();
       expect(tester.getRect(fullscreenPage), openingBounds);
+      expect(
+        tester.getRect(find.byType(NativeSessionVideoSurface)),
+        openingBounds,
+      );
       expect(
         find.byType(NativeSessionVideoSurface, skipOffstage: false),
         findsOneWidget,
@@ -11660,6 +11692,7 @@ void main() {
       final fullscreenSurface = tester.element(
         find.byType(NativeSessionVideoSurface),
       );
+      expect(fullscreenSurface, same(inlineSurfaceBeforeFullscreen));
       await tester.tap(
         find.byKey(const ValueKey('fullscreen_video_play_pause')),
       );
@@ -11683,6 +11716,26 @@ void main() {
         inExclusiveRange(0, 1),
       );
       expect(tester.getRect(fullscreenPage), openingBounds);
+      expect(
+        tester.element(find.byType(NativeSessionVideoSurface)),
+        same(inlineSurfaceBeforeFullscreen),
+      );
+      expect(
+        find.ancestor(
+          of: find.byType(NativeSessionVideoSurface),
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                (widget is FadeTransition && widget.opacity.value < 1) ||
+                (widget is Opacity && widget.opacity < 1),
+          ),
+        ),
+        findsNothing,
+      );
+      final midExitRect = tester.getRect(
+        find.byType(NativeSessionVideoSurface),
+      );
+      expect(midExitRect.width, lessThan(openingBounds.width));
+      expect(midExitRect.width, greaterThanOrEqualTo(posterRect.width));
       // The outgoing fullscreen route still owns the only video surface.
       expect(
         find.byType(NativeSessionVideoSurface, skipOffstage: false),
@@ -11706,6 +11759,10 @@ void main() {
           matching: find.byType(NativeSessionVideoSurface),
         ),
         findsOneWidget,
+      );
+      expect(
+        tester.element(find.byType(NativeSessionVideoSurface)),
+        same(inlineSurfaceBeforeFullscreen),
       );
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 200)),
@@ -16428,7 +16485,7 @@ void main() {
   );
 
   testWidgets(
-    'session detail title scrolls marquee after route entry on Android and Windows',
+    'session detail work name scrolls marquee after route entry on Android and Windows',
     (tester) async {
       const longTitle =
           '播放详细页超长作品名称跑马灯测试 / Very long playback detail title '
@@ -16437,10 +16494,13 @@ void main() {
         tester: tester,
         openDetail: false,
         initialTrack: testMusicTrack(
-          name: longTitle,
-          path: '/library/marquee-work/long-track.mp3',
-          groupKey: '/library/marquee-work',
-          groupTitle: 'Marquee Work',
+          name: 'Short track filename',
+          path: 'https://audio.test/marquee-work/track.mp3',
+          groupKey: 'marquee-work',
+          groupTitle: longTitle,
+        ).copyWith(
+          remoteMetadataKind: MusicTrack.remoteMetadataKindAsmrOne,
+          remoteMetadata: {'workTitle': longTitle},
         ),
         subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
         initialPosition: Duration.zero,
@@ -16461,6 +16521,10 @@ void main() {
       final scrollable = find.descendant(
         of: titleFinder,
         matching: find.byType(Scrollable),
+      );
+      expect(
+        find.descendant(of: titleFinder, matching: find.text(longTitle)),
+        findsOneWidget,
       );
       expect(scrollable, findsOneWidget);
       final position = tester.state<ScrollableState>(scrollable).position;

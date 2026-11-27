@@ -988,7 +988,9 @@ const Map<String, String> appLanguageEn = {
   'subtitle_selected': 'Subtitles switched',
   'subtitle_transcribe_generate': 'Transcribe audio to subtitles',
   'subtitle_transcribe_overwrite_hint':
-      'Local subtitles already exist. Transcribing saves a same-name SRT that replaces the primary subtitle while keeping generated translations.',
+      'Transcribing replaces the primary subtitle with a new SRT and keeps the other subtitle files.',
+  'subtitle_transcription_source_changed':
+      'The primary subtitle changed. Start transcription again.',
   'subtitle_script_generate': 'Match script to audio',
   'subtitle_script_selection_title': 'Select script',
   'subtitle_script_hint': 'Choose a TXT or MD script to create timed subtitles',
@@ -1252,6 +1254,9 @@ const Map<String, String> appLanguageEn = {
   'remote_source_test_success': 'Connection succeeded',
   'remote_source_test_failed':
       'Connection failed. Check the address and network',
+  'remote_source_duplicate': 'This remote media source is already added',
+  'remote_source_local_server':
+      'This is your own sharing service. Use the local library.',
   'remote_source_auth_failed':
       'Authentication failed. Check access code or credentials',
   'remote_source_load_failed': 'Failed to load remote catalog',

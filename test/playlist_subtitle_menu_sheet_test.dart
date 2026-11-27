@@ -1942,6 +1942,8 @@ void main() {
         ..writeAsBytesSync(const <int>[1, 2, 3, 4]);
       final oldLrc = File(p.join(directory.path, 'voice.lrc'))
         ..writeAsStringSync('[00:01.00]旧字幕\n[00:02.00]\n');
+      final alternate = File(p.join(directory.path, 'voice.vtt'))
+        ..writeAsStringSync('WEBVTT\n\n00:01.000 --> 00:02.000\n別の字幕\n');
       final existingTranslated = File(
         p.join(directory.path, 'voice.mp3.translated.zh-CN.srt'),
       )..writeAsStringSync('1\n00:00:01,000 --> 00:00:02,000\n旧字幕\n旧译文\n');
@@ -2022,6 +2024,7 @@ void main() {
       expect(generatedSrt.existsSync(), isTrue);
       expect(generatedSrt.readAsStringSync(), contains('耳元で囁いています。'));
       expect(oldLrc.existsSync(), isFalse);
+      expect(alternate.existsSync(), isTrue);
       expect(existingTranslated.existsSync(), isTrue);
       expect(
         service.trackSync(audioFile.path)?.cues.single.text,

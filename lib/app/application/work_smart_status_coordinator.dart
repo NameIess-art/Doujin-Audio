@@ -210,6 +210,8 @@ final class WorkSmartStatusCoordinator implements RuntimeBinding {
     required TimerFacade timer,
     Future<String?> Function()? readPersistedState,
     Future<void> Function(String json)? writePersistedState,
+    Future<Set<String>> Function(Iterable<String>, DateTime)?
+    loadRecentlyPlayedWorkKeys,
     DateTime Function()? now,
   }) : _library = library,
        _asmrLibrary = asmrLibrary,
@@ -218,6 +220,7 @@ final class WorkSmartStatusCoordinator implements RuntimeBinding {
        _timer = timer,
        _readPersistedState = readPersistedState,
        _writePersistedState = writePersistedState,
+       _loadRecentlyPlayedWorkKeys = loadRecentlyPlayedWorkKeys,
        _now = now ?? DateTime.now {
     _usageSubscription = _listeningActivity.workUsageUpdates.listen(
       _handleWorkUsageBatch,
@@ -246,6 +249,8 @@ final class WorkSmartStatusCoordinator implements RuntimeBinding {
   final TimerFacade _timer;
   final Future<String?> Function()? _readPersistedState;
   final Future<void> Function(String json)? _writePersistedState;
+  final Future<Set<String>> Function(Iterable<String>, DateTime)?
+  _loadRecentlyPlayedWorkKeys;
   final DateTime Function() _now;
 
   late final StreamSubscription<List<ListeningWorkUsageUpdate>>
@@ -739,8 +744,7 @@ final class WorkSmartStatusCoordinator implements RuntimeBinding {
         if (_disposed) return;
         final detail = entry.detail;
         if (detail.listenStatus != WorkListenStatus.listening) continue;
-        final tracks = _tracksForTarget(entry.target);
-        final coverage = computeWorkMainlineCoverage(tracks);
+        final coverage = computeWorkMainlineCoverage(entry.tracks);
         final lastActive = _latestDate(
           coverage.latestPlayedAt,
           detail.reviewUpdatedAt,
@@ -769,7 +773,8 @@ final class WorkSmartStatusCoordinator implements RuntimeBinding {
     }
 
     if (_asmrLibrary.initialized) {
-      for (final work in List<AsmrWork>.of(_asmrLibrary.reviewedWorks)) {
+      final stale = <String, AsmrWork>{};
+      for (final work in _asmrLibrary.reviewedWorks) {
         if (_disposed) return;
         if (work.listenStatus != WorkListenStatus.listening) continue;
         final lastActive = work.reviewUpdatedAt;
@@ -777,13 +782,28 @@ final class WorkSmartStatusCoordinator implements RuntimeBinding {
             now.difference(lastActive) < stalePostponeAfter) {
           continue;
         }
-        final statusKey = _statusKeyForAsmr(work);
         final workKey = work.rjCode.isNotEmpty
             ? 'rj:${work.rjCode.toUpperCase()}'
             : 'asmr:${work.id}';
-        final totals = await _listeningActivity.loadWorkTotalMilliseconds([
-          workKey,
-        ]);
+        stale[workKey] = work;
+      }
+      final recent = stale.isEmpty
+          ? const <String>{}
+          : await _loadRecentlyPlayedWorkKeys?.call(
+                  stale.keys,
+                  now.subtract(stalePostponeAfter),
+                ) ??
+                const <String>{};
+      final workKeys = stale.keys
+          .where((key) => !recent.contains(key))
+          .toList();
+      final totals = workKeys.isEmpty
+          ? const <String, int>{}
+          : await _listeningActivity.loadWorkTotalMilliseconds(workKeys);
+      for (final workKey in workKeys) {
+        if (_disposed) return;
+        final work = stale[workKey]!;
+        final statusKey = _statusKeyForAsmr(work);
         final record = _records.putIfAbsent(statusKey, _WorkSmartRecord.new);
         record.lastKnownStatus = WorkListenStatus.postponed;
         record.baselineMs = totals[workKey] ?? 0;
@@ -849,11 +869,14 @@ final class WorkSmartStatusCoordinator implements RuntimeBinding {
       final single = _library.trackByPath(target.targetPath);
       return single == null ? const <MusicTrack>[] : <MusicTrack>[single];
     }
-    return _library.library
-        .where(
-          (track) => PathMatcher.isWithinOrEqual(track.path, target.targetPath),
-        )
-        .toList(growable: false);
+    final root = target.targetPath;
+    return [
+      for (final key in _library.activeGroupKeys)
+        if (PathMatcher.isWithinOrEqual(key, root) ||
+            PathMatcher.isWithinOrEqual(root, key))
+          for (final track in _library.tracksInGroup(key))
+            if (PathMatcher.isWithinOrEqual(track.path, root)) track,
+    ];
   }
 
   AsmrWork? _resolveRemoteAsmrWork(MusicTrack track) {

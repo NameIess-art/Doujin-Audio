@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
@@ -223,8 +224,24 @@ class SubtitleModelStore extends ChangeNotifier {
   final Duration _idleTimeout;
   final Map<String, _ActiveModelDownload> _activeDownloads = {};
   final Map<String, SubtitleModelDownloadSnapshot> _snapshots = {};
+  final Map<String, int> _modelRevisions = {};
+  int _modelRevision = 0;
   final Map<String, ({DateTime modified, DateTime changed, String sha256})>
   _verifiedFiles = {};
+  final _pendingVerification =
+      <
+        ({String filePath, DateTime modified, DateTime changed, String sha256}),
+        Future<bool>
+      >{};
+
+  int bundleRevision(List<SubtitleModelSpec> specs) {
+    var revision = 0;
+    for (final spec in specs) {
+      final itemRevision = _modelRevisions[spec.name] ?? 0;
+      if (itemRevision > revision) revision = itemRevision;
+    }
+    return revision;
+  }
 
   SubtitleModelDownloadSnapshot snapshot(SubtitleModelSpec spec) =>
       _snapshots[spec.name] ??
@@ -314,6 +331,7 @@ class SubtitleModelStore extends ChangeNotifier {
         _verifiedFiles.remove(file.path);
       }
       _snapshots.remove(spec.name);
+      _modelRevisions[spec.name] = ++_modelRevision;
     }
     notifyListeners();
     return deletedBytes;
@@ -536,6 +554,7 @@ class SubtitleModelStore extends ChangeNotifier {
           total: spec.bytes,
           active: false,
         );
+        _modelRevisions[spec.name] = ++_modelRevision;
         notifyListeners();
         for (final entry in active.entries) {
           if (!entry.completer.isCompleted) {
@@ -776,7 +795,36 @@ class SubtitleModelStore extends ChangeNotifier {
       }
       return true;
     }
-    final digest = await sha256.bind(file.openRead()).first;
+    final key = (
+      filePath: file.path,
+      modified: stat.modified,
+      changed: stat.changed,
+      sha256: spec.sha256,
+    );
+    final pending = _pendingVerification[key];
+    if (pending != null) return pending;
+    final task = _verifyModelDigest(file, spec, stat);
+    _pendingVerification[key] = task;
+    try {
+      return await task;
+    } finally {
+      unawaited(_pendingVerification.remove(key));
+    }
+  }
+
+  Future<bool> _verifyModelDigest(
+    File file,
+    SubtitleModelSpec spec,
+    FileStat stat,
+  ) async {
+    final digest = await _readModelDigest(file.path);
+    final current = await file.stat();
+    if (current.type != stat.type ||
+        current.size != stat.size ||
+        current.modified != stat.modified ||
+        current.changed != stat.changed) {
+      return false;
+    }
     if (digest.toString() != spec.sha256) {
       _verifiedFiles.remove(file.path);
       return false;
@@ -796,6 +844,9 @@ class SubtitleModelStore extends ChangeNotifier {
     return true;
   }
 }
+
+Future<Digest> _readModelDigest(String filePath) =>
+    Isolate.run(() => sha256.bind(File(filePath).openRead()).first);
 
 class SubtitleModelDownloadCancelled implements Exception {
   const SubtitleModelDownloadCancelled();

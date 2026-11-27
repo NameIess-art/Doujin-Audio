@@ -359,10 +359,7 @@ class DataBackupService {
         validationDirectory,
         allowCrossPlatform: true,
       );
-      final fallbackDeviceId =
-          'backup:${decoded.manifest.platform}:'
-          '${decoded.manifest.createdAt.toUtc().toIso8601String()}:'
-          '${decoded.manifest.files[_databaseName]?.sha256 ?? ''}';
+      final fallbackDeviceId = 'legacy-backup:${decoded.manifest.platform}';
       final interestSettingKeys = <String>[
         for (final entry
             in AsmrPreferencesStore.interestCatalogKeys.entries) ...[
@@ -404,8 +401,10 @@ class DataBackupService {
               subtitle: row.subtitle,
               remoteCoverUrl: row.remoteCoverUrl,
               lastPlayedAtMs: row.lastPlayedAtMs,
+              updatedAtMs: row.updatedAtMs,
             ),
         ],
+        deletedHistory: rawSync.deletedHistory,
         timeSegments: [
           for (final row in rawSync.timeSegments)
             SyncTimeSegmentEntry(

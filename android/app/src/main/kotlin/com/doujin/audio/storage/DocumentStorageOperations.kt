@@ -276,10 +276,14 @@ internal class DocumentStorageOperations(
 
     internal fun writeFileBytesToDocumentFolder(
         folderUri: Uri, name: String, bytes: ByteArray,
+        authorizeExisting: ((String?) -> Boolean)? = null,
+        isValidBackup: (String) -> Boolean = { true },
         isValidCommitted: (String) -> Boolean = { true }
     ): String? {
         val saved = replaceSafDocumentInFolder(
             folderUri, name,
+            authorizeExisting = authorizeExisting,
+            isValidBackup = { isValidBackup(it.uri.toString()) },
             isValidCommitted = { isValidCommitted(it.uri.toString()) }
         ) { temporary ->
             contentResolver.openOutputStream(temporary.uri, "w")?.use { output ->
@@ -380,11 +384,13 @@ internal class DocumentStorageOperations(
         folder: Uri,
         targetName: String,
         isValidCommitted: (DocumentFile) -> Boolean = { true },
+        authorizeExisting: ((String?) -> Boolean)? = null,
+        isValidBackup: (DocumentFile) -> Boolean = { true },
         writeTemp: (DocumentFile) -> Boolean
     ): DocumentFile? {
         val documents = listReadableDirectoryDocuments(context, folder)
-        fun findFile(name: String, ignoreCase: Boolean = false): DocumentFile? {
-            val document = documents.firstOrNull {
+        fun findFile(name: String, ignoreCase: Boolean = false, entries: List<DirectoryDocument> = documents): DocumentFile? {
+            val document = entries.firstOrNull {
                 it.mime.isNotEmpty() && it.mime != DocumentsContract.Document.MIME_TYPE_DIR &&
                     paths.normalizeDisplayName(it.name.trim()).equals(name, ignoreCase = ignoreCase)
             } ?: return null
@@ -414,6 +420,14 @@ internal class DocumentStorageOperations(
             },
             writeTemp = writeTemp,
             isValidCommitted = isValidCommitted,
+            authorizeCommit = authorizeExisting?.let { authorize ->
+                {
+                    val entries = listReadableDirectoryDocuments(context, folder)
+                    val current = findFile(targetName, ignoreCase = true, entries = entries)
+                    authorize(current?.uri?.toString()) && current?.uri == existing?.uri
+                }
+            },
+            isValidBackup = isValidBackup,
             rename = { document, name -> paths.renameDocumentFile(document, name) },
             delete = { document -> document.delete() }
         )

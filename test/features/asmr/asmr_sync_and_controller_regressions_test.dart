@@ -307,7 +307,9 @@ class _FakeAsmrApiService extends AsmrApiService {
       throw const AsmrApiException('Unauthorized', statusCode: 401);
     }
     if (page > 1) return const <AsmrReviewRecord>[];
-    return reviewsByFilter[filter] ?? const <AsmrReviewRecord>[];
+    return filter == null
+        ? reviewsByFilter.values.expand((records) => records).toList()
+        : reviewsByFilter[filter] ?? const <AsmrReviewRecord>[];
   }
 
   @override
@@ -776,5 +778,6 @@ class _FakeRemoteCatalogService extends AsmrRemoteCatalogService {
     AsmrRequestCancellationToken? cancellationToken,
     AsmrCatalogCursor? cursor,
     bool includeJapanese = true,
+    bool useSecondaryOneTimeout = false,
   }) => onLoadPage(page);
 }

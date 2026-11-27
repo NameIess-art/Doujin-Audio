@@ -160,6 +160,15 @@ class AudioDetailRepository {
     return _saveExplicit(detail);
   }
 
+  Future<void> exportSyncedDetail(AudioDetail detail) async {
+    await _documents.saveExplicit(
+      detail,
+      loadTimeSegmentLabels: () =>
+          _store.loadTimeSegmentLabelsForTarget(detail.target),
+      beforeCommit: _ensureCanCommit,
+    );
+  }
+
   Future<AudioDetailSaveResult> saveUserReview(
     AudioDetailTarget target, {
     required WorkListenStatus? listenStatus,

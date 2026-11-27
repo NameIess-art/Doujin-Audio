@@ -57,6 +57,7 @@ class PersistedSyncHistoryRow {
     required this.subtitle,
     this.remoteCoverUrl,
     required this.lastPlayedAtMs,
+    this.updatedAtMs,
   });
 
   final String workKey;
@@ -64,6 +65,7 @@ class PersistedSyncHistoryRow {
   final String subtitle;
   final String? remoteCoverUrl;
   final int lastPlayedAtMs;
+  final int? updatedAtMs;
 }
 
 class PersistedSyncWorkRow {
@@ -107,6 +109,7 @@ class PersistedCrossPlatformSyncSnapshot {
     required this.deviceDayLedger,
     required this.deviceWorkDayLedger,
     required this.history,
+    required this.deletedHistory,
     required this.timeSegments,
     required this.deletedTimeSegments,
     required this.interestSettings,
@@ -118,6 +121,7 @@ class PersistedCrossPlatformSyncSnapshot {
   final Map<String, Map<String, int>> deviceDayLedger;
   final Map<String, Map<String, Map<String, int>>> deviceWorkDayLedger;
   final List<PersistedSyncHistoryRow> history;
+  final Map<String, int> deletedHistory;
   final List<PersistedSyncTimeSegmentRow> timeSegments;
   final Map<String, int> deletedTimeSegments;
   final Map<String, String?> interestSettings;
@@ -132,6 +136,7 @@ class PersistedCrossPlatformSyncApplyResult {
     required this.timeSegmentsMerged,
     this.updatedDetailTargets = const <(String, String)>{},
     this.workStatesMerged = 0,
+    this.historyChanged = false,
   });
 
   final Set<String> updatedTrackPaths;
@@ -140,6 +145,7 @@ class PersistedCrossPlatformSyncApplyResult {
   final int timeSegmentsMerged;
   final Set<(String, String)> updatedDetailTargets;
   final int workStatesMerged;
+  final bool historyChanged;
 }
 
 extension AppDatabaseSync on AppDatabase {
@@ -152,44 +158,124 @@ extension AppDatabaseSync on AppDatabase {
   Future<PersistedSyncTrackRow?> findSyncedTrackState({
     required String workKey,
     required String relativePath,
+  }) async => (await findSyncedTrackStates(
+    workKey: workKey,
+    relativePaths: [relativePath],
+  ))[relativePath];
+
+  Future<Map<String, PersistedSyncTrackRow>> findSyncedTrackStates({
+    required String workKey,
+    required Iterable<String> relativePaths,
+  }) {
+    final keys = {
+      for (final relativePath in relativePaths)
+        relativePath: ?CrossPlatformMediaIdentity.fromWorkAndRelativePath(
+          workKey: workKey,
+          relativePath: relativePath,
+        ),
+    };
+    if (keys.isEmpty) return Future.value(const {});
+    return _runDatabaseRead((db) async {
+      final rows = await db.query(
+        'sync_track_states',
+        where: 'work_key = ?',
+        whereArgs: [workKey.trim()],
+      );
+      final exact = <String, PersistedSyncTrackRow>{};
+      final byStem = <String, PersistedSyncTrackRow?>{};
+      for (final row in rows) {
+        final value = _syncTrackRowFromDb(row);
+        exact[value.syncKey] = value;
+        byStem[value.stemKey] = byStem.containsKey(value.stemKey)
+            ? null
+            : value;
+      }
+      return {
+        for (final MapEntry(key: path, value: identity) in keys.entries)
+          path: ?(exact[identity.syncKey] ?? byStem[identity.stemSyncKey]),
+      };
+    });
+  }
+
+  Future<void> saveRemoteTrackProgress({
+    required String workKey,
+    required String relativePath,
+    required int positionMs,
+    required int playedAtMs,
   }) async {
     final identity = CrossPlatformMediaIdentity.fromWorkAndRelativePath(
       workKey: workKey,
       relativePath: relativePath,
     );
-    if (identity == null) return null;
+    if (identity == null) return;
+    await _runDatabaseWrite(
+      (db) => db.transaction((txn) async {
+        final rows = await txn.query(
+          'sync_track_states',
+          where: 'work_key = ? AND stem_key = ?',
+          whereArgs: [identity.workKey, identity.stemSyncKey],
+        );
+        final row =
+            rows
+                .where((row) => row['sync_key'] == identity.syncKey)
+                .firstOrNull ??
+            rows.singleOrNull;
+        final existing = row == null ? null : _syncTrackRowFromDb(row);
+        if (playedAtMs < (existing?.lastPlayedAtMs ?? 0)) return;
+        await txn.insert(
+          'sync_track_states',
+          _syncTrackRowToDb(
+            PersistedSyncTrackRow(
+              syncKey: identity.syncKey,
+              workKey: identity.workKey,
+              relativePath: identity.relativePath,
+              stemKey: identity.stemSyncKey,
+              positionMs: positionMs,
+              lastPlayedAtMs: playedAtMs,
+              isFavorite: existing?.isFavorite ?? false,
+              favoriteUpdatedAtMs: existing?.favoriteUpdatedAtMs ?? 0,
+              updatedAtMs: max(playedAtMs, existing?.updatedAtMs ?? 0),
+            ),
+          ),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }),
+    );
+  }
+
+  Future<PersistedSyncWorkRow?> findSyncedWorkState(String workKey) async =>
+      (await findSyncedWorkStates([workKey]))[workKey.trim()];
+
+  Future<Map<String, PersistedSyncWorkRow>> findSyncedWorkStates(
+    Iterable<String> workKeys,
+  ) {
+    final keys = workKeys
+        .map((key) => key.trim())
+        .where((key) => key.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+    if (keys.isEmpty) return Future.value(const {});
     return _runDatabaseRead((db) async {
-      final exact = await db.query(
-        'sync_track_states',
-        where: 'sync_key = ?',
-        whereArgs: [identity.syncKey],
-        limit: 1,
-      );
-      if (exact.isNotEmpty) return _syncTrackRowFromDb(exact.first);
-      final byStem = await db.query(
-        'sync_track_states',
-        where: 'work_key = ? AND stem_key = ?',
-        whereArgs: [identity.workKey, identity.stemSyncKey],
-        limit: 2,
-      );
-      if (byStem.length == 1) return _syncTrackRowFromDb(byStem.first);
-      return null;
+      final results = <String, PersistedSyncWorkRow>{};
+      for (final chunk in _stringChunks(keys)) {
+        final placeholders = List.filled(chunk.length, '?').join(', ');
+        final rows = await db.query(
+          'sync_work_states',
+          where: 'work_key IN ($placeholders)',
+          whereArgs: chunk,
+        );
+        for (final row in rows) {
+          final work = _syncWorkRowFromDb(row);
+          results[work.workKey] = work;
+        }
+      }
+      return results;
     });
   }
 
-  Future<PersistedSyncWorkRow?> findSyncedWorkState(String workKey) async {
-    final trimmed = workKey.trim();
-    if (trimmed.isEmpty) return null;
-    return _runDatabaseRead((db) async {
-      final rows = await db.query(
-        'sync_work_states',
-        where: 'work_key = ?',
-        whereArgs: [trimmed],
-        limit: 1,
-      );
-      return rows.isEmpty ? null : _syncWorkRowFromDb(rows.first);
-    });
-  }
+  Future<Map<String, String?>> loadSyncInterestSettings(
+    Iterable<String> keys,
+  ) => _runDatabaseRead((db) => _loadSyncInterestSettings(db, keys));
 
   Future<Set<(String, String)>> upsertSyncedWorkState(
     PersistedSyncWorkRow incoming,
@@ -225,6 +311,7 @@ extension AppDatabaseSync on AppDatabase {
     required Map<String, Map<String, int>> incomingDeviceDayLedger,
     required Map<String, Map<String, Map<String, int>>> incomingDeviceWorkDayLedger,
     required List<PersistedSyncHistoryRow> incomingHistory,
+    Map<String, int> incomingDeletedHistory = const {},
     required List<PersistedSyncTimeSegmentRow> incomingTimeSegments,
     required Map<String, int> incomingDeletedTimeSegments,
     required Map<String, String?> mergedInterestSettings,
@@ -264,10 +351,12 @@ extension AppDatabaseSync on AppDatabase {
             currentSync == null || incomingPlayedAt > currentSyncPlayedAt;
         final newerFav =
             currentSync == null ||
-            incoming.favoriteUpdatedAtMs > currentSync.favoriteUpdatedAtMs ||
-            (incoming.favoriteUpdatedAtMs == currentSync.favoriteUpdatedAtMs &&
-                incoming.isFavorite &&
-                !currentSync.isFavorite);
+            _isNewerFavorite(
+              incoming.favoriteUpdatedAtMs,
+              incoming.isFavorite,
+              currentSync.favoriteUpdatedAtMs,
+              currentSync.isFavorite,
+            );
 
         if (newerProgress || newerFav) {
           final mergedRow = PersistedSyncTrackRow(
@@ -298,33 +387,34 @@ extension AppDatabaseSync on AppDatabase {
           trackStatesMerged++;
         }
 
+        final merged = existingSyncByKey[identity.syncKey]!;
         final matchedLocalTracks = localIndex.findMatches(identity);
         for (final local in matchedLocalTracks) {
           final localPlayedAt = local.lastPlayedAtMs ?? 0;
-          final applyProgress = incomingPlayedAt > localPlayedAt;
-          final applyFavorite =
-              incoming.favoriteUpdatedAtMs > localPlayedAt
-              ? incoming.isFavorite != local.isFavorite
-              : (incoming.isFavorite && !local.isFavorite);
+          final applyProgress = (merged.lastPlayedAtMs ?? 0) > localPlayedAt;
+          final applyFavorite = _isNewerFavorite(
+            merged.favoriteUpdatedAtMs,
+            merged.isFavorite,
+            local.favoriteUpdatedAtMs,
+            local.isFavorite,
+          );
           if (!applyProgress && !applyFavorite) continue;
 
-          batch.insert(
-            'track_playback_state',
-            <String, Object?>{
-              'path': local.path,
-              'last_played_position_ms': applyProgress
-                  ? incoming.positionMs
-                  : local.positionMs,
-              'last_played_at_ms': applyProgress
-                  ? incoming.lastPlayedAtMs
-                  : local.lastPlayedAtMs,
-              'is_favorite':
-                  (applyFavorite ? incoming.isFavorite : local.isFavorite)
-                  ? 1
-                  : 0,
-            },
-            conflictAlgorithm: ConflictAlgorithm.replace,
-          );
+          if (applyProgress) {
+            local.positionMs = merged.positionMs;
+            local.lastPlayedAtMs = merged.lastPlayedAtMs;
+          }
+          if (applyFavorite) {
+            local.isFavorite = merged.isFavorite;
+            local.favoriteUpdatedAtMs = merged.favoriteUpdatedAtMs;
+          }
+          batch.insert('track_playback_state', <String, Object?>{
+            'path': local.path,
+            'last_played_position_ms': local.positionMs,
+            'last_played_at_ms': local.lastPlayedAtMs,
+            'is_favorite': local.isFavorite ? 1 : 0,
+            'favorite_updated_at_ms': local.favoriteUpdatedAtMs,
+          }, conflictAlgorithm: ConflictAlgorithm.replace);
           updatedTrackPaths.add(local.path);
         }
       }
@@ -462,57 +552,13 @@ extension AppDatabaseSync on AppDatabase {
         }
       }
 
-      if (incomingHistory.isNotEmpty) {
-        final historyKeys = incomingHistory
-            .map((h) => h.workKey)
-            .toSet()
-            .toList(growable: false);
-        final existingHistoryRows = <String, Map<String, Object?>>{};
-        for (final chunk in _stringChunks(historyKeys)) {
-          final placeholders = List.filled(chunk.length, '?').join(', ');
-          final rows = await txn.query(
-            'listening_history',
-            where: 'work_key IN ($placeholders)',
-            whereArgs: chunk,
-          );
-          for (final row in rows) {
-            existingHistoryRows[row['work_key'] as String] = row;
-          }
-        }
-        for (final item in incomingHistory) {
-          if (item.lastPlayedAtMs <= 0) continue;
-          final existing = existingHistoryRows[item.workKey];
-          if (existing == null) {
-            final matchedLocal = localIndex.firstForWorkKey(item.workKey);
-            final syntheticTrack = MusicTrack(
-              path: matchedLocal?.path ?? item.workKey,
-              displayName: matchedLocal?.displayName ?? item.title,
-              groupKey: matchedLocal?.groupKey ?? item.workKey,
-              groupTitle: item.title,
-              groupSubtitle: item.subtitle,
-              isSingle: false,
-              remoteCoverUrl: item.remoteCoverUrl,
-            );
-            batch.insert('listening_history', <String, Object?>{
-              'work_key': item.workKey,
-              'track_json': jsonEncode(syntheticTrack.toJson()),
-              'last_played_at_ms': item.lastPlayedAtMs,
-              'legacy_order': 0,
-            }, conflictAlgorithm: ConflictAlgorithm.ignore);
-          } else {
-            final currentMs =
-                (existing['last_played_at_ms'] as num?)?.toInt() ?? 0;
-            if (item.lastPlayedAtMs > currentMs) {
-              batch.update(
-                'listening_history',
-                <String, Object?>{'last_played_at_ms': item.lastPlayedAtMs},
-                where: 'work_key = ?',
-                whereArgs: [item.workKey],
-              );
-            }
-          }
-        }
-      }
+      final historyChanged = await _mergeListeningHistory(
+        txn,
+        batch,
+        localIndex,
+        incomingHistory,
+        incomingDeletedHistory,
+      );
 
       // Merge time segment tombstones & labels.
       final existingDeletedRows = await txn.query('sync_deleted_time_segments');
@@ -583,7 +629,7 @@ extension AppDatabaseSync on AppDatabase {
         );
         batch.insert(
           'time_segment_labels',
-          _timeSegmentLabelRow(record),
+          _timeSegmentLabelRow(record, identity),
           conflictAlgorithm: ConflictAlgorithm.replace,
         );
         if (tombstoneTs != null) {
@@ -626,9 +672,121 @@ extension AppDatabaseSync on AppDatabase {
         timeSegmentsMerged: timeSegmentsMerged,
         updatedDetailTargets: workMerge.updatedDetailTargets,
         workStatesMerged: workMerge.mergedCount,
+        historyChanged: historyChanged,
       );
     });
   });
+}
+
+bool _isPortableListeningWork(String key) =>
+    key.startsWith('rj:') || key.startsWith('asmr:');
+
+Future<bool> _mergeListeningHistory(
+  Transaction txn,
+  Batch batch,
+  _LocalTrackIdentityIndex localIndex,
+  List<PersistedSyncHistoryRow> incoming,
+  Map<String, int> deleted,
+) async {
+  final incomingByKey = {
+    for (final row in incoming)
+      if (row.lastPlayedAtMs > 0 && _isPortableListeningWork(row.workKey))
+        row.workKey: row,
+  };
+  final keys = {
+    ...incomingByKey.keys,
+    ...deleted.keys.where(_isPortableListeningWork),
+  };
+  if (keys.isEmpty) return false;
+  final edits = await _loadListeningHistoryEdits(txn, keys);
+  final currentPlayed = <String, int>{};
+  for (final chunk in _stringChunks(keys.toList(growable: false))) {
+    final placeholders = List.filled(chunk.length, '?').join(', ');
+    final rows = await txn.query(
+      'listening_history',
+      columns: ['work_key', 'last_played_at_ms'],
+      where: 'work_key IN ($placeholders)',
+      whereArgs: chunk,
+    );
+    for (final row in rows) {
+      currentPlayed[row['work_key']! as String] =
+          row['last_played_at_ms']! as int;
+    }
+  }
+  var changed = false;
+  var newestEdit = 0;
+  for (final workKey in keys) {
+    final item = incomingByKey[workKey];
+    final playedAt = currentPlayed[workKey];
+    final edit = edits[workKey];
+    final localMs = max(playedAt ?? 0, edit?.updatedAtMs ?? 0);
+    final deletedAt = deleted[workKey] ?? 0;
+    final incomingMs = item?.updatedAtMs ?? item?.lastPlayedAtMs ?? 0;
+    if (deletedAt > 0 && deletedAt >= incomingMs && deletedAt >= localMs) {
+      if (deletedAt == localMs && edit?.deleted == true && playedAt == null) {
+        continue;
+      }
+      batch.insert(
+        'sync_listening_history_edits',
+        {'work_key': workKey, 'updated_at_ms': deletedAt, 'deleted': 1},
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      newestEdit = max(newestEdit, deletedAt);
+      if (playedAt != null) {
+        batch.delete(
+          'listening_history',
+          where: 'work_key = ?',
+          whereArgs: [workKey],
+        );
+        changed = true;
+      }
+    } else if (item != null && incomingMs > localMs) {
+      if (playedAt == null) {
+        final local = localIndex.firstForWorkKey(workKey);
+        final track = MusicTrack(
+          path: local?.path ?? workKey,
+          displayName: local?.displayName ?? item.title,
+          groupKey: local?.groupKey ?? workKey,
+          groupTitle: item.title,
+          groupSubtitle: item.subtitle,
+          isSingle: false,
+          remoteCoverUrl: item.remoteCoverUrl,
+        );
+        batch.insert('listening_history', {
+          'work_key': workKey,
+          'track_json': jsonEncode(track.toJson()),
+          'last_played_at_ms': item.lastPlayedAtMs,
+          'legacy_order': 0,
+        });
+        changed = true;
+      } else if (item.lastPlayedAtMs > playedAt) {
+        batch.update(
+          'listening_history',
+          {'last_played_at_ms': item.lastPlayedAtMs},
+          where: 'work_key = ?',
+          whereArgs: [workKey],
+        );
+        changed = true;
+      }
+      if (incomingMs > item.lastPlayedAtMs) {
+        newestEdit = max(newestEdit, incomingMs);
+        batch.insert(
+          'sync_listening_history_edits',
+          {'work_key': workKey, 'updated_at_ms': incomingMs, 'deleted': 0},
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    }
+  }
+  if (newestEdit > 0) {
+    batch.rawInsert(
+      'INSERT OR REPLACE INTO app_kv_settings (key, value) '
+      'VALUES (?, MAX(?, COALESCE((SELECT CAST(value AS INTEGER) '
+      'FROM app_kv_settings WHERE key = ?), 0)))',
+      [_listeningHistoryEditedAtKey, newestEdit, _listeningHistoryEditedAtKey],
+    );
+  }
+  return changed;
 }
 
 Future<PersistedCrossPlatformSyncSnapshot> _exportSyncSnapshotInTxn(
@@ -650,6 +808,7 @@ Future<PersistedCrossPlatformSyncSnapshot> _exportSyncSnapshotInTxn(
   for (final item in localTrackIndex.tracks) {
     if (item.positionMs <= 0 &&
         (item.lastPlayedAtMs == null || item.lastPlayedAtMs! <= 0) &&
+        item.favoriteUpdatedAtMs <= 0 &&
         !item.isFavorite) {
       continue;
     }
@@ -658,15 +817,19 @@ Future<PersistedCrossPlatformSyncSnapshot> _exportSyncSnapshotInTxn(
     final existingPlayedAt = existing?.lastPlayedAtMs ?? 0;
     final preferLocalProgress =
         existing == null || itemPlayedAt >= existingPlayedAt;
-    final isFav = item.isFavorite || (existing?.isFavorite ?? false);
-    final favTs = item.isFavorite
-        ? (itemPlayedAt > 0
-              ? itemPlayedAt
-              : DateTime.now().millisecondsSinceEpoch)
-        : (existing?.favoriteUpdatedAtMs ?? 0);
-    final updatedAt = itemPlayedAt > (existing?.updatedAtMs ?? 0)
-        ? itemPlayedAt
-        : (existing?.updatedAtMs ?? favTs);
+    final preferLocalFavorite =
+        existing == null ||
+        _isNewerFavorite(
+          item.favoriteUpdatedAtMs,
+          item.isFavorite,
+          existing.favoriteUpdatedAtMs,
+          existing.isFavorite,
+        );
+    final favTs = max(
+      item.favoriteUpdatedAtMs,
+      existing?.favoriteUpdatedAtMs ?? 0,
+    );
+    final updatedAt = max(max(itemPlayedAt, favTs), existing?.updatedAtMs ?? 0);
 
     trackStatesBySyncKey[item.identity.syncKey] = PersistedSyncTrackRow(
       syncKey: item.identity.syncKey,
@@ -677,7 +840,7 @@ Future<PersistedCrossPlatformSyncSnapshot> _exportSyncSnapshotInTxn(
       lastPlayedAtMs: preferLocalProgress
           ? item.lastPlayedAtMs
           : existing.lastPlayedAtMs,
-      isFavorite: isFav,
+      isFavorite: preferLocalFavorite ? item.isFavorite : existing.isFavorite,
       favoriteUpdatedAtMs: favTs,
       updatedAtMs: updatedAt,
     );
@@ -686,17 +849,16 @@ Future<PersistedCrossPlatformSyncSnapshot> _exportSyncSnapshotInTxn(
   final dayLedgers = await _snapshotDayLedgerInTxn(txn, deviceId);
   final workDayLedgers = await _snapshotWorkDayLedgerInTxn(txn, deviceId);
 
-  final rawHistory = await txn.query(
-    'listening_history',
-    orderBy: 'last_played_at_ms DESC',
-    limit: 500,
-  );
+  final rawHistory = await txn.rawQuery('''
+    SELECT h.*, e.updated_at_ms AS edit_updated_at_ms
+    FROM listening_history h
+    LEFT JOIN sync_listening_history_edits e ON e.work_key = h.work_key
+    WHERE h.work_key LIKE 'rj:%' OR h.work_key LIKE 'asmr:%'
+    ORDER BY h.last_played_at_ms DESC LIMIT 500
+  ''');
   final history = <PersistedSyncHistoryRow>[];
   for (final row in rawHistory) {
     final workKey = row['work_key'] as String? ?? '';
-    if (!workKey.startsWith('rj:') && !workKey.startsWith('asmr:')) {
-      continue;
-    }
     final lastPlayedAtMs = (row['last_played_at_ms'] as num?)?.toInt() ?? 0;
     if (lastPlayedAtMs <= 0) continue;
     Map<String, Object?>? decodedTrack;
@@ -724,9 +886,23 @@ Future<PersistedCrossPlatformSyncSnapshot> _exportSyncSnapshotInTxn(
         subtitle: subtitle,
         remoteCoverUrl: remoteCoverUrl?.isEmpty == true ? null : remoteCoverUrl,
         lastPlayedAtMs: lastPlayedAtMs,
+        updatedAtMs: switch (row['edit_updated_at_ms']) {
+          final int editedAt when editedAt > lastPlayedAtMs => editedAt,
+          _ => null,
+        },
       ),
     );
   }
+  final deletedHistory = <String, int>{
+    for (final row in await txn.rawQuery('''
+      SELECT e.work_key, e.updated_at_ms
+      FROM sync_listening_history_edits e
+      LEFT JOIN listening_history h ON h.work_key = e.work_key
+      WHERE e.deleted = 1 AND h.work_key IS NULL
+    '''))
+      if (_isPortableListeningWork(row['work_key']! as String))
+        row['work_key']! as String: row['updated_at_ms']! as int,
+  };
 
   final rawLabels = await txn.query('time_segment_labels');
   final segments = <PersistedSyncTimeSegmentRow>[];
@@ -758,23 +934,10 @@ Future<PersistedCrossPlatformSyncSnapshot> _exportSyncSnapshotInTxn(
       row['id'] as String: (row['deleted_at_ms'] as num).toInt(),
   };
 
-  final interestSettings = <String, String?>{};
-  final keysList = interestSettingKeys.toList(growable: false);
-  if (keysList.isNotEmpty) {
-    final placeholders = List.filled(keysList.length, '?').join(', ');
-    final settingRows = await txn.query(
-      'app_kv_settings',
-      where: 'key IN ($placeholders)',
-      whereArgs: keysList,
-    );
-    for (final k in keysList) {
-      interestSettings[k] = null;
-    }
-    for (final row in settingRows) {
-      interestSettings[row['key'] as String] = row['value'] as String?;
-    }
-  }
-
+  final interestSettings = await _loadSyncInterestSettings(
+    txn,
+    interestSettingKeys,
+  );
   final workStatesByKey = await _collectSyncWorkStatesInTxn(txn);
 
   return PersistedCrossPlatformSyncSnapshot(
@@ -783,11 +946,31 @@ Future<PersistedCrossPlatformSyncSnapshot> _exportSyncSnapshotInTxn(
     deviceDayLedger: dayLedgers,
     deviceWorkDayLedger: workDayLedgers,
     history: history,
+    deletedHistory: deletedHistory,
     timeSegments: segments,
     deletedTimeSegments: deletedSegments,
     interestSettings: interestSettings,
     workStates: workStatesByKey.values.toList(growable: false),
   );
+}
+
+Future<Map<String, String?>> _loadSyncInterestSettings(
+  DatabaseExecutor db,
+  Iterable<String> keys,
+) async {
+  final settings = <String, String?>{for (final key in keys) key: null};
+  for (final chunk in _stringChunks(settings.keys.toList(growable: false))) {
+    final placeholders = List.filled(chunk.length, '?').join(', ');
+    final rows = await db.query(
+      'app_kv_settings',
+      where: 'key IN ($placeholders)',
+      whereArgs: chunk,
+    );
+    for (final row in rows) {
+      settings[row['key'] as String] = row['value'] as String?;
+    }
+  }
+  return settings;
 }
 
 Future<String> _ensureSyncDeviceIdInTxn(
@@ -812,12 +995,31 @@ Future<String> _ensureSyncDeviceIdInTxn(
   return created;
 }
 
-Future<Map<String, String>> _loadTargetRjMap(DatabaseExecutor db) async {
-  final rows = await db.query(
-    'audio_details',
-    columns: const ['target_path', 'rj_code'],
-    where: "rj_code != ''",
-  );
+Future<Map<String, String>> _loadTargetRjMap(
+  DatabaseExecutor db, {
+  Iterable<String>? targets,
+}) async {
+  const fields = ['target_path', 'rj_code'];
+  final rows = <Map<String, Object?>>[];
+  if (targets == null) {
+    rows.addAll(
+      await db.query('audio_details', columns: fields, where: "rj_code != ''"),
+    );
+  } else {
+    for (final chunk in _stringChunks(targets.toList(growable: false))) {
+      final placeholders = List.filled(chunk.length, '?').join(', ');
+      rows.addAll(
+        await db.query(
+          'audio_details',
+          columns: fields,
+          where:
+              "target_type IN ('libraryRootFolder', 'singleAudioFile') "
+              "AND target_path IN ($placeholders) AND rj_code != ''",
+          whereArgs: chunk,
+        ),
+      );
+    }
+  }
   final map = <String, String>{};
   for (final row in rows) {
     final targetPath = row['target_path'] as String? ?? '';
@@ -831,8 +1033,19 @@ Future<Map<String, String>> _loadTargetRjMap(DatabaseExecutor db) async {
   return map;
 }
 
+bool _isNewerFavorite(
+  int incomingMs,
+  bool incomingValue,
+  int currentMs,
+  bool currentValue,
+) =>
+    incomingMs > currentMs ||
+    (incomingMs == currentMs &&
+        incomingValue != currentValue &&
+        (incomingMs > 0 ? !incomingValue : incomingValue));
+
 class _LocalTrackSyncCandidate {
-  const _LocalTrackSyncCandidate({
+  _LocalTrackSyncCandidate({
     required this.path,
     required this.displayName,
     required this.groupKey,
@@ -840,15 +1053,17 @@ class _LocalTrackSyncCandidate {
     required this.positionMs,
     required this.lastPlayedAtMs,
     required this.isFavorite,
+    required this.favoriteUpdatedAtMs,
   });
 
   final String path;
   final String displayName;
   final String groupKey;
   final CrossPlatformTrackIdentity identity;
-  final int positionMs;
-  final int? lastPlayedAtMs;
-  final bool isFavorite;
+  int positionMs;
+  int? lastPlayedAtMs;
+  bool isFavorite;
+  int favoriteUpdatedAtMs;
 }
 
 class _LocalTrackIdentityIndex {
@@ -890,8 +1105,12 @@ class _LocalTrackIdentityIndex {
 
 Future<_LocalTrackIdentityIndex> _loadLocalTrackIdentityIndex(
   DatabaseExecutor db,
-  Map<String, String> rjByTargetKey,
-) async {
+  Map<String, String>? rjByTargetKey, {
+  List<String>? paths,
+}) async {
+  final where = paths == null
+      ? ''
+      : 'WHERE t.path IN (${List.filled(paths.length, '?').join(', ')})';
   final rows = await db.rawQuery('''
     SELECT
       t.path,
@@ -903,12 +1122,25 @@ Future<_LocalTrackIdentityIndex> _loadLocalTrackIdentityIndex(
       p.last_played_position_ms,
       p.last_played_at_ms,
       p.is_favorite,
+      p.favorite_updated_at_ms,
       r.remote_metadata_kind,
       r.remote_metadata_json
     FROM tracks t
     LEFT JOIN track_playback_state p ON p.path = t.path
     LEFT JOIN track_remote_metadata r ON r.path = t.path
-  ''');
+    $where
+  ''', paths);
+  final targetRj =
+      rjByTargetKey ??
+      await _loadTargetRjMap(
+        db,
+        targets: {
+          for (final row in rows) ...[
+            row['path'] as String,
+            row['group_key'] as String,
+          ],
+        },
+      );
 
   final candidates = <_LocalTrackSyncCandidate>[];
   for (final row in rows) {
@@ -916,8 +1148,8 @@ Future<_LocalTrackIdentityIndex> _loadLocalTrackIdentityIndex(
     final groupKey = row['group_key'] as String? ?? '';
     final isSingle = ((row['is_single'] as num?)?.toInt() ?? 0) != 0;
     final rjOverride =
-        rjByTargetKey[PathMatcher.equivalenceKey(isSingle ? path : groupKey)] ??
-        rjByTargetKey[PathMatcher.equivalenceKey(path)];
+        targetRj[PathMatcher.equivalenceKey(isSingle ? path : groupKey)] ??
+        targetRj[PathMatcher.equivalenceKey(path)];
     Map<String, Object?>? remoteMetadata;
     final rawMeta = row['remote_metadata_json'] as String?;
     if (rawMeta != null && rawMeta.isNotEmpty) {
@@ -959,6 +1191,8 @@ Future<_LocalTrackIdentityIndex> _loadLocalTrackIdentityIndex(
         positionMs: (row['last_played_position_ms'] as num?)?.toInt() ?? 0,
         lastPlayedAtMs: (row['last_played_at_ms'] as num?)?.toInt(),
         isFavorite: ((row['is_favorite'] as num?)?.toInt() ?? 0) != 0,
+        favoriteUpdatedAtMs:
+            (row['favorite_updated_at_ms'] as num?)?.toInt() ?? 0,
       ),
     );
   }
@@ -966,10 +1200,11 @@ Future<_LocalTrackIdentityIndex> _loadLocalTrackIdentityIndex(
 }
 
 CrossPlatformTrackIdentity? _resolveIdentityForLabelTrackKey(
-  String trackKey,
-  _LocalTrackIdentityIndex localIndex,
-) {
-  final direct = localIndex.byNormalizedPath[PathMatcher.equivalenceKey(trackKey)];
+  String trackKey, [
+  _LocalTrackIdentityIndex? localIndex,
+]) {
+  final direct =
+      localIndex?.byNormalizedPath[PathMatcher.equivalenceKey(trackKey)];
   if (direct != null) return direct;
   if (trackKey.startsWith('asmr.one:')) {
     final rest = trackKey.substring('asmr.one:'.length);
@@ -988,6 +1223,7 @@ CrossPlatformTrackIdentity? _resolveIdentityForLabelTrackKey(
   if (doubleColon > 0 &&
       (trackKey.startsWith('rj:') ||
           trackKey.startsWith('asmr:') ||
+          trackKey.startsWith('asmr-key:') ||
           trackKey.startsWith('work:'))) {
     return CrossPlatformMediaIdentity.fromWorkAndRelativePath(
       workKey: trackKey.substring(0, doubleColon),

@@ -54,31 +54,140 @@ Future<void> showSessionVideoFullscreen(
   WidgetRef ref, {
   required String sessionId,
   required String trackPath,
+  SessionVideoFullscreenHandoff? handoff,
 }) async {
+  final navigator = Navigator.of(context);
+  final reducedMotion = MediaQuery.disableAnimationsOf(context);
   final orientationController = ref.read(appOrientationControllerProvider);
-  final playback = ref.read(playbackFacadeProvider);
   final lease = await orientationController.enterVideoFullscreen();
-  if (!context.mounted) {
+  if (!context.mounted || !navigator.mounted) {
     await lease.release();
     return;
   }
+  final navigatorContext = navigator.context;
+  if (!navigatorContext.mounted) {
+    await lease.release();
+    return;
+  }
+  final navigatorRenderObject = navigatorContext.findRenderObject();
+  var cachedInlineRect = handoff?.resolveInlineRect(
+    ancestor: navigatorRenderObject,
+  );
+  var cachedNavigatorSize =
+      navigatorRenderObject is RenderBox && navigatorRenderObject.hasSize
+      ? navigatorRenderObject.size
+      : null;
+  if (handoff != null && !handoff.borrowSurface()) {
+    await lease.release();
+    return;
+  }
+
+  Rect? resolveInlineRect(Size viewportSize) {
+    if (handoff == null) return null;
+    RenderObject? targetAncestor;
+    if (navigator.mounted) {
+      final currentNavigatorContext = navigator.context;
+      if (currentNavigatorContext.mounted) {
+        targetAncestor = currentNavigatorContext.findRenderObject();
+      }
+    }
+    final liveRect = handoff.resolveInlineRect(ancestor: targetAncestor);
+    if (liveRect != null) {
+      cachedInlineRect = liveRect;
+      cachedNavigatorSize = viewportSize;
+      return liveRect;
+    }
+    return cachedNavigatorSize == viewportSize ? cachedInlineRect : null;
+  }
+
   try {
-    final route = buildAppPageRoute<void>(
-      context: context,
-      fullscreenDialog: true,
-      slide: false,
-      child: SessionVideoFullscreenPage(
+    final route = _SessionVideoFullscreenRoute(
+      transitionDuration: reducedMotion ? Duration.zero : kAppPagePushDuration,
+      reverseTransitionDuration: reducedMotion
+          ? Duration.zero
+          : kAppPagePopDuration,
+      onExitFinalized: handoff?.restoreSurface,
+      pageBuilder: (context, animation) => SessionVideoFullscreenPage(
         sessionId: sessionId,
         trackPath: trackPath,
         fullscreenLease: lease,
+        videoSurfaceKey: handoff?.surfaceKey,
+        inlineBorderRadius: handoff?.inlineBorderRadius ?? 0,
+        resolveInlineRect: handoff == null ? null : resolveInlineRect,
+        routeAnimation: animation,
       ),
     );
-    await Navigator.of(context).push<void>(route);
+    await navigator.push<void>(route);
     // Keep the inline surface detached until the fullscreen surface is removed.
     await route.completed;
   } finally {
-    await playback.setSessionTemporarySpeed(sessionId, null);
+    handoff?.restoreSurface();
     await lease.release();
+  }
+}
+
+class _SessionVideoFullscreenRoute extends AppPreparedPageRoute<void> {
+  _SessionVideoFullscreenRoute({
+    required Widget Function(BuildContext, Animation<double>) pageBuilder,
+    required super.transitionDuration,
+    required super.reverseTransitionDuration,
+    this.onExitFinalized,
+  }) : super(
+         fullscreenDialog: true,
+         slide: false,
+         pageBuilder: (context, animation, _) =>
+             pageBuilder(context, animation),
+         transitionsBuilder: (_, _, _, child) => child,
+       );
+
+  final VoidCallback? onExitFinalized;
+  bool _exitFinalized = false;
+
+  void _notifyExitFinalized() {
+    if (_exitFinalized) return;
+    _exitFinalized = true;
+    onExitFinalized?.call();
+  }
+
+  void _handleExitStatus(AnimationStatus status) {
+    if (status == AnimationStatus.dismissed && !isActive) {
+      _notifyExitFinalized();
+    }
+  }
+
+  @override
+  void install() {
+    super.install();
+    animation?.addStatusListener(_handleExitStatus);
+  }
+
+  @override
+  Widget buildTransitions(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    final covered = secondaryAnimation.status != AnimationStatus.dismissed;
+    final interactive =
+        animation.status == AnimationStatus.completed && !covered;
+    return TickerMode(
+      enabled: !covered,
+      child: ExcludeFocus(
+        excluding: !interactive,
+        child: ExcludeSemantics(
+          excluding: !interactive,
+          child: IgnorePointer(ignoring: !interactive, child: child),
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    animation?.removeStatusListener(_handleExitStatus);
+    _notifyExitFinalized();
+    super.dispose();
   }
 }
 
@@ -90,11 +199,19 @@ class SessionVideoFullscreenPage extends ConsumerStatefulWidget {
     required this.sessionId,
     required this.trackPath,
     required this.fullscreenLease,
+    this.videoSurfaceKey,
+    this.inlineBorderRadius = 0,
+    this.resolveInlineRect,
+    this.routeAnimation,
   });
 
   final String sessionId;
   final String trackPath;
   final AppVideoFullscreenLease fullscreenLease;
+  final GlobalKey? videoSurfaceKey;
+  final double inlineBorderRadius;
+  final Rect? Function(Size viewportSize)? resolveInlineRect;
+  final Animation<double>? routeAnimation;
 
   @override
   ConsumerState<SessionVideoFullscreenPage> createState() =>
@@ -113,6 +230,15 @@ class _SessionVideoFullscreenPageState
   static const _controlRowSpacing = 8.0;
 
   late final PlaybackFacade _playback;
+  late final GlobalKey _effectiveSurfaceKey =
+      widget.videoSurfaceKey ??
+      GlobalKey(debugLabel: 'fullscreen_video_surface');
+  Animation<double>? _boundRouteAnimation;
+  CurvedAnimation? _curvedRouteGeometry;
+  Animation<double> _routeFade = kAlwaysCompleteAnimation;
+  Animation<double> get _routeGeometry =>
+      _curvedRouteGeometry ?? kAlwaysCompleteAnimation;
+  bool _routeOpaque = true;
   PlaybackSessionSnapshot? _initialSession;
   PlaybackPositionUiGate? _positionGate;
   late Future<String?> _coverFuture;
@@ -169,6 +295,7 @@ class _SessionVideoFullscreenPageState
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _playback = ref.read(playbackFacadeProvider);
+    _syncRouteAnimation(widget.routeAnimation);
     _initialSession = _playback.sessionSnapshotById(widget.sessionId);
     final session = _initialSession;
     if (session != null) {
@@ -183,6 +310,41 @@ class _SessionVideoFullscreenPageState
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _scheduleControlsHide();
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant SessionVideoFullscreenPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.routeAnimation, widget.routeAnimation)) {
+      _syncRouteAnimation(widget.routeAnimation);
+    }
+  }
+
+  void _syncRouteAnimation(Animation<double>? next) {
+    if (identical(_boundRouteAnimation, next)) return;
+    _boundRouteAnimation?.removeStatusListener(_handleRouteStatusChanged);
+    _curvedRouteGeometry?.dispose();
+    _curvedRouteGeometry = null;
+    _boundRouteAnimation = next;
+    if (next == null) {
+      _routeFade = kAlwaysCompleteAnimation;
+      _routeOpaque = true;
+      return;
+    }
+    next.addStatusListener(_handleRouteStatusChanged);
+    _routeFade = next.drive(CurveTween(curve: kAppFadeCurve));
+    _curvedRouteGeometry = CurvedAnimation(
+      parent: next,
+      curve: kAppSpringCurve,
+      reverseCurve: Curves.easeOutCubic.flipped,
+    );
+    _routeOpaque = next.status == AnimationStatus.completed;
+  }
+
+  void _handleRouteStatusChanged(AnimationStatus status) {
+    final opaque = status == AnimationStatus.completed;
+    if (_routeOpaque == opaque || !mounted) return;
+    setState(() => _routeOpaque = opaque);
   }
 
   void _handlePositionGateChanged() {
@@ -216,6 +378,9 @@ class _SessionVideoFullscreenPageState
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _boundRouteAnimation?.removeStatusListener(_handleRouteStatusChanged);
+    _curvedRouteGeometry?.dispose();
+    _curvedRouteGeometry = null;
     _controlsTimer?.cancel();
     _feedbackTimer?.cancel();
     _skipAccumulationTimer?.cancel();
@@ -514,6 +679,11 @@ class _SessionVideoFullscreenPageState
     _scheduleControlsHide();
   }
 
+  void _clearSkipTarget() {
+    _skipAccumulationTimer?.cancel();
+    _pendingSkipTarget = null;
+  }
+
   void _showOperationFailure() {
     if (!mounted) return;
     final i18n = ref.read(appLanguageProviderInstanceProvider);
@@ -645,8 +815,7 @@ class _SessionVideoFullscreenPageState
     switch (mode) {
       case _FullscreenVideoPanMode.horizontalSeek:
         if (!cancelled && target != null) {
-          _skipAccumulationTimer?.cancel();
-          _pendingSkipTarget = null;
+          _clearSkipTarget();
           unawaited(_playback.seekSession(widget.sessionId, target));
         }
         break;
@@ -852,7 +1021,10 @@ class _SessionVideoFullscreenPageState
           currentTrackIsVideo: track?.isVideo == true,
         )) {
       _exitAfterBuild();
-      return const ColoredBox(color: Colors.black);
+      return FadeTransition(
+        opacity: _routeFade,
+        child: const ColoredBox(color: Colors.black),
+      );
     }
     _subtitleEnabled = subtitleEnabled;
     if (_positionGate == null) {
@@ -887,8 +1059,7 @@ class _SessionVideoFullscreenPageState
       _activeTrackPath = activeSession.currentTrackPath;
       _activeCoverScope = coverScope;
       _activeCoverRevision = coverRevision;
-      _pendingSkipTarget = null;
-      _skipAccumulationTimer?.cancel();
+      _clearSkipTarget();
       _coverFuture = library.playbackCoverPathFutureForTrack(track);
     }
     final baseControlTheme = ref.read(themeProviderInstanceProvider).darkTheme;
@@ -919,7 +1090,9 @@ class _SessionVideoFullscreenPageState
             onKeyEvent: _handleKeyEvent,
             onFocusChange: (_) => _scheduleControlsHide(),
             child: Scaffold(
-                backgroundColor: Colors.black,
+                backgroundColor: _routeOpaque
+                    ? Colors.black
+                    : Colors.transparent,
                 body: AppPageContentTransition(
                   child: MouseRegion(
                     cursor: _controlsVisible
@@ -931,6 +1104,7 @@ class _SessionVideoFullscreenPageState
                     child: LayoutBuilder(
                       builder: (context, constraints) {
                         final viewportSize = constraints.biggest;
+                        final fullscreenRect = Offset.zero & viewportSize;
                         final controlBarPadding = _controlBarPadding(context);
                         // A separate row keeps the track usable beside the mute button.
                         final stackVolumeControls =
@@ -946,143 +1120,207 @@ class _SessionVideoFullscreenPageState
                           controlsVisible: _controlsVisible,
                           controlBarHeight: controlBarHeight,
                         );
+                        final videoReady = isSessionVideoReady(
+                          activeSession,
+                          track,
+                        );
                         return Stack(
                           fit: StackFit.expand,
                           children: [
-                            SessionVideoBlurredBackdrop(
-                              child: AsyncLocalCoverImage(
-                                onImageError: library
-                                    .coverArtworkCacheService
-                                    .reportArtworkReadFailure,
-                                future: _coverFuture,
-                                requestKey: (
-                                  activeSession.currentTrackPath,
-                                  coverRevision,
+                            FadeTransition(
+                              key: const ValueKey<String>(
+                                'fullscreen_video_backdrop_fade',
+                              ),
+                              opacity: _routeFade,
+                              child: ColoredBox(
+                                color: Colors.black,
+                                child: SessionVideoBlurredBackdrop(
+                                  child: TickerMode(
+                                    enabled: true,
+                                    child: AsyncLocalCoverImage(
+                                      onImageError: library
+                                          .coverArtworkCacheService
+                                          .reportArtworkReadFailure,
+                                      future: _coverFuture,
+                                      requestKey: (
+                                        activeSession.currentTrackPath,
+                                        coverRevision,
+                                      ),
+                                      initialPath: library
+                                          .resolvedPlaybackCoverPathForTrack(
+                                            track,
+                                          ),
+                                      retryFutureBuilder: () => library
+                                          .playbackCoverPathFutureForTrack(
+                                            track,
+                                          ),
+                                      cacheWidth: 200,
+                                      useDefaultCacheWidth: false,
+                                      fit: BoxFit.cover,
+                                    ),
+                                  ),
                                 ),
-                                initialPath: library
-                                    .resolvedPlaybackCoverPathForTrack(track),
-                                retryFutureBuilder: () => library
-                                    .playbackCoverPathFutureForTrack(track),
-                                cacheWidth: 200,
-                                useDefaultCacheWidth: false,
-                                fit: BoxFit.cover,
                               ),
                             ),
-                            if (isSessionVideoReady(activeSession, track))
-                              TweenAnimationBuilder<double>(
-                                tween: Tween<double>(begin: 0.0, end: 1.0),
-                                duration: MediaQuery.disableAnimationsOf(
-                                  context,
-                                )
-                                    ? Duration.zero
-                                    : const Duration(milliseconds: 220),
-                                curve: Curves.easeOutCubic,
-                                child: NativeSessionVideoSurface(
-                                  sessionId: widget.sessionId,
-                                  nativeRepository: ref
-                                      .read(playbackFacadeProvider)
-                                      .nativeRepository,
+                            if (videoReady)
+                              AnimatedBuilder(
+                                animation: _routeGeometry,
+                                child: KeyedSubtree(
+                                  key: _effectiveSurfaceKey,
+                                  child: NativeSessionVideoSurface(
+                                    sessionId: widget.sessionId,
+                                    nativeRepository: ref
+                                        .read(playbackFacadeProvider)
+                                        .nativeRepository,
+                                  ),
                                 ),
-                                builder: (context, opacity, child) =>
-                                    opacity >= 0.999
-                                    ? child!
-                                    : Opacity(opacity: opacity, child: child),
-                              ),
-                            Positioned.fromRect(
-                              rect: gestureRect,
-                              child: Listener(
-                                behavior: HitTestBehavior.translucent,
-                                onPointerSignal: _handlePointerSignal,
-                                child: MouseRegion(
-                                  cursor: _controlsVisible
-                                      ? SystemMouseCursors.click
-                                      : SystemMouseCursors.none,
-                                  child: GestureDetector(
-                                    key: const ValueKey<String>(
-                                      'fullscreen_video_gesture_surface',
+                                builder: (context, child) {
+                                  final t = _routeGeometry.value.clamp(
+                                    0.0,
+                                    1.0,
+                                  );
+                                  final fromRect = t >= 0.999
+                                      ? null
+                                      : widget.resolveInlineRect?.call(
+                                          viewportSize,
+                                        );
+                                  final rect = fromRect == null
+                                      ? fullscreenRect
+                                      : Rect.lerp(fromRect, fullscreenRect, t)!;
+                                  final radius = fromRect == null
+                                      ? 0.0
+                                      : widget.inlineBorderRadius * (1.0 - t);
+                                  return Positioned.fromRect(
+                                    rect: rect,
+                                    child: ClipRRect(
+                                      clipBehavior: radius <= 0.05
+                                          ? Clip.none
+                                          : Clip.antiAlias,
+                                      borderRadius: radius <= 0.05
+                                          ? BorderRadius.zero
+                                          : BorderRadius.circular(radius),
+                                      child: child,
                                     ),
-                                    excludeFromSemantics: true,
-                                    behavior: HitTestBehavior.opaque,
-                                    onTapDown: (details) =>
-                                        _lastPointerPosition =
-                                            gestureRect.topLeft +
-                                            details.localPosition,
-                                    onTap: _toggleControls,
-                                    onDoubleTapDown: (details) {
-                                      _doubleTapPosition =
-                                          details.localPosition;
-                                      _doubleTapViewportWidth = max(
-                                        1,
-                                        gestureRect.width,
-                                      );
-                                    },
-                                    onDoubleTap: _handleDoubleTap,
-                                    onLongPressStart: (_) =>
-                                        unawaited(_startTemporarySpeed()),
-                                    onLongPressEnd: (_) =>
-                                        unawaited(_restoreTemporarySpeed()),
-                                    onLongPressCancel: () =>
-                                        unawaited(_restoreTemporarySpeed()),
-                                    onPanStart: (details) => _handlePanStart(
-                                      details,
-                                      Size(
-                                        max(1, viewportSize.width),
-                                        max(1, viewportSize.height),
+                                  );
+                                },
+                              ),
+                            Positioned.fill(
+                              child: FadeTransition(
+                                key: const ValueKey<String>(
+                                  'fullscreen_video_chrome_fade',
+                                ),
+                                opacity: _routeFade,
+                                child: Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    Positioned.fromRect(
+                                      rect: gestureRect,
+                                      child: Listener(
+                                        behavior: HitTestBehavior.translucent,
+                                        onPointerSignal: _handlePointerSignal,
+                                        child: MouseRegion(
+                                          cursor: _controlsVisible
+                                              ? SystemMouseCursors.click
+                                              : SystemMouseCursors.none,
+                                          child: GestureDetector(
+                                            key: const ValueKey<String>(
+                                              'fullscreen_video_gesture_surface',
+                                            ),
+                                            excludeFromSemantics: true,
+                                            behavior: HitTestBehavior.opaque,
+                                            onTapDown: (details) =>
+                                                _lastPointerPosition =
+                                                    gestureRect.topLeft +
+                                                    details.localPosition,
+                                            onTap: _toggleControls,
+                                            onDoubleTapDown: (details) {
+                                              _doubleTapPosition =
+                                                  details.localPosition;
+                                              _doubleTapViewportWidth = max(
+                                                1,
+                                                gestureRect.width,
+                                              );
+                                            },
+                                            onDoubleTap: _handleDoubleTap,
+                                            onLongPressStart: (_) => unawaited(
+                                              _startTemporarySpeed(),
+                                            ),
+                                            onLongPressEnd: (_) => unawaited(
+                                              _restoreTemporarySpeed(),
+                                            ),
+                                            onLongPressCancel: () => unawaited(
+                                              _restoreTemporarySpeed(),
+                                            ),
+                                            onPanStart: (details) =>
+                                                _handlePanStart(
+                                                  details,
+                                                  Size(
+                                                    max(1, viewportSize.width),
+                                                    max(1, viewportSize.height),
+                                                  ),
+                                                ),
+                                            onPanUpdate: _handlePanUpdate,
+                                            onPanEnd: (_) => _handlePanEnd(
+                                              cancelled: false,
+                                            ),
+                                            onPanCancel: () =>
+                                                _handlePanEnd(cancelled: true),
+                                            child: SessionVideoControlsTarget(
+                                              label: controlsLabel,
+                                              controlsVisible: _controlsVisible,
+                                              onToggle: _toggleControls,
+                                            ),
+                                          ),
+                                        ),
                                       ),
                                     ),
-                                    onPanUpdate: _handlePanUpdate,
-                                    onPanEnd: (_) =>
-                                        _handlePanEnd(cancelled: false),
-                                    onPanCancel: () =>
-                                        _handlePanEnd(cancelled: true),
-                                    child: SessionVideoControlsTarget(
-                                      label: controlsLabel,
-                                      controlsVisible: _controlsVisible,
-                                      onToggle: _toggleControls,
+                                    if (subtitleEnabled)
+                                      AnimatedPositioned(
+                                        left: 24,
+                                        right: 24,
+                                        bottom: _controlsVisible
+                                            ? controlBarHeight + 12
+                                            : 24 +
+                                                  MediaQuery.viewPaddingOf(
+                                                    context,
+                                                  ).bottom,
+                                        duration:
+                                            MediaQuery.disableAnimationsOf(
+                                              context,
+                                            )
+                                            ? Duration.zero
+                                            : kAppFadeDuration,
+                                        curve: kAppFadeCurve,
+                                        child: IgnorePointer(
+                                          child:
+                                              _FullscreenVideoSubtitleOverlay(
+                                                session: activeSession,
+                                                positionGate: _positionGate!,
+                                              ),
+                                        ),
+                                      ),
+                                    _buildFeedback(),
+                                    if (transport.playbackError != null)
+                                      _buildErrorBanner(
+                                        context,
+                                        playbackError: transport.playbackError!,
+                                        useAsmrOneText:
+                                            track?.isRemoteAsmr ?? false,
+                                      ),
+                                    Builder(
+                                      builder: (context) => _buildControls(
+                                        context,
+                                        activeSession,
+                                        playing: transport.playing,
+                                        loading: transport.loading,
+                                        padding: controlBarPadding,
+                                        height: controlBarHeight,
+                                        stackVolumeControls:
+                                            stackVolumeControls,
+                                      ),
                                     ),
-                                  ),
+                                  ],
                                 ),
-                              ),
-                            ),
-                            if (subtitleEnabled)
-                              AnimatedPositioned(
-                                left: 24,
-                                right: 24,
-                                bottom: _controlsVisible
-                                    ? controlBarHeight + 12
-                                    : 24 +
-                                          MediaQuery.viewPaddingOf(
-                                            context,
-                                          ).bottom,
-                                duration: MediaQuery.disableAnimationsOf(
-                                  context,
-                                )
-                                    ? Duration.zero
-                                    : kAppFadeDuration,
-                                curve: kAppFadeCurve,
-                                child: IgnorePointer(
-                                  child: _FullscreenVideoSubtitleOverlay(
-                                    session: activeSession,
-                                    positionGate: _positionGate!,
-                                  ),
-                                ),
-                              ),
-                            _buildFeedback(),
-                            if (transport.playbackError != null)
-                              _buildErrorBanner(
-                                context,
-                                playbackError: transport.playbackError!,
-                                useAsmrOneText: track?.isRemoteAsmr ?? false,
-                              ),
-                            Builder(
-                              builder: (context) => _buildControls(
-                                context,
-                                activeSession,
-                                playing: transport.playing,
-                                loading: transport.loading,
-                                padding: controlBarPadding,
-                                height: controlBarHeight,
-                                stackVolumeControls: stackVolumeControls,
                               ),
                             ),
                           ],
@@ -1367,7 +1605,10 @@ class _SessionVideoFullscreenPageState
                                   Orientation.landscape,
                               onSeekStart: _beginControlInteraction,
                               onSeekCancel: _endControlInteraction,
-                              onManualSeek: (_) => _endControlInteraction(),
+                              onManualSeek: (_) {
+                                _clearSkipTarget();
+                                _endControlInteraction();
+                              },
                             ),
                           ),
                         ),

@@ -748,12 +748,20 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
     final trackPath = _currentTrackPath;
     final sessionId = widget.session.id;
     try {
-      final overwrite = await _confirmSubtitleOverwrite(
-        subtitles,
-        trackPath,
-        messageKey: 'subtitle_transcribe_overwrite_hint',
-      );
-      if (overwrite == null || !mounted) return;
+      final primary = await subtitles.transcriptionSubtitleTarget(trackPath);
+      if (!mounted) return;
+      if (primary.sourcePath != null) {
+        final i18n = ref.read(appLanguageProviderInstanceProvider);
+        final confirmed = await showConfirmActionDialog(
+          context: context,
+          title: i18n.tr('subtitle_import_overwrite_title'),
+          message: i18n.tr('subtitle_transcribe_overwrite_hint'),
+          cancelLabel: i18n.tr('cancel'),
+          confirmLabel: i18n.tr('subtitle_import_overwrite'),
+          isDestructive: false,
+        );
+        if (!confirmed || !mounted) return;
+      }
       final asrSpecs = subtitles.activeAsrModel.bundleSpecs;
       if (!await _confirmModelsDownload(
         asrSpecs,
@@ -769,6 +777,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
       final settings = ref.read(subtitleSettingsProvider.notifier);
       if (subtitles.startTranscriptionGeneration(
         trackPath,
+        expectedPrimary: primary,
         onApplied: () => settings.ensureSubtitlesEnabled(sessionId),
       )) {
         if (!downloadingInBackground) {

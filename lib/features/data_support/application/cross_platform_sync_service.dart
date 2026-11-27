@@ -9,6 +9,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../../core/logging/app_log_service.dart';
+import '../../../core/media/cross_platform_media_identity.dart';
+import '../../../core/media/music_track.dart';
 import '../../../core/network/webdav_client.dart';
 import '../../../core/persistence/app_preferences.dart';
 import '../../asmr/application/asmr_preferences.dart';
@@ -390,6 +392,34 @@ class CrossPlatformSyncService extends ChangeNotifier {
   Future<SyncWorkStateEntry?> findSyncedWorkState(String workKey) =>
       _repository.findSyncedWorkState(workKey);
 
+  Future<Map<String, SyncTrackStateEntry>> findSyncedTrackStates({
+    required String workKey,
+    required Iterable<String> relativePaths,
+  }) => _repository.findSyncedTrackStates(
+    workKey: workKey,
+    relativePaths: relativePaths,
+  );
+
+  Future<Map<String, SyncWorkStateEntry>> findSyncedWorkStates(
+    Iterable<String> workKeys,
+  ) => _repository.findSyncedWorkStates(workKeys);
+
+  Future<void> saveRemoteTrackProgress(
+    MusicTrack track, {
+    required Duration position,
+    required DateTime playedAt,
+  }) async {
+    if (!track.isRemoteMedia) return;
+    final identity = CrossPlatformMediaIdentity.fromTrack(track);
+    if (identity == null) return;
+    await _repository.saveRemoteTrackProgress(
+      workKey: identity.workKey,
+      relativePath: identity.relativePath,
+      positionMs: max(0, position.inMilliseconds),
+      playedAtMs: playedAt.millisecondsSinceEpoch,
+    );
+  }
+
   Future<void> upsertSyncedWorkState(SyncWorkStateEntry entry) async {
     final updatedTargets = await _repository.upsertSyncedWorkState(entry);
     if (_onSyncApplied != null && updatedTargets.isNotEmpty) {
@@ -527,6 +557,7 @@ class CrossPlatformSyncService extends ChangeNotifier {
       deviceDayLedger: snapshot.deviceDayLedger,
       deviceWorkDayLedger: snapshot.deviceWorkDayLedger,
       history: snapshot.history,
+      deletedHistory: snapshot.deletedHistory,
       timeSegments: snapshot.timeSegments,
       deletedTimeSegments: snapshot.deletedTimeSegments,
       interests: interestsJson,
@@ -553,11 +584,10 @@ class CrossPlatformSyncService extends ChangeNotifier {
         entry.value,
       ],
     ];
-    final current = await _repository.exportSnapshot(
-      generateDeviceId: _generateUuidV4,
-      interestSettingKeys: interestSettingKeys,
+    final localDeviceId = await _repository.ensureDeviceId(_generateUuidV4);
+    final currentInterests = await _repository.loadInterestSettings(
+      interestSettingKeys,
     );
-    final localDeviceId = current.deviceId;
 
     var anyInterestsChanged = false;
     final mergedSettingsToWrite = <String, String?>{};
@@ -565,8 +595,8 @@ class CrossPlatformSyncService extends ChangeNotifier {
     for (final catEntry in AsmrPreferencesStore.interestCatalogKeys.entries) {
       final prefKey = catEntry.key;
       final catalogKey = catEntry.value;
-      final localRaw = current.interestSettings[prefKey];
-      final localCatRaw = current.interestSettings[catalogKey];
+      final localRaw = currentInterests[prefKey];
+      final localCatRaw = currentInterests[catalogKey];
       final localPrefs = localRaw == null || localRaw.isEmpty
           ? AsmrTagPreferences()
           : AsmrTagPreferences.fromJson(
@@ -614,6 +644,7 @@ class CrossPlatformSyncService extends ChangeNotifier {
     final dayLedgers = <String, Map<String, int>>{};
     final workDayLedgers = <String, Map<String, Map<String, int>>>{};
     final historyByWork = <String, SyncHistoryWorkEntry>{};
+    final deletedHistory = <String, int>{};
     final segmentsById = <String, SyncTimeSegmentEntry>{};
     final deletedSegments = <String, int>{};
     final workStatesByKey = <String, SyncWorkStateEntry>{};
@@ -651,13 +682,36 @@ class CrossPlatformSyncService extends ChangeNotifier {
         }
       }
       for (final t in bundle.tracks) {
-        final key = '${t.workKey}::${t.relativePath.toLowerCase()}';
+        final identity = CrossPlatformMediaIdentity.fromWorkAndRelativePath(
+          workKey: t.workKey,
+          relativePath: t.relativePath,
+        );
+        if (identity == null) continue;
+        final key = identity.syncKey;
         final prev = tracksByKey[key];
-        if (prev == null ||
-            (t.lastPlayedAtMs ?? 0) >= (prev.lastPlayedAtMs ?? 0) ||
-            t.updatedAtMs > prev.updatedAtMs) {
+        if (prev == null) {
           tracksByKey[key] = t;
+          continue;
         }
+        final takeProgress =
+            (t.lastPlayedAtMs ?? 0) > (prev.lastPlayedAtMs ?? 0);
+        final takeFavorite =
+            t.favoriteUpdatedAtMs > prev.favoriteUpdatedAtMs ||
+            (t.favoriteUpdatedAtMs == prev.favoriteUpdatedAtMs &&
+                t.isFavorite != prev.isFavorite &&
+                (t.favoriteUpdatedAtMs > 0 ? !t.isFavorite : t.isFavorite));
+        tracksByKey[key] = SyncTrackStateEntry(
+          workKey: identity.workKey,
+          relativePath: identity.relativePath,
+          positionMs: takeProgress ? t.positionMs : prev.positionMs,
+          lastPlayedAtMs: takeProgress ? t.lastPlayedAtMs : prev.lastPlayedAtMs,
+          isFavorite: takeFavorite ? t.isFavorite : prev.isFavorite,
+          favoriteUpdatedAtMs: max(
+            t.favoriteUpdatedAtMs,
+            prev.favoriteUpdatedAtMs,
+          ),
+          updatedAtMs: max(t.updatedAtMs, prev.updatedAtMs),
+        );
       }
       for (final dev in bundle.deviceDayLedger.entries) {
         final map = dayLedgers.putIfAbsent(dev.key, () => <String, int>{});
@@ -679,8 +733,13 @@ class CrossPlatformSyncService extends ChangeNotifier {
       }
       for (final h in bundle.history) {
         final prev = historyByWork[h.workKey];
-        if (prev == null || h.lastPlayedAtMs >= prev.lastPlayedAtMs) {
+        if (prev == null || h.stateUpdatedAtMs > prev.stateUpdatedAtMs) {
           historyByWork[h.workKey] = h;
+        }
+      }
+      for (final entry in bundle.deletedHistory.entries) {
+        if (entry.value > (deletedHistory[entry.key] ?? 0)) {
+          deletedHistory[entry.key] = entry.value;
         }
       }
       for (final s in bundle.timeSegments) {
@@ -702,6 +761,7 @@ class CrossPlatformSyncService extends ChangeNotifier {
       incomingDeviceDayLedger: dayLedgers,
       incomingDeviceWorkDayLedger: workDayLedgers,
       incomingHistory: historyByWork.values.toList(growable: false),
+      incomingDeletedHistory: deletedHistory,
       incomingTimeSegments: segmentsById.values.toList(growable: false),
       incomingDeletedTimeSegments: deletedSegments,
       mergedInterestSettings: mergedSettingsToWrite,
@@ -714,7 +774,7 @@ class CrossPlatformSyncService extends ChangeNotifier {
             dbResult.listeningDaysUpdated > 0 ||
             dbResult.timeSegmentsMerged > 0 ||
             anyInterestsChanged ||
-            historyByWork.isNotEmpty)) {
+            dbResult.historyChanged)) {
       await _onSyncApplied!(
         dbResult.updatedTrackPaths,
         anyInterestsChanged,

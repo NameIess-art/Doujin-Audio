@@ -6,6 +6,7 @@ import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
+import 'package:doujin_audio/core/persistence/persistence_records.dart';
 import 'package:doujin_audio/core/widgets/app_feedback.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_account_sync_service.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_api_service.dart';
@@ -222,6 +223,7 @@ void main() {
         listeningActivity: listeningActivity,
         playback: playback,
         timer: timer,
+        loadRecentlyPlayedWorkKeys: appDatabase.loadRecentlyPlayedWorkKeys,
         readPersistedState: () => appDatabase.loadAppSetting(
           WorkSmartStatusCoordinator.persistedSettingKey,
         ),
@@ -383,6 +385,53 @@ void main() {
         expect(replayed.listenStatus, WorkListenStatus.replay);
         expect(replayed.userRating, 5);
         expect(replayed.reviewText, 'Great track');
+      },
+    );
+
+    test(
+      'recent ASMR usage protects an older listening review from postponement',
+      () async {
+        final work = AsmrWork.fromJson(const {
+          'id': 234567,
+          'title': 'ASMR work',
+        });
+        await asmrController.saveWorkReview(
+          work,
+          listenStatus: WorkListenStatus.listening,
+          userRating: null,
+          reviewText: '',
+          updatedAt: currentNow.subtract(const Duration(days: 16)),
+        );
+        final workKey = work.rjCode.isNotEmpty
+            ? 'rj:${work.rjCode}'
+            : 'asmr:${work.id}';
+        await appDatabase.importListeningBatch('recent-asmr', [
+          ListeningDayRecord(
+            date: currentNow.toIso8601String().split('T').first,
+            totalMs: 1000,
+            works: [
+              ListeningWorkRecord(
+                workKey: workKey,
+                track: MusicTrack(
+                  path: 'https://example.test/track.mp3',
+                  displayName: 'track',
+                  groupKey: workKey,
+                  groupTitle: work.title,
+                  groupSubtitle: '',
+                  isSingle: false,
+                ),
+                milliseconds: 1000,
+                lastPlayedAtMs: currentNow.millisecondsSinceEpoch,
+              ),
+            ],
+          ),
+        ]);
+        await appDatabase.removeListeningHistoryEntry(workKey);
+        await coordinator.initializeAndSweepStale();
+        expect(
+          asmrController.reviewedWorks.single.listenStatus,
+          WorkListenStatus.listening,
+        );
       },
     );
 

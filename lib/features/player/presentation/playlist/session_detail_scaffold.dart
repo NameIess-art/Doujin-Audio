@@ -715,14 +715,7 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
                     : kAppFadeDuration,
                 curve: kAppFadeCurve,
                 child: !showHeaderActions
-                    ? Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          closeButton,
-                          const SizedBox(width: 8),
-                          sleepButton,
-                        ],
-                      )
+                    ? closeButton
                     : Row(
                         children: [
                           closeButton,

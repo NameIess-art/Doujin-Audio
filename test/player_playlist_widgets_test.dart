@@ -15618,9 +15618,8 @@ void main() {
               }
             }
           } else {
-            expect(sleep, findsOneWidget);
-            expect(tester.getRect(sleep).top, buttonRect.top);
             expect(timer, findsNothing);
+            expect(sleep, findsNothing);
           }
           final arrow = find.descendant(
             of: button,

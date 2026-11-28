@@ -5838,10 +5838,10 @@ void main() {
   );
 
   testWidgets(
-    'sleep mode opened from landscape playback fills the view and restores rotation',
+    'sleep mode opened from large-screen landscape playback fills the view and restores rotation',
     (tester) async {
-      const portrait = Size(390, 820);
-      const landscape = Size(820, 390);
+      const portrait = Size(640, 1024);
+      const landscape = Size(1024, 640);
       _setLogicalTestViewSize(tester, portrait);
       final orientations = <List<DeviceOrientation>>[];
       final modes = <SystemUiMode>[];
